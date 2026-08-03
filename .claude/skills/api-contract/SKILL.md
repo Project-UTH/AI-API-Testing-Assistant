@@ -57,6 +57,8 @@ Ví dụ — tạo project thành công:
 | `AI_GENERATION_FAILED` | 502 | LLM lỗi hoặc trả về sai định dạng khi sinh test case |
 | `TEST_EXECUTION_FAILED` | 500 | Lỗi khi thực thi test (không phải lỗi của API được test) |
 | `INTERNAL_ERROR` | 500 | Lỗi hệ thống chung, không xác định được nguyên nhân cụ thể |
+| `EMAIL_ALREADY_EXISTS` | 409 | Email đã được đăng ký |
+| `INVALID_CREDENTIALS` | 401 | Sai email hoặc mật khẩu |
 
 ## 3. Pagination (dùng cho mọi API trả danh sách)
 
