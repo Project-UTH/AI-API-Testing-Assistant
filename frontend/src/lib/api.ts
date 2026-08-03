@@ -29,10 +29,7 @@ export function clearToken(): void {
   localStorage.removeItem(AUTH_TOKEN_KEY)
 }
 
-export async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function rawFetch(path: string, options: RequestInit = {}): Promise<unknown> {
   const token = getToken()
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -43,6 +40,10 @@ export async function apiFetch<T>(
       ...options.headers,
     },
   })
+
+  if (response.status === 204) {
+    return null
+  }
 
   const body = await response.json().catch(() => null)
 
@@ -56,5 +57,32 @@ export async function apiFetch<T>(
     )
   }
 
+  return body
+}
+
+export async function apiFetch<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const body = await rawFetch(path, options)
+  if (body === null) {
+    return undefined as T
+  }
   return (body as { data: T }).data
+}
+
+export interface PagedResult<T> {
+  data: T[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}
+
+export async function apiFetchPaged<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<PagedResult<T>> {
+  const body = await rawFetch(path, options)
+  return body as PagedResult<T>
 }
