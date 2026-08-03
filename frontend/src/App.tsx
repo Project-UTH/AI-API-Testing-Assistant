@@ -4,6 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout"
 import { RequireAuth } from "@/components/RequireAuth"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { ProjectsPage } from "@/pages/ProjectsPage"
+import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
 
@@ -17,6 +18,7 @@ function App() {
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:id" element={<ProjectDetailPage />} />
         </Route>
       </Route>
 
