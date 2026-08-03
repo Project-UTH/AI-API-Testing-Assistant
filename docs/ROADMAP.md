@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Agent
 
-> Cập nhật lần cuối: (điền ngày mỗi khi sửa)
+> Cập nhật lần cuối: 2026-08-03
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -8,7 +8,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 
 | Module | Trạng thái |
 |---|---|
-| 1. Setup nền tảng | 🟡 Đang làm |
+| 1. Setup nền tảng | ✅ Xong |
 | 2. Quản lý Project | ⬜ Chưa bắt đầu |
 | 3. Import & Parse OpenAPI | ⬜ Chưa bắt đầu |
 | 4. AI sinh Test Case | ⬜ Chưa bắt đầu |
@@ -24,19 +24,21 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 *Không phụ thuộc module nào — làm trước tiên*
 
 **Backend**
-- [ ] Khởi tạo Spring Boot project (Web, JPA, MySQL, Security, Spring AI)
-- [ ] Setup package theo skill `springboot-architecture`
-- [ ] DB schema — bảng `project`, `endpoint`, `test_case`, `test_execution`, `test_result`
-- [ ] JWT auth (đăng ký/đăng nhập)
+- [x] Khởi tạo Spring Boot project (Web, JPA, MySQL, Security) — chưa thêm Spring AI, để dành Module 4
+- [x] Setup package theo skill `springboot-architecture`
+- [x] DB schema — bảng `users`, `projects`, `endpoints`, `test_cases`, `test_executions`, `test_results`
+- [x] JWT auth (đăng ký/đăng nhập)
 
 **Frontend**
-- [ ] Khởi tạo React (Vite) + Tailwind + shadcn
-- [ ] Layout khung (sidebar, header)
-- [ ] Trang đăng nhập/đăng ký
+- [x] Khởi tạo React (Vite) + Tailwind + shadcn
+- [x] Layout khung (sidebar, header)
+- [x] Trang đăng nhập/đăng ký
 
 **Chung**
-- [ ] Git: branch `develop`, quy tắc branch/commit đã thống nhất
-- [ ] `.claude/skills/` đã setup xong (8 skill hiện có)
+- [x] Git: branch `develop`, quy tắc branch/commit đã thống nhất
+- [x] `.claude/skills/` đã setup xong (8 skill hiện có)
+
+**Ghi chú:** Entity JPA cho `Project`/`Endpoint`/`TestCase`/`TestExecution`/`TestResult` đã được tạo sẵn ở bước này để thiết lập DB schema đầy đủ cùng lúc (chỉ gồm field/quan hệ tối thiểu). Module 2/3 chỉ cần bổ sung field chi tiết + Service/Controller/DTO, không cần tạo lại entity từ đầu.
 
 ---
 
