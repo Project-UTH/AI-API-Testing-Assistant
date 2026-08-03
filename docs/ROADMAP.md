@@ -1,4 +1,4 @@
-# Roadmap — AI API Testing Agent
+# Roadmap — AI API Testing Assistant
 
 > Cập nhật lần cuối: 2026-08-03
 

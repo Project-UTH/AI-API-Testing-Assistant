@@ -1,9 +1,9 @@
 ---
 name: springboot-architecture
-description: Kiến trúc và cấu trúc code backend Spring Boot cho dự án AI API Testing Agent. Dùng khi tạo package mới, viết Controller/Service/Repository, thiết kế Entity, hoặc quyết định nơi đặt logic mới trong backend.
+description: Kiến trúc và cấu trúc code backend Spring Boot cho dự án AI API Testing Assistant. Dùng khi tạo package mới, viết Controller/Service/Repository, thiết kế Entity, hoặc quyết định nơi đặt logic mới trong backend.
 ---
 
-# Kiến trúc Backend — AI API Testing Agent
+# Kiến trúc Backend — AI API Testing Assistant
 
 ## Nguyên tắc phân lớp (bắt buộc)
 

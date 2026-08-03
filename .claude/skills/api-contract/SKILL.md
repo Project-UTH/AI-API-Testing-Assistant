@@ -1,9 +1,9 @@
 ---
 name: api-contract
-description: Hợp đồng format response, error, pagination giữa Spring Boot backend và React frontend của AI API Testing Agent. Dùng khi tạo/sửa endpoint backend, khi viết code gọi API ở frontend, hoặc khi cần đối chiếu format dữ liệu giữa 2 phía.
+description: Hợp đồng format response, error, pagination giữa Spring Boot backend và React frontend của AI API Testing Assistant. Dùng khi tạo/sửa endpoint backend, khi viết code gọi API ở frontend, hoặc khi cần đối chiếu format dữ liệu giữa 2 phía.
 ---
 
-# API Contract — AI API Testing Agent
+# API Contract — AI API Testing Assistant
 
 Đây là **hợp đồng bắt buộc** cho toàn bộ API giữa backend và frontend. Bất kỳ thay đổi nào ở đây phải được cả người phụ trách backend và frontend xác nhận, vì đổi 1 phía mà phía kia không biết sẽ gây lỗi runtime.
 

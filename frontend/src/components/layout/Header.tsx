@@ -14,7 +14,7 @@ export function Header() {
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border px-4">
-      <div className="md:hidden font-semibold">AI API Testing Agent</div>
+      <div className="md:hidden font-semibold">AI API Testing Assistant</div>
       <div className="ml-auto flex items-center gap-2">
         <ModeToggle />
         <Button variant="ghost" size="icon" onClick={handleLogout} title="Đăng xuất">
