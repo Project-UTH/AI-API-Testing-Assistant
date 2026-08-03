@@ -19,6 +19,10 @@ export function RegisterPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+
+  const passwordMismatch =
+    confirmPassword.length > 0 && password !== confirmPassword
 
   const mutation = useMutation({
     mutationFn: () => registerUser(email, password),
@@ -30,6 +34,9 @@ export function RegisterPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (password !== confirmPassword) {
+      return
+    }
     mutation.mutate()
   }
 
@@ -39,7 +46,7 @@ export function RegisterPage() {
         <CardHeader>
           <CardTitle>Đăng ký</CardTitle>
           <CardDescription>
-            Tạo tài khoản AI API Testing Agent mới
+            Tạo tài khoản AI API Testing Assistant mới
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -65,6 +72,23 @@ export function RegisterPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="confirm-password">Nhập lại mật khẩu</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                required
+                minLength={8}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                aria-invalid={passwordMismatch}
+              />
+              {passwordMismatch && (
+                <p className="text-sm text-destructive">
+                  Mật khẩu nhập lại không khớp
+                </p>
+              )}
+            </div>
             {mutation.isError && (
               <p className="text-sm text-destructive">
                 {mutation.error instanceof ApiError
@@ -72,7 +96,10 @@ export function RegisterPage() {
                   : "Đã xảy ra lỗi, vui lòng thử lại"}
               </p>
             )}
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              disabled={mutation.isPending || passwordMismatch}
+            >
               {mutation.isPending ? "Đang đăng ký..." : "Đăng ký"}
             </Button>
             <p className="text-center text-sm text-muted-foreground">

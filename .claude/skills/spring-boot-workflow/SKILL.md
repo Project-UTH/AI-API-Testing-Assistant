@@ -1,6 +1,6 @@
 ---
 name: spring-boot-workflow
-description: Quy trình từng bước khi phát triển 1 chức năng backend mới cho AI API Testing Agent (từ phân tích yêu cầu đến khi test xong). Dùng khi bắt đầu code 1 endpoint/chức năng mới, hoặc khi cần checklist trước khi coi 1 task backend là hoàn thành.
+description: Quy trình từng bước khi phát triển 1 chức năng backend mới cho AI API Testing Assistant (từ phân tích yêu cầu đến khi test xong). Dùng khi bắt đầu code 1 endpoint/chức năng mới, hoặc khi cần checklist trước khi coi 1 task backend là hoàn thành.
 ---
 
 # Workflow phát triển Backend

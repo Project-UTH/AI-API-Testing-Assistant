@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Context nền cho Claude Code khi làm việc trong repo `AI-API-Testing-Agent`. File này luôn được load — giữ ngắn gọn, đưa chi tiết dài vào skill hoặc docs/ và tham chiếu tới đây.
+Context nền cho Claude Code khi làm việc trong repo `AI-API-Testing-Assistant`. File này luôn được load — giữ ngắn gọn, đưa chi tiết dài vào skill hoặc docs/ và tham chiếu tới đây.
 
 ## Giới thiệu dự án
 
@@ -18,7 +18,7 @@ Hệ thống kiểm thử API thông minh: import OpenAPI/Swagger, dùng AI sinh
 ## Cấu trúc thư mục
 
 ```
-AI-API-Testing-Agent/
+AI-API-Testing-Assistant/
 ├── docs/
 │   └── ROADMAP.md              # tiến độ dự án theo module
 ├── .claude/skills/              # xem mục Skills bên dưới

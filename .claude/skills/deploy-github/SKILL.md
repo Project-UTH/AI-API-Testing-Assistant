@@ -1,6 +1,6 @@
 ---
 name: deploy-github
-description: Quy trình branch, commit và deploy cho AI API Testing Agent (chưa dùng Docker). Dùng khi tạo branch, viết commit message, mở PR, hoặc release.
+description: Quy trình branch, commit và deploy cho AI API Testing Assistant (chưa dùng Docker). Dùng khi tạo branch, viết commit message, mở PR, hoặc release.
 disable-model-invocation: true
 ---
 

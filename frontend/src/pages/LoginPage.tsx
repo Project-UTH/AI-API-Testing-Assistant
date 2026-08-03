@@ -39,7 +39,7 @@ export function LoginPage() {
         <CardHeader>
           <CardTitle>Đăng nhập</CardTitle>
           <CardDescription>
-            Đăng nhập vào AI API Testing Agent
+            Đăng nhập vào AI API Testing Assistant
           </CardDescription>
         </CardHeader>
         <CardContent>
