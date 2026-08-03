@@ -1,0 +1,88 @@
+import { useState } from "react"
+import { Link, useNavigate } from "react-router-dom"
+import { useMutation } from "@tanstack/react-query"
+
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { ApiError, setToken } from "@/lib/api"
+import { loginUser } from "@/lib/auth"
+
+export function LoginPage() {
+  const navigate = useNavigate()
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+
+  const mutation = useMutation({
+    mutationFn: () => loginUser(email, password),
+    onSuccess: (data) => {
+      setToken(data.token)
+      navigate("/", { replace: true })
+    },
+  })
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    mutation.mutate()
+  }
+
+  return (
+    <div className="flex min-h-svh items-center justify-center p-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle>Đăng nhập</CardTitle>
+          <CardDescription>
+            Đăng nhập vào AI API Testing Agent
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="password">Mật khẩu</Label>
+              <Input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {mutation.isError && (
+              <p className="text-sm text-destructive">
+                {mutation.error instanceof ApiError
+                  ? mutation.error.message
+                  : "Đã xảy ra lỗi, vui lòng thử lại"}
+              </p>
+            )}
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? "Đang đăng nhập..." : "Đăng nhập"}
+            </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              Chưa có tài khoản?{" "}
+              <Link to="/register" className="text-primary underline">
+                Đăng ký
+              </Link>
+            </p>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
