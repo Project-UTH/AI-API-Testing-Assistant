@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-03
+> Cập nhật lần cuối: 2026-08-04
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -9,7 +9,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | Module | Trạng thái |
 |---|---|
 | 1. Setup nền tảng | ✅ Xong |
-| 2. Quản lý Project | ⬜ Chưa bắt đầu |
+| 2. Quản lý Project | ✅ Xong |
 | 3. Import & Parse OpenAPI | ⬜ Chưa bắt đầu |
 | 4. AI sinh Test Case | ⬜ Chưa bắt đầu |
 | 5. Review Test Case | ⬜ Chưa bắt đầu |
@@ -46,15 +46,17 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 *Phụ thuộc: Module 1*
 
 **Backend**
-- [ ] Entity + Repository `Project`
-- [ ] Endpoint CRUD `Project` (theo format `api-contract`)
+- [x] Entity + Repository `Project` (entity đã có từ Module 1, bổ sung `findAllByOwner`)
+- [x] Endpoint CRUD `Project` (theo format `api-contract`) — `GET/POST /api/v1/projects`, `GET/PUT/DELETE /api/v1/projects/{id}`, phân trang, giới hạn theo owner (403/404 khi không phải chủ sở hữu)
 
 **Frontend**
-- [ ] Trang danh sách Project
-- [ ] Form tạo/sửa Project
-- [ ] Gọi API bằng tanstack-query
+- [x] Trang danh sách Project (`/projects`, dạng card grid)
+- [x] Form tạo/sửa Project (dialog, dùng chung `ProjectFormDialog`) + xoá (`DeleteProjectDialog`)
+- [x] Gọi API bằng tanstack-query (`lib/projects.ts`, `apiFetchPaged`)
 
-**Mốc xác nhận:** tạo Project ở FE → lưu DB → hiển thị lại đúng — xác nhận pipeline DB → API → UI hoạt động.
+**Mốc xác nhận:** tạo Project ở FE → lưu DB → hiển thị lại đúng — xác nhận pipeline DB → API → UI hoạt động. ✅ Đã verify bằng Playwright: đăng ký → tạo → sửa → xem chi tiết → xoá → về lại rỗng.
+
+**Ghi chú quan trọng:** trang chi tiết `/projects/:id` (`ProjectDetailPage.tsx`) đã được tạo sẵn ở module này — route, fetch 1 project theo id (`getProject`), hiển thị tên/mô tả/ngày tạo. Module 3 chỉ cần bổ sung phần hiển thị/quản lý Endpoint vào đúng trang này (đã có khối placeholder đánh dấu vị trí), **không tạo route hay trang mới**.
 
 ---
 
@@ -69,7 +71,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 
 **Frontend**
 - [ ] Form import (URL hoặc upload file)
-- [ ] Trang danh sách Endpoint, chọn endpoint cần test
+- [ ] Bổ sung danh sách Endpoint, chọn endpoint cần test **vào trang `ProjectDetailPage.tsx` đã có sẵn từ Module 2** (không tạo trang mới)
 
 ---
 
