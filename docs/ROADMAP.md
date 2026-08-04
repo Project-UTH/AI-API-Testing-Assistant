@@ -10,7 +10,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 |---|---|
 | 1. Setup nền tảng | ✅ Xong |
 | 2. Quản lý Project | ✅ Xong |
-| 3. Import & Parse OpenAPI | ⬜ Chưa bắt đầu |
+| 3. Import & Parse OpenAPI | ✅ Xong |
 | 4. AI sinh Test Case | ⬜ Chưa bắt đầu |
 | 5. Review Test Case | ⬜ Chưa bắt đầu |
 | 6. Thực thi Test | ⬜ Chưa bắt đầu |
@@ -64,14 +64,16 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 *Phụ thuộc: Module 2*
 
 **Backend**
-- [ ] Tích hợp Swagger Parser (import từ URL và từ file)
-- [ ] Entity/Repository `Endpoint`, lưu path/method/schema/required fields
-- [ ] Cấu hình xác thực target API (API Key/Bearer Token) — mã hoá AES trước khi lưu
-- [ ] Validate/sanitize URL người dùng nhập (tránh SSRF)
+- [x] Tích hợp Swagger Parser (import từ URL và từ file) — `EndpointImportService`, dùng chung logic parse `OpenAPIV3Parser().readContents(...)` cho cả 2 nguồn
+- [x] Entity/Repository `Endpoint`, lưu path/method/schema/required fields — bổ sung field `summary`, `EndpointRepository.findAllByProject`/`deleteAllByProject`
+- [x] Cấu hình xác thực target API (API Key/Bearer Token) — mã hoá AES-256/GCM trước khi lưu (`AesEncryptionService`, field `Project.targetAuthType`/`targetAuthValueEncrypted`)
+- [x] Validate/sanitize URL người dùng nhập (tránh SSRF) — `SafeUrlFetcher` tự fetch (không dùng `readLocation`), chặn scheme khác http/https, IP loopback/private/link-local, không theo redirect
 
 **Frontend**
-- [ ] Form import (URL hoặc upload file)
-- [ ] Bổ sung danh sách Endpoint, chọn endpoint cần test **vào trang `ProjectDetailPage.tsx` đã có sẵn từ Module 2** (không tạo trang mới)
+- [x] Form import (URL hoặc upload file) — `ImportOpenApiDialog.tsx`, hỗ trợ cả 2 kiểu trong cùng 1 dialog + cấu hình auth tuỳ chọn
+- [x] Bổ sung danh sách Endpoint, chọn endpoint cần test **vào trang `ProjectDetailPage.tsx` đã có sẵn từ Module 2** (không tạo trang mới) — `EndpointList.tsx`
+
+**Mốc xác nhận:** import file OpenAPI mẫu (4 endpoint) qua UI thật (đăng ký → tạo project → import → danh sách endpoint hiển thị đúng method/path/summary) — verify bằng Playwright, kèm test thủ công qua `curl` cho case SSRF bị chặn và mã hoá AES trong DB. Unit test `EndpointImportServiceTest` (6 case) pass.
 
 ---
 
