@@ -40,7 +40,8 @@ public class EndpointImportService {
 
     @Transactional
     public List<EndpointResponse> importFromUrl(UUID projectId, String url, TargetAuthType authType, String authValue) {
-        String content = safeUrlFetcher.fetch(url);
+        validateAuthValue(authType, authValue);
+        String content = fetchUrlContent(url, authType, authValue);
         return doImport(projectId, content, authType, authValue);
     }
 
@@ -89,14 +90,34 @@ public class EndpointImportService {
     }
 
     private void applyAuthConfig(Project project, TargetAuthType authType, String authValue) {
+        validateAuthValue(authType, authValue);
         if (authType == null || authType == TargetAuthType.NONE) {
             return;
         }
-        if (authValue == null || authValue.isBlank()) {
-            throw new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn");
-        }
         project.setTargetAuthType(authType);
         project.setTargetAuthValueEncrypted(aesEncryptionService.encrypt(authValue));
+    }
+
+    private void validateAuthValue(TargetAuthType authType, String authValue) {
+        if (authType != null && authType != TargetAuthType.NONE && (authValue == null || authValue.isBlank())) {
+            throw new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn");
+        }
+    }
+
+    /**
+     * Nếu URL nguồn OpenAPI bị chặn sau login, dùng chính auth đã nhập (vốn được lưu lại
+     * cho Module 6) để gắn header khi tải — không phải mọi API bị chặn login đều có cách
+     * xác thực nào khác ngoài giá trị người dùng đã cung cấp.
+     */
+    private String fetchUrlContent(String url, TargetAuthType authType, String authValue) {
+        if (authType == null || authType == TargetAuthType.NONE) {
+            return safeUrlFetcher.fetch(url);
+        }
+        return switch (authType) {
+            case BEARER_TOKEN -> safeUrlFetcher.fetch(url, "Authorization", "Bearer " + authValue);
+            case API_KEY -> safeUrlFetcher.fetch(url, "X-API-Key", authValue);
+            case NONE -> safeUrlFetcher.fetch(url);
+        };
     }
 
     private Endpoint buildEndpoint(Project project, String path, String method, Operation operation) {

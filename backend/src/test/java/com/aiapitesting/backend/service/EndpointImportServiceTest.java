@@ -103,6 +103,44 @@ class EndpointImportServiceTest {
     }
 
     @Test
+    void importFromUrl_withBearerAuth_passesAuthorizationHeaderToFetcher() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(safeUrlFetcher.fetch("https://private.example.com/openapi.json", "Authorization", "Bearer secret-token"))
+                .thenReturn(SAMPLE_OPENAPI);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<EndpointResponse> result = endpointImportService.importFromUrl(
+                projectId, "https://private.example.com/openapi.json", TargetAuthType.BEARER_TOKEN, "secret-token");
+
+        assertThat(result).hasSize(1);
+        verify(safeUrlFetcher).fetch("https://private.example.com/openapi.json", "Authorization", "Bearer secret-token");
+        verify(safeUrlFetcher, never()).fetch(anyString());
+    }
+
+    @Test
+    void importFromUrl_withApiKeyAuth_passesApiKeyHeaderToFetcher() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(safeUrlFetcher.fetch("https://private.example.com/openapi.json", "X-API-Key", "my-key"))
+                .thenReturn(SAMPLE_OPENAPI);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        endpointImportService.importFromUrl(
+                projectId, "https://private.example.com/openapi.json", TargetAuthType.API_KEY, "my-key");
+
+        verify(safeUrlFetcher).fetch("https://private.example.com/openapi.json", "X-API-Key", "my-key");
+    }
+
+    @Test
+    void importFromUrl_authTypeWithoutValueFailsBeforeFetching() {
+        assertThatThrownBy(() -> endpointImportService.importFromUrl(
+                projectId, "https://private.example.com/openapi.json", TargetAuthType.BEARER_TOKEN, " "))
+                .isInstanceOf(InvalidRequestException.class);
+
+        verifyNoInteractions(safeUrlFetcher);
+        verifyNoInteractions(endpointRepository);
+    }
+
+    @Test
     void importFromUrl_ssrfRejectionPropagatesFromSafeFetcher() {
         when(safeUrlFetcher.fetch("http://169.254.169.254/latest/meta-data"))
                 .thenThrow(new SwaggerParseException("URL trỏ tới địa chỉ nội bộ không được phép"));
