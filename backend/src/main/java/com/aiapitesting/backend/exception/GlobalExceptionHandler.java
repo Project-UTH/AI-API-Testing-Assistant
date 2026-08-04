@@ -35,6 +35,18 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("FORBIDDEN", ex.getMessage()));
     }
 
+    @ExceptionHandler(SwaggerParseException.class)
+    public ResponseEntity<ApiErrorResponse> handleSwaggerParseFailed(SwaggerParseException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(ApiErrorResponse.of("SWAGGER_PARSE_FAILED", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of("VALIDATION_ERROR", ex.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
