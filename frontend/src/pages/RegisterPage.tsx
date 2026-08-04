@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { AuthLayout } from "@/components/layout/AuthLayout"
 import { ApiError, setToken } from "@/lib/api"
 import { registerUser } from "@/lib/auth"
 
@@ -41,10 +42,12 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-svh items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
+    <AuthLayout>
+      <Card className="w-full max-w-sm border border-border bg-card/80 shadow-xl shadow-black/5 ring-0 backdrop-blur-md">
         <CardHeader>
-          <CardTitle>Đăng ký</CardTitle>
+          <CardTitle className="text-2xl font-heading font-semibold">
+            Đăng ký
+          </CardTitle>
           <CardDescription>
             Tạo tài khoản AI API Testing Assistant mới
           </CardDescription>
@@ -111,6 +114,6 @@ export function RegisterPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </AuthLayout>
   )
 }
