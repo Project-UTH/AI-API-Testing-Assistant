@@ -31,11 +31,13 @@ export function clearToken(): void {
 
 async function rawFetch(path: string, options: RequestInit = {}): Promise<unknown> {
   const token = getToken()
+  const isFormData = options.body instanceof FormData
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      // FormData: để browser tự set Content-Type kèm boundary, không set thủ công.
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },

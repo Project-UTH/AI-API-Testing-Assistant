@@ -1,12 +1,16 @@
+import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Upload } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { EndpointList } from "@/components/projects/EndpointList"
+import { ImportOpenApiDialog } from "@/components/projects/ImportOpenApiDialog"
 import { getProject } from "@/lib/projects"
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [importOpen, setImportOpen] = useState(false)
 
   const { data: project, isLoading, isError } = useQuery({
     queryKey: ["projects", id],
@@ -44,9 +48,21 @@ export function ProjectDetailPage() {
             Tạo ngày {new Date(project.createdAt).toLocaleDateString("vi-VN")}
           </p>
 
-          <div className="mt-8 rounded-lg border border-dashed border-border p-6 text-center text-muted-foreground">
-            Danh sách Endpoint sẽ hiển thị ở đây (Module 3 — Import & Parse OpenAPI)
+          <div className="mt-8 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Endpoint</h2>
+            <Button size="sm" onClick={() => setImportOpen(true)}>
+              <Upload className="h-4 w-4" />
+              Import OpenAPI
+            </Button>
           </div>
+
+          <EndpointList projectId={id!} />
+
+          <ImportOpenApiDialog
+            open={importOpen}
+            onOpenChange={setImportOpen}
+            projectId={id!}
+          />
         </div>
       )}
     </div>
