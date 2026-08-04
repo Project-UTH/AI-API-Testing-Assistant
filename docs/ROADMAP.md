@@ -10,7 +10,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 |---|---|
 | 1. Setup nền tảng | ✅ Xong |
 | 2. Quản lý Project | ✅ Xong |
-| 3. Import & Parse OpenAPI | ⬜ Chưa bắt đầu |
+| 3. Import & Parse OpenAPI | ✅ Xong |
 | 4. AI sinh Test Case | ⬜ Chưa bắt đầu |
 | 5. Review Test Case | ⬜ Chưa bắt đầu |
 | 6. Thực thi Test | ⬜ Chưa bắt đầu |
@@ -64,14 +64,19 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 *Phụ thuộc: Module 2*
 
 **Backend**
-- [ ] Tích hợp Swagger Parser (import từ URL và từ file)
-- [ ] Entity/Repository `Endpoint`, lưu path/method/schema/required fields
-- [ ] Cấu hình xác thực target API (API Key/Bearer Token) — mã hoá AES trước khi lưu
-- [ ] Validate/sanitize URL người dùng nhập (tránh SSRF)
+- [x] Tích hợp Swagger Parser (import từ URL và từ file) — `EndpointImportService`, dùng chung logic parse `OpenAPIV3Parser().readContents(...)` cho cả 2 nguồn
+- [x] Entity/Repository `Endpoint`, lưu path/method/schema/required fields — bổ sung field `summary`, `EndpointRepository.findAllByProject`/`deleteAllByProject`
+- [x] Cấu hình xác thực target API (API Key/Bearer Token) — mã hoá AES-256/GCM trước khi lưu (`AesEncryptionService`, field `Project.targetAuthType`/`targetAuthValueEncrypted`)
+- [x] Validate/sanitize URL người dùng nhập (tránh SSRF) — `SafeUrlFetcher` tự fetch (không dùng `readLocation`), chặn scheme khác http/https, IP loopback/private/link-local, không theo redirect
+- [x] *(Phát sinh khi test)* Gắn auth đã nhập vào chính request tải URL nguồn (không chỉ lưu lại cho Module 6) — `SafeUrlFetcher.fetch(url, headerName, headerValue)`, `EndpointImportService.fetchUrlContent` map `BEARER_TOKEN → Authorization: Bearer`, `API_KEY → X-API-Key`. Cho phép import URL OpenAPI bị chặn sau đăng nhập.
+- [x] *(Phát sinh khi test)* Fix lỗi xoá Project khi đã có Endpoint — MySQL từ chối xoá do vi phạm khoá ngoại `endpoints.project_id` (lỗi 1451/500). `ProjectService.delete()` nay xoá hết Endpoint con trước rồi mới xoá Project, gói trong `@Transactional`.
 
 **Frontend**
-- [ ] Form import (URL hoặc upload file)
-- [ ] Bổ sung danh sách Endpoint, chọn endpoint cần test **vào trang `ProjectDetailPage.tsx` đã có sẵn từ Module 2** (không tạo trang mới)
+- [x] Form import (URL hoặc upload file) — `ImportOpenApiDialog.tsx`, hỗ trợ cả 2 kiểu trong cùng 1 dialog + cấu hình auth tuỳ chọn
+- [x] Bổ sung danh sách Endpoint, chọn endpoint cần test **vào trang `ProjectDetailPage.tsx` đã có sẵn từ Module 2** (không tạo trang mới) — `EndpointList.tsx`
+- [x] *(Phát sinh khi test)* Tách UI xác thực theo chế độ import — chế độ "Từ file" ẩn khối xác thực (ghi chú sẽ cấu hình lại khi thiết lập chạy test case ở Module 6); chế độ "Từ URL" giữ khối xác thực, đổi label + chú thích rõ là để tải được URL nếu nó yêu cầu đăng nhập. Chặn ở `mutationFn` để auth nhập lúc ở URL mode không bị gửi kèm khi submit ở file mode.
+
+**Mốc xác nhận:** import file OpenAPI mẫu (4 endpoint) qua UI thật (đăng ký → tạo project → import → danh sách endpoint hiển thị đúng method/path/summary) — verify bằng Playwright, kèm test thủ công qua `curl` cho case SSRF bị chặn và mã hoá AES trong DB. Unit test `EndpointImportServiceTest` (9 case) + `ProjectServiceTest` (3 case, cascade delete) pass. Auth-khi-tải-URL đã verify qua `curl`/Playwright với `httpbingo.org` và qua 1 GitHub private repo thật (token đúng → import được, token sai/không có → lỗi 401).
 
 ---
 
@@ -86,8 +91,9 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 - [ ] Endpoint `POST /endpoints/{id}/generate-tests`
 
 **Frontend**
-- [ ] UI trigger sinh test case
-- [ ] Hiển thị trạng thái loading/lỗi khi AI xử lý
+- [ ] UI chọn nhiều endpoint trong `EndpointList` (checkbox) — người dùng có nhiều endpoint sau khi import, không bắt sinh test case từng cái một
+- [ ] UI trigger sinh test case cho các endpoint đã chọn — gọi lặp API `POST /endpoints/{id}/generate-tests` (đã có sẵn) cho từng endpoint, không cần API batch riêng ở backend
+- [ ] Hiển thị trạng thái loading/lỗi khi AI xử lý (theo từng endpoint đang sinh)
 
 ---
 

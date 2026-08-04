@@ -33,6 +33,14 @@ public class Project {
     @JoinColumn(name = "owner_id", nullable = false)
     private User owner;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_auth_type", nullable = false)
+    @Builder.Default
+    private TargetAuthType targetAuthType = TargetAuthType.NONE;
+
+    @Column(name = "target_auth_value_encrypted", columnDefinition = "TEXT")
+    private String targetAuthValueEncrypted;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
