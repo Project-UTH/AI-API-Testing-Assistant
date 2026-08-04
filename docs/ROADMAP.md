@@ -91,8 +91,9 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 - [ ] Endpoint `POST /endpoints/{id}/generate-tests`
 
 **Frontend**
-- [ ] UI trigger sinh test case
-- [ ] Hiển thị trạng thái loading/lỗi khi AI xử lý
+- [ ] UI chọn nhiều endpoint trong `EndpointList` (checkbox) — người dùng có nhiều endpoint sau khi import, không bắt sinh test case từng cái một
+- [ ] UI trigger sinh test case cho các endpoint đã chọn — gọi lặp API `POST /endpoints/{id}/generate-tests` (đã có sẵn) cho từng endpoint, không cần API batch riêng ở backend
+- [ ] Hiển thị trạng thái loading/lỗi khi AI xử lý (theo từng endpoint đang sinh)
 
 ---
 
