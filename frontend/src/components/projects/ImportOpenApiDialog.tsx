@@ -52,8 +52,8 @@ export function ImportOpenApiDialog({
       importOpenApi(projectId, {
         url: mode === "url" ? url : undefined,
         file: mode === "file" ? (file ?? undefined) : undefined,
-        authType,
-        authValue,
+        authType: mode === "file" ? "NONE" : authType,
+        authValue: mode === "file" ? "" : authValue,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
@@ -129,32 +129,41 @@ export function ImportOpenApiDialog({
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="auth-type">Xác thực target API (tuỳ chọn)</Label>
-            <select
-              id="auth-type"
-              className={cn(selectClassName)}
-              value={authType}
-              onChange={(e) => setAuthType(e.target.value as TargetAuthType)}
-            >
-              <option value="NONE">Không</option>
-              <option value="API_KEY">API Key</option>
-              <option value="BEARER_TOKEN">Bearer Token</option>
-            </select>
-          </div>
-
-          {authType !== "NONE" && (
+          {mode === "url" ? (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="auth-value">
-                {authType === "API_KEY" ? "Giá trị API Key" : "Giá trị Bearer Token"}
-              </Label>
-              <Input
-                id="auth-value"
-                type="password"
-                value={authValue}
-                onChange={(e) => setAuthValue(e.target.value)}
-              />
+              <Label htmlFor="auth-type">Xác thực khi tải URL (tuỳ chọn)</Label>
+              <p className="text-xs text-muted-foreground">
+                Điền nếu URL này yêu cầu đăng nhập (API Key/Bearer Token) mới tải được.
+              </p>
+              <select
+                id="auth-type"
+                className={cn(selectClassName)}
+                value={authType}
+                onChange={(e) => setAuthType(e.target.value as TargetAuthType)}
+              >
+                <option value="NONE">Không</option>
+                <option value="API_KEY">API Key</option>
+                <option value="BEARER_TOKEN">Bearer Token</option>
+              </select>
+
+              {authType !== "NONE" && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="auth-value">
+                    {authType === "API_KEY" ? "Giá trị API Key" : "Giá trị Bearer Token"}
+                  </Label>
+                  <Input
+                    id="auth-value"
+                    type="password"
+                    value={authValue}
+                    onChange={(e) => setAuthValue(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Xác thực để gọi API thật sẽ được cấu hình khi thiết lập chạy test case.
+            </p>
           )}
 
           {mutation.isError && (
