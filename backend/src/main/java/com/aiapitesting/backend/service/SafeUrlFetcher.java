@@ -17,15 +17,23 @@ public class SafeUrlFetcher {
     private static final int MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
     public String fetch(String rawUrl) {
+        return fetch(rawUrl, null, null);
+    }
+
+    public String fetch(String rawUrl, String authHeaderName, String authHeaderValue) {
         URI uri = parseAndValidate(rawUrl);
 
         try {
             HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
-            // Không theo redirect: chặn kiểu SSRF dùng redirect để né kiểm tra IP ở bước validate.
+            // Không theo redirect: chặn kiểu SSRF dùng redirect để né kiểm tra IP ở bước validate
+            // (đồng thời tránh header xác thực bị gửi sang host khác ngoài ý muốn).
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(READ_TIMEOUT_MS);
             connection.setRequestMethod("GET");
+            if (authHeaderName != null && authHeaderValue != null) {
+                connection.setRequestProperty(authHeaderName, authHeaderValue);
+            }
 
             int status = connection.getResponseCode();
             if (status != HttpURLConnection.HTTP_OK) {
