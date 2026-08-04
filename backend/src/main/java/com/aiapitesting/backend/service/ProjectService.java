@@ -41,22 +41,26 @@ public class ProjectService {
     }
 
     public ProjectResponse getById(UUID id) {
-        return ProjectResponse.from(findOwnedProject(id));
+        return ProjectResponse.from(getOwnedProject(id));
     }
 
     public ProjectResponse update(UUID id, ProjectRequest request) {
-        Project project = findOwnedProject(id);
+        Project project = getOwnedProject(id);
         project.setName(request.name());
         project.setDescription(request.description());
         return ProjectResponse.from(projectRepository.save(project));
     }
 
     public void delete(UUID id) {
-        Project project = findOwnedProject(id);
+        Project project = getOwnedProject(id);
         projectRepository.delete(project);
     }
 
-    private Project findOwnedProject(UUID id) {
+    /**
+     * Trả về entity Project nếu thuộc user đang đăng nhập — dùng lại bởi các service khác
+     * (vd. EndpointImportService) cần thao tác trên entity thay vì DTO.
+     */
+    public Project getOwnedProject(UUID id) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ProjectNotFoundException("Không tìm thấy project với id đã cho"));
 

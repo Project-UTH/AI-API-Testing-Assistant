@@ -33,6 +33,9 @@ public class Endpoint {
     @Column(nullable = false)
     private String method;
 
+    @Column
+    private String summary;
+
     @Column(name = "schema_definition", columnDefinition = "TEXT")
     private String schema;
 
