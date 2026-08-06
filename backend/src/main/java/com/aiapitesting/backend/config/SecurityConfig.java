@@ -3,6 +3,7 @@ package com.aiapitesting.backend.config;
 import com.aiapitesting.backend.security.JwtAccessDeniedHandler;
 import com.aiapitesting.backend.security.JwtAuthEntryPoint;
 import com.aiapitesting.backend.security.JwtAuthFilter;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -43,6 +44,12 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jwtAuthEntryPoint)
                         .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
+                        // Controller trả CompletableFuture (vd. sinh test case AI @Async) khiến Spring MVC
+                        // dispatch lại request 1 lần nữa (DispatcherType.ASYNC) để hoàn tất response sau khi
+                        // tác vụ nền xong. JwtAuthFilter (OncePerRequestFilter) không chạy lại ở lần dispatch
+                        // này nên không có gì xác thực - phải permit riêng dispatch loại ASYNC, request gốc
+                        // (DispatcherType.REQUEST) vẫn đã được xác thực đầy đủ như bình thường.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

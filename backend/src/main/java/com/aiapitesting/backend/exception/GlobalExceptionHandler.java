@@ -41,6 +41,18 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("SWAGGER_PARSE_FAILED", ex.getMessage()));
     }
 
+    @ExceptionHandler(EndpointNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleEndpointNotFound(EndpointNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiErrorResponse.of("ENDPOINT_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(AiGenerationFailedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiGenerationFailed(AiGenerationFailedException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(ApiErrorResponse.of("AI_GENERATION_FAILED", ex.getMessage()));
+    }
+
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
