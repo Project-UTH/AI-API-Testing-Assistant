@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-04
+> Cập nhật lần cuối: 2026-08-06
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -11,7 +11,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 1. Setup nền tảng | ✅ Xong |
 | 2. Quản lý Project | ✅ Xong |
 | 3. Import & Parse OpenAPI | ✅ Xong |
-| 4. AI sinh Test Case | ⬜ Chưa bắt đầu |
+| 4. AI sinh Test Case | ✅ Xong |
 | 5. Review Test Case | ⬜ Chưa bắt đầu |
 | 6. Thực thi Test | ⬜ Chưa bắt đầu |
 | 7. Lịch sử & Dashboard | ⬜ Chưa bắt đầu |
@@ -83,17 +83,29 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 ## 4. AI sinh Test Case
 *Phụ thuộc: Module 3*
 
+**Phạm vi đã chốt:** chỉ sinh 3 nhóm test case Cơ bản — **Positive** (happy path), **Negative** (thiếu trường bắt buộc/sai kiểu dữ liệu), **Boundary Value** (giá trị biên). Nhóm Nâng cao (Security Test Cases, Test Data Generation, Assertion Generation) và Module cao cấp (Performance Test Cases — chưa có module riêng; Bug Report Generation đã có vị trí ở Module 8) để dành cho giai đoạn sau, không làm ở đây. Không sinh case xác thực/phân quyền (401/403).
+
 **Backend**
-- [ ] Tích hợp Spring AI, cấu hình ChatClient + timeout/retry
-- [ ] Viết prompt template thật tại `backend/src/main/resources/prompts/generate-test-case.st`
-- [ ] Service `TestCaseGenerationService` load template + format bằng Spring AI `PromptTemplate`
-- [ ] Validate JSON schema test case AI trả về trước khi lưu DB
-- [ ] Endpoint `POST /endpoints/{id}/generate-tests`
+- [x] Tích hợp Spring AI (`spring-ai-bom` 2.0.0, `spring-ai-starter-model-openai`), cấu hình `ChatClient` + timeout/retry (`spring.ai.retry.max-attempts`, `spring.http.client.connect-timeout`/`read-timeout`)
+- [x] *(Phát sinh khi làm)* LLM provider thực tế dùng **Groq** (free tier, không cần thẻ) thay vì OpenAI trả phí — do tương thích 100% format OpenAI nên chỉ đổi `spring.ai.openai.base-url=https://api.groq.com/openai/v1` + `chat.options.model=llama-3.3-70b-versatile` + biến môi trường `GROQ_API_KEY`, không đổi dependency hay code Java nào
+- [x] Viết prompt template thật tại `backend/src/main/resources/prompts/generate-test-case.st` (chỉ Positive/Negative/Boundary Value)
+- [x] Service `TestCaseGenerationService` (`service/ai/`) load template + format bằng Spring AI `PromptTemplate` (delimiter tuỳ chỉnh `<>` để tránh xung đột với JSON nhúng trong prompt), dùng structured output (`ChatClient...entity(...)`)
+- [x] Validate test case AI trả về trước khi lưu DB (danh sách không rỗng, tên không blank, `expectedStatus` hợp lệ 100-599) → lỗi thì trả `AI_GENERATION_FAILED` (502), không lưu rác vào DB
+- [x] Endpoint `POST /api/v1/projects/{projectId}/endpoints/{endpointId}/generate-tests` (route đầy đủ theo đúng pattern nested resource đang dùng, không phải `/endpoints/{id}/generate-tests` như ghi tắt ban đầu) — `@Async`, trả `CompletableFuture` để không chiếm thread trong lúc chờ AI, nhưng vẫn là 1 request/1 response bình thường phía frontend (không cần polling)
+- [x] *(Phát sinh khi làm)* `TestCase` entity bổ sung field `requestHeaders`/`requestBody`/`expectedStatus` (TEXT/Integer) để lưu nội dung test case AI sinh ra — trước đó chỉ có `name`/`description`
+- [x] *(Phát sinh khi làm)* Regenerate = xoá hết test case cũ của endpoint rồi lưu lại (`deleteAllByEndpoint` + `saveAll`), giống pattern `EndpointImportService` đang xoá-rồi-sinh-lại endpoint. Cần xem lại hành vi này ở Module 5 khi có test case sửa thủ công, để không xoá nhầm
+- [x] *(Bảo mật, quan trọng)* `TestCaseGenerationService` **không đụng tới** `Project.targetAuthType`/`targetAuthValueEncrypted` dưới mọi hình thức — không giải mã, không đưa vào prompt gửi AI, không gắn vào `requestHeaders` của test case. Việc gắn token/API key thật vào request để gọi target API thật để dành cho Module 6 lúc thực thi (đúng quy tắc CLAUDE.md "giải mã chỉ khi thực thi test")
+- [x] *(Bug phát sinh khi test, nghiêm trọng)* Mọi lần gọi `generate-tests` đều trả `401 UNAUTHORIZED` dù JWT hợp lệ — do controller trả `CompletableFuture` khiến Spring MVC dispatch lại request lần 2 (`DispatcherType.ASYNC`) để trả response sau khi `@Async` xong; `JwtAuthFilter` (`OncePerRequestFilter`) không chạy lại ở lần dispatch này nên không có gì xác thực, bị chặn ở `.anyRequest().authenticated()`. Xác nhận bằng debug log (`FilterChainProxy`/`AnonymousAuthenticationFilter`), fix bằng `SecurityConfig.dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()`. Đồng thời wrap `AsyncConfig.taskExecutor()` bằng `DelegatingSecurityContextAsyncTaskExecutor` để `SecurityContextHolder` (dùng trong `CurrentUserService`) cũng có giá trị đúng bên trong chính luồng xử lý `@Async`.
+- [x] *(Bug phát sinh khi test với AI thật)* Tên/mô tả test case AI sinh ra bị lỗi font tiếng Việt (vd. `"Táº¡o"` thay vì `"Tạo"`) — xác nhận bằng cách gọi thẳng Groq API: nội dung AI tự sinh (không phải do người dùng gõ) trả về đúng UTF-8 hoàn toàn, nên lỗi nằm ở phía đọc file `generate-test-case.st`. Nguyên nhân: `PromptTemplate.builder().resource(promptResource)` để Spring AI tự suy ra charset khi đọc `Resource`, trên Windows charset tiến trình (`sun.jnu.encoding`) không đảm bảo là UTF-8 dù JVM 18+ đã set `file.encoding=UTF-8` mặc định — khiến hướng dẫn tiếng Việt gửi cho AI đã bị lỗi font từ trước, AI "bắt chước" luôn kiểu lỗi đó khi trả lời. Fix: đọc rõ `promptResource.getContentAsString(StandardCharsets.UTF_8)` rồi truyền vào `PromptTemplate.builder().template(text)` thay vì `.resource(...)`.
 
 **Frontend**
-- [ ] UI chọn nhiều endpoint trong `EndpointList` (checkbox) — người dùng có nhiều endpoint sau khi import, không bắt sinh test case từng cái một
-- [ ] UI trigger sinh test case cho các endpoint đã chọn — gọi lặp API `POST /endpoints/{id}/generate-tests` (đã có sẵn) cho từng endpoint, không cần API batch riêng ở backend
-- [ ] Hiển thị trạng thái loading/lỗi khi AI xử lý (theo từng endpoint đang sinh)
+- [x] UI chọn nhiều endpoint trong `EndpointList` (checkbox, dùng `npx shadcn add checkbox`) — người dùng có nhiều endpoint sau khi import, không bắt sinh test case từng cái một
+- [x] UI trigger sinh test case cho các endpoint đã chọn — gọi lặp API `generate-tests` (đã có sẵn) cho từng endpoint đã chọn, không cần API batch riêng ở backend
+- [x] Hiển thị trạng thái loading/lỗi khi AI xử lý (theo từng endpoint đang sinh) — gọi thẳng `generateTestCases(...)` (không qua `useMutation`) thành N Promise độc lập, mỗi cái tự cập nhật state riêng
+- [x] *(Bug phát sinh khi test, nghiêm trọng)* Chọn nhiều endpoint rồi bấm sinh cùng lúc: chỉ dòng cuối cùng cập nhật đúng trạng thái, các dòng còn lại xoay vòng mãi dù network đã trả response từ lâu (xác nhận bằng Playwright: network tab có đủ request/response, nhưng UI không update). Nguyên nhân: gọi `mutate()` nhiều lần trên cùng 1 instance `useMutation()` — chỉ lần gọi cuối có callback được đảm bảo chạy. Fix: bỏ `useMutation` cho luồng này, gọi thẳng hàm API trả `Promise` cho từng endpoint, tự quản trạng thái qua `setGenerationState`.
+- [x] *(Phát sinh khi làm — UX regenerate)* Endpoint đã sinh test case tự bỏ chọn checkbox ngay sau khi thành công (tránh gọi lại AI tốn quota nếu người dùng bấm "Sinh Test Case" nhiều lần liên tiếp), nhưng **không khoá `disabled`** checkbox — người dùng vẫn tự tay tích lại 1 endpoint đã sinh nếu thật sự muốn sinh lại. Khi tích lại, dòng đó đổi từ nhãn xanh "Đã sinh N test case" sang cảnh báo vàng "Sẽ xoá N test case cũ và sinh lại" trước khi bấm nút, khớp đúng hành vi backend (xoá hết rồi lưu bộ mới).
+
+**Mốc xác nhận:** backend build xanh, 18/18 test pass (`./mvnw test`, gồm 5 test mới cho `TestCaseGenerationServiceTest`: sinh thành công, AI trả rỗng, AI trả status không hợp lệ, endpoint không thuộc project, project không phải chủ sở hữu). Spring context load thành công với Spring AI wiring mới (`BackendApplicationTests`). Đã verify end-to-end bằng Playwright thật (đăng ký → tạo project → import 3 endpoint → chọn cả 3 → bấm Sinh Test Case): cả backend (không còn 401 async-dispatch) và frontend (không còn dòng nào bị treo) đều đúng, có ảnh chụp màn hình xác nhận. `npx tsc --noEmit` không lỗi. **Đã verify sinh test case AI thật qua Groq** (`llama-3.3-70b-versatile`, key free tier): endpoint mẫu `POST /users` (có trường `email` bắt buộc) sinh ra đủ 3 nhóm — Positive (`201`, dữ liệu hợp lệ), Negative (`400`, thiếu trường `email`), Boundary Value (`201`, email ngắn hợp lệ) — tên/mô tả tiếng Việt hiển thị đúng sau khi fix lỗi font.
 
 ---
 
