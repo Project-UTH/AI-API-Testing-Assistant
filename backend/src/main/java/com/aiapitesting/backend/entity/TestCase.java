@@ -42,6 +42,10 @@ public class TestCase {
     @Column(nullable = false)
     private Integer expectedStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private TestCaseSource source;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

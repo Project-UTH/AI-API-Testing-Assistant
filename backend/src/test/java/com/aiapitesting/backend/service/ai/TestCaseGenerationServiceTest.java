@@ -3,6 +3,8 @@ package com.aiapitesting.backend.service.ai;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
+import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.ForbiddenException;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Answers;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -91,8 +94,14 @@ class TestCaseGenerationServiceTest {
         List<TestCaseResponse> result = future.get();
 
         assertThat(result).hasSize(2);
-        verify(testCaseRepository).deleteAllByEndpoint(endpoint);
-        verify(testCaseRepository).saveAll(anyList());
+        // Chỉ xoá-và-thay test case do AI sinh trước đó, không đụng tới test case tự thêm tay
+        verify(testCaseRepository).deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
+
+        ArgumentCaptor<List<TestCase>> savedCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseRepository).saveAll(savedCaptor.capture());
+        assertThat(savedCaptor.getValue())
+                .extracting(TestCase::getSource)
+                .containsOnly(TestCaseSource.AI_GENERATED);
     }
 
     @Test

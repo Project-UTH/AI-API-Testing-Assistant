@@ -5,6 +5,7 @@ import { RequireAuth } from "@/components/RequireAuth"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { ProjectsPage } from "@/pages/ProjectsPage"
 import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
+import { TestCasesPage } from "@/pages/TestCasesPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
 
@@ -19,6 +20,7 @@ function App() {
           <Route index element={<DashboardPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:id" element={<ProjectDetailPage />} />
+          <Route path="/projects/:id/test-cases" element={<TestCasesPage />} />
         </Route>
       </Route>
 

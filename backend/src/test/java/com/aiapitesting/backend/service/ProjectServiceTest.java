@@ -6,6 +6,7 @@ import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
+import com.aiapitesting.backend.repository.TestCaseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +31,9 @@ class ProjectServiceTest {
     private EndpointRepository endpointRepository;
 
     @Mock
+    private TestCaseRepository testCaseRepository;
+
+    @Mock
     private CurrentUserService currentUserService;
 
     @InjectMocks
@@ -47,13 +51,16 @@ class ProjectServiceTest {
     }
 
     @Test
-    void delete_removesEndpointsBeforeProject() {
+    void delete_removesTestCasesThenEndpointsThenProject() {
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
         when(currentUserService.getCurrentUser()).thenReturn(owner);
 
         projectService.delete(projectId);
 
-        InOrder inOrder = inOrder(endpointRepository, projectRepository);
+        // Dọn test case trước, rồi endpoint, rồi project - tránh vi phạm khoá ngoại
+        // test_cases.endpoint_id / endpoints.project_id
+        InOrder inOrder = inOrder(testCaseRepository, endpointRepository, projectRepository);
+        inOrder.verify(testCaseRepository).deleteAllByEndpointProject(project);
         inOrder.verify(endpointRepository).deleteAllByProject(project);
         inOrder.verify(projectRepository).delete(project);
     }
@@ -65,6 +72,7 @@ class ProjectServiceTest {
         assertThatThrownBy(() -> projectService.delete(projectId))
                 .isInstanceOf(ProjectNotFoundException.class);
 
+        verifyNoInteractions(testCaseRepository);
         verifyNoInteractions(endpointRepository);
         verify(projectRepository, never()).delete(any());
     }
@@ -78,6 +86,7 @@ class ProjectServiceTest {
         assertThatThrownBy(() -> projectService.delete(projectId))
                 .isInstanceOf(ForbiddenException.class);
 
+        verifyNoInteractions(testCaseRepository);
         verifyNoInteractions(endpointRepository);
         verify(projectRepository, never()).delete(any());
     }

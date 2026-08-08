@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-06
+> Cập nhật lần cuối: 2026-08-08
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -12,7 +12,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 2. Quản lý Project | ✅ Xong |
 | 3. Import & Parse OpenAPI | ✅ Xong |
 | 4. AI sinh Test Case | ✅ Xong |
-| 5. Review Test Case | ⬜ Chưa bắt đầu |
+| 5. Review Test Case | ✅ Xong |
 | 6. Thực thi Test | ⬜ Chưa bắt đầu |
 | 7. Lịch sử & Dashboard | ⬜ Chưa bắt đầu |
 | 8. AI phân tích lỗi (stretch) | ⬜ Chưa bắt đầu |
@@ -104,6 +104,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 - [x] Hiển thị trạng thái loading/lỗi khi AI xử lý (theo từng endpoint đang sinh) — gọi thẳng `generateTestCases(...)` (không qua `useMutation`) thành N Promise độc lập, mỗi cái tự cập nhật state riêng
 - [x] *(Bug phát sinh khi test, nghiêm trọng)* Chọn nhiều endpoint rồi bấm sinh cùng lúc: chỉ dòng cuối cùng cập nhật đúng trạng thái, các dòng còn lại xoay vòng mãi dù network đã trả response từ lâu (xác nhận bằng Playwright: network tab có đủ request/response, nhưng UI không update). Nguyên nhân: gọi `mutate()` nhiều lần trên cùng 1 instance `useMutation()` — chỉ lần gọi cuối có callback được đảm bảo chạy. Fix: bỏ `useMutation` cho luồng này, gọi thẳng hàm API trả `Promise` cho từng endpoint, tự quản trạng thái qua `setGenerationState`.
 - [x] *(Phát sinh khi làm — UX regenerate)* Endpoint đã sinh test case tự bỏ chọn checkbox ngay sau khi thành công (tránh gọi lại AI tốn quota nếu người dùng bấm "Sinh Test Case" nhiều lần liên tiếp), nhưng **không khoá `disabled`** checkbox — người dùng vẫn tự tay tích lại 1 endpoint đã sinh nếu thật sự muốn sinh lại. Khi tích lại, dòng đó đổi từ nhãn xanh "Đã sinh N test case" sang cảnh báo vàng "Sẽ xoá N test case cũ và sinh lại" trước khi bấm nút, khớp đúng hành vi backend (xoá hết rồi lưu bộ mới).
+- [x] *(Bug phát sinh khi test, đã fix)* Trạng thái "đã sinh N test case" bị mất khi rời trang Project rồi quay lại — vì chỉ được lưu ở `generationState` (state nội bộ của `EndpointList`, mất khi component unmount), không có nguồn sự thật từ server. Fix: `EndpointResponse` (backend) bổ sung field `testCaseCount`, tính qua `TestCaseRepository.countByEndpointIds` (1 query GROUP BY cho cả trang, tránh N+1) và gắn vào `EndpointImportService.list()`; frontend dùng `endpoint.testCaseCount` làm giá trị mặc định khi chưa có `generationState` nào ghi đè trong phiên, đồng thời gọi `queryClient.invalidateQueries(["endpoints", projectId])` ngay sau khi sinh xong để đồng bộ lại số liệu thật. Đã verify bằng Playwright: sinh test case → rời trang → quay lại → nhãn "Đã sinh N test case" vẫn hiển thị đúng.
 
 **Mốc xác nhận:** backend build xanh, 18/18 test pass (`./mvnw test`, gồm 5 test mới cho `TestCaseGenerationServiceTest`: sinh thành công, AI trả rỗng, AI trả status không hợp lệ, endpoint không thuộc project, project không phải chủ sở hữu). Spring context load thành công với Spring AI wiring mới (`BackendApplicationTests`). Đã verify end-to-end bằng Playwright thật (đăng ký → tạo project → import 3 endpoint → chọn cả 3 → bấm Sinh Test Case): cả backend (không còn 401 async-dispatch) và frontend (không còn dòng nào bị treo) đều đúng, có ảnh chụp màn hình xác nhận. `npx tsc --noEmit` không lỗi. **Đã verify sinh test case AI thật qua Groq** (`llama-3.3-70b-versatile`, key free tier): endpoint mẫu `POST /users` (có trường `email` bắt buộc) sinh ra đủ 3 nhóm — Positive (`201`, dữ liệu hợp lệ), Negative (`400`, thiếu trường `email`), Boundary Value (`201`, email ngắn hợp lệ) — tên/mô tả tiếng Việt hiển thị đúng sau khi fix lỗi font.
 
@@ -112,25 +113,51 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 ## 5. Review Test Case
 *Phụ thuộc: Module 4*
 
+**Phạm vi đã chốt:** xem test case theo 2 chế độ trong cùng 1 trang — toàn bộ project (gộp theo endpoint) và lọc riêng 1 endpoint (deep-link từ `EndpointList`). Thêm/sửa/xoá test case thủ công. AI sinh lại (`generate-tests`) chỉ thay thế test case do chính AI sinh trước đó, không đụng tới test case người dùng tự thêm — cần field `source` (`AI_GENERATED`/`MANUAL`) để phân biệt.
+
 **Backend**
-- [ ] Endpoint sửa/thêm/xoá test case thủ công
+- [x] `TestCase` entity bổ sung field `source` (enum `AI_GENERATED`/`MANUAL`, `@Enumerated(STRING)`) để phân biệt nguồn gốc test case
+- [x] `TestCaseService` (`service/`, không phải `service/ai/` vì không phải logic AI) — CRUD: `listByProject` (toàn bộ test case của project, có `endpointPath`/`endpointMethod` kèm theo để FE nhóm/hiển thị mà không cần gọi thêm API), `create`/`update`/`delete` theo đúng chain ownership `getOwnedProject → findByIdAndProject → findByIdAndEndpoint` đã dùng ở Module 4
+- [x] `TestCaseGenerationService.generate()` đổi sang `deleteAllByEndpointAndSource(endpoint, AI_GENERATED)` thay vì xoá sạch — đúng yêu cầu "chỉ thay case AI sinh, giữ nguyên case tự thêm"; test case AI sinh gắn `source = AI_GENERATED`, test case tạo thủ công gắn `source = MANUAL`
+- [x] Endpoint mới: `GET /api/v1/projects/{projectId}/test-cases` (toàn bộ, controller riêng `ProjectTestCaseController`), `POST/PUT/DELETE /api/v1/projects/{projectId}/endpoints/{endpointId}/test-cases[/{testCaseId}]` (thêm vào `TestCaseController` cũ)
+- [x] `TestCaseNotFoundException` → 404 `TEST_CASE_NOT_FOUND`, đã bổ sung vào bảng mã lỗi skill `api-contract`
+- [x] *(Bug phát sinh, đã fix)* Import lại OpenAPI hoặc xoá Project khi các endpoint liên quan đã có test case → lỗi khoá ngoại `test_cases.endpoint_id` (MySQL 1451/500), vì `EndpointImportService.doImport()` và `ProjectService.delete()` xoá endpoint mà chưa dọn test case trước — cùng loại lỗi đã fix cho `Project`↔`Endpoint` ở Module 3. Fix: thêm `testCaseRepository.deleteAllByEndpointProject(project)` trước bước xoá endpoint ở cả 2 nơi.
+- [x] *(Bug phát sinh khi test thật, nghiêm trọng — không unit test nào bắt được vì Mockito không mô phỏng đúng hành vi Hibernate)* `GET .../test-cases` và `PUT .../test-cases/{id}` trả `500 INTERNAL_ERROR` (nuốt lỗi hoàn toàn, không log gì — đã thêm `log.error` vào handler `Exception.class` của `GlobalExceptionHandler` để chẩn đoán được, giữ lại lâu dài). Nguyên nhân thật: `TestCase.endpoint` là `@ManyToOne(LAZY)`, `spring.jpa.open-in-view=false` nên session đóng ngay khi repository method trả về — (1) `findAllByEndpointProject`/`findByIdAndEndpoint` trả `TestCase` với `endpoint` là proxy chưa init, `TestCaseResponse.from()` đọc `endpoint.getPath()` bên ngoài session → `LazyInitializationException`; (2) `TestCaseService.update()` gọi `testCaseRepository.save(testCase)` trên entity đã có id → JPA dùng `merge()` nội bộ, trả về 1 bản managed KHÁC với association `endpoint` không cascade MERGE nên bị "quên" state đã init, quay lại thành proxy. Fix (1): thêm `JOIN FETCH tc.endpoint` vào 2 query trên. Fix (2): `update()` không dùng entity trả về từ `save()` nữa mà build response từ chính đối tượng `testCase` đang giữ (đã init sẵn `endpoint` từ bước fetch).
 
 **Frontend**
-- [ ] UI xem danh sách test case đã sinh
-- [ ] UI sửa/thêm/xoá test case trước khi chạy
+- [x] `TestCasesPage` (route `/projects/:id/test-cases`, đọc thêm `?endpointId=` qua `useSearchParams` để lọc) — 1 trang duy nhất phục vụ cả "xem toàn bộ" (không filter) và "xem riêng 1 endpoint" (có filter), gộp test case theo endpoint phía client từ 1 lần gọi `listTestCases` (không cần API riêng cho từng chế độ vì dữ liệu nhỏ)
+- [x] `TestCaseFormDialog`/`DeleteTestCaseDialog` (thư mục mới `components/testcases/`) — sao chép đúng pattern `ProjectFormDialog`/`DeleteProjectDialog` đã có (dialog + `useMutation` + invalidate query + hiện lỗi qua `ApiError`)
+- [x] Điểm vào: nút "Xem tất cả Test Case" ở `ProjectDetailPage` (cạnh "Import OpenAPI"), link "Xem test case" ở từng dòng `EndpointList` khi `testCaseCount > 0` (điều hướng có kèm `?endpointId=`)
+- [x] *(Phát sinh khi làm)* Đổi nhãn `EndpointList` từ "Đã sinh N test case" → "Có N test case" (số này giờ gồm cả case tự thêm, không chỉ AI sinh); cảnh báo regenerate đổi từ "Sẽ xoá N test case cũ..." sang câu tĩnh không kèm số vì giờ không xoá sạch nữa, chỉ thay case AI
+
+**Mốc xác nhận:** backend build xanh, toàn bộ test pass (`./mvnw test`, gồm `TestCaseServiceTest` mới + cập nhật `TestCaseGenerationServiceTest`/`EndpointImportServiceTest`/`ProjectServiceTest`). `npx tsc --noEmit` sạch. Đã verify end-to-end bằng Playwright + curl thật: sinh AI → xem toàn bộ (nhãn "AI") → thêm thủ công (nhãn "Tự thêm") → sửa (tên đổi đúng, `source` giữ nguyên) → xem lọc riêng theo endpoint từ `EndpointList` → sinh lại AI (chỉ 5 case AI bị thay, case tự thêm vẫn còn) → xoá case tự thêm (mất đúng 1) → import lại OpenAPI cho project đã có test case (201, không còn 500). Dữ liệu cũ tạo trước khi có field `source` (23 dòng, từ Module 4) tự động nhận đúng giá trị `AI_GENERATED` sau khi Hibernate thêm cột — do MySQL dùng giá trị ENUM khai báo đầu tiên làm default ngầm khi `sql_mode` không bật strict, và enum khai báo đúng thứ tự `AI_GENERATED` trước `MANUAL` nên trùng khớp về mặt ngữ nghĩa (toàn bộ test case cũ đều thật sự do AI sinh).
 
 ---
 
 ## 6. Thực thi Test
 *Phụ thuộc: Module 5*
 
+**Vấn đề đã phát hiện khi bàn trước khi code (chưa xử lý ở bản cơ bản):** `TestCase` hiện chỉ có `requestHeaders`/`requestBody`/`expectedStatus` — không có field nào lưu giá trị cụ thể cho path parameter/query parameter. Với endpoint kiểu `GET /pet/{petId}`, không có chỗ nào biết thay `{petId}` bằng giá trị nào khi gọi thật. Đã chốt hướng xử lý tối thiểu: AI sinh thêm field `resolvedPath` (đường dẫn đã thay placeholder bằng giá trị cụ thể, ví dụ `/pet/1`) — cần làm **trước** khi engine thực thi chạy được các endpoint có tham số. Hướng đầy đủ hơn (test data chaining) xem mục "Nâng cao" bên dưới.
+
 **Backend**
-- [ ] Engine thực thi bằng Rest Assured
+- [ ] Bổ sung `resolvedPath` vào `TestCase`/`GeneratedTestCase`/prompt `generate-test-case.st` — AI phải trả về path đã thay placeholder bằng giá trị cụ thể hợp lệ theo schema (không chỉ path gốc có `{}`)
+- [ ] Engine thực thi bằng Rest Assured, dùng `resolvedPath` (không phải `Endpoint.path` thô) để build request thật
 - [ ] Xử lý bất đồng bộ (`@Async`) khi chạy nhiều test case
 - [ ] Endpoint trigger thực thi + endpoint poll trạng thái (theo `api-contract`)
 
 **Frontend**
 - [ ] Nút chạy test, hiển thị trạng thái PENDING/RUNNING/COMPLETED/FAILED
+
+**Giới hạn đã biết (chấp nhận cho bản cơ bản):** chỉ so sánh `expectedStatus` thật trả về so với dự kiến — không so sánh nội dung response (đó là Assertion Generation, xem Nâng cao). Nghĩa là bắt được lỗi sai status/lỗi server, không bắt được lỗi "status đúng nhưng data sai".
+
+### Nâng cao (stretch — làm sau khi bản cơ bản chạy ổn, không thuộc MVP)
+
+**Test Data Chaining** — 1 test case dùng lại dữ liệu thật lấy từ response của 1 test case khác đã chạy trước (vd. `POST /pet` tạo pet thật, lấy `id` trả về, dùng cho `GET /pet/{petId}` thay vì đoán 1 id có thể không tồn tại). Đáng tin cậy hơn hẳn `resolvedPath` (dùng ID thật thay vì AI đoán) nhưng đụng cả 4 lớp kiến trúc, quy mô ngang 1 module riêng:
+
+- [ ] **Data model**: `TestCase` thêm field khai báo "capture" (JSONPath trích giá trị từ response, vd. `{"petId": "$.id"}`) cho test case sinh dữ liệu; thêm cú pháp placeholder (vd. `{{petId}}`) dùng được trong `resolvedPath`/`requestBody`/`requestHeaders` của test case tiêu thụ; thêm quan hệ phụ thuộc giữa 2 test case (test case nào phải chạy trước)
+- [ ] **Execution engine**: sắp thứ tự chạy theo dependency thay vì độc lập/song song như thiết kế cơ bản; sau khi chạy test case "sinh dữ liệu" thành công, parse response JSON thật theo JSONPath đã khai báo, lưu vào 1 bộ nhớ biến gắn với lần `TestExecution` đó; thay `{{petId}}` bằng giá trị thật trước khi gửi request của test case phụ thuộc; thêm trạng thái mới (`BLOCKED`/`SKIPPED`) cho test case phụ thuộc khi test case nguồn fail hoặc bị bỏ qua — cần cập nhật danh sách trạng thái hợp lệ trong skill `api-contract` mục 4
+- [ ] **Sinh bằng AI**: **không** để AI tự suy luận quan hệ giữa các endpoint (rủi ro chọn nhầm endpoint/field để chain, vì `generate-tests` hiện chỉ nhìn 1 endpoint/lần) — chaining phải do người dùng tự khai báo thủ công ở Module 5, AI chỉ hỗ trợ gợi ý sau này nếu cần
+- [ ] **UI (Module 5)**: trong `TestCaseFormDialog`, thêm cách đánh dấu 1 trường là "động" (chọn test case nguồn + JSONPath) thay vì nhập giá trị tĩnh; hiển thị được chuỗi phụ thuộc; chặn phụ thuộc vòng (A phụ thuộc B, B phụ thuộc A)
 
 ---
 
