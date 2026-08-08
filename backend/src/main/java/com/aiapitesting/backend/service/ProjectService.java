@@ -9,6 +9,7 @@ import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
+import com.aiapitesting.backend.repository.TestCaseRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -23,6 +24,7 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final EndpointRepository endpointRepository;
+    private final TestCaseRepository testCaseRepository;
     private final CurrentUserService currentUserService;
 
     public ProjectResponse create(ProjectRequest request) {
@@ -57,6 +59,7 @@ public class ProjectService {
     @Transactional
     public void delete(UUID id) {
         Project project = getOwnedProject(id);
+        testCaseRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         projectRepository.delete(project);
     }
