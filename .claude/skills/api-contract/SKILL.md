@@ -53,6 +53,7 @@ Ví dụ — tạo project thành công:
 | `FORBIDDEN` | 403 | Không có quyền truy cập project/resource này |
 | `PROJECT_NOT_FOUND` | 404 | Không tìm thấy project |
 | `ENDPOINT_NOT_FOUND` | 404 | Không tìm thấy endpoint |
+| `TEST_CASE_NOT_FOUND` | 404 | Không tìm thấy test case |
 | `SWAGGER_PARSE_FAILED` | 422 | Không parse được file/URL OpenAPI |
 | `AI_GENERATION_FAILED` | 502 | LLM lỗi hoặc trả về sai định dạng khi sinh test case |
 | `TEST_EXECUTION_FAILED` | 500 | Lỗi khi thực thi test (không phải lỗi của API được test) |

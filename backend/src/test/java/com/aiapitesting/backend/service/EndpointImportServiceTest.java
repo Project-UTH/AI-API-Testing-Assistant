@@ -7,6 +7,7 @@ import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,9 @@ class EndpointImportServiceTest {
     private EndpointRepository endpointRepository;
 
     @Mock
+    private TestCaseRepository testCaseRepository;
+
+    @Mock
     private SafeUrlFetcher safeUrlFetcher;
 
     @Mock
@@ -82,6 +86,9 @@ class EndpointImportServiceTest {
         assertThat(result.get(0).method()).isEqualTo("GET");
         assertThat(result.get(0).summary()).isEqualTo("List pets");
 
+        // Dọn test case của các endpoint cũ trước khi xoá endpoint - tránh vi phạm khoá ngoại
+        // test_cases.endpoint_id (lỗi MySQL 1451) nếu các endpoint đó đã có test case
+        verify(testCaseRepository).deleteAllByEndpointProject(project);
         verify(endpointRepository).deleteAllByProject(project);
 
         ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);

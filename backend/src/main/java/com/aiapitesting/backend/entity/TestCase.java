@@ -33,6 +33,19 @@ public class TestCase {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(columnDefinition = "TEXT")
+    private String requestHeaders;
+
+    @Column(columnDefinition = "TEXT")
+    private String requestBody;
+
+    @Column(nullable = false)
+    private Integer expectedStatus;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private TestCaseSource source;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

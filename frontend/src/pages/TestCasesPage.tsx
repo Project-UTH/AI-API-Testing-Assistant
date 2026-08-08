@@ -1,0 +1,199 @@
+import { useMemo, useState } from "react"
+import { Link, useParams, useSearchParams } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
+import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { listEndpoints } from "@/lib/endpoints"
+import { listTestCases, type TestCase } from "@/lib/testcases"
+import { TestCaseFormDialog } from "@/components/testcases/TestCaseFormDialog"
+import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialog"
+
+const selectClassName =
+  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 sm:w-64"
+
+const METHOD_STYLES: Record<string, string> = {
+  GET: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  POST: "bg-green-500/10 text-green-600 dark:text-green-400",
+  PUT: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  PATCH: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+  DELETE: "bg-red-500/10 text-red-600 dark:text-red-400",
+}
+
+const SOURCE_STYLES: Record<TestCase["source"], string> = {
+  AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  MANUAL: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
+}
+
+interface FormState {
+  open: boolean
+  endpointId: string
+  testCase: TestCase | null
+}
+
+export function TestCasesPage() {
+  const { id } = useParams<{ id: string }>()
+  const projectId = id!
+  const [searchParams, setSearchParams] = useSearchParams()
+  const endpointFilter = searchParams.get("endpointId") ?? ""
+
+  const { data: endpointsData } = useQuery({
+    queryKey: ["endpoints", projectId],
+    queryFn: () => listEndpoints(projectId),
+  })
+  const { data: testCases, isLoading, isError } = useQuery({
+    queryKey: ["test-cases", projectId],
+    queryFn: () => listTestCases(projectId),
+  })
+
+  const endpoints = endpointsData?.data ?? []
+  const allTestCases = testCases ?? []
+
+  const [formState, setFormState] = useState<FormState>({
+    open: false,
+    endpointId: "",
+    testCase: null,
+  })
+  const [deleteTarget, setDeleteTarget] = useState<TestCase | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+
+  const testCasesByEndpoint = useMemo(() => {
+    const map = new Map<string, TestCase[]>()
+    for (const testCase of allTestCases) {
+      const list = map.get(testCase.endpointId) ?? []
+      list.push(testCase)
+      map.set(testCase.endpointId, list)
+    }
+    return map
+  }, [allTestCases])
+
+  const visibleEndpoints = endpointFilter
+    ? endpoints.filter((endpoint) => endpoint.id === endpointFilter)
+    : endpoints
+
+  function openCreate(endpointId: string) {
+    setFormState({ open: true, endpointId, testCase: null })
+  }
+
+  function openEdit(testCase: TestCase) {
+    setFormState({ open: true, endpointId: testCase.endpointId, testCase })
+  }
+
+  function openDelete(testCase: TestCase) {
+    setDeleteTarget(testCase)
+    setDeleteOpen(true)
+  }
+
+  return (
+    <div>
+      <Button variant="ghost" size="sm" nativeButton={false} render={<Link to={`/projects/${projectId}`} />}>
+        <ArrowLeft className="h-4 w-4" />
+        Quay lại Project
+      </Button>
+
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-semibold">Test Case</h1>
+        <select
+          className={selectClassName}
+          value={endpointFilter}
+          onChange={(e) => {
+            const value = e.target.value
+            setSearchParams(value ? { endpointId: value } : {})
+          }}
+        >
+          <option value="">Tất cả endpoint</option>
+          {endpoints.map((endpoint) => (
+            <option key={endpoint.id} value={endpoint.id}>
+              {endpoint.method} {endpoint.path}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {isLoading && <p className="mt-6 text-muted-foreground">Đang tải...</p>}
+
+      {isError && (
+        <p className="mt-6 text-destructive">Không tải được danh sách test case, vui lòng thử lại.</p>
+      )}
+
+      {!isLoading && !isError && visibleEndpoints.length === 0 && (
+        <p className="mt-6 text-muted-foreground">Chưa có endpoint nào.</p>
+      )}
+
+      <div className="mt-4 flex flex-col gap-4">
+        {visibleEndpoints.map((endpoint) => {
+          const cases = testCasesByEndpoint.get(endpoint.id) ?? []
+          return (
+            <div key={endpoint.id} className="rounded-lg border border-border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span
+                    className={cn(
+                      "w-16 shrink-0 rounded-md px-2 py-0.5 text-center text-xs font-semibold",
+                      METHOD_STYLES[endpoint.method] ?? "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {endpoint.method}
+                  </span>
+                  <span className="truncate font-mono text-sm">{endpoint.path}</span>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => openCreate(endpoint.id)}>
+                  <Plus className="h-4 w-4" />
+                  Thêm test case
+                </Button>
+              </div>
+
+              {cases.length === 0 ? (
+                <p className="mt-3 text-sm text-muted-foreground">Chưa có test case nào.</p>
+              ) : (
+                <ul className="mt-3 flex flex-col gap-2">
+                  {cases.map((testCase) => (
+                    <li
+                      key={testCase.id}
+                      className="flex items-center gap-3 rounded-md border border-border p-2"
+                    >
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium",
+                          SOURCE_STYLES[testCase.source]
+                        )}
+                      >
+                        {testCase.source === "AI_GENERATED" ? "AI" : "Tự thêm"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm">{testCase.name}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        → {testCase.expectedStatus}
+                      </span>
+                      <Button size="icon-sm" variant="ghost" onClick={() => openEdit(testCase)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="icon-sm" variant="ghost" onClick={() => openDelete(testCase)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <TestCaseFormDialog
+        open={formState.open}
+        onOpenChange={(open) => setFormState((prev) => ({ ...prev, open }))}
+        projectId={projectId}
+        endpointId={formState.endpointId}
+        testCase={formState.testCase}
+      />
+
+      <DeleteTestCaseDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        projectId={projectId}
+        testCase={deleteTarget}
+      />
+    </div>
+  )
+}
