@@ -4,6 +4,7 @@ import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
@@ -74,7 +75,8 @@ public class TestCaseGenerationService {
         }
         validate(generated);
 
-        testCaseRepository.deleteAllByEndpoint(endpoint);
+        // Chỉ xoá-và-thay test case do AI sinh trước đó - giữ nguyên test case người dùng tự thêm tay
+        testCaseRepository.deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
         List<TestCase> saved = testCaseRepository.saveAll(generated.stream()
                 .map(g -> toEntity(endpoint, g)).toList());
         return CompletableFuture.completedFuture(saved.stream().map(TestCaseResponse::from).toList());
@@ -125,6 +127,7 @@ public class TestCaseGenerationService {
                 .requestHeaders(writeHeadersAsJson(generated.requestHeaders()))
                 .requestBody(generated.requestBody())
                 .expectedStatus(generated.expectedStatus())
+                .source(TestCaseSource.AI_GENERATED)
                 .build();
     }
 

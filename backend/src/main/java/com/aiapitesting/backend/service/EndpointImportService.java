@@ -8,6 +8,7 @@ import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -26,7 +27,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +37,7 @@ public class EndpointImportService {
 
     private final ProjectService projectService;
     private final EndpointRepository endpointRepository;
+    private final TestCaseRepository testCaseRepository;
     private final SafeUrlFetcher safeUrlFetcher;
     private final AesEncryptionService aesEncryptionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -59,7 +63,15 @@ public class EndpointImportService {
     public PageResponse<EndpointResponse> list(UUID projectId, Pageable pageable) {
         Project project = projectService.getOwnedProject(projectId);
         Page<Endpoint> page = endpointRepository.findAllByProject(project, pageable);
-        return PageResponse.from(page, EndpointResponse::from);
+
+        List<UUID> endpointIds = page.getContent().stream().map(Endpoint::getId).toList();
+        Map<UUID, Long> testCaseCountByEndpointId = testCaseRepository.countByEndpointIds(endpointIds).stream()
+                .collect(Collectors.toMap(
+                        TestCaseRepository.EndpointTestCaseCount::getEndpointId,
+                        TestCaseRepository.EndpointTestCaseCount::getCount));
+
+        return PageResponse.from(page, endpoint ->
+                EndpointResponse.from(endpoint, testCaseCountByEndpointId.getOrDefault(endpoint.getId(), 0L)));
     }
 
     private List<EndpointResponse> doImport(UUID projectId, String content, TargetAuthType authType, String authValue) {
@@ -84,6 +96,9 @@ public class EndpointImportService {
             throw new SwaggerParseException("Tài liệu OpenAPI không chứa endpoint nào");
         }
 
+        // Xoá test case của các endpoint cũ trước - endpoint_id là khoá ngoại NOT NULL, xoá endpoint
+        // trước khi test case còn tham chiếu tới sẽ vi phạm khoá ngoại (lỗi MySQL 1451)
+        testCaseRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         List<Endpoint> saved = endpointRepository.saveAll(endpoints);
         return saved.stream().map(EndpointResponse::from).toList();

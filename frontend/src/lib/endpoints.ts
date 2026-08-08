@@ -6,6 +6,7 @@ export interface Endpoint {
   method: string
   summary: string | null
   createdAt: string
+  testCaseCount: number
 }
 
 export type TargetAuthType = "NONE" | "API_KEY" | "BEARER_TOKEN"

@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { Link } from "react-router-dom"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -27,6 +28,7 @@ const METHOD_STYLES: Record<string, string> = {
 }
 
 export function EndpointList({ projectId }: EndpointListProps) {
+  const queryClient = useQueryClient()
   const { data, isLoading, isError } = useQuery({
     queryKey: ["endpoints", projectId],
     queryFn: () => listEndpoints(projectId),
@@ -70,6 +72,9 @@ export function EndpointList({ projectId }: EndpointListProps) {
             next.delete(endpointId)
             return next
           })
+          // Đồng bộ lại testCaseCount thật từ server - để trạng thái "đã sinh" không bị mất
+          // khi rời trang rồi quay lại (generationState chỉ sống trong phiên hiện tại)
+          queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
         })
         .catch((error) => {
           setGenerationState((prev) => ({
@@ -117,7 +122,14 @@ export function EndpointList({ projectId }: EndpointListProps) {
 
       <ul className="flex flex-col gap-2">
         {endpoints.map((endpoint) => {
-          const state = generationState[endpoint.id]
+          // generationState chỉ phản ánh thao tác trong phiên hiện tại (mất khi rời trang);
+          // testCaseCount lấy từ server là nguồn sự thật lâu dài - dùng nó làm mặc định khi
+          // chưa có trạng thái phiên nào ghi đè lên.
+          const state: GenerationState | undefined =
+            generationState[endpoint.id] ??
+            (endpoint.testCaseCount > 0
+              ? { status: "success", count: endpoint.testCaseCount }
+              : undefined)
           const alreadyGenerated = state?.status === "success"
           const selected = selectedIds.has(endpoint.id)
           const willRegenerate = alreadyGenerated && selected
@@ -149,16 +161,24 @@ export function EndpointList({ projectId }: EndpointListProps) {
               )}
               {state?.status === "success" && willRegenerate && (
                 <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
-                  Sẽ xoá {state.count} test case cũ và sinh lại
+                  Sinh lại sẽ thay test case AI đã sinh, giữ nguyên test case bạn tự thêm
                 </span>
               )}
               {state?.status === "success" && !willRegenerate && (
                 <span className="shrink-0 text-xs text-green-600 dark:text-green-400">
-                  Đã sinh {state.count} test case
+                  Có {state.count} test case
                 </span>
               )}
               {state?.status === "error" && (
                 <span className="shrink-0 text-xs text-destructive">{state.message}</span>
+              )}
+              {endpoint.testCaseCount > 0 && (
+                <Link
+                  to={`/projects/${projectId}/test-cases?endpointId=${endpoint.id}`}
+                  className="shrink-0 text-xs text-primary underline-offset-4 hover:underline"
+                >
+                  Xem test case
+                </Link>
               )}
             </li>
           )
