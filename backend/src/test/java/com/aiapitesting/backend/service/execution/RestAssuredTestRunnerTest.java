@@ -100,6 +100,22 @@ class RestAssuredTestRunnerTest {
     }
 
     @Test
+    void run_patchMethodWithTrailingStaticSegmentAndQueryParams_sendsRealPatchVerbToCorrectPath() {
+        server.start();
+        Endpoint endpoint = Endpoint.builder().method("PATCH").path("/pet/{petId}/stock").build();
+        TestCase testCase = TestCase.builder().endpoint(endpoint)
+                .resolvedPath("/pet/{{petId}}/stock?quantity={{quantity}}&operation={{operation}}")
+                .expectedStatus(200).build();
+
+        RestAssuredTestRunner.RunResult result = runner.run(project, testCase,
+                Map.of("petId", "1", "quantity", "10", "operation", "increase"));
+
+        assertThat(handler.method).isEqualTo("PATCH");
+        assertThat(handler.path).isEqualTo("/pet/1/stock");
+        assertThat(result.statusCode()).isEqualTo(200);
+    }
+
+    @Test
     void run_targetReturnsErrorStatus_stillReturnsRealStatusNotException() {
         handler.statusCode = 404;
         handler.responseBody = "not found";
