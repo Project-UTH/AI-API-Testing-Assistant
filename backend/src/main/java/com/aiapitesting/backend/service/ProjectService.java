@@ -4,8 +4,10 @@ import com.aiapitesting.backend.dto.request.ProjectRequest;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.dto.response.ProjectResponse;
 import com.aiapitesting.backend.entity.Project;
+import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.ForbiddenException;
+import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
@@ -13,6 +15,7 @@ import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
+import com.aiapitesting.backend.security.AesEncryptionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -32,6 +35,7 @@ public class ProjectService {
     private final TestExecutionRepository testExecutionRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final CurrentUserService currentUserService;
+    private final AesEncryptionService aesEncryptionService;
 
     public ProjectResponse create(ProjectRequest request) {
         User owner = currentUserService.getCurrentUser();
@@ -60,6 +64,34 @@ public class ProjectService {
         project.setName(request.name());
         project.setDescription(request.description());
         return ProjectResponse.from(projectRepository.save(project));
+    }
+
+    /**
+     * Cấu hình xác thực gọi API thật (Module 6) độc lập với lúc import - cần thiết vì import
+     * bằng file không gọi ra ngoài nên không có chỗ nào set auth cho project, và người dùng có
+     * thể cần đổi/xoá auth sau này mà không muốn import lại toàn bộ endpoint. Khác với lúc import
+     * (authType NONE = giữ nguyên auth cũ, vì import không phải lúc nào cũng nhằm sửa auth): ở đây
+     * NONE là hành động rõ ràng của người dùng muốn xoá auth, nên phải xoá thật.
+     */
+    @Transactional
+    public ProjectResponse updateTargetAuth(UUID id, TargetAuthType authType, String authValue) {
+        Project project = getOwnedProject(id);
+        validateTargetAuthValue(authType, authValue);
+        if (authType == null || authType == TargetAuthType.NONE) {
+            project.setTargetAuthType(TargetAuthType.NONE);
+            project.setTargetAuthValueEncrypted(null);
+        } else {
+            project.setTargetAuthType(authType);
+            project.setTargetAuthValueEncrypted(aesEncryptionService.encrypt(authValue));
+        }
+        return ProjectResponse.from(projectRepository.save(project));
+    }
+
+    /** Dùng chung với EndpointImportService để tránh trùng logic validate cặp authType/authValue. */
+    public void validateTargetAuthValue(TargetAuthType authType, String authValue) {
+        if (authType != null && authType != TargetAuthType.NONE && (authValue == null || authValue.isBlank())) {
+            throw new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn");
+        }
     }
 
     @Transactional

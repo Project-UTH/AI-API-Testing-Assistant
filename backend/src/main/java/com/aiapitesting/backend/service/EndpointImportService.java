@@ -5,7 +5,6 @@ import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
-import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -55,7 +54,7 @@ public class EndpointImportService {
     public List<EndpointResponse> importFromUrl(
             UUID projectId, String url, TargetAuthType authType, String authValue, String targetBaseUrl
     ) {
-        validateAuthValue(authType, authValue);
+        projectService.validateTargetAuthValue(authType, authValue);
         String content = fetchUrlContent(url, authType, authValue);
         return doImport(projectId, content, authType, authValue, targetBaseUrl);
     }
@@ -146,19 +145,14 @@ public class EndpointImportService {
         return null;
     }
 
+    /** authType NONE nghĩa là "giữ nguyên auth hiện có" ở đây (khác updateTargetAuth - nơi NONE là xoá thật). */
     private void applyAuthConfig(Project project, TargetAuthType authType, String authValue) {
-        validateAuthValue(authType, authValue);
+        projectService.validateTargetAuthValue(authType, authValue);
         if (authType == null || authType == TargetAuthType.NONE) {
             return;
         }
         project.setTargetAuthType(authType);
         project.setTargetAuthValueEncrypted(aesEncryptionService.encrypt(authValue));
-    }
-
-    private void validateAuthValue(TargetAuthType authType, String authValue) {
-        if (authType != null && authType != TargetAuthType.NONE && (authValue == null || authValue.isBlank())) {
-            throw new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn");
-        }
     }
 
     /**
