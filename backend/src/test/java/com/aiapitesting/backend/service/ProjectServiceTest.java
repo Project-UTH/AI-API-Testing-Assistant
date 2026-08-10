@@ -6,7 +6,10 @@ import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
+import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionRepository;
+import com.aiapitesting.backend.repository.TestResultRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +37,15 @@ class ProjectServiceTest {
     private TestCaseRepository testCaseRepository;
 
     @Mock
+    private TestResultRepository testResultRepository;
+
+    @Mock
+    private TestExecutionRepository testExecutionRepository;
+
+    @Mock
+    private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
     private CurrentUserService currentUserService;
 
     @InjectMocks
@@ -51,15 +63,20 @@ class ProjectServiceTest {
     }
 
     @Test
-    void delete_removesTestCasesThenEndpointsThenProject() {
+    void delete_removesTestResultsExecutionsTestCasesThenEndpointsThenProject() {
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
         when(currentUserService.getCurrentUser()).thenReturn(owner);
 
         projectService.delete(projectId);
 
-        // Dọn test case trước, rồi endpoint, rồi project - tránh vi phạm khoá ngoại
-        // test_cases.endpoint_id / endpoints.project_id
-        InOrder inOrder = inOrder(testCaseRepository, endpointRepository, projectRepository);
+        // Dọn TestResult, rồi TestExecution, rồi test case, rồi endpoint, rồi project - tránh vi
+        // phạm khoá ngoại (test_results.test_case_id / test_executions.project_id /
+        // test_cases.endpoint_id / endpoints.project_id)
+        InOrder inOrder = inOrder(testResultRepository, testExecutionRepository, testCaseDependencyRepository,
+                testCaseRepository, endpointRepository, projectRepository);
+        inOrder.verify(testResultRepository).deleteAllByTestCaseEndpointProject(project);
+        inOrder.verify(testExecutionRepository).deleteAllByProject(project);
+        inOrder.verify(testCaseDependencyRepository).deleteAllByProject(project);
         inOrder.verify(testCaseRepository).deleteAllByEndpointProject(project);
         inOrder.verify(endpointRepository).deleteAllByProject(project);
         inOrder.verify(projectRepository).delete(project);
@@ -72,6 +89,8 @@ class ProjectServiceTest {
         assertThatThrownBy(() -> projectService.delete(projectId))
                 .isInstanceOf(ProjectNotFoundException.class);
 
+        verifyNoInteractions(testResultRepository);
+        verifyNoInteractions(testExecutionRepository);
         verifyNoInteractions(testCaseRepository);
         verifyNoInteractions(endpointRepository);
         verify(projectRepository, never()).delete(any());
@@ -86,6 +105,8 @@ class ProjectServiceTest {
         assertThatThrownBy(() -> projectService.delete(projectId))
                 .isInstanceOf(ForbiddenException.class);
 
+        verifyNoInteractions(testResultRepository);
+        verifyNoInteractions(testExecutionRepository);
         verifyNoInteractions(testCaseRepository);
         verifyNoInteractions(endpointRepository);
         verify(projectRepository, never()).delete(any());

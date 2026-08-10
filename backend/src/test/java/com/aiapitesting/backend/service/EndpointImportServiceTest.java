@@ -7,14 +7,19 @@ import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionRepository;
+import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
+import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -44,6 +49,22 @@ class EndpointImportServiceTest {
             }
             """;
 
+    private static final String SAMPLE_OPENAPI_WITH_SERVERS = """
+            {
+              "openapi": "3.0.0",
+              "info": { "title": "Sample", "version": "1.0" },
+              "servers": [ { "url": "https://petstore.example.com/v2" } ],
+              "paths": {
+                "/pets": {
+                  "get": {
+                    "summary": "List pets",
+                    "responses": { "200": { "description": "ok" } }
+                  }
+                }
+              }
+            }
+            """;
+
     @Mock
     private ProjectService projectService;
 
@@ -54,10 +75,22 @@ class EndpointImportServiceTest {
     private TestCaseRepository testCaseRepository;
 
     @Mock
+    private TestResultRepository testResultRepository;
+
+    @Mock
+    private TestExecutionRepository testExecutionRepository;
+
+    @Mock
+    private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
     private SafeUrlFetcher safeUrlFetcher;
 
     @Mock
     private AesEncryptionService aesEncryptionService;
+
+    @Spy
+    private TargetAuthHeaderResolver targetAuthHeaderResolver = new TargetAuthHeaderResolver();
 
     @InjectMocks
     private EndpointImportService endpointImportService;
@@ -79,15 +112,17 @@ class EndpointImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "spec.json", "application/json", SAMPLE_OPENAPI.getBytes(StandardCharsets.UTF_8));
 
-        List<EndpointResponse> result = endpointImportService.importFromFile(projectId, file, null, null);
+        List<EndpointResponse> result = endpointImportService.importFromFile(projectId, file, null, null, null);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).path()).isEqualTo("/pets");
         assertThat(result.get(0).method()).isEqualTo("GET");
         assertThat(result.get(0).summary()).isEqualTo("List pets");
 
-        // Dọn test case của các endpoint cũ trước khi xoá endpoint - tránh vi phạm khoá ngoại
-        // test_cases.endpoint_id (lỗi MySQL 1451) nếu các endpoint đó đã có test case
+        // Dọn TestResult/TestExecution/test case của các endpoint cũ trước khi xoá endpoint - tránh
+        // vi phạm khoá ngoại (lỗi MySQL 1451) nếu các endpoint đó đã có dữ liệu liên quan
+        verify(testResultRepository).deleteAllByTestCaseEndpointProject(project);
+        verify(testExecutionRepository).deleteAllByProject(project);
         verify(testCaseRepository).deleteAllByEndpointProject(project);
         verify(endpointRepository).deleteAllByProject(project);
 
@@ -103,7 +138,7 @@ class EndpointImportServiceTest {
         when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         List<EndpointResponse> result = endpointImportService.importFromUrl(
-                projectId, "https://example.com/openapi.json", null, null);
+                projectId, "https://example.com/openapi.json", null, null, null);
 
         assertThat(result).hasSize(1);
         verify(safeUrlFetcher).fetch("https://example.com/openapi.json");
@@ -117,7 +152,7 @@ class EndpointImportServiceTest {
         when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         List<EndpointResponse> result = endpointImportService.importFromUrl(
-                projectId, "https://private.example.com/openapi.json", TargetAuthType.BEARER_TOKEN, "secret-token");
+                projectId, "https://private.example.com/openapi.json", TargetAuthType.BEARER_TOKEN, "secret-token", null);
 
         assertThat(result).hasSize(1);
         verify(safeUrlFetcher).fetch("https://private.example.com/openapi.json", "Authorization", "Bearer secret-token");
@@ -132,7 +167,7 @@ class EndpointImportServiceTest {
         when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         endpointImportService.importFromUrl(
-                projectId, "https://private.example.com/openapi.json", TargetAuthType.API_KEY, "my-key");
+                projectId, "https://private.example.com/openapi.json", TargetAuthType.API_KEY, "my-key", null);
 
         verify(safeUrlFetcher).fetch("https://private.example.com/openapi.json", "X-API-Key", "my-key");
     }
@@ -140,7 +175,7 @@ class EndpointImportServiceTest {
     @Test
     void importFromUrl_authTypeWithoutValueFailsBeforeFetching() {
         assertThatThrownBy(() -> endpointImportService.importFromUrl(
-                projectId, "https://private.example.com/openapi.json", TargetAuthType.BEARER_TOKEN, " "))
+                projectId, "https://private.example.com/openapi.json", TargetAuthType.BEARER_TOKEN, " ", null))
                 .isInstanceOf(InvalidRequestException.class);
 
         verifyNoInteractions(safeUrlFetcher);
@@ -153,7 +188,7 @@ class EndpointImportServiceTest {
                 .thenThrow(new SwaggerParseException("URL trỏ tới địa chỉ nội bộ không được phép"));
 
         assertThatThrownBy(() -> endpointImportService.importFromUrl(
-                projectId, "http://169.254.169.254/latest/meta-data", null, null))
+                projectId, "http://169.254.169.254/latest/meta-data", null, null, null))
                 .isInstanceOf(SwaggerParseException.class);
 
         verifyNoInteractions(endpointRepository);
@@ -166,7 +201,7 @@ class EndpointImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "spec.json", "application/json", "not a valid openapi document".getBytes(StandardCharsets.UTF_8));
 
-        assertThatThrownBy(() -> endpointImportService.importFromFile(projectId, file, null, null))
+        assertThatThrownBy(() -> endpointImportService.importFromFile(projectId, file, null, null, null))
                 .isInstanceOf(SwaggerParseException.class);
 
         verify(endpointRepository, never()).saveAll(anyList());
@@ -179,7 +214,7 @@ class EndpointImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "spec.json", "application/json", SAMPLE_OPENAPI.getBytes(StandardCharsets.UTF_8));
 
-        assertThatThrownBy(() -> endpointImportService.importFromFile(projectId, file, TargetAuthType.API_KEY, " "))
+        assertThatThrownBy(() -> endpointImportService.importFromFile(projectId, file, TargetAuthType.API_KEY, " ", null))
                 .isInstanceOf(InvalidRequestException.class);
 
         verifyNoInteractions(aesEncryptionService);
@@ -194,9 +229,48 @@ class EndpointImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "spec.json", "application/json", SAMPLE_OPENAPI.getBytes(StandardCharsets.UTF_8));
 
-        endpointImportService.importFromFile(projectId, file, TargetAuthType.BEARER_TOKEN, "secret-token");
+        endpointImportService.importFromFile(projectId, file, TargetAuthType.BEARER_TOKEN, "secret-token", null);
 
         assertThat(project.getTargetAuthType()).isEqualTo(TargetAuthType.BEARER_TOKEN);
         assertThat(project.getTargetAuthValueEncrypted()).isEqualTo("encrypted-value");
+    }
+
+    @Test
+    void importFromFile_targetBaseUrlProvidedByUser_takesPriorityOverSpecServers() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "spec.json", "application/json", SAMPLE_OPENAPI_WITH_SERVERS.getBytes(StandardCharsets.UTF_8));
+
+        endpointImportService.importFromFile(projectId, file, null, null, "https://user-chosen.example.com");
+
+        assertThat(project.getTargetBaseUrl()).isEqualTo("https://user-chosen.example.com");
+    }
+
+    @Test
+    void importFromFile_targetBaseUrlBlank_fallsBackToSpecServers() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "spec.json", "application/json", SAMPLE_OPENAPI_WITH_SERVERS.getBytes(StandardCharsets.UTF_8));
+
+        endpointImportService.importFromFile(projectId, file, null, null, "  ");
+
+        assertThat(project.getTargetBaseUrl()).isEqualTo("https://petstore.example.com/v2");
+    }
+
+    @Test
+    void importFromFile_noTargetBaseUrlAndSpecHasNoServers_leavesNull() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "spec.json", "application/json", SAMPLE_OPENAPI.getBytes(StandardCharsets.UTF_8));
+
+        endpointImportService.importFromFile(projectId, file, null, null, null);
+
+        assertThat(project.getTargetBaseUrl()).isNull();
     }
 }
