@@ -2,7 +2,9 @@ package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.request.TestCaseRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
+import com.aiapitesting.backend.dto.response.DependencySuggestionResponse;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
+import com.aiapitesting.backend.service.DependencySuggestionService;
 import com.aiapitesting.backend.service.TestCaseService;
 import com.aiapitesting.backend.service.ai.TestCaseGenerationService;
 import jakarta.validation.Valid;
@@ -10,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -28,6 +31,7 @@ public class TestCaseController {
 
     private final TestCaseGenerationService testCaseGenerationService;
     private final TestCaseService testCaseService;
+    private final DependencySuggestionService dependencySuggestionService;
 
     @PostMapping("/generate-tests")
     public CompletableFuture<ResponseEntity<ApiResponse<List<TestCaseResponse>>>> generate(
@@ -66,5 +70,14 @@ public class TestCaseController {
     ) {
         testCaseService.delete(projectId, endpointId, testCaseId);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/test-cases/{testCaseId}/dependency-suggestions")
+    public ResponseEntity<ApiResponse<List<DependencySuggestionResponse>>> dependencySuggestions(
+            @PathVariable UUID projectId,
+            @PathVariable UUID endpointId,
+            @PathVariable UUID testCaseId
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(dependencySuggestionService.suggest(projectId, endpointId, testCaseId)));
     }
 }
