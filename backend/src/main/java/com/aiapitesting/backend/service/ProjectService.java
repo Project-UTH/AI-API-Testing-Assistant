@@ -9,7 +9,10 @@ import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
+import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionRepository;
+import com.aiapitesting.backend.repository.TestResultRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -25,6 +28,9 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final EndpointRepository endpointRepository;
     private final TestCaseRepository testCaseRepository;
+    private final TestResultRepository testResultRepository;
+    private final TestExecutionRepository testExecutionRepository;
+    private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final CurrentUserService currentUserService;
 
     public ProjectResponse create(ProjectRequest request) {
@@ -59,6 +65,12 @@ public class ProjectService {
     @Transactional
     public void delete(UUID id) {
         Project project = getOwnedProject(id);
+        // Thứ tự bắt buộc để tránh vi phạm khoá ngoại (MySQL 1451): TestResult/TestExecution/
+        // TestCaseDependency tham chiếu TestCase, TestCase tham chiếu Endpoint, Endpoint tham
+        // chiếu Project.
+        testResultRepository.deleteAllByTestCaseEndpointProject(project);
+        testExecutionRepository.deleteAllByProject(project);
+        testCaseDependencyRepository.deleteAllByProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         projectRepository.delete(project);
