@@ -105,6 +105,10 @@ Frontend poll qua `GET /api/v1/projects/{projectId}/executions/{executionId}` đ
 
 Không được tự thêm giá trị khác cho cả 2 enum trên mà không cập nhật skill này. `autoIncludedTestCaseIds`: danh sách test case được tự động thêm vào lần chạy do là nguồn dữ liệu (Test Data Chaining) cho 1 test case đã chọn — rỗng nếu không liên quan.
 
+## 4b. Cấu hình xác thực Target API độc lập với import
+
+`PUT /api/v1/projects/{projectId}/target-auth` — body `{ "authType": "NONE" | "API_KEY" | "BEARER_TOKEN", "authValue": "..." }`. Dùng khi cần đặt/đổi/xoá auth gọi API thật (Module 6) mà **không** phải qua lại luồng import (vd sau khi import bằng file - file không gọi ra ngoài nên không có auth nào được set). Khác với auth nhập lúc `POST /endpoints/import` (`authType: "NONE"` ở đó nghĩa là "giữ nguyên auth cũ, không đụng vào"), ở endpoint này `authType: "NONE"` là hành động rõ ràng: xoá auth hiện có. `ProjectResponse` trả kèm `targetBaseUrl`/`targetAuthType` (không bao giờ trả `targetAuthValueEncrypted` hay giá trị gốc ra ngoài).
+
 ## 5. Naming convention endpoint
 
 - Danh từ số nhiều, kebab-case nếu nhiều từ: `/api/v1/projects`, `/api/v1/test-cases`

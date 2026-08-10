@@ -1,6 +1,7 @@
 package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.request.ProjectRequest;
+import com.aiapitesting.backend.dto.request.TargetAuthUpdateRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.dto.response.ProjectResponse;
@@ -60,5 +61,14 @@ public class ProjectController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         projectService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/target-auth")
+    public ResponseEntity<ApiResponse<ProjectResponse>> updateTargetAuth(
+            @PathVariable UUID id,
+            @RequestBody TargetAuthUpdateRequest request
+    ) {
+        ProjectResponse response = projectService.updateTargetAuth(id, request.authType(), request.authValue());
+        return ResponseEntity.ok(ApiResponse.of(response));
     }
 }

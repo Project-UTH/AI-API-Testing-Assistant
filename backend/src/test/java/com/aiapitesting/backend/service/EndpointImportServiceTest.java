@@ -174,6 +174,9 @@ class EndpointImportServiceTest {
 
     @Test
     void importFromUrl_authTypeWithoutValueFailsBeforeFetching() {
+        doThrow(new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn"))
+                .when(projectService).validateTargetAuthValue(TargetAuthType.BEARER_TOKEN, " ");
+
         assertThatThrownBy(() -> endpointImportService.importFromUrl(
                 projectId, "https://private.example.com/openapi.json", TargetAuthType.BEARER_TOKEN, " ", null))
                 .isInstanceOf(InvalidRequestException.class);
@@ -210,6 +213,8 @@ class EndpointImportServiceTest {
     @Test
     void importFromFile_authTypeWithoutValueThrowsInvalidRequest() {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        doThrow(new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn"))
+                .when(projectService).validateTargetAuthValue(TargetAuthType.API_KEY, " ");
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "spec.json", "application/json", SAMPLE_OPENAPI.getBytes(StandardCharsets.UTF_8));
