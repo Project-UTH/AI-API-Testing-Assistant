@@ -54,6 +54,8 @@ Ví dụ — tạo project thành công:
 | `PROJECT_NOT_FOUND` | 404 | Không tìm thấy project |
 | `ENDPOINT_NOT_FOUND` | 404 | Không tìm thấy endpoint |
 | `TEST_CASE_NOT_FOUND` | 404 | Không tìm thấy test case |
+| `TEST_EXECUTION_NOT_FOUND` | 404 | Không tìm thấy lần thực thi test |
+| `TEST_CASE_HAS_DEPENDENTS` | 409 | Không xoá/sinh lại test case vì đang có test case khác phụ thuộc (Test Data Chaining) |
 | `SWAGGER_PARSE_FAILED` | 422 | Không parse được file/URL OpenAPI |
 | `AI_GENERATION_FAILED` | 502 | LLM lỗi hoặc trả về sai định dạng khi sinh test case |
 | `TEST_EXECUTION_FAILED` | 500 | Lỗi khi thực thi test (không phải lỗi của API được test) |
@@ -82,13 +84,26 @@ Vì thực thi test không block request, endpoint chạy test trả về ngay:
 ```json
 {
   "data": {
-    "executionId": "uuid",
-    "status": "PENDING"
+    "id": "uuid",
+    "status": "PENDING",
+    "startedAt": "2026-08-08T10:00:00Z",
+    "finishedAt": null,
+    "results": [],
+    "autoIncludedTestCaseIds": []
   }
 }
 ```
 
-Frontend poll qua `GET /api/v1/executions/{executionId}` để lấy trạng thái. Các giá trị `status` hợp lệ: `PENDING`, `RUNNING`, `COMPLETED`, `FAILED` — không được tự thêm giá trị khác mà không cập nhật skill này.
+Frontend poll qua `GET /api/v1/projects/{projectId}/executions/{executionId}` để lấy trạng thái. Có **2 khái niệm trạng thái tách biệt, không được nhầm lẫn**:
+
+- **`ExecutionStatus`** (field `status` ở cấp `TestExecutionResponse`, trạng thái của *cả lần chạy*) — các giá trị hợp lệ: `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`. `COMPLETED` nghĩa là đã chạy xong hết danh sách test case, **không có nghĩa "toàn bộ pass"**. `FAILED` chỉ dùng khi lỗi ở tầng orchestration (vd exception ngoài dự kiến khi lập lịch chạy) — không dùng khi chỉ có 1 vài test case bên trong bị fail.
+- **`TestResultStatus`** (field `status` ở từng phần tử trong `results[]`, trạng thái của *từng test case* trong lần chạy đó) — các giá trị hợp lệ: `PASSED`, `FAILED`, `ERROR`, `BLOCKED`, `SKIPPED`.
+  - `PASSED`/`FAILED`: gọi được target API, so `expectedStatus` với status thật trả về.
+  - `ERROR`: lỗi hạ tầng khi gọi target API (network, timeout, không đọc được response) — không phải lỗi của API đang test.
+  - `BLOCKED`: (Test Data Chaining) phụ thuộc vào 1 test case khác không `PASSED`, hoặc không trích được giá trị JSONPath từ response nguồn.
+  - `SKIPPED`: dự phòng, chưa dùng.
+
+Không được tự thêm giá trị khác cho cả 2 enum trên mà không cập nhật skill này. `autoIncludedTestCaseIds`: danh sách test case được tự động thêm vào lần chạy do là nguồn dữ liệu (Test Data Chaining) cho 1 test case đã chọn — rỗng nếu không liên quan.
 
 ## 5. Naming convention endpoint
 
