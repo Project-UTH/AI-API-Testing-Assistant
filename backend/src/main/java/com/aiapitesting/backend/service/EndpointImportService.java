@@ -94,6 +94,12 @@ public class EndpointImportService {
 
         ParseOptions options = new ParseOptions();
         options.setResolve(true);
+        // setResolve(true) chỉ resolve $ref TRỎ RA NGOÀI file (multi-file spec) - $ref nội bộ dạng
+        // "#/components/schemas/..." vẫn giữ nguyên dạng {"$ref": "..."} khi serialize Operation,
+        // khiến AI sinh test case KHÔNG THẤY được field/required nào của requestBody (chỉ thấy 1
+        // chuỗi $ref vô nghĩa với nó) - đây là nguyên nhân AI hay thiếu field bắt buộc. setResolveFully
+        // mới thật sự inline properties/required/type vào ngay trong cây Operation trước khi serialize.
+        options.setResolveFully(true);
         SwaggerParseResult result = new OpenAPIV3Parser().readContents(content, null, options);
         OpenAPI openApi = result.getOpenAPI();
 
