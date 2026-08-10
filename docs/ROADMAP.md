@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-08
+> Cập nhật lần cuối: 2026-08-09 (verify Module 6 + Module 7 bằng Playwright E2E thật + người dùng tự tay dùng thử; phát hiện + fix nhiều bug thật: `autoIncludedTestCaseIds` mất khi poll `GET /executions/{id}`, thiếu hỗ trợ query parameter, dialog không cuộn được, dropdown quá hẹp, form dependency báo lỗi im lặng, thiếu chỗ xem chi tiết response)
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -13,10 +13,11 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 3. Import & Parse OpenAPI | ✅ Xong |
 | 4. AI sinh Test Case | ✅ Xong |
 | 5. Review Test Case | ✅ Xong |
-| 6. Thực thi Test | ⬜ Chưa bắt đầu |
-| 7. Lịch sử & Dashboard | ⬜ Chưa bắt đầu |
-| 8. AI phân tích lỗi (stretch) | ⬜ Chưa bắt đầu |
-| 9. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
+| 6. Thực thi Test | ✅ Xong |
+| 7. Test Data Chaining | ✅ Xong |
+| 8. Lịch sử & Dashboard | ⬜ Chưa bắt đầu |
+| 9. AI phân tích lỗi (stretch) | ⬜ Chưa bắt đầu |
+| 10. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
 
@@ -83,7 +84,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 ## 4. AI sinh Test Case
 *Phụ thuộc: Module 3*
 
-**Phạm vi đã chốt:** chỉ sinh 3 nhóm test case Cơ bản — **Positive** (happy path), **Negative** (thiếu trường bắt buộc/sai kiểu dữ liệu), **Boundary Value** (giá trị biên). Nhóm Nâng cao (Security Test Cases, Test Data Generation, Assertion Generation) và Module cao cấp (Performance Test Cases — chưa có module riêng; Bug Report Generation đã có vị trí ở Module 8) để dành cho giai đoạn sau, không làm ở đây. Không sinh case xác thực/phân quyền (401/403).
+**Phạm vi đã chốt:** chỉ sinh 3 nhóm test case Cơ bản — **Positive** (happy path), **Negative** (thiếu trường bắt buộc/sai kiểu dữ liệu), **Boundary Value** (giá trị biên). Nhóm Nâng cao (Security Test Cases, Test Data Generation, Assertion Generation) và Module cao cấp (Performance Test Cases — chưa có module riêng; Bug Report Generation đã có vị trí ở Module 9) để dành cho giai đoạn sau, không làm ở đây. Không sinh case xác thực/phân quyền (401/403).
 
 **Backend**
 - [x] Tích hợp Spring AI (`spring-ai-bom` 2.0.0, `spring-ai-starter-model-openai`), cấu hình `ChatClient` + timeout/retry (`spring.ai.retry.max-attempts`, `spring.http.client.connect-timeout`/`read-timeout`)
@@ -137,32 +138,65 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 ## 6. Thực thi Test
 *Phụ thuộc: Module 5*
 
-**Vấn đề đã phát hiện khi bàn trước khi code (chưa xử lý ở bản cơ bản):** `TestCase` hiện chỉ có `requestHeaders`/`requestBody`/`expectedStatus` — không có field nào lưu giá trị cụ thể cho path parameter/query parameter. Với endpoint kiểu `GET /pet/{petId}`, không có chỗ nào biết thay `{petId}` bằng giá trị nào khi gọi thật. Đã chốt hướng xử lý tối thiểu: AI sinh thêm field `resolvedPath` (đường dẫn đã thay placeholder bằng giá trị cụ thể, ví dụ `/pet/1`) — cần làm **trước** khi engine thực thi chạy được các endpoint có tham số. Hướng đầy đủ hơn (test data chaining) xem mục "Nâng cao" bên dưới.
+**Vấn đề đã phát hiện khi bàn trước khi code:**
+- `TestCase` hiện chỉ có `requestHeaders`/`requestBody`/`expectedStatus` — không có chỗ lưu giá trị cụ thể cho path/query parameter, không chạy được endpoint kiểu `GET /pet/{petId}`.
+- Hệ thống chưa có nơi lưu base URL của target API — `Endpoint.path` chỉ là path tương đối, import hiện đọc schema OpenAPI nhưng bỏ qua `servers[]`. URL người dùng nhập lúc import là vị trí **tài liệu OpenAPI**, khác hoàn toàn với base URL của **API thật** cần gọi lúc thực thi (có thể khác domain, và import từ file thì không có URL nào để suy luận cả) — 2 khái niệm phải tách bạch rõ.
+- AI đoán cụ thể 1 giá trị path-param (vd `/pet/1`) gần như chắc chắn sai khi gọi API thật có state (server không có sẵn `id=1`) — quyết định dùng cú pháp placeholder `{{tenThamSo}}` (khớp tên tham số OpenAPI) thay vì giá trị đoán cụ thể, kèm 1 field fallback riêng cho giá trị đoán. Việc lấy được giá trị **thật** (không phải đoán) cho placeholder này là việc của Module 7.
 
 **Backend**
-- [ ] Bổ sung `resolvedPath` vào `TestCase`/`GeneratedTestCase`/prompt `generate-test-case.st` — AI phải trả về path đã thay placeholder bằng giá trị cụ thể hợp lệ theo schema (không chỉ path gốc có `{}`)
-- [ ] Engine thực thi bằng Rest Assured, dùng `resolvedPath` (không phải `Endpoint.path` thô) để build request thật
-- [ ] Xử lý bất đồng bộ (`@Async`) khi chạy nhiều test case
-- [ ] Endpoint trigger thực thi + endpoint poll trạng thái (theo `api-contract`)
+- [x] `Project` thêm `targetBaseUrl` — suy ra từ `openApi.getServers()[0]` lúc import (cả 2 nguồn file/URL, lọc bỏ server mặc định `"/"` mà swagger-parser tự điền khi spec không khai báo `servers`), luôn để người dùng xem lại/sửa tay trong dialog import trước khi xác nhận
+- [x] Trích `TargetAuthHeaderResolver` dùng chung cho việc map `TargetAuthType → header`, dùng lại ở cả `EndpointImportService` và `RestAssuredTestRunner`
+- [x] Bổ sung `TestExecutionRepository.deleteAllByProject`, `TestResultRepository.deleteAllByTestCaseEndpointProject`, gọi trước khi bulk-xoá `TestCase`/`Project` ở `EndpointImportService.doImport()`/`ProjectService.delete()` — tránh lỗi khoá ngoại 1451 lần 3
+- [x] `TestCase` thêm `resolvedPath` + `pathParamFallbacks`
+- [x] `TestCaseGenerationService`/prompt `generate-test-case.st` sinh thêm `resolvedPath`/`pathParamFallbacks` theo đúng quy tắc đã chốt
+- [x] *(Bug phát hiện khi người dùng tự tay dùng thật sau demo, không phải lỗi vặt)* Hệ thống ban đầu không có khái niệm tham số **query** (OpenAPI `"in": "query"`) — chỉ có path-param và requestBody/Headers. Endpoint kiểu `POST /pet/{petId}` (Petstore "update with form data") nhận `name`/`status` qua query string chứ không phải JSON body; AI sinh test case không biết biểu diễn ở đâu nên để trống, khiến request thật gửi đi thiếu tham số bắt buộc, luôn fail dù app không có bug. Fix: không thêm field mới — tái dùng nguyên cơ chế `{{tenThamSo}}` đã có, gắn thẳng query string vào cuối `resolvedPath` (vd `/pet/{{petId}}?name={{name}}`), giá trị dự phòng vẫn chung 1 object `pathParamFallbacks`. `TestCasePathValidator`/`RestAssuredTestRunner`/engine thực thi không cần sửa gì (đã tổng quát hoá sẵn cho mọi token `{{}}` trong `resolvedPath`, không phân biệt path hay query) — chỉ cần dạy lại prompt AI + cập nhật hint UI
+- [x] `TestCasePathValidator` (service dùng chung, gọi từ cả `TestCaseGenerationService` và `TestCaseService`): kiểm token còn sót 1-ngoặc, mỗi token `{{}}` phải có fallback; đồng thời có `extractPlaceholders`/`substitute` dùng lại ở engine thực thi và gợi ý liên kết (Module 7)
+- [x] `TestResult` thiết kế lại: bỏ `passed`, thêm `status` (`TestResultStatus`), unique `(execution_id, test_case_id)`; `ExecutionStatus` ghi rõ ngữ nghĩa COMPLETED/FAILED trong Javadoc
+- [x] Thêm `io.rest-assured:rest-assured`; `service/execution/RestAssuredTestRunner` build request thật, thay token cả trong `requestBody`/`requestHeaders` (không chỉ path), gắn auth target giải mã đúng lúc thực thi
+- [x] *(Bug phát sinh khi viết test tích hợp, nghiêm trọng)* Mọi lệnh gọi `RestAssuredTestRunner.run()` đều crash `NullPointerException` sâu trong `groovy.lang.MetaClassImpl`/`ClosureMetaClass` — nguyên nhân: `rest-assured:5.5.1` không khai báo cứng version Groovy, Maven tự chọn bản mới nhất có trong repo (`org.apache.groovy:groovy:5.0.6`), không tương thích với engine Groovy nội bộ mà rest-assured dùng để gửi request (được build/test cho Groovy 4.x). Không phát hiện được nếu chỉ mock `RestAssuredTestRunner` (như ở `TestExecutionRunnerTest`) — chỉ lộ ra khi có test tích hợp gọi `run()` thật. Fix: ghim `org.apache.groovy:groovy`/`groovy-xml`/`groovy-json` về `4.0.28` qua `dependencyManagement` trong `pom.xml`.
+- [x] `service/execution/TestExecutionService` (đồng bộ, orchestration) + `service/execution/TestExecutionRunner` (`@Async` riêng) — *(Phát sinh khi làm, khác thiết kế phác thảo ban đầu)* tách thành 2 class thay vì gộp 1, vì Spring AOP proxy-based không kích hoạt `@Async` khi tự gọi qua `this` trong cùng 1 bean (self-invocation) — nếu gộp chung, `runInBackground` sẽ chạy đồng bộ, chặn luôn request thay vì chạy nền. Hành vi bên ngoài (trigger trả PENDING ngay, chạy nền tuần tự theo `createdAt`) đúng như thiết kế
+- [x] `POST /api/v1/projects/{projectId}/executions`, `GET /api/v1/projects/{projectId}/executions/{executionId}` (`TestExecutionController`) theo `api-contract`; skill `api-contract` đã cập nhật giải thích `TestResultStatus` tách biệt `ExecutionStatus`, thêm mã lỗi `TEST_EXECUTION_NOT_FOUND`
 
 **Frontend**
-- [ ] Nút chạy test, hiển thị trạng thái PENDING/RUNNING/COMPLETED/FAILED
+- [x] `ImportOpenApiDialog.tsx` thêm ô "Target Base URL" (luôn hiển thị, không tự động ẩn)
+- [x] `TestCaseFormDialog.tsx` thêm ô `resolvedPath`/`pathParamFallbacks`, hint text cập nhật để nói rõ query-param dùng chung cú pháp `{{}}` gắn vào cuối path
+- [x] `TestCasesPage.tsx` thêm chọn nhiều test case (checkbox) + nút "Chạy Test", điều hướng sang trang kết quả sau khi trigger
+- [x] Trang mới `TestExecutionPage.tsx` (route `/projects/:id/executions/:executionId`) — poll bằng `refetchInterval` khi PENDING/RUNNING, hiện từng kết quả với badge PASSED/FAILED/ERROR/BLOCKED/SKIPPED; bấm vào 1 dòng kết quả để mở rộng xem chi tiết (response body format lại thành JSON dễ đọc, thông báo lỗi đầy đủ không bị cắt) — dữ liệu backend đã trả sẵn từ đầu, chỉ thiếu chỗ hiển thị
+- [x] *(Bug phát hiện khi người dùng tự tay dùng thật, không lộ ra qua test tự động vì test tự động không đo layout)* Dialog dùng chung (`components/ui/dialog.tsx`) không có `max-height`/`overflow-y-auto` — nội dung dài hơn màn hình bị cắt mất, không cuộn được để bấm nút "Lưu thay đổi", ảnh hưởng mọi dialog dài trong app chứ không riêng 1 chỗ. Fix: thêm `max-h-[85vh] overflow-y-auto` vào `DialogContent`
+- [x] *(Bug tương tự)* Dropdown "Test case nguồn" trong khối Test Data Chaining bị bóp xuống ~46px (không đủ hiện chữ) do dialog gốc chỉ `sm:max-w-sm` (384px) trong khi hàng chứa nó có 2 ô input cố định bề rộng + 1 nút. Fix: nới riêng dialog `TestCaseFormDialog` lên `sm:max-w-2xl`
+- [x] *(Bug tương tự)* Bấm "Thêm" ở form gán dependency thủ công khi chưa chọn nguồn/điền thiếu/gõ sai tên placeholder chỉ lặng lẽ không làm gì, không báo lỗi. Fix: thêm thông báo lỗi rõ ràng theo từng trường hợp; đồng thời đổi ô "Placeholder" từ nhập tự do sang dropdown chọn đúng token `{{}}` có thật trong `resolvedPath`/`requestBody`/`requestHeaders` — loại bỏ khả năng gõ sai định dạng ngay từ đầu
 
-**Giới hạn đã biết (chấp nhận cho bản cơ bản):** chỉ so sánh `expectedStatus` thật trả về so với dự kiến — không so sánh nội dung response (đó là Assertion Generation, xem Nâng cao). Nghĩa là bắt được lỗi sai status/lỗi server, không bắt được lỗi "status đúng nhưng data sai".
+**Giới hạn đã biết (chấp nhận cho bản cơ bản):** chỉ so sánh `expectedStatus` thật trả về so với dự kiến — không so sánh nội dung response (đó là Assertion Generation, không thuộc phạm vi module này).
 
-### Nâng cao (stretch — làm sau khi bản cơ bản chạy ổn, không thuộc MVP)
-
-**Test Data Chaining** — 1 test case dùng lại dữ liệu thật lấy từ response của 1 test case khác đã chạy trước (vd. `POST /pet` tạo pet thật, lấy `id` trả về, dùng cho `GET /pet/{petId}` thay vì đoán 1 id có thể không tồn tại). Đáng tin cậy hơn hẳn `resolvedPath` (dùng ID thật thay vì AI đoán) nhưng đụng cả 4 lớp kiến trúc, quy mô ngang 1 module riêng:
-
-- [ ] **Data model**: `TestCase` thêm field khai báo "capture" (JSONPath trích giá trị từ response, vd. `{"petId": "$.id"}`) cho test case sinh dữ liệu; thêm cú pháp placeholder (vd. `{{petId}}`) dùng được trong `resolvedPath`/`requestBody`/`requestHeaders` của test case tiêu thụ; thêm quan hệ phụ thuộc giữa 2 test case (test case nào phải chạy trước)
-- [ ] **Execution engine**: sắp thứ tự chạy theo dependency thay vì độc lập/song song như thiết kế cơ bản; sau khi chạy test case "sinh dữ liệu" thành công, parse response JSON thật theo JSONPath đã khai báo, lưu vào 1 bộ nhớ biến gắn với lần `TestExecution` đó; thay `{{petId}}` bằng giá trị thật trước khi gửi request của test case phụ thuộc; thêm trạng thái mới (`BLOCKED`/`SKIPPED`) cho test case phụ thuộc khi test case nguồn fail hoặc bị bỏ qua — cần cập nhật danh sách trạng thái hợp lệ trong skill `api-contract` mục 4
-- [ ] **Sinh bằng AI**: **không** để AI tự suy luận quan hệ giữa các endpoint (rủi ro chọn nhầm endpoint/field để chain, vì `generate-tests` hiện chỉ nhìn 1 endpoint/lần) — chaining phải do người dùng tự khai báo thủ công ở Module 5, AI chỉ hỗ trợ gợi ý sau này nếu cần
-- [ ] **UI (Module 5)**: trong `TestCaseFormDialog`, thêm cách đánh dấu 1 trường là "động" (chọn test case nguồn + JSONPath) thay vì nhập giá trị tĩnh; hiển thị được chuỗi phụ thuộc; chặn phụ thuộc vòng (A phụ thuộc B, B phụ thuộc A)
+**Mốc xác nhận:** `./mvnw test` xanh (bao gồm `RestAssuredTestRunnerTest` — test tích hợp thật với `com.sun.net.httpserver.HttpServer` cục bộ, kiểm method/path/header/body/status/response đúng thật, không mock), `npx tsc --noEmit` sạch, `npm run build` thành công. **Đã verify bằng Playwright E2E thật** với backend+MySQL+Swagger Petstore demo công khai (`https://petstore3.swagger.io/api/v3`): đăng ký → tạo project → import OpenAPI kèm `targetBaseUrl` → AI sinh test case → chạy test → nhận đúng status thật (bao gồm cả trường hợp Petstore demo tự trả `500` — hệ thống ghi nhận đúng `FAILED`, không phải lỗi của mình).
 
 ---
 
-## 7. Lịch sử & Dashboard
+## 7. Test Data Chaining
 *Phụ thuộc: Module 6*
+
+**Phạm vi đã chốt:** 1 test case dùng lại dữ liệu thật lấy từ response của 1 test case khác đã chạy trước (vd `POST /pet` tạo pet thật, lấy `id` trả về, dùng cho `GET /pet/{petId}` thay vì đoán 1 id có thể không tồn tại). Chaining hoàn toàn **opt-in do người dùng xác nhận** — AI không tự suy luận quan hệ giữa các endpoint (rủi ro chọn nhầm nguồn, vì `generate-tests` chỉ nhìn 1 endpoint/lần) — nhưng có **gợi ý tự động bằng quy tắc tất định** (dò endpoint `POST` cùng resource) để giảm ma sát của việc phải tự nhớ gán, kể cả khi người dùng sinh test case cho endpoint con trước endpoint cha.
+
+**Backend**
+- [x] Entity + repository `TestCaseDependency` — quản lý qua `TestCaseRequest.dependencies`, xoá-hết-tạo-lại mỗi lần lưu (`TestCaseService.saveDependencies`); validate nguồn phải thuộc cùng project (chặn tham chiếu chéo project khác)
+- [x] Validate `placeholderName` gửi lên phải khớp đúng 1 token `{{}}` thật có trong `resolvedPath`/`requestBody`/`requestHeaders` của chính test case — chặn lưu dependency "mồ côi" do gõ sai tên
+- [x] `TestExecutionService` mở rộng: BFS bao đóng bắc cầu ra `autoIncludedTestCaseIds`; xây đồ thị phụ thuộc gồm cạnh tường minh + cạnh ngầm định (`DELETE` luôn chạy sau mọi test dùng chung nguồn); kiểm tra cycle (DFS) trước khi sắp lịch; Kahn's algorithm ra **1 thứ tự tuyến tính duy nhất** (tie-break `createdAt`) — không còn khái niệm "wave"/song song, dùng chung 1 vòng lặp tuần tự với bản Module 6
+- [x] `TestExecutionRunner`: `BLOCKED` khi nguồn không `PASSED` hoặc `io.restassured.path.json.JsonPath` không trích được giá trị (tự bỏ tiền tố `$.` nếu có vì thư viện dùng cú pháp GPath); giá trị thật ưu tiên cao hơn `pathParamFallbacks`; lan truyền `BLOCKED` tự nhiên qua map trạng thái tuần tự
+- [x] Guard `TestCaseService.ensureNoDependents()` — dùng chung cho cả xoá tay (`delete()`) và regenerate (`TestCaseGenerationService.generate()`, inject `TestCaseService`) — mã lỗi `TEST_CASE_HAS_DEPENDENTS` (409, đã thêm vào bảng mã lỗi `api-contract`)
+- [x] Dọn `TestCaseDependency` trước khi bulk-xoá ở `doImport()`/`ProjectService.delete()` — chuỗi xoá đầy đủ: `TestResult` → `TestExecution` → `TestCaseDependency` → `TestCase` → `Endpoint` → `Project`
+- [x] `DependencySuggestionService` + `GET .../test-cases/{id}/dependency-suggestions` (thêm vào `TestCaseController`) — cắt path theo đúng vị trí tham số (`EndpointRepository.findByProjectAndPathAndMethod`, `TestCaseRepository.findAllByEndpointOrderByCreatedAtAsc`), verify riêng cả trường hợp tham số cuối path lẫn tham số giữa path lồng nhau
+- [x] *(Bug phát hiện khi chạy Playwright E2E thật, không lộ ra ở unit test vì toàn bộ mock ở tầng response)* `TestExecutionResponse.from()` (dùng bởi `GET /executions/{id}` — endpoint mà trang kết quả poll liên tục) luôn trả `autoIncludedTestCaseIds` rỗng (hardcode `List.of()`), chỉ response ban đầu của `POST /executions` (`pending()`) có giá trị đúng — nhưng frontend không dùng response đó để render, chỉ dùng `execution.id` để điều hướng rồi luôn fetch lại qua GET. Hệ quả: banner "N test case phụ trợ tự động chạy kèm" không bao giờ hiện được dù cơ chế auto-include chạy đúng phía sau. Fix: thêm cột `autoIncluded` (boolean) vào `TestResult`, `TestExecutionRunner`/`TestExecutionService` truyền `autoIncludedIds` xuống để đánh dấu đúng lúc lưu từng kết quả, `TestExecutionResponse.from()` tính lại `autoIncludedTestCaseIds` từ chính danh sách `TestResult` đã lưu thay vì hardcode
+
+**Frontend**
+- [x] `TestCaseFormDialog.tsx`: khối "Phụ thuộc dữ liệu" — gọi gợi ý khi mở ở chế độ sửa, banner "Áp dụng" theo từng tham số chưa có dependency; gán thủ công (dropdown toàn bộ test case trong project trừ chính nó, nhập JSONPath + placeholder); chặn cycle phía client bằng DFS trên dữ liệu `dependencies` đã tải kèm mỗi test case; hiện danh sách placeholder khả dụng phát hiện từ `resolvedPath`/`requestBody`/`requestHeaders` để giảm gõ sai tên
+- [x] `TestExecutionPage.tsx` (làm ở Module 6, đã có sẵn từ đầu): banner "N test case phụ trợ tự động chạy kèm" khi có `autoIncludedTestCaseIds`, badge `BLOCKED`/`SKIPPED`
+
+**Mốc xác nhận:** `./mvnw test` xanh — gồm `TestExecutionServiceTest` (BFS auto-include, cycle giữa 2 test case chọn tường minh, `DELETE` luôn xếp cuối dù `createdAt` sớm hơn), `TestExecutionRunnerTest` (dependency PASSED dùng giá trị thật thay fallback, dependency nguồn fail → consumer `BLOCKED` không gọi target API, kết quả `TestResult.autoIncluded` đánh dấu đúng), `DependencySuggestionServiceTest` (tham số cuối path lẫn giữa path lồng nhau), guard `TestCaseHasDependentsException` ở cả `TestCaseServiceTest`/`TestCaseGenerationServiceTest`. `npx tsc --noEmit` sạch, `npm run build` thành công. **Đã verify bằng Playwright E2E thật**: sinh test case cho `POST /pet` trước, `GET /pet/{petId}` sau → mở test case Positive của `GET /pet/{petId}` → gợi ý liên kết tới `POST /pet` xuất hiện đúng → bấm Áp dụng → chỉ chọn chạy test tiêu thụ → banner "1 test case phụ trợ đã tự động chạy kèm" hiện đúng → hệ thống tự kéo theo test nguồn chạy trước. Lần chạy thật gặp đúng trường hợp Petstore demo trả `500` cho `POST /pet` — xác nhận `BLOCKED` lan truyền đúng sang `GET /pet/{petId}` (nguồn không `PASSED` nên không gọi target API với ID giả), đúng thiết kế. Phát hiện + fix 1 bug thật trong lúc E2E (xem bullet backend phía trên). Chưa thử được case `PASSED` cả 2 (phụ thuộc Petstore demo công khai trả 200 cho `POST /pet`, ngoài tầm kiểm soát) và case `DELETE`/409 — cơ chế đã có unit test bao phủ đầy đủ, chỉ chưa tự tay click qua UI.
+
+---
+
+## 8. Lịch sử & Dashboard
+*Phụ thuộc: Module 6, 7*
 
 **Backend**
 - [ ] Lưu lịch sử TestExecution/TestResult
@@ -174,8 +208,8 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 
 ---
 
-## 8. AI phân tích lỗi (Stretch — làm nếu còn thời gian)
-*Phụ thuộc: Module 7*
+## 9. AI phân tích lỗi (Stretch — làm nếu còn thời gian)
+*Phụ thuộc: Module 8*
 
 **Backend**
 - [ ] Prompt template `backend/src/main/resources/prompts/analyze-response.st`, giải thích nguyên nhân lỗi
@@ -186,8 +220,8 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 
 ---
 
-## 9. Hoàn thiện & Demo
-*Phụ thuộc: tất cả module MVP (1-7) đã xong*
+## 10. Hoàn thiện & Demo
+*Phụ thuộc: tất cả module MVP (1-8) đã xong*
 
 - [ ] Polish UI, fix bug toàn luồng
 - [ ] Viết tài liệu kỹ thuật
