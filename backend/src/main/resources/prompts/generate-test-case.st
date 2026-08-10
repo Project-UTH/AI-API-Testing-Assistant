@@ -40,13 +40,22 @@ Quy tắc riêng cho resolvedPath và pathParamFallbacks (path tham số dạng 
   thay vào vị trí tham số đó (không dùng {{ }}), ví dụ resolvedPath "/pet/999999999" hoặc
   "/pet/khong-hop-le"; pathParamFallbacks có thể để object rỗng {} cho test case này.
 - resolvedPath không bao giờ được để sót dạng 1-dấu-ngoặc {tenThamSo} chưa được thay.
+- BẮT BUỘC: resolvedPath phải giữ NGUYÊN VẸN mọi segment tĩnh (không phải tham số) của Path, kể cả
+  segment tĩnh nằm SAU tham số path. Ví dụ Path "/pet/{petId}/uploadImage" (segment "uploadImage"
+  nằm sau tham số) -> resolvedPath PHẢI là "/pet/{{petId}}/uploadImage", TUYỆT ĐỐI không được rút
+  gọn/bỏ sót thành "/pet/{{petId}}" - làm sai sẽ gọi nhầm sang endpoint khác hoàn toàn (endpoint
+  không tồn tại hoặc tồn tại nhưng dùng cho mục đích khác), khiến request luôn thất bại.
 
 Quy tắc cho tham số query (parameters có "in": "query" trong định nghĩa OpenAPI):
 - Endpoint OpenAPI KHÔNG khai báo request body cho những tham số này (chúng không nằm trong
-  requestBody) - chúng phải được gắn vào resolvedPath dưới dạng query string, dùng ĐÚNG cùng cú
-  pháp {{tenThamSo}} như tham số path, ví dụ Path "/pet/{petId}" với query "name", "status" ->
-  resolvedPath "/pet/{{petId}}?name={{name}}&status={{status}}". Tuyệt đối không bỏ sót query
-  parameter required rồi để requestBody/resolvedPath trống - endpoint sẽ báo lỗi thiếu tham số.
+  requestBody) - chúng phải được gắn vào NGAY SAU phần path đã đầy đủ (đã áp dụng đúng quy tắc giữ
+  nguyên segment tĩnh phía trên, kể cả segment tĩnh sau tham số path) dưới dạng query string, dùng
+  ĐÚNG cùng cú pháp {{tenThamSo}} như tham số path. Ví dụ Path "/pet/{petId}" với query "name",
+  "status" -> resolvedPath "/pet/{{petId}}?name={{name}}&status={{status}}". Ví dụ PHỨC TẠP HƠN -
+  Path "/pet/{petId}/stock" (có segment tĩnh "stock" sau tham số path) với query "quantity" ->
+  resolvedPath PHẢI là "/pet/{{petId}}/stock?quantity={{quantity}}", KHÔNG được bỏ sót "/stock"
+  thành "/pet/{{petId}}?quantity={{quantity}}". Tuyệt đối không bỏ sót query parameter required
+  rồi để requestBody/resolvedPath trống - endpoint sẽ báo lỗi thiếu tham số.
 - Áp dụng đúng logic như path param: nếu test case không cố ý kiểm tra sai giá trị của tham số
   query đó, dùng {{tenThamSo}} và thêm giá trị đoán hợp lý vào pathParamFallbacks (cùng object với
   path param, ví dụ {"petId": "1", "name": "Buddy", "status": "available"}). Nếu chính tham số
