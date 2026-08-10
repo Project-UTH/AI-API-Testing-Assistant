@@ -15,4 +15,7 @@ public interface EndpointRepository extends JpaRepository<Endpoint, UUID> {
     void deleteAllByProject(Project project);
 
     Optional<Endpoint> findByIdAndProject(UUID id, Project project);
+
+    // Dò endpoint "tạo resource" cùng path gốc - dùng cho gợi ý liên kết tự động (Module 7).
+    Optional<Endpoint> findByProjectAndPathAndMethod(Project project, String path, String method);
 }
