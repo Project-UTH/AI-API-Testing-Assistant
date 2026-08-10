@@ -11,7 +11,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "test_results")
+@Table(name = "test_results", uniqueConstraints = @UniqueConstraint(
+        name = "uk_test_results_execution_test_case", columnNames = {"execution_id", "test_case_id"}))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -31,7 +32,9 @@ public class TestResult {
     @JoinColumn(name = "execution_id", nullable = false)
     private TestExecution execution;
 
-    private Boolean passed;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private TestResultStatus status;
 
     private Integer responseStatus;
 
@@ -40,6 +43,11 @@ public class TestResult {
 
     @Column(columnDefinition = "TEXT")
     private String errorMessage;
+
+    /** True nếu test case này không nằm trong lựa chọn ban đầu, được kéo theo qua Test Data Chaining (Module 7). */
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean autoIncluded = false;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
