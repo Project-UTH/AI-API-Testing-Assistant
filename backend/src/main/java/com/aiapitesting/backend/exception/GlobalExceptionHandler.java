@@ -61,6 +61,18 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("TEST_CASE_NOT_FOUND", ex.getMessage()));
     }
 
+    @ExceptionHandler(TestExecutionNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleTestExecutionNotFound(TestExecutionNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiErrorResponse.of("TEST_EXECUTION_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(TestCaseHasDependentsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTestCaseHasDependents(TestCaseHasDependentsException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of("TEST_CASE_HAS_DEPENDENTS", ex.getMessage()));
+    }
+
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

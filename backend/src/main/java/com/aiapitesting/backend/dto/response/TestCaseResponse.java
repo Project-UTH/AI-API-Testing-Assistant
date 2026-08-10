@@ -4,6 +4,7 @@ import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record TestCaseResponse(
@@ -16,10 +17,17 @@ public record TestCaseResponse(
         String requestHeaders,
         String requestBody,
         Integer expectedStatus,
+        String resolvedPath,
+        String pathParamFallbacks,
         TestCaseSource source,
-        Instant createdAt
+        Instant createdAt,
+        List<TestCaseDependencyResponse> dependencies
 ) {
     public static TestCaseResponse from(TestCase testCase) {
+        return from(testCase, List.of());
+    }
+
+    public static TestCaseResponse from(TestCase testCase, List<TestCaseDependencyResponse> dependencies) {
         return new TestCaseResponse(
                 testCase.getId(),
                 testCase.getEndpoint().getId(),
@@ -30,8 +38,11 @@ public record TestCaseResponse(
                 testCase.getRequestHeaders(),
                 testCase.getRequestBody(),
                 testCase.getExpectedStatus(),
+                testCase.getResolvedPath(),
+                testCase.getPathParamFallbacks(),
                 testCase.getSource(),
-                testCase.getCreatedAt()
+                testCase.getCreatedAt(),
+                dependencies
         );
     }
 }
