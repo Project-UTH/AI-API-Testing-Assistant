@@ -38,6 +38,7 @@ export function ImportOpenApiDialog({
   const [file, setFile] = useState<File | null>(null)
   const [authType, setAuthType] = useState<TargetAuthType>("NONE")
   const [authValue, setAuthValue] = useState("")
+  const [targetBaseUrl, setTargetBaseUrl] = useState("")
 
   function resetForm() {
     setMode("url")
@@ -45,6 +46,7 @@ export function ImportOpenApiDialog({
     setFile(null)
     setAuthType("NONE")
     setAuthValue("")
+    setTargetBaseUrl("")
   }
 
   const mutation = useMutation({
@@ -54,6 +56,7 @@ export function ImportOpenApiDialog({
         file: mode === "file" ? (file ?? undefined) : undefined,
         authType: mode === "file" ? "NONE" : authType,
         authValue: mode === "file" ? "" : authValue,
+        targetBaseUrl,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
@@ -128,6 +131,21 @@ export function ImportOpenApiDialog({
               />
             </div>
           )}
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="target-base-url">Target Base URL (URL gọi API thật lúc chạy test)</Label>
+            <p className="text-xs text-muted-foreground">
+              Khác với URL/file phía trên (đó chỉ là nơi lấy tài liệu OpenAPI). Để trống nếu tài
+              liệu có khai báo <code>servers</code>, hệ thống sẽ tự dùng giá trị đó.
+            </p>
+            <Input
+              id="target-base-url"
+              type="url"
+              placeholder="https://api.example.com"
+              value={targetBaseUrl}
+              onChange={(e) => setTargetBaseUrl(e.target.value)}
+            />
+          </div>
 
           {mode === "url" ? (
             <div className="flex flex-col gap-2">
