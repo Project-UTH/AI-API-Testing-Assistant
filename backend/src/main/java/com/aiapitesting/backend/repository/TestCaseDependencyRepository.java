@@ -17,7 +17,17 @@ public interface TestCaseDependencyRepository extends JpaRepository<TestCaseDepe
     // nào đã có dependency rồi, không cần gợi ý lại.
     List<TestCaseDependency> findAllByTestCase(TestCase testCase);
 
-    void deleteAllByTestCase(TestCase testCase);
+    /**
+     * @Modifying bat buoc o day (khong the dung derived delete thuong) - saveDependencies() xoa
+     * roi insert lai dependency CHO CUNG 1 placeholder trong cung 1 transaction; derived delete
+     * mac dinh chi danh dau entity de xoa trong persistence context, con Hibernate flush THEO THU
+     * TU CO DINH (insert truoc, delete sau) bat ke thu tu goi trong code - khien insert dong moi
+     * dung y het (test_case_id, placeholder_name) voi dong sap bi xoa chay TRUOC, vi pham unique
+     * constraint. @Modifying ep chay bulk DELETE that ngay lap tuc, khong doi flush.
+     */
+    @Modifying
+    @Query("DELETE FROM TestCaseDependency tcd WHERE tcd.testCase = :testCase")
+    void deleteAllByTestCase(@Param("testCase") TestCase testCase);
 
     // Dọn trước khi bulk-xoá 1 tập test case cụ thể (regenerate AI - TestCaseGenerationService) -
     // các test case này có thể tự là consumer của dependency khác, không chỉ nguồn (đã chặn ở
