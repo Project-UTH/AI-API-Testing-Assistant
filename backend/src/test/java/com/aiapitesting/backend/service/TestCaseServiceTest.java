@@ -9,7 +9,9 @@ import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestResultRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +41,15 @@ class TestCaseServiceTest {
 
     @Mock
     private TestCaseRepository testCaseRepository;
+
+    @Mock
+    private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private TestResultRepository testResultRepository;
+
+    @Mock
+    private TestCasePathValidator testCasePathValidator;
 
     @InjectMocks
     private TestCaseService testCaseService;
@@ -80,7 +91,7 @@ class TestCaseServiceTest {
         when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TestCaseRequest request = new TestCaseRequest(
-                "Test thu cong", "mo ta", "{\"Content-Type\":\"application/json\"}", "{}", 400);
+                "Test thu cong", "mo ta", "{\"Content-Type\":\"application/json\"}", "{}", 400, null, null, null);
 
         TestCaseResponse response = testCaseService.create(projectId, endpointId, request);
 
@@ -98,7 +109,7 @@ class TestCaseServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.empty());
 
-        TestCaseRequest request = new TestCaseRequest("Ten", null, null, null, 200);
+        TestCaseRequest request = new TestCaseRequest("Ten", null, null, null, 200, null, null, null);
 
         assertThatThrownBy(() -> testCaseService.create(projectId, endpointId, request))
                 .isInstanceOf(EndpointNotFoundException.class);
@@ -114,7 +125,7 @@ class TestCaseServiceTest {
         when(testCaseRepository.findByIdAndEndpoint(testCaseId, endpoint)).thenReturn(Optional.of(existing));
         when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TestCaseRequest request = new TestCaseRequest("Ten moi", "mo ta moi", null, null, 404);
+        TestCaseRequest request = new TestCaseRequest("Ten moi", "mo ta moi", null, null, 404, null, null, null);
         TestCaseResponse response = testCaseService.update(projectId, endpointId, testCaseId, request);
 
         assertThat(response.name()).isEqualTo("Ten moi");
@@ -129,7 +140,7 @@ class TestCaseServiceTest {
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         when(testCaseRepository.findByIdAndEndpoint(testCaseId, endpoint)).thenReturn(Optional.empty());
 
-        TestCaseRequest request = new TestCaseRequest("Ten", null, null, null, 200);
+        TestCaseRequest request = new TestCaseRequest("Ten", null, null, null, 200, null, null, null);
 
         assertThatThrownBy(() -> testCaseService.update(projectId, endpointId, testCaseId, request))
                 .isInstanceOf(TestCaseNotFoundException.class);
@@ -146,6 +157,7 @@ class TestCaseServiceTest {
 
         testCaseService.delete(projectId, endpointId, testCaseId);
 
+        verify(testResultRepository).deleteAllByTestCase(existing);
         verify(testCaseRepository).delete(existing);
     }
 
@@ -157,5 +169,41 @@ class TestCaseServiceTest {
 
         assertThatThrownBy(() -> testCaseService.delete(projectId, endpointId, testCaseId))
                 .isInstanceOf(TestCaseNotFoundException.class);
+    }
+
+    @Test
+    void delete_hasDependents_throwsTestCaseHasDependentsAndDoesNotDelete() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        TestCase existing = TestCase.builder()
+                .id(testCaseId).endpoint(endpoint).name("Nguon").expectedStatus(200)
+                .source(TestCaseSource.MANUAL).build();
+        when(testCaseRepository.findByIdAndEndpoint(testCaseId, endpoint)).thenReturn(Optional.of(existing));
+
+        TestCase consumer = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).name("Test phu thuoc").build();
+        com.aiapitesting.backend.entity.TestCaseDependency dependency = com.aiapitesting.backend.entity.TestCaseDependency.builder()
+                .testCase(consumer).dependsOnTestCase(existing).jsonPath("$.id").placeholderName("petId").build();
+        when(testCaseDependencyRepository.findAllByDependsOnTestCaseIdIn(List.of(testCaseId)))
+                .thenReturn(List.of(dependency));
+
+        assertThatThrownBy(() -> testCaseService.delete(projectId, endpointId, testCaseId))
+                .isInstanceOf(com.aiapitesting.backend.exception.TestCaseHasDependentsException.class);
+
+        verify(testCaseRepository, org.mockito.Mockito.never()).delete(any());
+    }
+
+    @Test
+    void create_dependencyPlaceholderNotMatchingAnyToken_throwsInvalidRequest() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        com.aiapitesting.backend.dto.request.TestCaseDependencyInput badInput =
+                new com.aiapitesting.backend.dto.request.TestCaseDependencyInput(UUID.randomUUID(), "$.id", "petId");
+        TestCaseRequest request = new TestCaseRequest(
+                "Test", null, null, null, 200, "/pets", null, List.of(badInput));
+
+        assertThatThrownBy(() -> testCaseService.create(projectId, endpointId, request))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
     }
 }

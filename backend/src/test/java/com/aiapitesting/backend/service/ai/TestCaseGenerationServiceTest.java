@@ -9,8 +9,12 @@ import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.ProjectService;
+import com.aiapitesting.backend.service.TestCasePathValidator;
+import com.aiapitesting.backend.service.TestCaseService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,6 +57,18 @@ class TestCaseGenerationServiceTest {
     @Mock
     private TestCaseRepository testCaseRepository;
 
+    @Mock
+    private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private TestResultRepository testResultRepository;
+
+    @Mock
+    private TestCasePathValidator testCasePathValidator;
+
+    @Mock
+    private TestCaseService testCaseService;
+
     @InjectMocks
     private TestCaseGenerationService testCaseGenerationService;
 
@@ -83,10 +99,12 @@ class TestCaseGenerationServiceTest {
         stubAiResponse(List.of(
                 new TestCaseGenerationService.GeneratedTestCase(
                         "Positive - Tao user hop le", "mo ta",
-                        Map.of("Content-Type", "application/json"), "{\"email\":\"a@b.com\"}", 201),
+                        Map.of("Content-Type", "application/json"), "{\"email\":\"a@b.com\"}", 201,
+                        "/users", Map.of()),
                 new TestCaseGenerationService.GeneratedTestCase(
                         "Negative - Thieu email", "mo ta",
-                        Map.of("Content-Type", "application/json"), "{}", 400)
+                        Map.of("Content-Type", "application/json"), "{}", 400,
+                        "/users", Map.of())
         ));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -96,6 +114,9 @@ class TestCaseGenerationServiceTest {
         assertThat(result).hasSize(2);
         // Chỉ xoá-và-thay test case do AI sinh trước đó, không đụng tới test case tự thêm tay
         verify(testCaseRepository).deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
+        // Dọn TestResult + TestCaseDependency (phía consumer) trước khi xoá - tránh lỗi khoá ngoại 1451
+        verify(testResultRepository).deleteAllByTestCaseIn(anyList());
+        verify(testCaseDependencyRepository).deleteAllByTestCaseIn(anyList());
 
         ArgumentCaptor<List<TestCase>> savedCaptor = ArgumentCaptor.forClass(List.class);
         verify(testCaseRepository).saveAll(savedCaptor.capture());
@@ -121,7 +142,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new TestCaseGenerationService.GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 999)));
+                "Positive", "mo ta", Map.of(), "{}", 999, "/users", Map.of())));
 
         assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId))
                 .isInstanceOf(AiGenerationFailedException.class);
@@ -149,6 +170,27 @@ class TestCaseGenerationServiceTest {
 
         verifyNoInteractions(endpointRepository);
         verifyNoInteractions(testCaseRepository);
+    }
+
+    @Test
+    void generate_existingAiCaseHasDependents_blocksRegenerateBeforeDeleting() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        stubAiResponse(List.of(new TestCaseGenerationService.GeneratedTestCase(
+                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of())));
+
+        TestCase existingAiCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint)
+                .source(TestCaseSource.AI_GENERATED).build();
+        when(testCaseRepository.findAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED))
+                .thenReturn(List.of(existingAiCase));
+        org.mockito.Mockito.doThrow(new com.aiapitesting.backend.exception.TestCaseHasDependentsException("co nguoi phu thuoc"))
+                .when(testCaseService).ensureNoDependents(List.of(existingAiCase));
+
+        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId))
+                .isInstanceOf(com.aiapitesting.backend.exception.TestCaseHasDependentsException.class);
+
+        verify(testCaseRepository, never()).deleteAllByEndpointAndSource(any(), any());
+        verify(testCaseRepository, never()).saveAll(anyList());
     }
 
     @SuppressWarnings("unchecked")
