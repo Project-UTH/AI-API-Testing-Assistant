@@ -11,7 +11,11 @@ Mô tả: <summary>
 
 Yêu cầu:
 - Sinh từ 3 đến 6 test case, bao gồm:
-  1. Positive Test Case: ít nhất 1 case với dữ liệu hợp lệ đầy đủ, kỳ vọng thành công (2xx)
+  1. Positive Test Case: ít nhất 1 case với dữ liệu hợp lệ đầy đủ, kỳ vọng thành công (2xx).
+     BẮT BUỘC: đối chiếu đúng mảng "required" trong JSON Schema của requestBody (nếu schema có
+     khai báo) - requestBody phải chứa ĐỦ mọi field liệt kê trong "required", không được thiếu dù
+     chỉ 1 field (thiếu 1 field required sẽ khiến API trả lỗi 400 thay vì 2xx, làm sai mục đích
+     của Positive Test Case)
   2. Negative Test Case: ít nhất 1-2 case với dữ liệu không hợp lệ - thiếu trường bắt buộc,
      sai kiểu dữ liệu, hoặc giá trị null khi không cho phép - kỳ vọng 400
   3. Boundary Value Test Case: ít nhất 1 case với giá trị ở biên cho các trường có ràng buộc
