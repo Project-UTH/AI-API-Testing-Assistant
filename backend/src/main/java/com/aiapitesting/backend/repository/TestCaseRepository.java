@@ -22,7 +22,19 @@ public interface TestCaseRepository extends JpaRepository<TestCase, UUID> {
     @Query("SELECT tc FROM TestCase tc JOIN FETCH tc.endpoint WHERE tc.id = :id AND tc.endpoint = :endpoint")
     Optional<TestCase> findByIdAndEndpoint(@Param("id") UUID id, @Param("endpoint") Endpoint endpoint);
 
+    // JOIN FETCH endpoint để entity còn dùng được (RestAssuredTestRunner đọc endpoint.getMethod())
+    // sau khi băng qua @Async - entity truyền vào luồng khác, session gốc đã đóng.
+    @Query("SELECT tc FROM TestCase tc JOIN FETCH tc.endpoint WHERE tc.id IN :ids AND tc.endpoint.project = :project")
+    List<TestCase> findAllByIdInAndEndpointProject(@Param("ids") List<UUID> ids, @Param("project") Project project);
+
     void deleteAllByEndpointAndSource(Endpoint endpoint, TestCaseSource source);
+
+    // Lấy trước danh sách sắp bị xoá bởi deleteAllByEndpointAndSource - để guard kiểm tra
+    // TestCaseDependency trước khi xoá thật (chặn regenerate nếu còn ai phụ thuộc).
+    List<TestCase> findAllByEndpointAndSource(Endpoint endpoint, TestCaseSource source);
+
+    // Dùng cho gợi ý liên kết tự động (Module 7) - lấy test case 2xx tạo sớm nhất của 1 endpoint.
+    List<TestCase> findAllByEndpointOrderByCreatedAtAsc(Endpoint endpoint);
 
     void deleteAllByEndpointProject(Project project);
 

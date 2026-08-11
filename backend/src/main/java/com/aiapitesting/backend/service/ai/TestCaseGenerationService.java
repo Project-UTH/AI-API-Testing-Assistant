@@ -8,8 +8,12 @@ import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.ProjectService;
+import com.aiapitesting.backend.service.TestCasePathValidator;
+import com.aiapitesting.backend.service.TestCaseService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +52,10 @@ public class TestCaseGenerationService {
     private final ProjectService projectService;
     private final EndpointRepository endpointRepository;
     private final TestCaseRepository testCaseRepository;
+    private final TestCaseDependencyRepository testCaseDependencyRepository;
+    private final TestResultRepository testResultRepository;
+    private final TestCasePathValidator testCasePathValidator;
+    private final TestCaseService testCaseService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("classpath:prompts/generate-test-case.st")
@@ -75,7 +83,16 @@ public class TestCaseGenerationService {
         }
         validate(generated);
 
-        // Chỉ xoá-và-thay test case do AI sinh trước đó - giữ nguyên test case người dùng tự thêm tay
+        // Chặn regenerate nếu còn test case khác (kể cả ở endpoint khác) đang phụ thuộc dữ liệu từ
+        // 1 trong các test case AI_GENERATED sắp bị xoá (Test Data Chaining, Module 7).
+        List<TestCase> existingAiCases = testCaseRepository.findAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
+        testCaseService.ensureNoDependents(existingAiCases);
+
+        // Chỉ xoá-và-thay test case do AI sinh trước đó - giữ nguyên test case người dùng tự thêm tay.
+        // Dọn TestResult + TestCaseDependency (phía consumer - chính các test case này có thể tự phụ
+        // thuộc nguồn khác) trước khi xoá, tránh lỗi khoá ngoại 1451 (cùng loại đã fix ở TestCaseService.delete()).
+        testResultRepository.deleteAllByTestCaseIn(existingAiCases);
+        testCaseDependencyRepository.deleteAllByTestCaseIn(existingAiCases);
         testCaseRepository.deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
         List<TestCase> saved = testCaseRepository.saveAll(generated.stream()
                 .map(g -> toEntity(endpoint, g)).toList());
@@ -116,6 +133,10 @@ public class TestCaseGenerationService {
                     || testCase.expectedStatus() > MAX_STATUS) {
                 throw new AiGenerationFailedException("AI trả về mã trạng thái HTTP không hợp lệ");
             }
+            testCasePathValidator.validate(
+                    testCase.resolvedPath(),
+                    writeFallbacksAsJson(testCase.pathParamFallbacks()),
+                    AiGenerationFailedException::new);
         }
     }
 
@@ -127,6 +148,8 @@ public class TestCaseGenerationService {
                 .requestHeaders(writeHeadersAsJson(generated.requestHeaders()))
                 .requestBody(generated.requestBody())
                 .expectedStatus(generated.expectedStatus())
+                .resolvedPath(generated.resolvedPath())
+                .pathParamFallbacks(writeFallbacksAsJson(generated.pathParamFallbacks()))
                 .source(TestCaseSource.AI_GENERATED)
                 .build();
     }
@@ -142,12 +165,25 @@ public class TestCaseGenerationService {
         }
     }
 
+    private String writeFallbacksAsJson(Map<String, String> pathParamFallbacks) {
+        if (pathParamFallbacks == null || pathParamFallbacks.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(pathParamFallbacks);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     record GeneratedTestCase(
             String name,
             String description,
             Map<String, String> requestHeaders,
             String requestBody,
-            Integer expectedStatus
+            Integer expectedStatus,
+            String resolvedPath,
+            Map<String, String> pathParamFallbacks
     ) {
     }
 }

@@ -36,7 +36,8 @@ public class EndpointController {
             @RequestParam(required = false) String url,
             @RequestParam(required = false) MultipartFile file,
             @RequestParam(required = false) TargetAuthType authType,
-            @RequestParam(required = false) String authValue
+            @RequestParam(required = false) String authValue,
+            @RequestParam(required = false) String targetBaseUrl
     ) {
         boolean hasUrl = url != null && !url.isBlank();
         boolean hasFile = file != null && !file.isEmpty();
@@ -46,8 +47,8 @@ public class EndpointController {
         }
 
         List<EndpointResponse> imported = hasUrl
-                ? endpointImportService.importFromUrl(projectId, url, authType, authValue)
-                : endpointImportService.importFromFile(projectId, file, authType, authValue);
+                ? endpointImportService.importFromUrl(projectId, url, authType, authValue, targetBaseUrl)
+                : endpointImportService.importFromFile(projectId, file, authType, authValue, targetBaseUrl);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(imported));
     }
