@@ -41,6 +41,14 @@ public class Project {
     @Column(name = "target_auth_value_encrypted", columnDefinition = "TEXT")
     private String targetAuthValueEncrypted;
 
+    /**
+     * Base URL của API thật sẽ gọi lúc thực thi test (Module 6) - khác hoàn toàn với URL người
+     * dùng nhập lúc import (đó là vị trí tài liệu OpenAPI, có thể khác domain). Suy ra từ
+     * openApi.getServers() lúc import nếu có, hoặc người dùng tự nhập tay.
+     */
+    @Column(name = "target_base_url")
+    private String targetBaseUrl;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

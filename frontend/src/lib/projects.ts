@@ -1,10 +1,18 @@
 import { apiFetch, apiFetchPaged, type PagedResult } from "@/lib/api"
+import type { TargetAuthType } from "@/lib/endpoints"
 
 export interface Project {
   id: string
   name: string
   description: string | null
   createdAt: string
+  targetBaseUrl: string | null
+  targetAuthType: TargetAuthType
+}
+
+export interface TargetAuthUpdateInput {
+  authType: TargetAuthType
+  authValue?: string
 }
 
 export interface ProjectInput {
@@ -37,5 +45,12 @@ export function updateProject(id: string, input: ProjectInput): Promise<Project>
 export function deleteProject(id: string): Promise<void> {
   return apiFetch<void>(`/projects/${id}`, {
     method: "DELETE",
+  })
+}
+
+export function updateTargetAuth(id: string, input: TargetAuthUpdateInput): Promise<Project> {
+  return apiFetch<Project>(`/projects/${id}/target-auth`, {
+    method: "PUT",
+    body: JSON.stringify(input),
   })
 }

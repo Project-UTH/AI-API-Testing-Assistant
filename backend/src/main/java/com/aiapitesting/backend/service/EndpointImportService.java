@@ -5,14 +5,18 @@ import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
-import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionRepository;
+import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
+import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
+import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
@@ -38,26 +42,34 @@ public class EndpointImportService {
     private final ProjectService projectService;
     private final EndpointRepository endpointRepository;
     private final TestCaseRepository testCaseRepository;
+    private final TestResultRepository testResultRepository;
+    private final TestExecutionRepository testExecutionRepository;
+    private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final SafeUrlFetcher safeUrlFetcher;
     private final AesEncryptionService aesEncryptionService;
+    private final TargetAuthHeaderResolver targetAuthHeaderResolver;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
-    public List<EndpointResponse> importFromUrl(UUID projectId, String url, TargetAuthType authType, String authValue) {
-        validateAuthValue(authType, authValue);
+    public List<EndpointResponse> importFromUrl(
+            UUID projectId, String url, TargetAuthType authType, String authValue, String targetBaseUrl
+    ) {
+        projectService.validateTargetAuthValue(authType, authValue);
         String content = fetchUrlContent(url, authType, authValue);
-        return doImport(projectId, content, authType, authValue);
+        return doImport(projectId, content, authType, authValue, targetBaseUrl);
     }
 
     @Transactional
-    public List<EndpointResponse> importFromFile(UUID projectId, MultipartFile file, TargetAuthType authType, String authValue) {
+    public List<EndpointResponse> importFromFile(
+            UUID projectId, MultipartFile file, TargetAuthType authType, String authValue, String targetBaseUrl
+    ) {
         String content;
         try {
             content = new String(file.getBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new SwaggerParseException("Không thể đọc file đã tải lên");
         }
-        return doImport(projectId, content, authType, authValue);
+        return doImport(projectId, content, authType, authValue, targetBaseUrl);
     }
 
     public PageResponse<EndpointResponse> list(UUID projectId, Pageable pageable) {
@@ -74,18 +86,31 @@ public class EndpointImportService {
                 EndpointResponse.from(endpoint, testCaseCountByEndpointId.getOrDefault(endpoint.getId(), 0L)));
     }
 
-    private List<EndpointResponse> doImport(UUID projectId, String content, TargetAuthType authType, String authValue) {
+    private List<EndpointResponse> doImport(
+            UUID projectId, String content, TargetAuthType authType, String authValue, String targetBaseUrl
+    ) {
         Project project = projectService.getOwnedProject(projectId);
         applyAuthConfig(project, authType, authValue);
 
         ParseOptions options = new ParseOptions();
         options.setResolve(true);
+        // setResolve(true) chỉ resolve $ref TRỎ RA NGOÀI file (multi-file spec) - $ref nội bộ dạng
+        // "#/components/schemas/..." vẫn giữ nguyên dạng {"$ref": "..."} khi serialize Operation,
+        // khiến AI sinh test case KHÔNG THẤY được field/required nào của requestBody (chỉ thấy 1
+        // chuỗi $ref vô nghĩa với nó) - đây là nguyên nhân AI hay thiếu field bắt buộc. setResolveFully
+        // mới thật sự inline properties/required/type vào ngay trong cây Operation trước khi serialize.
+        options.setResolveFully(true);
         SwaggerParseResult result = new OpenAPIV3Parser().readContents(content, null, options);
         OpenAPI openApi = result.getOpenAPI();
 
         if (openApi == null || openApi.getPaths() == null || openApi.getPaths().isEmpty()) {
             throw new SwaggerParseException("Không parse được nội dung OpenAPI đã cung cấp");
         }
+
+        // targetBaseUrl (nơi gọi API thật lúc thực thi test, Module 6) khác hoàn toàn với `content`
+        // đang parse ở đây (tài liệu OpenAPI, có thể host ở domain khác) - ưu tiên giá trị người
+        // dùng tự nhập, chỉ suy ra từ servers[] của chính spec khi người dùng để trống.
+        project.setTargetBaseUrl(resolveTargetBaseUrl(targetBaseUrl, openApi));
 
         List<Endpoint> endpoints = new ArrayList<>();
         openApi.getPaths().forEach((path, pathItem) ->
@@ -96,27 +121,44 @@ public class EndpointImportService {
             throw new SwaggerParseException("Tài liệu OpenAPI không chứa endpoint nào");
         }
 
-        // Xoá test case của các endpoint cũ trước - endpoint_id là khoá ngoại NOT NULL, xoá endpoint
-        // trước khi test case còn tham chiếu tới sẽ vi phạm khoá ngoại (lỗi MySQL 1451)
+        // Dọn TestResult/TestExecution/TestCaseDependency/test case của các endpoint cũ trước khi
+        // xoá endpoint - đều là khoá ngoại NOT NULL, xoá endpoint trước khi còn bị tham chiếu sẽ vi
+        // phạm khoá ngoại (lỗi MySQL 1451, đã gặp 2 lần với endpoints/test_cases, nay thêm
+        // test_results/test_case_dependencies)
+        testResultRepository.deleteAllByTestCaseEndpointProject(project);
+        testExecutionRepository.deleteAllByProject(project);
+        testCaseDependencyRepository.deleteAllByProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         List<Endpoint> saved = endpointRepository.saveAll(endpoints);
         return saved.stream().map(EndpointResponse::from).toList();
     }
 
+    private String resolveTargetBaseUrl(String targetBaseUrl, OpenAPI openApi) {
+        if (targetBaseUrl != null && !targetBaseUrl.isBlank()) {
+            return targetBaseUrl;
+        }
+        // Theo chuẩn OpenAPI 3.0, spec không khai báo `servers` thì swagger-parser tự điền 1 server
+        // mặc định url "/" (relative) - không dùng được làm base URL gọi API thật, chỉ nhận URL
+        // tuyệt đối (http/https) làm gợi ý.
+        List<Server> servers = openApi.getServers();
+        if (servers != null && !servers.isEmpty()) {
+            String url = servers.get(0).getUrl();
+            if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
+                return url;
+            }
+        }
+        return null;
+    }
+
+    /** authType NONE nghĩa là "giữ nguyên auth hiện có" ở đây (khác updateTargetAuth - nơi NONE là xoá thật). */
     private void applyAuthConfig(Project project, TargetAuthType authType, String authValue) {
-        validateAuthValue(authType, authValue);
+        projectService.validateTargetAuthValue(authType, authValue);
         if (authType == null || authType == TargetAuthType.NONE) {
             return;
         }
         project.setTargetAuthType(authType);
         project.setTargetAuthValueEncrypted(aesEncryptionService.encrypt(authValue));
-    }
-
-    private void validateAuthValue(TargetAuthType authType, String authValue) {
-        if (authType != null && authType != TargetAuthType.NONE && (authValue == null || authValue.isBlank())) {
-            throw new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn");
-        }
     }
 
     /**
@@ -125,14 +167,11 @@ public class EndpointImportService {
      * xác thực nào khác ngoài giá trị người dùng đã cung cấp.
      */
     private String fetchUrlContent(String url, TargetAuthType authType, String authValue) {
-        if (authType == null || authType == TargetAuthType.NONE) {
+        TargetAuthHeaderResolver.AuthHeader header = targetAuthHeaderResolver.resolve(authType, authValue);
+        if (header == null) {
             return safeUrlFetcher.fetch(url);
         }
-        return switch (authType) {
-            case BEARER_TOKEN -> safeUrlFetcher.fetch(url, "Authorization", "Bearer " + authValue);
-            case API_KEY -> safeUrlFetcher.fetch(url, "X-API-Key", authValue);
-            case NONE -> safeUrlFetcher.fetch(url);
-        };
+        return safeUrlFetcher.fetch(url, header.name(), header.value());
     }
 
     private Endpoint buildEndpoint(Project project, String path, String method, Operation operation) {

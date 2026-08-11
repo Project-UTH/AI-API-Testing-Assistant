@@ -2,6 +2,26 @@ import { apiFetch } from "@/lib/api"
 
 export type TestCaseSource = "AI_GENERATED" | "MANUAL"
 
+export interface TestCaseDependency {
+  dependsOnTestCaseId: string
+  dependsOnTestCaseName: string
+  jsonPath: string
+  placeholderName: string
+}
+
+export interface TestCaseDependencyInput {
+  dependsOnTestCaseId: string
+  jsonPath: string
+  placeholderName: string
+}
+
+export interface DependencySuggestion {
+  paramName: string
+  sourceTestCaseId: string
+  sourceLabel: string
+  suggestedJsonPath: string
+}
+
 export interface TestCase {
   id: string
   endpointId: string
@@ -12,8 +32,11 @@ export interface TestCase {
   requestHeaders: string | null
   requestBody: string | null
   expectedStatus: number
+  resolvedPath: string | null
+  pathParamFallbacks: string | null
   source: TestCaseSource
   createdAt: string
+  dependencies: TestCaseDependency[]
 }
 
 export interface TestCaseInput {
@@ -22,6 +45,9 @@ export interface TestCaseInput {
   requestHeaders?: string
   requestBody?: string
   expectedStatus: number
+  resolvedPath?: string
+  pathParamFallbacks?: string
+  dependencies?: TestCaseDependencyInput[]
 }
 
 export function generateTestCases(projectId: string, endpointId: string): Promise<TestCase[]> {
@@ -65,4 +91,14 @@ export function deleteTestCase(
   return apiFetch<void>(`/projects/${projectId}/endpoints/${endpointId}/test-cases/${testCaseId}`, {
     method: "DELETE",
   })
+}
+
+export function getDependencySuggestions(
+  projectId: string,
+  endpointId: string,
+  testCaseId: string
+): Promise<DependencySuggestion[]> {
+  return apiFetch<DependencySuggestion[]>(
+    `/projects/${projectId}/endpoints/${endpointId}/test-cases/${testCaseId}/dependency-suggestions`
+  )
 }

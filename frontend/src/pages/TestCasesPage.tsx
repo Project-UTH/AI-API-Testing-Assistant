@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react"
-import { Link, useParams, useSearchParams } from "react-router-dom"
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, Loader2, Pencil, Play, Plus, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
+import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
 import { listTestCases, type TestCase } from "@/lib/testcases"
+import { triggerExecution } from "@/lib/executions"
 import { TestCaseFormDialog } from "@/components/testcases/TestCaseFormDialog"
 import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialog"
 
@@ -29,12 +32,14 @@ const SOURCE_STYLES: Record<TestCase["source"], string> = {
 interface FormState {
   open: boolean
   endpointId: string
+  endpointPath: string
   testCase: TestCase | null
 }
 
 export function TestCasesPage() {
   const { id } = useParams<{ id: string }>()
   const projectId = id!
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const endpointFilter = searchParams.get("endpointId") ?? ""
 
@@ -53,10 +58,14 @@ export function TestCasesPage() {
   const [formState, setFormState] = useState<FormState>({
     open: false,
     endpointId: "",
+    endpointPath: "",
     testCase: null,
   })
   const [deleteTarget, setDeleteTarget] = useState<TestCase | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isRunning, setIsRunning] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
 
   const testCasesByEndpoint = useMemo(() => {
     const map = new Map<string, TestCase[]>()
@@ -72,17 +81,47 @@ export function TestCasesPage() {
     ? endpoints.filter((endpoint) => endpoint.id === endpointFilter)
     : endpoints
 
-  function openCreate(endpointId: string) {
-    setFormState({ open: true, endpointId, testCase: null })
+  function openCreate(endpointId: string, endpointPath: string) {
+    setFormState({ open: true, endpointId, endpointPath, testCase: null })
   }
 
   function openEdit(testCase: TestCase) {
-    setFormState({ open: true, endpointId: testCase.endpointId, testCase })
+    setFormState({
+      open: true,
+      endpointId: testCase.endpointId,
+      endpointPath: testCase.endpointPath,
+      testCase,
+    })
   }
 
   function openDelete(testCase: TestCase) {
     setDeleteTarget(testCase)
     setDeleteOpen(true)
+  }
+
+  function toggleSelect(testCaseId: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) {
+        next.add(testCaseId)
+      } else {
+        next.delete(testCaseId)
+      }
+      return next
+    })
+  }
+
+  async function handleRun() {
+    setRunError(null)
+    setIsRunning(true)
+    try {
+      const execution = await triggerExecution(projectId, Array.from(selectedIds))
+      navigate(`/projects/${projectId}/executions/${execution.id}`)
+    } catch (error) {
+      setRunError(error instanceof ApiError ? error.message : "Đã xảy ra lỗi, vui lòng thử lại")
+    } finally {
+      setIsRunning(false)
+    }
   }
 
   return (
@@ -94,22 +133,30 @@ export function TestCasesPage() {
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold">Test Case</h1>
-        <select
-          className={selectClassName}
-          value={endpointFilter}
-          onChange={(e) => {
-            const value = e.target.value
-            setSearchParams(value ? { endpointId: value } : {})
-          }}
-        >
-          <option value="">Tất cả endpoint</option>
-          {endpoints.map((endpoint) => (
-            <option key={endpoint.id} value={endpoint.id}>
-              {endpoint.method} {endpoint.path}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className={selectClassName}
+            value={endpointFilter}
+            onChange={(e) => {
+              const value = e.target.value
+              setSearchParams(value ? { endpointId: value } : {})
+            }}
+          >
+            <option value="">Tất cả endpoint</option>
+            {endpoints.map((endpoint) => (
+              <option key={endpoint.id} value={endpoint.id}>
+                {endpoint.method} {endpoint.path}
+              </option>
+            ))}
+          </select>
+          <Button size="sm" disabled={selectedIds.size === 0 || isRunning} onClick={handleRun}>
+            {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            Chạy Test {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
+          </Button>
+        </div>
       </div>
+
+      {runError && <p className="mt-2 text-sm text-destructive">{runError}</p>}
 
       {isLoading && <p className="mt-6 text-muted-foreground">Đang tải...</p>}
 
@@ -138,7 +185,7 @@ export function TestCasesPage() {
                   </span>
                   <span className="truncate font-mono text-sm">{endpoint.path}</span>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => openCreate(endpoint.id)}>
+                <Button size="sm" variant="outline" onClick={() => openCreate(endpoint.id, endpoint.path)}>
                   <Plus className="h-4 w-4" />
                   Thêm test case
                 </Button>
@@ -153,6 +200,10 @@ export function TestCasesPage() {
                       key={testCase.id}
                       className="flex items-center gap-3 rounded-md border border-border p-2"
                     >
+                      <Checkbox
+                        checked={selectedIds.has(testCase.id)}
+                        onCheckedChange={(checked) => toggleSelect(testCase.id, checked === true)}
+                      />
                       <span
                         className={cn(
                           "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium",
@@ -185,6 +236,7 @@ export function TestCasesPage() {
         onOpenChange={(open) => setFormState((prev) => ({ ...prev, open }))}
         projectId={projectId}
         endpointId={formState.endpointId}
+        endpointPath={formState.endpointPath}
         testCase={formState.testCase}
       />
 

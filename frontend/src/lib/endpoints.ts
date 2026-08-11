@@ -16,6 +16,8 @@ export interface ImportOpenApiInput {
   file?: File
   authType?: TargetAuthType
   authValue?: string
+  /** Base URL của API thật sẽ gọi lúc thực thi test - khác với `url` (vị trí tài liệu OpenAPI). */
+  targetBaseUrl?: string
 }
 
 export function listEndpoints(projectId: string): Promise<PagedResult<Endpoint>> {
@@ -30,6 +32,7 @@ export function importOpenApi(projectId: string, input: ImportOpenApiInput): Pro
     formData.append("authType", input.authType)
     if (input.authValue) formData.append("authValue", input.authValue)
   }
+  if (input.targetBaseUrl) formData.append("targetBaseUrl", input.targetBaseUrl)
 
   return apiFetch<Endpoint[]>(`/projects/${projectId}/endpoints/import`, {
     method: "POST",

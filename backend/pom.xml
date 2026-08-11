@@ -39,6 +39,25 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
+			<!-- rest-assured 5.5.1 khong khai bao version groovy co dinh, Maven tu chon ban moi
+			     nhat co trong repo (groovy 5.0.6) - ban nay khong tuong thich voi engine Groovy noi
+			     bo cua rest-assured (loi NullPointerException sau trong ClosureMetaClass khi goi
+			     request thuc te). Ghim ve nhanh Groovy 4.0.x da duoc rest-assured kiem thu. -->
+			<dependency>
+				<groupId>org.apache.groovy</groupId>
+				<artifactId>groovy</artifactId>
+				<version>4.0.28</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.groovy</groupId>
+				<artifactId>groovy-xml</artifactId>
+				<version>4.0.28</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.groovy</groupId>
+				<artifactId>groovy-json</artifactId>
+				<version>4.0.28</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 	<dependencies>
@@ -94,6 +113,11 @@
 			<groupId>io.swagger.parser.v3</groupId>
 			<artifactId>swagger-parser</artifactId>
 			<version>2.1.22</version>
+		</dependency>
+		<dependency>
+			<groupId>io.rest-assured</groupId>
+			<artifactId>rest-assured</artifactId>
+			<version>5.5.1</version>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

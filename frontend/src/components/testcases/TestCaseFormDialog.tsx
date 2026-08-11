@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useMemo, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,14 +15,63 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ApiError } from "@/lib/api"
-import { createTestCase, updateTestCase, type TestCase } from "@/lib/testcases"
+import {
+  createTestCase,
+  getDependencySuggestions,
+  listTestCases,
+  updateTestCase,
+  type TestCase,
+  type TestCaseDependencyInput,
+} from "@/lib/testcases"
 
 interface TestCaseFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
   endpointId: string
+  /** Path gốc của endpoint (có thể còn {tenThamSo} dạng OpenAPI) - dùng prefill resolvedPath khi tạo mới. */
+  endpointPath: string
   testCase?: TestCase | null
+}
+
+interface LocalDependency extends TestCaseDependencyInput {
+  /** Chỉ để hiển thị trong danh sách, không gửi lên backend. */
+  label: string
+}
+
+const PLACEHOLDER_TOKEN = /\{\{(\w+)\}\}/g
+
+function extractPlaceholders(text: string): string[] {
+  const names = new Set<string>()
+  for (const match of text.matchAll(PLACEHOLDER_TOKEN)) {
+    names.add(match[1])
+  }
+  return Array.from(names)
+}
+
+function wouldCreateCycle(
+  allTestCases: TestCase[],
+  currentId: string,
+  candidateSourceId: string,
+  localDeps: LocalDependency[]
+): boolean {
+  const graph = new Map<string, string[]>()
+  for (const tc of allTestCases) {
+    graph.set(tc.id, tc.dependencies.map((d) => d.dependsOnTestCaseId))
+  }
+  graph.set(currentId, [...localDeps.map((d) => d.dependsOnTestCaseId), candidateSourceId])
+
+  const visited = new Set<string>()
+  function dfs(id: string): boolean {
+    if (visited.has(id)) return false
+    visited.add(id)
+    for (const dep of graph.get(id) ?? []) {
+      if (dep === currentId) return true
+      if (dfs(dep)) return true
+    }
+    return false
+  }
+  return dfs(currentId)
 }
 
 export function TestCaseFormDialog({
@@ -29,6 +79,7 @@ export function TestCaseFormDialog({
   onOpenChange,
   projectId,
   endpointId,
+  endpointPath,
   testCase,
 }: TestCaseFormDialogProps) {
   const queryClient = useQueryClient()
@@ -38,6 +89,14 @@ export function TestCaseFormDialog({
   const [requestHeaders, setRequestHeaders] = useState("")
   const [requestBody, setRequestBody] = useState("")
   const [expectedStatus, setExpectedStatus] = useState("200")
+  const [resolvedPath, setResolvedPath] = useState("")
+  const [pathParamFallbacks, setPathParamFallbacks] = useState("")
+  const [dependencies, setDependencies] = useState<LocalDependency[]>([])
+  const [depFormError, setDepFormError] = useState<string | null>(null)
+
+  const [newDepSourceId, setNewDepSourceId] = useState("")
+  const [newDepJsonPath, setNewDepJsonPath] = useState("$.id")
+  const [newDepPlaceholder, setNewDepPlaceholder] = useState("")
 
   useEffect(() => {
     if (open) {
@@ -46,8 +105,49 @@ export function TestCaseFormDialog({
       setRequestHeaders(testCase?.requestHeaders ?? "")
       setRequestBody(testCase?.requestBody ?? "")
       setExpectedStatus(testCase ? String(testCase.expectedStatus) : "200")
+      setResolvedPath(testCase?.resolvedPath ?? endpointPath)
+      setPathParamFallbacks(testCase?.pathParamFallbacks ?? "")
+      setDependencies(
+        (testCase?.dependencies ?? []).map((d) => ({
+          dependsOnTestCaseId: d.dependsOnTestCaseId,
+          jsonPath: d.jsonPath,
+          placeholderName: d.placeholderName,
+          label: d.dependsOnTestCaseName,
+        }))
+      )
+      setNewDepSourceId("")
+      setNewDepJsonPath("$.id")
+      setNewDepPlaceholder("")
+      setDepFormError(null)
     }
-  }, [open, testCase])
+  }, [open, testCase, endpointPath])
+
+  // Toàn bộ test case trong project - dùng làm danh sách chọn nguồn (không giới hạn theo endpoint
+  // hiện tại) và để chặn phụ thuộc vòng phía client.
+  const { data: allTestCases } = useQuery({
+    queryKey: ["test-cases", projectId],
+    queryFn: () => listTestCases(projectId),
+    enabled: open,
+  })
+  const candidateSources = (allTestCases ?? []).filter((tc) => tc.id !== testCase?.id)
+
+  // Gợi ý tự động chỉ có ý nghĩa khi sửa (đã có resolvedPath để phân tích) - không gọi lúc tạo mới.
+  const { data: suggestions } = useQuery({
+    queryKey: ["dependency-suggestions", projectId, endpointId, testCase?.id],
+    queryFn: () => getDependencySuggestions(projectId, endpointId, testCase!.id),
+    enabled: open && isEdit,
+  })
+  const coveredPlaceholders = new Set(dependencies.map((d) => d.placeholderName))
+  const visibleSuggestions = (suggestions ?? []).filter((s) => !coveredPlaceholders.has(s.paramName))
+
+  const availablePlaceholders = useMemo(
+    () => [
+      ...extractPlaceholders(resolvedPath),
+      ...extractPlaceholders(requestBody),
+      ...extractPlaceholders(requestHeaders),
+    ],
+    [resolvedPath, requestBody, requestHeaders]
+  )
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -57,6 +157,13 @@ export function TestCaseFormDialog({
         requestHeaders,
         requestBody,
         expectedStatus: Number(expectedStatus),
+        resolvedPath,
+        pathParamFallbacks,
+        dependencies: dependencies.map(({ dependsOnTestCaseId, jsonPath, placeholderName }) => ({
+          dependsOnTestCaseId,
+          jsonPath,
+          placeholderName,
+        })),
       }
       return testCase
         ? updateTestCase(projectId, endpointId, testCase.id, input)
@@ -74,9 +181,59 @@ export function TestCaseFormDialog({
     mutation.mutate()
   }
 
+  function applySuggestion(paramName: string, sourceTestCaseId: string, sourceLabel: string, jsonPath: string) {
+    setDependencies((prev) => [
+      ...prev,
+      { dependsOnTestCaseId: sourceTestCaseId, jsonPath, placeholderName: paramName, label: sourceLabel },
+    ]);
+  }
+
+  function addManualDependency() {
+    setDepFormError(null)
+    if (!newDepSourceId) {
+      setDepFormError("Vui lòng chọn Test case nguồn.")
+      return
+    }
+    if (!newDepJsonPath.trim() || !newDepPlaceholder.trim()) {
+      setDepFormError("Vui lòng nhập đủ JSONPath và Placeholder.")
+      return
+    }
+    const placeholderName = newDepPlaceholder.trim()
+    if (!availablePlaceholders.includes(placeholderName)) {
+      setDepFormError(
+        availablePlaceholders.length > 0
+          ? `Placeholder "${placeholderName}" không khớp {{...}} nào trong resolvedPath/body/headers - dùng đúng tên: ${availablePlaceholders.join(", ")}.`
+          : `Placeholder "${placeholderName}" không khớp {{...}} nào trong resolvedPath/body/headers.`
+      )
+      return
+    }
+    const currentId = testCase?.id ?? "__new__"
+    if (wouldCreateCycle(allTestCases ?? [], currentId, newDepSourceId, dependencies)) {
+      setDepFormError("Không thể thêm - sẽ tạo ra phụ thuộc vòng giữa các test case.")
+      return
+    }
+    const source = candidateSources.find((tc) => tc.id === newDepSourceId)
+    setDependencies((prev) => [
+      ...prev,
+      {
+        dependsOnTestCaseId: newDepSourceId,
+        jsonPath: newDepJsonPath.trim(),
+        placeholderName: newDepPlaceholder.trim(),
+        label: source ? `${source.endpointMethod} ${source.endpointPath} — ${source.name}` : newDepSourceId,
+      },
+    ])
+    setNewDepSourceId("")
+    setNewDepJsonPath("$.id")
+    setNewDepPlaceholder("")
+  }
+
+  function removeDependency(placeholderName: string) {
+    setDependencies((prev) => prev.filter((d) => d.placeholderName !== placeholderName))
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-2xl">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>{isEdit ? "Sửa Test Case" : "Thêm Test Case"}</DialogTitle>
@@ -122,6 +279,34 @@ export function TestCaseFormDialog({
           </div>
 
           <div className="flex flex-col gap-2">
+            <Label htmlFor="test-case-resolved-path">Đường dẫn thực thi (resolvedPath)</Label>
+            <p className="text-xs text-muted-foreground">
+              Dùng <code>{"{{tenThamSo}}"}</code> cho tham số cần giá trị thật lúc chạy (vd{" "}
+              <code>/pet/{"{{petId}}"}</code>), hoặc giá trị cụ thể nếu test này cố ý dùng ID
+              sai/biên. Tham số query cũng dùng chung cú pháp này, gắn thẳng vào cuối path, vd{" "}
+              <code>{"/pet/{{petId}}?name={{name}}"}</code>.
+            </p>
+            <Input
+              id="test-case-resolved-path"
+              value={resolvedPath}
+              onChange={(e) => setResolvedPath(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="test-case-fallbacks">Giá trị dự phòng cho tham số path/query (JSON, tuỳ chọn)</Label>
+            <p className="text-xs text-muted-foreground">
+              Dùng khi chưa gán dữ liệu thật (Test Data Chaining), vd <code>{'{"petId": "1"}'}</code>.
+            </p>
+            <Textarea
+              id="test-case-fallbacks"
+              placeholder='{"petId": "1"}'
+              value={pathParamFallbacks}
+              onChange={(e) => setPathParamFallbacks(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
             <Label htmlFor="test-case-headers">Request Headers (JSON, tuỳ chọn)</Label>
             <Textarea
               id="test-case-headers"
@@ -138,6 +323,116 @@ export function TestCaseFormDialog({
               value={requestBody}
               onChange={(e) => setRequestBody(e.target.value)}
             />
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            <Label>Phụ thuộc dữ liệu (Test Data Chaining)</Label>
+            <p className="text-xs text-muted-foreground">
+              Lấy giá trị thật từ response của 1 test case khác thay vì giá trị dự phòng. Chỉ áp
+              dụng cho tham số dạng <code>{"{{tenThamSo}}"}</code>
+              {availablePlaceholders.length > 0 && (
+                <> — hiện có: {availablePlaceholders.map((p) => <code key={p} className="ml-1">{p}</code>)}</>
+              )}
+              .
+            </p>
+
+            {visibleSuggestions.map((s) => (
+              <div
+                key={s.paramName}
+                className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 p-2 text-xs"
+              >
+                <span className="min-w-0 flex-1">
+                  Phát hiện <code>{s.sourceLabel}</code> có thể dùng làm nguồn dữ liệu thật cho{" "}
+                  <code>{s.paramName}</code>.
+                </span>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => applySuggestion(s.paramName, s.sourceTestCaseId, s.sourceLabel, s.suggestedJsonPath)}
+                >
+                  Áp dụng
+                </Button>
+              </div>
+            ))}
+
+            {dependencies.length > 0 && (
+              <ul className="flex flex-col gap-1.5">
+                {dependencies.map((dep) => (
+                  <li
+                    key={dep.placeholderName}
+                    className="flex items-center gap-2 rounded-md border border-border p-2 text-xs"
+                  >
+                    <code className="shrink-0 font-semibold">{`{{${dep.placeholderName}}}`}</code>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      ← {dep.label} ({dep.jsonPath})
+                    </span>
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="ghost"
+                      onClick={() => removeDependency(dep.placeholderName)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {candidateSources.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Chưa có test case nào khác trong project để chọn làm nguồn - tạo test case cho
+                endpoint nguồn trước.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <Label htmlFor="dep-source" className="text-xs">Test case nguồn</Label>
+                  <select
+                    id="dep-source"
+                    className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-xs outline-none dark:bg-input/30"
+                    value={newDepSourceId}
+                    onChange={(e) => setNewDepSourceId(e.target.value)}
+                  >
+                    <option value="">Chọn...</option>
+                    {candidateSources.map((tc) => (
+                      <option key={tc.id} value={tc.id}>
+                        {tc.endpointMethod} {tc.endpointPath} — {tc.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex w-24 flex-col gap-1">
+                  <Label htmlFor="dep-jsonpath" className="text-xs">JSONPath</Label>
+                  <Input
+                    id="dep-jsonpath"
+                    className="h-8 text-xs"
+                    value={newDepJsonPath}
+                    onChange={(e) => setNewDepJsonPath(e.target.value)}
+                  />
+                </div>
+                <div className="flex w-28 flex-col gap-1">
+                  <Label htmlFor="dep-placeholder" className="text-xs">Tên placeholder</Label>
+                  <select
+                    id="dep-placeholder"
+                    className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-xs outline-none dark:bg-input/30"
+                    value={newDepPlaceholder}
+                    onChange={(e) => setNewDepPlaceholder(e.target.value)}
+                  >
+                    <option value="">Chọn...</option>
+                    {availablePlaceholders.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={addManualDependency}>
+                  Thêm
+                </Button>
+              </div>
+            )}
+
+            {depFormError && <p className="text-xs text-destructive">{depFormError}</p>}
           </div>
 
           {mutation.isError && (

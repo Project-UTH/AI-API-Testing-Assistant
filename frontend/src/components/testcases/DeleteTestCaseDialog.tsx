@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import {
@@ -10,6 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { ApiError } from "@/lib/api"
 import { deleteTestCase, type TestCase } from "@/lib/testcases"
 
 interface DeleteTestCaseDialogProps {
@@ -41,6 +43,13 @@ export function DeleteTestCaseDialog({
     },
   })
 
+  useEffect(() => {
+    if (open) {
+      mutation.reset()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, testCase?.id])
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -50,6 +59,13 @@ export function DeleteTestCaseDialog({
             Hành động này không thể hoàn tác. Test case sẽ bị xoá vĩnh viễn.
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {mutation.isError && (
+          <p className="text-sm text-destructive">
+            {mutation.error instanceof ApiError
+              ? mutation.error.message
+              : "Đã xảy ra lỗi, vui lòng thử lại"}
+          </p>
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={mutation.isPending}>
             Huỷ
