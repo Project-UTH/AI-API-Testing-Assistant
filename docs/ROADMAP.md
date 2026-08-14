@@ -15,9 +15,10 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 5. Review Test Case | ✅ Xong |
 | 6. Thực thi Test | ✅ Xong |
 | 7. Test Data Chaining | ✅ Xong |
-| 8. Lịch sử & Dashboard | ⬜ Chưa bắt đầu |
-| 9. AI phân tích lỗi (stretch) | ⬜ Chưa bắt đầu |
-| 10. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
+| 8. Lịch sử & Dashboard | ✅ Xong |
+| 9. Nâng cao Test Case AI sinh (Security, Assertion, Test Data) | ⬜ Chưa bắt đầu |
+| 10. AI phân tích lỗi (stretch) | ⬜ Chưa bắt đầu |
+| 11. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
 
@@ -203,16 +204,56 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 *Phụ thuộc: Module 6, 7*
 
 **Backend**
-- [ ] Lưu lịch sử TestExecution/TestResult
-- [ ] Endpoint thống kê pass/fail theo project, theo thời gian
+- [x] Entity mới `TestGenerationEvent` (1 dòng/lần gọi `generate-tests`, lưu `testCaseCount` + `snapshotJson` — snapshot danh sách test case AI sinh tại thời điểm đó) và `TestExecutionEndpoint` (bảng nối N-N `TestExecution`↔`Endpoint`, vì 1 lần chạy test có thể chọn test case của nhiều endpoint cùng lúc) — `TestCaseGenerationService.generate()`/`TestExecutionService` ghi thêm 1 dòng mỗi lần chạy, không sửa hành vi cũ
+- [x] `TestHistoryService` (`service/`, đọc-tổng hợp, không phải logic AI/engine thực thi) — gộp 2 nguồn sự kiện (`TestGenerationEvent` + `TestExecution` qua `TestExecutionEndpoint`) thành 1 timeline/endpoint, sắp theo thời gian; tính `selectedCount`/`passCount`/`failCount` riêng theo từng endpoint trong 1 execution đa-endpoint từ `TestResult`, không N+1 query (gom hết theo project 1 lần rồi group trong bộ nhớ)
+- [x] `GET /api/v1/projects/{projectId}/history` (`TestHistoryController`) — trả danh sách theo từng endpoint đã từng có lịch sử (endpoint chưa sinh/chưa chạy test case nào thì không xuất hiện)
+- [x] *(Phát sinh khi làm — UX)* `TestResultResponse` bổ sung `endpointId` (JOIN FETCH thêm `tc.endpoint` ở `TestResultRepository.findAllByExecutionOrderByTestCaseCreatedAt`, tránh `LazyInitializationException` giống bug đã gặp ở Module 5) để trang kết quả thực thi lọc được theo đúng 1 endpoint khi vào từ Lịch sử — trước đó bấm "Xem chi tiết" ở 1 endpoint trong Lịch sử luôn hiện kết quả của TẤT CẢ endpoint chạy chung trong lần đó, gây nhầm lẫn
+- [x] *(Mở rộng theo yêu cầu người dùng)* **Lịch sử tổng** gộp mọi project của user hiện tại (khác `TestHistoryService` chỉ theo 1 project) — `HistoryFeedService` (`service/`) tái dùng đúng cách gộp-trong-Java của `TestHistoryService` (không native SQL UNION, dữ liệu vẫn giới hạn theo owner nên không cần), thêm `TestGenerationEventRepository.findAllForHistoryFeed`/`TestExecutionEndpointRepository.findAllForHistoryFeed` (lọc owner/project/ngày ở JPQL) rồi gộp/sort/phân trang thủ công bằng `PageImpl`. **Bẫy đã tránh:** `TestExecutionEndpointRepository.findAllForHistoryFeed` KHÔNG nhận `endpointId` — vì `otherEndpointCount` phải tính trên toàn bộ endpoint 1 execution chạm tới, lọc endpoint sớm ở SQL sẽ luôn ra sai số 0; lọc endpoint được áp ở tầng Java sau khi đã tính xong (ngược lại, generation event lọc `endpointId` ngay ở SQL an toàn vì không có khái niệm này)
+- [x] `GET /api/v1/history` (`HistoryFeedController`, top-level, không lồng `/projects/{id}`) — filter `projectId`/`endpointId`/`from`/`to`/`status` (`HistoryStatusFilter`: `ALL`/`HAS_FAIL`/`ALL_PASS`), phân trang chuẩn `PageResponse` giống `ProjectController.list()`. Filter trạng thái khác `ALL` ẩn hẳn sự kiện "Sinh test case" (không có khái niệm pass/fail) và bỏ qua luôn việc query/parse snapshot của chúng
+- [x] `GET /api/v1/dashboard/summary` (`DashboardController`/`DashboardService`) — tổng số project/endpoint/test case, tổng test result đã chạy, tỷ lệ pass tổng (%, `null` khi chưa có kết quả nào để tránh chia cho 0), toàn bộ đều giới hạn theo owner hiện tại bằng count query trực tiếp ở repository (`countByOwner`/`countByProjectOwner`/`countByEndpointProjectOwner`/`countByTestCaseEndpointProjectOwner[AndStatus]`), không N+1
 
 **Frontend**
-- [ ] Trang lịch sử kiểm thử
-- [ ] Dashboard thống kê (biểu đồ pass/fail)
+- [x] `TestHistoryPage.tsx` (route `/projects/:id/history`, vào từ nút ở `ProjectDetailPage`) — timeline dạng dòng thời gian theo từng endpoint, 2 loại sự kiện: "Sinh test case" (xem chi tiết snapshot danh sách test case AI sinh lúc đó) và "Chạy test" (pass/fail, link sang `TestExecutionPage` đã có, ghi chú khi chạy chung nhiều endpoint)
+- [x] `TestExecutionPage.tsx` đọc thêm `?endpointId=` qua `useSearchParams` (giống pattern lọc đã có ở `TestCasesPage`), lọc `results` chỉ hiện đúng test case của endpoint đó; link "Xem chi tiết" ở sự kiện Chạy test trong `TestHistoryPage` gắn kèm `endpointId` của dòng đang xem
+- [x] *(Mở rộng theo yêu cầu người dùng)* `GlobalHistoryPage.tsx` (route mới `/history`, mục sidebar "Lịch sử" ngay dưới "Project") — feed phẳng mọi project, mới nhất lên đầu, filter Project/Endpoint (endpoint chỉ bật khi đã chọn project, tái dùng `listEndpoints`)/khoảng ngày (`<input type="date">`, chưa có component date-range nào trong repo)/trạng thái, phân trang Prev/Next (control phân trang đầu tiên trong app). Tách `selectClassName` từ `TestCasesPage.tsx` sang `lib/utils.ts` dùng chung cho 3 dropdown filter mới; `listProjects()` nhận thêm tham số `size` tuỳ chọn để lấy đủ project cho dropdown mà không đổi hành vi cũ ở `ProjectsPage`
+- [x] `DashboardPage.tsx` — 4 thẻ KPI (project/endpoint/test case/tỷ lệ pass), biểu đồ xu hướng pass rate của N lần chạy gần nhất (SVG tự vẽ bằng tay, không thêm thư viện chart mới), feed "Hoạt động gần đây" tái dùng thẳng `getHistoryFeed` đã có ở Lịch sử tổng (không gọi API riêng) — có skeleton loading, trạng thái lỗi, trạng thái rỗng khi chưa có project nào
+
+**Lưu ý hành vi đã có từ trước (không phải bug):** import lại OpenAPI cho 1 project sẽ xoá sạch endpoint cũ (kể cả path/method trùng) và thay bằng endpoint mới — kéo theo toàn bộ lịch sử (`TestGenerationEvent`/`TestExecution` liên quan) của endpoint cũ biến mất theo, đúng như cảnh báo sẵn có trong dialog Import ("Endpoint cũ của project sẽ được thay thế bằng danh sách mới"). Người dùng có thể nhầm là bug khi thấy lịch sử "biến mất" sau khi tự tay import lại.
+
+**Mốc xác nhận (phần Lịch sử):** `./mvnw test` xanh (gồm `TestHistoryServiceTest` mới), `npx tsc --noEmit` sạch. **Đã verify bằng tay qua UI thật** (người dùng tự tay bấm sinh test case → chạy test → vào trang Lịch sử → xem đúng timeline theo từng endpoint, bấm "Xem chi tiết" ở sự kiện Chạy test chỉ còn hiện đúng test case của endpoint đó, không còn lẫn endpoint khác).
+
+**Mốc xác nhận (phần Dashboard):** `./mvnw test` xanh — 79/79 test pass toàn backend, gồm `DashboardServiceTest` mới (tính đúng tỷ lệ pass từ số liệu repository, không chia cho 0 khi chưa có kết quả test nào). `npx tsc --noEmit` sạch.
 
 ---
 
-## 9. AI phân tích lỗi (Stretch — làm nếu còn thời gian)
+## 9. Nâng cao Test Case AI sinh
+*Phụ thuộc: Module 4, Module 6 (cần engine thực thi thật để chạy assertion/security case), Module 7 (security case dùng chung placeholder/dependency nếu cần dữ liệu thật)*
+
+**Phạm vi:** mở rộng 3 nhóm Cơ bản (Positive/Negative/Boundary Value) đã có ở Module 4 bằng 3 nhóm Nâng cao đã ghi chú sẵn nhưng chưa làm — Security, Assertion Generation, Test Data nâng cao. Người dùng chọn nhóm muốn sinh khi bấm "Sinh Test Case" (không bắt sinh cả 6 nhóm mỗi lần, tốn quota AI).
+
+### 9a. Security Test Cases
+- [ ] Prompt mới hoặc mở rộng `generate-test-case.st` — sinh case gọi API **thiếu token**, **token sai/hết hạn** (kỳ vọng `401`), và case injection nhẹ (SQL/script chèn vào field string, kỳ vọng `400` do validation chứ không phải `500` do lỗi server)
+- [ ] `TestCase` cần cách override auth riêng cho từng case (khác `targetAuthType` mặc định của `Project`) — vd field `authOverride` (`NONE`/`INVALID`/`DEFAULT`), vì `RestAssuredTestRunner` hiện luôn tự gắn auth thật giải mã từ `Project`, không có cách nào gửi request "cố tình sai token"
+- [ ] `TestCaseCategory`/`source` bổ sung giá trị phân loại `SECURITY` để lọc riêng ở Review/History (tái dùng enum kiểu `source` đã có ở Module 5, không tạo cơ chế phân loại mới)
+- [ ] Frontend: checkbox chọn nhóm "Security" khi sinh (cạnh checkbox chọn endpoint ở `EndpointList`), badge riêng cho case Security trong `TestCasesPage`
+
+### 9b. Assertion Generation
+- [ ] Entity mới `TestCaseAssertion` (`testCaseId`, `jsonPath`, `operator`: `EQUALS`/`CONTAINS`/`EXISTS`/`TYPE`, `expectedValue`) — AI sinh kèm test case (vd `POST /users` trả `email` đúng bằng giá trị đã gửi), người dùng có thể tự thêm/sửa tay giống test case thủ công
+- [ ] `RestAssuredTestRunner` sau khi nhận response: dùng lại `io.restassured.path.json.JsonPath` (đã dùng ở Module 7 cho chaining) để trích giá trị theo từng assertion, so khớp theo `operator` — `TestResult` hiện chỉ so `expectedStatus`, cần gộp thêm kết quả assertion để ra `status` cuối (case `PASSED` chỉ khi cả status code lẫn mọi assertion đều đúng)
+- [ ] `TestResult` cần lưu chi tiết assertion nào fail (không chỉ pass/fail tổng) để người dùng biết chính xác field nào sai — có thể tái dùng cách lưu response chi tiết đã có, thêm 1 bảng/cột JSON riêng
+- [ ] Frontend: `TestCaseFormDialog` thêm khối "Assertion" (thêm/xoá dòng jsonPath + operator + expected); `TestExecutionPage` hiện rõ assertion nào fail khi mở rộng 1 dòng kết quả
+
+### 9c. Test Data nâng cao
+- [ ] Mở rộng quy tắc Boundary Value trong `generate-test-case.st`: chuỗi Unicode/emoji, chuỗi rất dài (vượt giới hạn field nếu schema có `maxLength`), số âm/số ở biên kiểu dữ liệu (`int` min/max), `null` lồng trong object thay vì thiếu hẳn field, khác biệt giữa "field rỗng" và "field không gửi"
+- [ ] Không cần entity mới — chỉ sửa prompt + `TestCasePathValidator` (nếu giá trị sinh ra phá vỡ token `{{}}` hiện có, vd chuỗi chứa dấu `{{`)
+
+**Rủi ro cần lưu ý khi làm:** AI sinh case Security/injection có thể tự đoán sai kỳ vọng (vd tưởng injection phải trả `500`) — cần review kỹ trước khi cho chạy thật vào target API, đặc biệt injection case không nên chạy vào API sản xuất thật ngoài `shop-api-target`.
+
+**Mốc xác nhận (dự kiến):** sinh riêng từng nhóm cho `shop-api-target` — case thiếu token trả đúng `401`, case injection trả `400` (không phải `500`), assertion trên `POST /api/products` kiểm đúng field `stock`/`price` trả về khớp giá trị đã gửi.
+
+---
+
+## 10. AI phân tích lỗi (Stretch — làm nếu còn thời gian)
 *Phụ thuộc: Module 8*
 
 **Backend**
@@ -224,7 +265,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 
 ---
 
-## 10. Hoàn thiện & Demo
+## 11. Hoàn thiện & Demo
 *Phụ thuộc: tất cả module MVP (1-8) đã xong*
 
 - [ ] Polish UI, fix bug toàn luồng
