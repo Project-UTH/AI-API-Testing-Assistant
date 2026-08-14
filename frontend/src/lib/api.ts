@@ -29,6 +29,19 @@ export function clearToken(): void {
   localStorage.removeItem(AUTH_TOKEN_KEY)
 }
 
+/** Đọc email người dùng từ payload JWT hiện có, không cần gọi API riêng. */
+export function getCurrentUserEmail(): string | null {
+  const token = getToken()
+  if (!token) return null
+  try {
+    const payload = token.split(".")[1]
+    const decoded = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")))
+    return typeof decoded.sub === "string" ? decoded.sub : null
+  } catch {
+    return null
+  }
+}
+
 async function rawFetch(path: string, options: RequestInit = {}): Promise<unknown> {
   const token = getToken()
   const isFormData = options.body instanceof FormData

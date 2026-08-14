@@ -25,7 +25,7 @@ export function ProjectsPage() {
   const navigate = useNavigate()
   const { data, isLoading, isError } = useQuery({
     queryKey: ["projects"],
-    queryFn: listProjects,
+    queryFn: () => listProjects(),
   })
 
   const [formOpen, setFormOpen] = useState(false)
