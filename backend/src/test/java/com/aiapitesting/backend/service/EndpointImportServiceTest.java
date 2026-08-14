@@ -9,7 +9,9 @@ import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
+import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
@@ -81,7 +83,13 @@ class EndpointImportServiceTest {
     private TestExecutionRepository testExecutionRepository;
 
     @Mock
+    private TestExecutionEndpointRepository testExecutionEndpointRepository;
+
+    @Mock
     private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private TestGenerationEventRepository testGenerationEventRepository;
 
     @Mock
     private SafeUrlFetcher safeUrlFetcher;
@@ -119,11 +127,14 @@ class EndpointImportServiceTest {
         assertThat(result.get(0).method()).isEqualTo("GET");
         assertThat(result.get(0).summary()).isEqualTo("List pets");
 
-        // Dọn TestResult/TestExecution/test case của các endpoint cũ trước khi xoá endpoint - tránh
-        // vi phạm khoá ngoại (lỗi MySQL 1451) nếu các endpoint đó đã có dữ liệu liên quan
+        // Dọn TestExecutionEndpoint/TestResult/TestExecution/test case/TestGenerationEvent của các
+        // endpoint cũ trước khi xoá endpoint - tránh vi phạm khoá ngoại (lỗi MySQL 1451) nếu các
+        // endpoint đó đã có dữ liệu liên quan
+        verify(testExecutionEndpointRepository).deleteAllByExecutionProject(project);
         verify(testResultRepository).deleteAllByTestCaseEndpointProject(project);
         verify(testExecutionRepository).deleteAllByProject(project);
         verify(testCaseRepository).deleteAllByEndpointProject(project);
+        verify(testGenerationEventRepository).deleteAllByEndpointProject(project);
         verify(endpointRepository).deleteAllByProject(project);
 
         ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
