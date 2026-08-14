@@ -1,10 +1,11 @@
 import { NavLink } from "react-router-dom"
 import { cn } from "@/lib/utils"
-import { FolderKanban, LayoutDashboard } from "lucide-react"
+import { FolderKanban, History, LayoutDashboard } from "lucide-react"
 
 const navItems = [
   { to: "/", label: "Tổng quan", icon: LayoutDashboard, end: true },
   { to: "/projects", label: "Project", icon: FolderKanban },
+  { to: "/history", label: "Lịch sử", icon: History },
 ]
 
 export function Sidebar() {

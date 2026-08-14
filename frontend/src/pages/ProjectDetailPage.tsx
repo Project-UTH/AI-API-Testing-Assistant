@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, KeyRound, ListChecks, Upload } from "lucide-react"
+import { ArrowLeft, History, KeyRound, ListChecks, Upload } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { EndpointList } from "@/components/projects/EndpointList"
@@ -76,6 +76,15 @@ export function ProjectDetailPage() {
           <div className="mt-8 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Endpoint</h2>
             <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                nativeButton={false}
+                render={<Link to={`/projects/${id}/history`} />}
+              >
+                <History className="h-4 w-4" />
+                Lịch sử kiểm thử
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
