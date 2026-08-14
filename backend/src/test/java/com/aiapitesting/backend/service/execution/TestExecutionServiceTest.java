@@ -8,10 +8,12 @@ import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseDependency;
 import com.aiapitesting.backend.entity.TestExecution;
+import com.aiapitesting.backend.entity.TestExecutionEndpoint;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestExecutionNotFoundException;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.ProjectService;
@@ -56,6 +58,9 @@ class TestExecutionServiceTest {
 
     @Mock
     private TestResultRepository testResultRepository;
+
+    @Mock
+    private TestExecutionEndpointRepository testExecutionEndpointRepository;
 
     @Mock
     private TestExecutionRunner testExecutionRunner;
@@ -131,6 +136,11 @@ class TestExecutionServiceTest {
         ArgumentCaptor<List<TestCase>> orderedCaptor = ArgumentCaptor.forClass(List.class);
         verify(testExecutionRunner).runInBackground(any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID());
         assertThat(orderedCaptor.getValue()).extracting(TestCase::getId).containsExactly(id2, id1);
+
+        // Lịch sử (Module 8) - cả 2 test case đã chọn cùng thuộc 1 endpoint, chỉ ghi 1 dòng liên kết.
+        ArgumentCaptor<List<TestExecutionEndpoint>> linksCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testExecutionEndpointRepository).saveAll(linksCaptor.capture());
+        assertThat(linksCaptor.getValue()).extracting(TestExecutionEndpoint::getEndpoint).containsExactly(getEndpoint);
     }
 
     @Test
@@ -158,6 +168,14 @@ class TestExecutionServiceTest {
         ArgumentCaptor<List<TestCase>> orderedCaptor = ArgumentCaptor.forClass(List.class);
         verify(testExecutionRunner).runInBackground(any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID());
         assertThat(orderedCaptor.getValue()).extracting(TestCase::getId).containsExactly(source.getId(), consumer.getId());
+
+        // Lịch sử (Module 8) - consumer thuộc getEndpoint, source chỉ có mặt do auto-included (chaining)
+        // thuộc postEndpoint - cả 2 endpoint đều phải có dòng liên kết, không chỉ endpoint được chọn tường minh.
+        ArgumentCaptor<List<TestExecutionEndpoint>> linksCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testExecutionEndpointRepository).saveAll(linksCaptor.capture());
+        assertThat(linksCaptor.getValue())
+                .extracting(TestExecutionEndpoint::getEndpoint)
+                .containsExactlyInAnyOrder(getEndpoint, postEndpoint);
     }
 
     @Test

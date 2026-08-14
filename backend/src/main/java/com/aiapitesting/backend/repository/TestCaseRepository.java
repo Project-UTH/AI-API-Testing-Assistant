@@ -4,6 +4,7 @@ import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
+import com.aiapitesting.backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,6 +14,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface TestCaseRepository extends JpaRepository<TestCase, UUID> {
+    // Trang Tổng quan (Module 8) - tổng test case của toàn bộ project user sở hữu.
+    long countByEndpointProjectOwner(User owner);
     // JOIN FETCH endpoint để TestCaseResponse.from() đọc được endpoint.getPath()/getMethod() sau khi
     // session đã đóng (spring.jpa.open-in-view=false) - tránh LazyInitializationException, đồng thời
     // tránh N+1 query khi map danh sách.

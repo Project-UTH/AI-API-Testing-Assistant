@@ -1,15 +1,18 @@
 package com.aiapitesting.backend.service.ai;
 
+import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
+import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.ProjectService;
 import com.aiapitesting.backend.service.TestCasePathValidator;
@@ -56,6 +59,7 @@ public class TestCaseGenerationService {
     private final TestResultRepository testResultRepository;
     private final TestCasePathValidator testCasePathValidator;
     private final TestCaseService testCaseService;
+    private final TestGenerationEventRepository testGenerationEventRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("classpath:prompts/generate-test-case.st")
@@ -96,6 +100,15 @@ public class TestCaseGenerationService {
         testCaseRepository.deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
         List<TestCase> saved = testCaseRepository.saveAll(generated.stream()
                 .map(g -> toEntity(endpoint, g)).toList());
+
+        // Lưu snapshot lịch sử (Module 8) - đúng nội dung AI sinh ra TẠI THỜI ĐIỂM NÀY, tách biệt
+        // với bảng test_cases sống vì lần regenerate sau sẽ xoá hẳn bộ này.
+        testGenerationEventRepository.save(TestGenerationEvent.builder()
+                .endpoint(endpoint)
+                .testCaseCount(saved.size())
+                .snapshotJson(writeSnapshotAsJson(generated))
+                .build());
+
         return CompletableFuture.completedFuture(saved.stream().map(TestCaseResponse::from).toList());
     }
 
@@ -176,14 +189,11 @@ public class TestCaseGenerationService {
         }
     }
 
-    record GeneratedTestCase(
-            String name,
-            String description,
-            Map<String, String> requestHeaders,
-            String requestBody,
-            Integer expectedStatus,
-            String resolvedPath,
-            Map<String, String> pathParamFallbacks
-    ) {
+    private String writeSnapshotAsJson(List<GeneratedTestCase> generated) {
+        try {
+            return objectMapper.writeValueAsString(generated);
+        } catch (Exception e) {
+            throw new IllegalStateException("Không serialize được snapshot lịch sử sinh test case", e);
+        }
     }
 }

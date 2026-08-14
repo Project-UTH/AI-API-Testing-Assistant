@@ -10,4 +10,6 @@ import java.util.UUID;
 
 public interface ProjectRepository extends JpaRepository<Project, UUID> {
     Page<Project> findAllByOwner(User owner, Pageable pageable);
+
+    long countByOwner(User owner);
 }

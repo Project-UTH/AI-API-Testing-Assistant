@@ -10,7 +10,9 @@ import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
+import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,7 +49,13 @@ class ProjectServiceTest {
     private TestExecutionRepository testExecutionRepository;
 
     @Mock
+    private TestExecutionEndpointRepository testExecutionEndpointRepository;
+
+    @Mock
     private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private TestGenerationEventRepository testGenerationEventRepository;
 
     @Mock
     private CurrentUserService currentUserService;
@@ -76,15 +84,20 @@ class ProjectServiceTest {
 
         projectService.delete(projectId);
 
-        // Dọn TestResult, rồi TestExecution, rồi test case, rồi endpoint, rồi project - tránh vi
-        // phạm khoá ngoại (test_results.test_case_id / test_executions.project_id /
-        // test_cases.endpoint_id / endpoints.project_id)
-        InOrder inOrder = inOrder(testResultRepository, testExecutionRepository, testCaseDependencyRepository,
-                testCaseRepository, endpointRepository, projectRepository);
+        // Dọn TestExecutionEndpoint, TestResult, rồi TestExecution, rồi test case, rồi
+        // TestGenerationEvent, rồi endpoint, rồi project - tránh vi phạm khoá ngoại
+        // (test_execution_endpoints.execution_id / test_results.test_case_id /
+        // test_executions.project_id / test_cases.endpoint_id / test_generation_events.endpoint_id /
+        // endpoints.project_id)
+        InOrder inOrder = inOrder(testExecutionEndpointRepository, testResultRepository, testExecutionRepository,
+                testCaseDependencyRepository, testCaseRepository, testGenerationEventRepository,
+                endpointRepository, projectRepository);
+        inOrder.verify(testExecutionEndpointRepository).deleteAllByExecutionProject(project);
         inOrder.verify(testResultRepository).deleteAllByTestCaseEndpointProject(project);
         inOrder.verify(testExecutionRepository).deleteAllByProject(project);
         inOrder.verify(testCaseDependencyRepository).deleteAllByProject(project);
         inOrder.verify(testCaseRepository).deleteAllByEndpointProject(project);
+        inOrder.verify(testGenerationEventRepository).deleteAllByEndpointProject(project);
         inOrder.verify(endpointRepository).deleteAllByProject(project);
         inOrder.verify(projectRepository).delete(project);
     }
@@ -96,9 +109,11 @@ class ProjectServiceTest {
         assertThatThrownBy(() -> projectService.delete(projectId))
                 .isInstanceOf(ProjectNotFoundException.class);
 
+        verifyNoInteractions(testExecutionEndpointRepository);
         verifyNoInteractions(testResultRepository);
         verifyNoInteractions(testExecutionRepository);
         verifyNoInteractions(testCaseRepository);
+        verifyNoInteractions(testGenerationEventRepository);
         verifyNoInteractions(endpointRepository);
         verify(projectRepository, never()).delete(any());
     }
@@ -112,9 +127,11 @@ class ProjectServiceTest {
         assertThatThrownBy(() -> projectService.delete(projectId))
                 .isInstanceOf(ForbiddenException.class);
 
+        verifyNoInteractions(testExecutionEndpointRepository);
         verifyNoInteractions(testResultRepository);
         verifyNoInteractions(testExecutionRepository);
         verifyNoInteractions(testCaseRepository);
+        verifyNoInteractions(testGenerationEventRepository);
         verifyNoInteractions(endpointRepository);
         verify(projectRepository, never()).delete(any());
     }
