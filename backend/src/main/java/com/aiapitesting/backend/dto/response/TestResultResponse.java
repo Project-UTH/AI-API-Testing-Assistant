@@ -8,6 +8,7 @@ import java.util.UUID;
 public record TestResultResponse(
         UUID testCaseId,
         String testCaseName,
+        UUID endpointId,
         TestResultStatus status,
         Integer expectedStatus,
         Integer responseStatus,
@@ -18,6 +19,7 @@ public record TestResultResponse(
         return new TestResultResponse(
                 result.getTestCase().getId(),
                 result.getTestCase().getName(),
+                result.getTestCase().getEndpoint().getId(),
                 result.getStatus(),
                 result.getTestCase().getExpectedStatus(),
                 result.getResponseStatus(),

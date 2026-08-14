@@ -1,11 +1,25 @@
-import { useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, ChevronDown, Loader2 } from "lucide-react"
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Ban,
+  CheckCircle2,
+  ChevronDown,
+  Loader2,
+  SkipForward,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { getExecution, type ExecutionStatus, type TestResultStatus } from "@/lib/executions"
+import { getExecution, type ExecutionStatus, type TestResult, type TestResultStatus } from "@/lib/executions"
+
+// Thứ tự cố định (khớp RESULT_STATUS_LABEL bên dưới) - dùng để vẽ donut theo 1 thứ tự nhất quán,
+// không lệ thuộc thứ tự dữ liệu trả về.
+const STATUS_ORDER: TestResultStatus[] = ["PASSED", "FAILED", "ERROR", "BLOCKED", "SKIPPED"]
 
 function formatBody(body: string | null): string | null {
   if (body === null || body === "") return null
@@ -46,9 +60,19 @@ const RESULT_STATUS_LABEL: Record<TestResultStatus, string> = {
   SKIPPED: "Bỏ qua",
 }
 
+const RESULT_STATUS_ICON: Record<TestResultStatus, LucideIcon> = {
+  PASSED: CheckCircle2,
+  FAILED: XCircle,
+  ERROR: AlertTriangle,
+  BLOCKED: Ban,
+  SKIPPED: SkipForward,
+}
+
 export function TestExecutionPage() {
   const { id, executionId } = useParams<{ id: string; executionId: string }>()
   const projectId = id!
+  const [searchParams] = useSearchParams()
+  const endpointFilter = searchParams.get("endpointId")
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const { data: execution, isLoading, isError } = useQuery({
@@ -60,6 +84,10 @@ export function TestExecutionPage() {
       return status === "PENDING" || status === "RUNNING" ? 1500 : false
     },
   })
+
+  const filteredResults =
+    execution?.results.filter((result) => !endpointFilter || result.endpointId === endpointFilter) ?? []
+  const isFinished = execution && execution.status !== "PENDING" && execution.status !== "RUNNING"
 
   return (
     <div>
@@ -100,12 +128,14 @@ export function TestExecutionPage() {
         </p>
       )}
 
-      {execution && execution.status !== "PENDING" && execution.status !== "RUNNING" && execution.results.length === 0 && (
+      {isFinished && filteredResults.length === 0 && (
         <p className="mt-6 text-muted-foreground">Không có kết quả nào.</p>
       )}
 
+      {isFinished && filteredResults.length > 0 && <ExecutionSummaryDashboard results={filteredResults} />}
+
       <ul className="mt-4 flex flex-col gap-2">
-        {execution?.results.map((result) => {
+        {filteredResults.map((result) => {
           const isExpanded = expandedId === result.testCaseId
           const formattedBody = formatBody(result.responseBody)
           return (
@@ -161,6 +191,127 @@ export function TestExecutionPage() {
           )
         })}
       </ul>
+    </div>
+  )
+}
+
+const RING_SIZE = 172
+const RING_RADIUS = 66
+const RING_STROKE_WIDTH = 18
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
+
+function ExecutionSummaryDashboard({ results }: { results: TestResult[] }) {
+  const total = results.length
+  const countByStatus = results.reduce<Partial<Record<TestResultStatus, number>>>((acc, result) => {
+    acc[result.status] = (acc[result.status] ?? 0) + 1
+    return acc
+  }, {})
+  const presentStatuses = STATUS_ORDER.filter((status) => (countByStatus[status] ?? 0) > 0)
+  const passCount = countByStatus.PASSED ?? 0
+  const passRate = total > 0 ? Math.round((passCount / total) * 100) : 0
+
+  // Vẽ ring "nở ra" 1 lần khi mount (fromZero -> giá trị thật) - tôn trọng prefers-reduced-motion
+  // bằng motion-reduce:transition-none ở className của từng <circle> nên chỉ tắt animation, kết
+  // quả cuối vẫn đúng ngay lập tức, không cần nhánh code riêng.
+  const [grown, setGrown] = useState(false)
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setGrown(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  let cumulativeOffset = 0
+  const segments = presentStatuses.map((status) => {
+    const count = countByStatus[status] ?? 0
+    const fraction = count / total
+    const dash = fraction * RING_CIRCUMFERENCE
+    const segment = { status, count, dash, offset: cumulativeOffset }
+    cumulativeOffset += dash
+    return segment
+  })
+
+  return (
+    <div className="mt-4 flex animate-in flex-col gap-5 rounded-xl bg-card p-5 shadow-sm ring-1 ring-foreground/10 duration-500 fade-in-0 slide-in-from-bottom-2 motion-reduce:animate-none sm:flex-row sm:items-center sm:gap-8">
+      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase sm:hidden">
+        Tổng quan kết quả
+      </p>
+
+      <div className="relative shrink-0 self-center" style={{ width: RING_SIZE, height: RING_SIZE }}>
+        <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}>
+          <circle
+            cx={RING_SIZE / 2}
+            cy={RING_SIZE / 2}
+            r={RING_RADIUS}
+            fill="none"
+            strokeWidth={RING_STROKE_WIDTH}
+            className="text-border stroke-current"
+          />
+          <g className="drop-shadow-sm" transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}>
+            {segments.map(({ status, count, dash, offset }) => (
+              <circle
+                key={status}
+                cx={RING_SIZE / 2}
+                cy={RING_SIZE / 2}
+                r={RING_RADIUS}
+                fill="none"
+                strokeWidth={RING_STROKE_WIDTH}
+                strokeLinecap="round"
+                strokeDasharray={grown ? `${dash} ${RING_CIRCUMFERENCE - dash}` : `0 ${RING_CIRCUMFERENCE}`}
+                strokeDashoffset={-offset}
+                className={cn(
+                  "stroke-current transition-[stroke-dasharray] duration-700 ease-out motion-reduce:transition-none",
+                  RESULT_STATUS_STYLES[status]
+                )}
+              >
+                <title>
+                  {RESULT_STATUS_LABEL[status]}: {count}
+                </title>
+              </circle>
+            ))}
+          </g>
+        </svg>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-4xl font-semibold">{passRate}%</span>
+          <span className="text-xs text-muted-foreground">hoàn thành</span>
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-4">
+        <p className="hidden text-xs font-medium tracking-wide text-muted-foreground uppercase sm:block">
+          Tổng quan kết quả
+        </p>
+
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Tổng test case</p>
+            <p className="text-2xl font-semibold">{total}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Tiến độ hoàn thành</p>
+            <p className="text-2xl font-semibold">{passRate}%</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 border-t border-border pt-4">
+          {presentStatuses.map((status) => {
+            const Icon = RESULT_STATUS_ICON[status]
+            const count = countByStatus[status] ?? 0
+            return (
+              <span
+                key={status}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
+                  RESULT_STATUS_STYLES[status]
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {RESULT_STATUS_LABEL[status]}
+                <span>{count}</span>
+                <span className="text-[10px] opacity-70">({Math.round((count / total) * 100)}%)</span>
+              </span>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }

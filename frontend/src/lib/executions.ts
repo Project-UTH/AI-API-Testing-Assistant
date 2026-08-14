@@ -6,6 +6,7 @@ export type TestResultStatus = "PASSED" | "FAILED" | "ERROR" | "BLOCKED" | "SKIP
 export interface TestResult {
   testCaseId: string
   testCaseName: string
+  endpointId: string
   status: TestResultStatus
   expectedStatus: number
   responseStatus: number | null

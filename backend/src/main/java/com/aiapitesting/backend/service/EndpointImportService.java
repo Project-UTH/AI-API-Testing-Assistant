@@ -9,7 +9,9 @@ import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
+import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
@@ -44,7 +46,9 @@ public class EndpointImportService {
     private final TestCaseRepository testCaseRepository;
     private final TestResultRepository testResultRepository;
     private final TestExecutionRepository testExecutionRepository;
+    private final TestExecutionEndpointRepository testExecutionEndpointRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
+    private final TestGenerationEventRepository testGenerationEventRepository;
     private final SafeUrlFetcher safeUrlFetcher;
     private final AesEncryptionService aesEncryptionService;
     private final TargetAuthHeaderResolver targetAuthHeaderResolver;
@@ -121,14 +125,16 @@ public class EndpointImportService {
             throw new SwaggerParseException("Tài liệu OpenAPI không chứa endpoint nào");
         }
 
-        // Dọn TestResult/TestExecution/TestCaseDependency/test case của các endpoint cũ trước khi
-        // xoá endpoint - đều là khoá ngoại NOT NULL, xoá endpoint trước khi còn bị tham chiếu sẽ vi
-        // phạm khoá ngoại (lỗi MySQL 1451, đã gặp 2 lần với endpoints/test_cases, nay thêm
-        // test_results/test_case_dependencies)
+        // Dọn TestExecutionEndpoint/TestResult/TestExecution/TestCaseDependency/TestGenerationEvent/
+        // test case của các endpoint cũ trước khi xoá endpoint - đều là khoá ngoại NOT NULL, xoá
+        // endpoint trước khi còn bị tham chiếu sẽ vi phạm khoá ngoại (lỗi MySQL 1451, đã gặp nhiều
+        // lần trong dự án này).
+        testExecutionEndpointRepository.deleteAllByExecutionProject(project);
         testResultRepository.deleteAllByTestCaseEndpointProject(project);
         testExecutionRepository.deleteAllByProject(project);
         testCaseDependencyRepository.deleteAllByProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
+        testGenerationEventRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         List<Endpoint> saved = endpointRepository.saveAll(endpoints);
         return saved.stream().map(EndpointResponse::from).toList();

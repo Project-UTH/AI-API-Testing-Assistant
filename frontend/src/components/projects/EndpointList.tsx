@@ -5,7 +5,7 @@ import { Loader2, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { cn } from "@/lib/utils"
+import { cn, METHOD_STYLES } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
 import { generateTestCases } from "@/lib/testcases"
@@ -18,14 +18,6 @@ type GenerationState =
   | { status: "pending" }
   | { status: "success"; count: number }
   | { status: "error"; message: string }
-
-const METHOD_STYLES: Record<string, string> = {
-  GET: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  POST: "bg-green-500/10 text-green-600 dark:text-green-400",
-  PUT: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  PATCH: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-  DELETE: "bg-red-500/10 text-red-600 dark:text-red-400",
-}
 
 export function EndpointList({ projectId }: EndpointListProps) {
   const queryClient = useQueryClient()

@@ -5,24 +5,13 @@ import { ArrowLeft, Loader2, Pencil, Play, Plus, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { cn } from "@/lib/utils"
+import { cn, METHOD_STYLES, selectClassName } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
 import { listTestCases, type TestCase } from "@/lib/testcases"
 import { triggerExecution } from "@/lib/executions"
 import { TestCaseFormDialog } from "@/components/testcases/TestCaseFormDialog"
 import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialog"
-
-const selectClassName =
-  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 sm:w-64"
-
-const METHOD_STYLES: Record<string, string> = {
-  GET: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  POST: "bg-green-500/10 text-green-600 dark:text-green-400",
-  PUT: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  PATCH: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-  DELETE: "bg-red-500/10 text-red-600 dark:text-red-400",
-}
 
 const SOURCE_STYLES: Record<TestCase["source"], string> = {
   AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
