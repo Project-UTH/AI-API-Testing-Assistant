@@ -1,16 +1,19 @@
 package com.aiapitesting.backend.service.ai;
 
+import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
+import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.ProjectService;
 import com.aiapitesting.backend.service.TestCasePathValidator;
@@ -69,6 +72,9 @@ class TestCaseGenerationServiceTest {
     @Mock
     private TestCaseService testCaseService;
 
+    @Mock
+    private TestGenerationEventRepository testGenerationEventRepository;
+
     @InjectMocks
     private TestCaseGenerationService testCaseGenerationService;
 
@@ -97,11 +103,11 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(
-                new TestCaseGenerationService.GeneratedTestCase(
+                new GeneratedTestCase(
                         "Positive - Tao user hop le", "mo ta",
                         Map.of("Content-Type", "application/json"), "{\"email\":\"a@b.com\"}", 201,
                         "/users", Map.of()),
-                new TestCaseGenerationService.GeneratedTestCase(
+                new GeneratedTestCase(
                         "Negative - Thieu email", "mo ta",
                         Map.of("Content-Type", "application/json"), "{}", 400,
                         "/users", Map.of())
@@ -123,6 +129,17 @@ class TestCaseGenerationServiceTest {
         assertThat(savedCaptor.getValue())
                 .extracting(TestCase::getSource)
                 .containsOnly(TestCaseSource.AI_GENERATED);
+
+        // Lịch sử (Module 8) - phải lưu đúng 1 sự kiện sinh test case, snapshot chứa đúng nội dung
+        // AI vừa sinh, tách biệt hoàn toàn với bảng test_cases sống.
+        ArgumentCaptor<TestGenerationEvent> eventCaptor = ArgumentCaptor.forClass(TestGenerationEvent.class);
+        verify(testGenerationEventRepository).save(eventCaptor.capture());
+        TestGenerationEvent event = eventCaptor.getValue();
+        assertThat(event.getEndpoint()).isEqualTo(endpoint);
+        assertThat(event.getTestCaseCount()).isEqualTo(2);
+        assertThat(event.getSnapshotJson())
+                .contains("Positive - Tao user hop le")
+                .contains("Negative - Thieu email");
     }
 
     @Test
@@ -141,7 +158,7 @@ class TestCaseGenerationServiceTest {
     void generate_aiReturnsInvalidStatus_throwsAiGenerationFailed() {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
-        stubAiResponse(List.of(new TestCaseGenerationService.GeneratedTestCase(
+        stubAiResponse(List.of(new GeneratedTestCase(
                 "Positive", "mo ta", Map.of(), "{}", 999, "/users", Map.of())));
 
         assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId))
@@ -176,7 +193,7 @@ class TestCaseGenerationServiceTest {
     void generate_existingAiCaseHasDependents_blocksRegenerateBeforeDeleting() {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
-        stubAiResponse(List.of(new TestCaseGenerationService.GeneratedTestCase(
+        stubAiResponse(List.of(new GeneratedTestCase(
                 "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of())));
 
         TestCase existingAiCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint)
@@ -194,7 +211,7 @@ class TestCaseGenerationServiceTest {
     }
 
     @SuppressWarnings("unchecked")
-    private void stubAiResponse(List<TestCaseGenerationService.GeneratedTestCase> result) {
+    private void stubAiResponse(List<GeneratedTestCase> result) {
         when(chatClient.prompt(any(Prompt.class)).call()
                 .entity(any(ParameterizedTypeReference.class)))
                 .thenReturn(result);

@@ -20,8 +20,8 @@ export interface ProjectInput {
   description?: string
 }
 
-export function listProjects(): Promise<PagedResult<Project>> {
-  return apiFetchPaged<Project>("/projects?page=0&size=20&sort=createdAt,desc")
+export function listProjects(size = 20): Promise<PagedResult<Project>> {
+  return apiFetchPaged<Project>(`/projects?page=0&size=${size}&sort=createdAt,desc`)
 }
 
 export function getProject(id: string): Promise<Project> {

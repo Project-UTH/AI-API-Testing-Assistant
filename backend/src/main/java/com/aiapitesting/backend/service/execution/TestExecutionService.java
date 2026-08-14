@@ -2,15 +2,18 @@ package com.aiapitesting.backend.service.execution;
 
 import com.aiapitesting.backend.dto.request.TestExecutionRequest;
 import com.aiapitesting.backend.dto.response.TestExecutionResponse;
+import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseDependency;
 import com.aiapitesting.backend.entity.TestExecution;
+import com.aiapitesting.backend.entity.TestExecutionEndpoint;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestExecutionNotFoundException;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.ProjectService;
@@ -23,6 +26,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +49,7 @@ public class TestExecutionService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestExecutionRepository testExecutionRepository;
     private final TestResultRepository testResultRepository;
+    private final TestExecutionEndpointRepository testExecutionEndpointRepository;
     private final TestExecutionRunner testExecutionRunner;
 
     public TestExecutionResponse trigger(UUID projectId, TestExecutionRequest request) {
@@ -95,6 +100,18 @@ public class TestExecutionService {
 
         TestExecution execution = testExecutionRepository.save(
                 TestExecution.builder().project(project).status(ExecutionStatus.PENDING).build());
+
+        // Lịch sử kiểm thử (Module 8) - ghi 1 dòng cho MỌI endpoint có mặt trong tập test case đã
+        // chạy (tự chọn lẫn auto-included do chaining), để xem lịch sử của bất kỳ endpoint nào trong
+        // số đó cũng thấy đúng sự kiện chạy này, không chỉ endpoint được chọn tường minh.
+        Map<UUID, Endpoint> endpointsInvolved = new LinkedHashMap<>();
+        for (UUID testCaseId : fullSetIds) {
+            Endpoint endpoint = testCaseById.get(testCaseId).getEndpoint();
+            endpointsInvolved.putIfAbsent(endpoint.getId(), endpoint);
+        }
+        testExecutionEndpointRepository.saveAll(endpointsInvolved.values().stream()
+                .map(endpoint -> TestExecutionEndpoint.builder().execution(execution).endpoint(endpoint).build())
+                .toList());
 
         testExecutionRunner.runInBackground(execution, ordered, project, edgesByConsumerId, autoIncludedIds);
 
