@@ -79,7 +79,7 @@ class TestHistoryServiceTest {
         stubTestCaseCounts(Map.of(endpointA.getId(), 3L));
 
         String snapshotJson = objectMapper.writeValueAsString(List.of(
-                new GeneratedTestCase("Positive - tao san pham", "mo ta", Map.of(), "{}", 201, "/api/products", Map.of())));
+                new GeneratedTestCase("Positive - tao san pham", "mo ta", Map.of(), "{}", 201, "/api/products", Map.of(), null, null)));
         TestGenerationEvent event = TestGenerationEvent.builder()
                 .id(UUID.randomUUID()).endpoint(endpointA).testCaseCount(3)
                 .snapshotJson(snapshotJson).createdAt(Instant.parse("2026-08-13T03:04:00Z")).build();
@@ -186,7 +186,7 @@ class TestHistoryServiceTest {
         String snapshotJson;
         try {
             snapshotJson = objectMapper.writeValueAsString(List.of(
-                    new GeneratedTestCase("Positive", "mo ta", Map.of(), "{}", 201, "/api/products", Map.of())));
+                    new GeneratedTestCase("Positive", "mo ta", Map.of(), "{}", 201, "/api/products", Map.of(), null, null)));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

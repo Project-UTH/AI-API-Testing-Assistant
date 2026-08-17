@@ -28,6 +28,8 @@ export function EndpointList({ projectId }: EndpointListProps) {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [generationState, setGenerationState] = useState<Record<string, GenerationState>>({})
+  const [includeSecurity, setIncludeSecurity] = useState(false)
+  const [includeAssertions, setIncludeAssertions] = useState(false)
 
   const endpoints = data?.data ?? []
 
@@ -52,7 +54,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
     // (backend tự xoá bộ cũ và thay bằng bộ mới), nên ở đây không cần bỏ qua nữa.
     selectedIds.forEach((endpointId) => {
       setGenerationState((prev) => ({ ...prev, [endpointId]: { status: "pending" } }))
-      generateTestCases(projectId, endpointId)
+      generateTestCases(projectId, endpointId, { includeSecurity, includeAssertions })
         .then((created) => {
           setGenerationState((prev) => ({
             ...prev,
@@ -106,10 +108,26 @@ export function EndpointList({ projectId }: EndpointListProps) {
         <span className="text-sm text-muted-foreground">
           {selectedIds.size > 0 ? `Đã chọn ${selectedIds.size} endpoint` : "Chọn endpoint để sinh test case"}
         </span>
-        <Button size="sm" disabled={selectedIds.size === 0} onClick={handleGenerate}>
-          <Sparkles className="h-4 w-4" />
-          Sinh Test Case
-        </Button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Checkbox
+              checked={includeSecurity}
+              onCheckedChange={(checked) => setIncludeSecurity(checked === true)}
+            />
+            + Security
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Checkbox
+              checked={includeAssertions}
+              onCheckedChange={(checked) => setIncludeAssertions(checked === true)}
+            />
+            + Assertion
+          </label>
+          <Button size="sm" disabled={selectedIds.size === 0} onClick={handleGenerate}>
+            <Sparkles className="h-4 w-4" />
+            Sinh Test Case
+          </Button>
+        </div>
       </div>
 
       <ul className="flex flex-col gap-2">

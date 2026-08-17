@@ -5,9 +5,9 @@ package com.aiapitesting.backend.entity;
  * của cả lần chạy). Xem giải thích ở skill api-contract mục 4.
  */
 public enum TestResultStatus {
-    /** Gọi được target API, status thật khớp expectedStatus. */
+    /** Gọi được target API, status thật khớp expectedStatus VÀ mọi assertion (nếu có, Module 9b) đều đúng. */
     PASSED,
-    /** Gọi được target API, status thật không khớp expectedStatus. */
+    /** Gọi được target API nhưng status thật không khớp expectedStatus, hoặc có assertion sai. */
     FAILED,
     /** Lỗi hạ tầng khi gọi target API (network, timeout, không đọc được response). */
     ERROR,

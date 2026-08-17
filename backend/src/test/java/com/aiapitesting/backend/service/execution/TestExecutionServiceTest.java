@@ -11,6 +11,7 @@ import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestExecutionEndpoint;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestExecutionNotFoundException;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
@@ -52,6 +53,9 @@ class TestExecutionServiceTest {
 
     @Mock
     private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private TestCaseAssertionRepository testCaseAssertionRepository;
 
     @Mock
     private TestExecutionRepository testExecutionRepository;
@@ -122,6 +126,7 @@ class TestExecutionServiceTest {
         when(testCaseRepository.findAllByIdInAndEndpointProject(anyList(), any(Project.class)))
                 .thenReturn(List.of(newer, older));
         when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testCaseAssertionRepository.findAllByTestCaseIn(anyList())).thenReturn(List.of());
 
         TestExecution saved = TestExecution.builder().id(UUID.randomUUID()).project(project)
                 .status(ExecutionStatus.PENDING).startedAt(Instant.now()).build();
@@ -134,7 +139,8 @@ class TestExecutionServiceTest {
         assertThat(response.autoIncludedTestCaseIds()).isEmpty();
 
         ArgumentCaptor<List<TestCase>> orderedCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testExecutionRunner).runInBackground(any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID());
+        verify(testExecutionRunner).runInBackground(
+                any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID(), anyAssertionMap());
         assertThat(orderedCaptor.getValue()).extracting(TestCase::getId).containsExactly(id2, id1);
 
         // Lịch sử (Module 8) - cả 2 test case đã chọn cùng thuộc 1 endpoint, chỉ ghi 1 dòng liên kết.
@@ -156,6 +162,7 @@ class TestExecutionServiceTest {
         TestCaseDependency dependency = TestCaseDependency.builder()
                 .testCase(consumer).dependsOnTestCase(source).jsonPath("$.id").placeholderName("petId").build();
         when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of(dependency));
+        when(testCaseAssertionRepository.findAllByTestCaseIn(anyList())).thenReturn(List.of());
 
         TestExecution saved = TestExecution.builder().id(UUID.randomUUID()).project(project)
                 .status(ExecutionStatus.PENDING).startedAt(Instant.now()).build();
@@ -166,7 +173,8 @@ class TestExecutionServiceTest {
         assertThat(response.autoIncludedTestCaseIds()).containsExactly(source.getId());
 
         ArgumentCaptor<List<TestCase>> orderedCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testExecutionRunner).runInBackground(any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID());
+        verify(testExecutionRunner).runInBackground(
+                any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID(), anyAssertionMap());
         assertThat(orderedCaptor.getValue()).extracting(TestCase::getId).containsExactly(source.getId(), consumer.getId());
 
         // Lịch sử (Module 8) - consumer thuộc getEndpoint, source chỉ có mặt do auto-included (chaining)
@@ -222,6 +230,7 @@ class TestExecutionServiceTest {
                 .testCase(deletePet).dependsOnTestCase(source).jsonPath("$.id").placeholderName("petId").build();
         when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project))
                 .thenReturn(List.of(getDependsOnSource, deleteDependsOnSource));
+        when(testCaseAssertionRepository.findAllByTestCaseIn(anyList())).thenReturn(List.of());
 
         TestExecution saved = TestExecution.builder().id(UUID.randomUUID()).project(project)
                 .status(ExecutionStatus.PENDING).startedAt(Instant.now()).build();
@@ -230,7 +239,8 @@ class TestExecutionServiceTest {
         testExecutionService.trigger(projectId, new TestExecutionRequest(List.of(getPet.getId(), deletePet.getId())));
 
         ArgumentCaptor<List<TestCase>> orderedCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testExecutionRunner).runInBackground(any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID());
+        verify(testExecutionRunner).runInBackground(
+                any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID(), anyAssertionMap());
         List<TestCase> ordered = orderedCaptor.getValue();
         assertThat(ordered).hasSize(3);
         assertThat(ordered.get(ordered.size() - 1).getId()).isEqualTo(deletePet.getId());
@@ -272,5 +282,10 @@ class TestExecutionServiceTest {
     @SuppressWarnings("unchecked")
     private static Set<UUID> anySetOfUUID() {
         return org.mockito.ArgumentMatchers.any(Set.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<UUID, List<AssertionSpec>> anyAssertionMap() {
+        return org.mockito.ArgumentMatchers.any(Map.class);
     }
 }

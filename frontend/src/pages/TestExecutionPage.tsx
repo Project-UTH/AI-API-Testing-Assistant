@@ -185,6 +185,37 @@ export function TestExecutionPage() {
                       <p className="text-xs text-muted-foreground">Không có response body.</p>
                     )}
                   </div>
+                  {result.assertionResults.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-xs font-medium text-muted-foreground">Assertions</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {result.assertionResults.map((a, index) => (
+                          <li
+                            key={`${a.jsonPath}-${a.operator}-${index}`}
+                            className={cn(
+                              "flex flex-wrap items-center gap-2 rounded-md px-2 py-1 text-xs",
+                              a.passed
+                                ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                : "bg-destructive/10 text-destructive"
+                            )}
+                          >
+                            {a.passed ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                            ) : (
+                              <XCircle className="h-3.5 w-3.5 shrink-0" />
+                            )}
+                            <code className="shrink-0 font-semibold">{a.jsonPath}</code>
+                            <span>{a.operator}</span>
+                            {a.operator !== "EXISTS" && (
+                              <span className="min-w-0 truncate">
+                                kỳ vọng "{a.expectedValue}", thực tế "{a.actualValue ?? "—"}"
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </li>

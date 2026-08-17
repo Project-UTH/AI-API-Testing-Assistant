@@ -16,6 +16,13 @@ import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialo
 const SOURCE_STYLES: Record<TestCase["source"], string> = {
   AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   MANUAL: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
+  SECURITY: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+}
+
+const SOURCE_LABEL: Record<TestCase["source"], string> = {
+  AI_GENERATED: "AI",
+  MANUAL: "Tự thêm",
+  SECURITY: "Security",
 }
 
 interface FormState {
@@ -199,7 +206,7 @@ export function TestCasesPage() {
                           SOURCE_STYLES[testCase.source]
                         )}
                       >
-                        {testCase.source === "AI_GENERATED" ? "AI" : "Tự thêm"}
+                        {SOURCE_LABEL[testCase.source]}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-sm">{testCase.name}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">

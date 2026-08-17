@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service.execution;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
 import com.aiapitesting.backend.service.TestCasePathValidator;
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Gọi target API thật cho 1 TestCase - chỉ trả về status/response thật, không tự quyết
@@ -30,6 +32,8 @@ public class RestAssuredTestRunner {
 
     private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final int READ_TIMEOUT_MS = 30_000;
+    /** Giá trị cố định, cố tình sai - dùng cho case Security authOverride=INVALID (Module 9a). */
+    private static final String INVALID_AUTH_VALUE = "invalid-token-security-test-case";
 
     private final TargetAuthHeaderResolver targetAuthHeaderResolver;
     private final AesEncryptionService aesEncryptionService;
@@ -49,15 +53,22 @@ public class RestAssuredTestRunner {
                         .setParam("http.socket.timeout", READ_TIMEOUT_MS)));
 
         // Thay {{tenThamSo}} cả trong header/body - dependency (Module 7) không chỉ nhắm vào path.
+        // Gộp vào 1 Map (case-insensitive) rồi gọi .headers() đúng 1 lần - RestAssured's .header()
+        // gọi SAU .headers() sẽ THÊM header trùng tên thay vì thay thế, nên nếu tách 2 lệnh như
+        // trước, 1 test case Security (Module 9a) tự sinh sẵn header "Authorization" giả trong
+        // requestBody sẽ khiến request có 2 header Authorization cùng lúc (giả + auth header thật ở
+        // dưới) - target API nhận 2 giá trị Authorization sẽ từ chối luôn (403) dù giá trị thật vẫn
+        // có mặt, làm sai lệch hẳn kết quả test case authOverride=DEFAULT (đã gặp thật khi verify).
         String headersJson = testCasePathValidator.substitute(testCase.getRequestHeaders(), resolvedValues);
-        Map<String, String> headers = parseHeaders(headersJson);
+        Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        headers.putAll(parseHeaders(headersJson));
+
+        TargetAuthHeaderResolver.AuthHeader authHeader = resolveAuthHeader(project, testCase.getAuthOverride());
+        if (authHeader != null) {
+            headers.put(authHeader.name(), authHeader.value());
+        }
         if (!headers.isEmpty()) {
             request = request.headers(headers);
-        }
-
-        TargetAuthHeaderResolver.AuthHeader authHeader = resolveAuthHeader(project);
-        if (authHeader != null) {
-            request = request.header(authHeader.name(), authHeader.value());
         }
 
         String body = testCasePathValidator.substitute(testCase.getRequestBody(), resolvedValues);
@@ -72,10 +83,18 @@ public class RestAssuredTestRunner {
     /**
      * Giải mã targetAuthValueEncrypted và gắn header thật đúng lúc gọi target API - không giải mã
      * hay dùng ở bất kỳ chỗ nào khác (đúng quy tắc CLAUDE.md "giải mã chỉ khi thực thi test").
+     * authOverride (Module 9a, case Security) có thể cố tình bỏ qua hoặc thay bằng giá trị sai -
+     * NONE/INVALID không bao giờ chạm tới targetAuthValueEncrypted thật.
      */
-    private TargetAuthHeaderResolver.AuthHeader resolveAuthHeader(Project project) {
+    private TargetAuthHeaderResolver.AuthHeader resolveAuthHeader(Project project, TestCaseAuthOverride authOverride) {
         if (project.getTargetAuthType() == null || project.getTargetAuthType() == TargetAuthType.NONE) {
             return null;
+        }
+        if (authOverride == TestCaseAuthOverride.NONE) {
+            return null;
+        }
+        if (authOverride == TestCaseAuthOverride.INVALID) {
+            return targetAuthHeaderResolver.resolve(project.getTargetAuthType(), INVALID_AUTH_VALUE);
         }
         String decrypted = aesEncryptionService.decrypt(project.getTargetAuthValueEncrypted());
         return targetAuthHeaderResolver.resolve(project.getTargetAuthType(), decrypted);

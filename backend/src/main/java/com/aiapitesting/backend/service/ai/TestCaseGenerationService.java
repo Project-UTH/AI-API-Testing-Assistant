@@ -1,15 +1,20 @@
 package com.aiapitesting.backend.service.ai;
 
+import com.aiapitesting.backend.dto.ai.GeneratedAssertion;
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
+import com.aiapitesting.backend.dto.request.GenerateTestCasesRequest;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseAssertion;
+import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
@@ -34,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -56,6 +62,7 @@ public class TestCaseGenerationService {
     private final EndpointRepository endpointRepository;
     private final TestCaseRepository testCaseRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
+    private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestResultRepository testResultRepository;
     private final TestCasePathValidator testCasePathValidator;
     private final TestCaseService testCaseService;
@@ -67,12 +74,36 @@ public class TestCaseGenerationService {
 
     @Async
     @Transactional
-    public CompletableFuture<List<TestCaseResponse>> generate(UUID projectId, UUID endpointId) {
+    public CompletableFuture<List<TestCaseResponse>> generate(UUID projectId, UUID endpointId, GenerateTestCasesRequest request) {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        boolean includeSecurity = request != null && request.includeSecurity();
+        boolean includeAssertions = request != null && request.includeAssertions();
 
-        Prompt prompt = buildPrompt(endpoint);
+        // Luôn sinh lại nhóm Cơ bản (Positive/Negative/Boundary) - hành vi mặc định không đổi.
+        // Nhóm Security (nếu bật) là 1 lần gọi AI hoàn toàn riêng, xoá/lưu theo đúng source=SECURITY
+        // để không đụng tới nhóm Cơ bản và ngược lại (đúng yêu cầu roadmap Module 9a). includeAssertions
+        // áp dụng cho CẢ 2 lần gọi (nếu bật) - không phải 1 nhóm riêng, chỉ là AI có được yêu cầu tự
+        // đề xuất thêm assertion cho mỗi test case đang sinh hay không (đúng chốt trong plan Module 9b).
+        List<TestCase> saved = new ArrayList<>(
+                generateGroup(endpoint, TestCaseSource.AI_GENERATED, false, includeAssertions));
+        if (includeSecurity) {
+            saved.addAll(generateGroup(endpoint, TestCaseSource.SECURITY, true, includeAssertions));
+        }
+
+        return CompletableFuture.completedFuture(saved.stream().map(TestCaseResponse::from).toList());
+    }
+
+    /**
+     * Sinh + lưu 1 nhóm test case (Cơ bản hoặc Security) - xoá-và-thay đúng phạm vi theo source,
+     * không đụng nhóm khác. Mỗi nhóm là 1 lần gọi AI riêng và 1 dòng lịch sử (TestGenerationEvent)
+     * riêng vì đúng bản chất đã xảy ra 2 lần gọi AI thật khi cả 2 nhóm cùng được yêu cầu.
+     */
+    private List<TestCase> generateGroup(
+            Endpoint endpoint, TestCaseSource source, boolean includeSecurity, boolean includeAssertions
+    ) {
+        Prompt prompt = buildPrompt(endpoint, includeSecurity, includeAssertions);
 
         List<GeneratedTestCase> generated;
         try {
@@ -82,24 +113,50 @@ public class TestCaseGenerationService {
         } catch (Exception e) {
             // Log lỗi gốc từ AI provider để chẩn đoán (rate limit, sai key, timeout...) - không log
             // prompt/nội dung nhạy cảm, chỉ log loại lỗi + message do provider trả về.
-            log.warn("Goi AI that bai khi sinh test case cho endpoint {}: {}", endpointId, e.toString());
+            log.warn("Goi AI that bai khi sinh test case cho endpoint {}: {}", endpoint.getId(), e.toString());
             throw new AiGenerationFailedException("Không thể sinh test case từ AI, vui lòng thử lại");
         }
         validate(generated);
 
         // Chặn regenerate nếu còn test case khác (kể cả ở endpoint khác) đang phụ thuộc dữ liệu từ
-        // 1 trong các test case AI_GENERATED sắp bị xoá (Test Data Chaining, Module 7).
-        List<TestCase> existingAiCases = testCaseRepository.findAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
-        testCaseService.ensureNoDependents(existingAiCases);
+        // 1 trong các test case cùng source sắp bị xoá (Test Data Chaining, Module 7).
+        List<TestCase> existing = testCaseRepository.findAllByEndpointAndSource(endpoint, source);
+        testCaseService.ensureNoDependents(existing);
 
-        // Chỉ xoá-và-thay test case do AI sinh trước đó - giữ nguyên test case người dùng tự thêm tay.
-        // Dọn TestResult + TestCaseDependency (phía consumer - chính các test case này có thể tự phụ
-        // thuộc nguồn khác) trước khi xoá, tránh lỗi khoá ngoại 1451 (cùng loại đã fix ở TestCaseService.delete()).
-        testResultRepository.deleteAllByTestCaseIn(existingAiCases);
-        testCaseDependencyRepository.deleteAllByTestCaseIn(existingAiCases);
-        testCaseRepository.deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
+        // Dọn TestResult + TestCaseDependency + TestCaseAssertion (phía consumer - chính các test
+        // case này có thể tự phụ thuộc nguồn khác) trước khi xoá, tránh lỗi khoá ngoại 1451 (cùng
+        // loại đã fix ở TestCaseService.delete()).
+        testResultRepository.deleteAllByTestCaseIn(existing);
+        testCaseDependencyRepository.deleteAllByTestCaseIn(existing);
+        testCaseAssertionRepository.deleteAllByTestCaseIn(existing);
+        testCaseRepository.deleteAllByEndpointAndSource(endpoint, source);
         List<TestCase> saved = testCaseRepository.saveAll(generated.stream()
-                .map(g -> toEntity(endpoint, g)).toList());
+                .map(g -> toEntity(endpoint, g, source)).toList());
+
+        // saveAll() giữ nguyên thứ tự input -> ghép lại đúng theo index với `generated` để biết
+        // assertion nào (nếu AI có sinh) thuộc về test case nào vừa lưu.
+        List<TestCaseAssertion> assertionsToSave = new ArrayList<>();
+        for (int i = 0; i < saved.size(); i++) {
+            List<GeneratedAssertion> generatedAssertions = generated.get(i).assertions();
+            if (generatedAssertions == null) {
+                continue;
+            }
+            TestCase savedCase = saved.get(i);
+            for (GeneratedAssertion ga : generatedAssertions) {
+                if (ga.jsonPath() == null || ga.jsonPath().isBlank() || ga.operator() == null) {
+                    continue;
+                }
+                assertionsToSave.add(TestCaseAssertion.builder()
+                        .testCase(savedCase)
+                        .jsonPath(ga.jsonPath())
+                        .operator(ga.operator())
+                        .expectedValue(ga.expectedValue())
+                        .build());
+            }
+        }
+        if (!assertionsToSave.isEmpty()) {
+            testCaseAssertionRepository.saveAll(assertionsToSave);
+        }
 
         // Lưu snapshot lịch sử (Module 8) - đúng nội dung AI sinh ra TẠI THỜI ĐIỂM NÀY, tách biệt
         // với bảng test_cases sống vì lần regenerate sau sẽ xoá hẳn bộ này.
@@ -109,10 +166,10 @@ public class TestCaseGenerationService {
                 .snapshotJson(writeSnapshotAsJson(generated))
                 .build());
 
-        return CompletableFuture.completedFuture(saved.stream().map(TestCaseResponse::from).toList());
+        return saved;
     }
 
-    private Prompt buildPrompt(Endpoint endpoint) {
+    private Prompt buildPrompt(Endpoint endpoint, boolean includeSecurity, boolean includeAssertions) {
         // Đọc rõ UTF-8 thay vì để Resource tự suy ra charset - trên Windows, charset mặc định của
         // tiến trình JVM (sun.jnu.encoding) có thể không phải UTF-8 dù JVM 18+ đã set file.encoding=UTF-8,
         // khiến nội dung .st (tiếng Việt có dấu) bị đọc sai byte, gửi hướng dẫn lỗi font cho AI.
@@ -130,7 +187,9 @@ public class TestCaseGenerationService {
                 "method", endpoint.getMethod(),
                 "path", endpoint.getPath(),
                 "summary", endpoint.getSummary() == null ? "(không có mô tả)" : endpoint.getSummary(),
-                "schemaJson", endpoint.getSchema()));
+                "schemaJson", endpoint.getSchema(),
+                "includeSecurity", includeSecurity,
+                "includeAssertions", includeAssertions));
     }
 
     private void validate(List<GeneratedTestCase> generated) {
@@ -153,7 +212,7 @@ public class TestCaseGenerationService {
         }
     }
 
-    private TestCase toEntity(Endpoint endpoint, GeneratedTestCase generated) {
+    private TestCase toEntity(Endpoint endpoint, GeneratedTestCase generated, TestCaseSource source) {
         return TestCase.builder()
                 .endpoint(endpoint)
                 .name(generated.name())
@@ -163,7 +222,8 @@ public class TestCaseGenerationService {
                 .expectedStatus(generated.expectedStatus())
                 .resolvedPath(generated.resolvedPath())
                 .pathParamFallbacks(writeFallbacksAsJson(generated.pathParamFallbacks()))
-                .source(TestCaseSource.AI_GENERATED)
+                .source(source)
+                .authOverride(generated.authOverride() == null ? TestCaseAuthOverride.DEFAULT : generated.authOverride())
                 .build();
     }
 
