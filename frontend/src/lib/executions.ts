@@ -3,6 +3,16 @@ import { apiFetch } from "@/lib/api"
 export type ExecutionStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
 export type TestResultStatus = "PASSED" | "FAILED" | "ERROR" | "BLOCKED" | "SKIPPED"
 
+export type AssertionOperator = "EQUALS" | "CONTAINS" | "EXISTS" | "TYPE"
+
+export interface AssertionResult {
+  jsonPath: string
+  operator: AssertionOperator
+  expectedValue: string | null
+  actualValue: string | null
+  passed: boolean
+}
+
 export interface TestResult {
   testCaseId: string
   testCaseName: string
@@ -12,6 +22,7 @@ export interface TestResult {
   responseStatus: number | null
   responseBody: string | null
   errorMessage: string | null
+  assertionResults: AssertionResult[]
 }
 
 export interface TestExecution {

@@ -11,6 +11,7 @@ import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
@@ -64,6 +65,9 @@ class TestCaseGenerationServiceTest {
     private TestCaseDependencyRepository testCaseDependencyRepository;
 
     @Mock
+    private TestCaseAssertionRepository testCaseAssertionRepository;
+
+    @Mock
     private TestResultRepository testResultRepository;
 
     @Mock
@@ -106,15 +110,15 @@ class TestCaseGenerationServiceTest {
                 new GeneratedTestCase(
                         "Positive - Tao user hop le", "mo ta",
                         Map.of("Content-Type", "application/json"), "{\"email\":\"a@b.com\"}", 201,
-                        "/users", Map.of()),
+                        "/users", Map.of(), null, null),
                 new GeneratedTestCase(
                         "Negative - Thieu email", "mo ta",
                         Map.of("Content-Type", "application/json"), "{}", 400,
-                        "/users", Map.of())
+                        "/users", Map.of(), null, null)
         ));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(projectId, endpointId);
+        CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(projectId, endpointId, null);
         List<TestCaseResponse> result = future.get();
 
         assertThat(result).hasSize(2);
@@ -148,7 +152,7 @@ class TestCaseGenerationServiceTest {
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of());
 
-        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId))
+        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
                 .isInstanceOf(AiGenerationFailedException.class);
 
         verify(testCaseRepository, never()).saveAll(anyList());
@@ -159,9 +163,9 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 999, "/users", Map.of())));
+                "Positive", "mo ta", Map.of(), "{}", 999, "/users", Map.of(), null, null)));
 
-        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId))
+        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
                 .isInstanceOf(AiGenerationFailedException.class);
 
         verify(testCaseRepository, never()).saveAll(anyList());
@@ -172,7 +176,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId))
+        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
                 .isInstanceOf(EndpointNotFoundException.class);
 
         verifyNoInteractions(testCaseRepository);
@@ -182,7 +186,7 @@ class TestCaseGenerationServiceTest {
     void generate_notOwner_throwsForbidden() {
         when(projectService.getOwnedProject(projectId)).thenThrow(new ForbiddenException("Ban khong co quyen truy cap project nay"));
 
-        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId))
+        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
                 .isInstanceOf(ForbiddenException.class);
 
         verifyNoInteractions(endpointRepository);
@@ -194,7 +198,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of())));
+                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null)));
 
         TestCase existingAiCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint)
                 .source(TestCaseSource.AI_GENERATED).build();
@@ -203,11 +207,33 @@ class TestCaseGenerationServiceTest {
         org.mockito.Mockito.doThrow(new com.aiapitesting.backend.exception.TestCaseHasDependentsException("co nguoi phu thuoc"))
                 .when(testCaseService).ensureNoDependents(List.of(existingAiCase));
 
-        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId))
+        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
                 .isInstanceOf(com.aiapitesting.backend.exception.TestCaseHasDependentsException.class);
 
         verify(testCaseRepository, never()).deleteAllByEndpointAndSource(any(), any());
         verify(testCaseRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void generate_includeSecurityTrue_alsoGeneratesAndSavesSecurityGroupSeparately() throws Exception {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        // Cùng 1 stub AI trả về cho cả 2 lần gọi (Cơ bản + Security) - đủ để kiểm tra tách source đúng.
+        stubAiResponse(List.of(new GeneratedTestCase(
+                "Security - Thieu token", "mo ta", Map.of(), null, 401, "/users",
+                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null)));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
+                projectId, endpointId, new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false));
+        future.get();
+
+        // Cả 2 nhóm đều được xoá-và-thay đúng phạm vi source riêng - không nhóm nào đụng nhóm kia.
+        verify(testCaseRepository).deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
+        verify(testCaseRepository).deleteAllByEndpointAndSource(endpoint, TestCaseSource.SECURITY);
+        verify(testCaseRepository, org.mockito.Mockito.times(2)).saveAll(anyList());
+        // 2 lần gọi AI thật (Cơ bản + Security) -> 2 dòng lịch sử sinh test case riêng biệt.
+        verify(testGenerationEventRepository, org.mockito.Mockito.times(2)).save(any(TestGenerationEvent.class));
     }
 
     @SuppressWarnings("unchecked")

@@ -44,6 +44,14 @@ public class TestResult {
     @Column(columnDefinition = "TEXT")
     private String errorMessage;
 
+    /**
+     * JSON list các AssertionResultResponse (Module 9b) - chỉ có giá trị khi thật sự gọi được
+     * target API (có response để chấm assertion); null cho case ERROR/BLOCKED hoặc test case
+     * không có assertion nào.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String assertionResultsJson;
+
     /** True nếu test case này không nằm trong lựa chọn ban đầu, được kéo theo qua Test Data Chaining (Module 7). */
     @Column(nullable = false)
     @Builder.Default

@@ -1,6 +1,22 @@
 import { apiFetch } from "@/lib/api"
 
-export type TestCaseSource = "AI_GENERATED" | "MANUAL"
+export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY"
+
+export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
+
+export type AssertionOperator = "EQUALS" | "CONTAINS" | "EXISTS" | "TYPE"
+
+export interface TestCaseAssertion {
+  jsonPath: string
+  operator: AssertionOperator
+  expectedValue: string | null
+}
+
+export interface TestCaseAssertionInput {
+  jsonPath: string
+  operator: AssertionOperator
+  expectedValue: string | null
+}
 
 export interface TestCaseDependency {
   dependsOnTestCaseId: string
@@ -35,8 +51,10 @@ export interface TestCase {
   resolvedPath: string | null
   pathParamFallbacks: string | null
   source: TestCaseSource
+  authOverride: TestCaseAuthOverride
   createdAt: string
   dependencies: TestCaseDependency[]
+  assertions: TestCaseAssertion[]
 }
 
 export interface TestCaseInput {
@@ -47,12 +65,27 @@ export interface TestCaseInput {
   expectedStatus: number
   resolvedPath?: string
   pathParamFallbacks?: string
+  authOverride?: TestCaseAuthOverride
   dependencies?: TestCaseDependencyInput[]
+  assertions?: TestCaseAssertionInput[]
 }
 
-export function generateTestCases(projectId: string, endpointId: string): Promise<TestCase[]> {
+export interface GenerateTestCasesOptions {
+  includeSecurity?: boolean
+  includeAssertions?: boolean
+}
+
+export function generateTestCases(
+  projectId: string,
+  endpointId: string,
+  options?: GenerateTestCasesOptions
+): Promise<TestCase[]> {
   return apiFetch<TestCase[]>(`/projects/${projectId}/endpoints/${endpointId}/generate-tests`, {
     method: "POST",
+    body: JSON.stringify({
+      includeSecurity: options?.includeSecurity ?? false,
+      includeAssertions: options?.includeAssertions ?? false,
+    }),
   })
 }
 

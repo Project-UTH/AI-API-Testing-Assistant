@@ -9,6 +9,7 @@ import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
@@ -27,6 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,6 +46,9 @@ class TestCaseServiceTest {
 
     @Mock
     private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private TestCaseAssertionRepository testCaseAssertionRepository;
 
     @Mock
     private TestResultRepository testResultRepository;
@@ -91,7 +96,7 @@ class TestCaseServiceTest {
         when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TestCaseRequest request = new TestCaseRequest(
-                "Test thu cong", "mo ta", "{\"Content-Type\":\"application/json\"}", "{}", 400, null, null, null);
+                "Test thu cong", "mo ta", "{\"Content-Type\":\"application/json\"}", "{}", 400, null, null, null, null, null);
 
         TestCaseResponse response = testCaseService.create(projectId, endpointId, request);
 
@@ -102,6 +107,24 @@ class TestCaseServiceTest {
         verify(testCaseRepository).save(captor.capture());
         assertThat(captor.getValue().getSource()).isEqualTo(TestCaseSource.MANUAL);
         assertThat(captor.getValue().getEndpoint()).isEqualTo(endpoint);
+        // authOverride khong truyen (null trong request) -> mac dinh DEFAULT, khong de null xuong DB
+        assertThat(captor.getValue().getAuthOverride())
+                .isEqualTo(com.aiapitesting.backend.entity.TestCaseAuthOverride.DEFAULT);
+    }
+
+    @Test
+    void create_withExplicitAuthOverride_savesItAsGiven() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TestCaseRequest request = new TestCaseRequest(
+                "Security - token sai", null, null, null, 401, null, null,
+                com.aiapitesting.backend.entity.TestCaseAuthOverride.INVALID, null, null);
+
+        TestCaseResponse response = testCaseService.create(projectId, endpointId, request);
+
+        assertThat(response.authOverride()).isEqualTo(com.aiapitesting.backend.entity.TestCaseAuthOverride.INVALID);
     }
 
     @Test
@@ -109,7 +132,7 @@ class TestCaseServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.empty());
 
-        TestCaseRequest request = new TestCaseRequest("Ten", null, null, null, 200, null, null, null);
+        TestCaseRequest request = new TestCaseRequest("Ten", null, null, null, 200, null, null, null, null, null);
 
         assertThatThrownBy(() -> testCaseService.create(projectId, endpointId, request))
                 .isInstanceOf(EndpointNotFoundException.class);
@@ -125,7 +148,7 @@ class TestCaseServiceTest {
         when(testCaseRepository.findByIdAndEndpoint(testCaseId, endpoint)).thenReturn(Optional.of(existing));
         when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TestCaseRequest request = new TestCaseRequest("Ten moi", "mo ta moi", null, null, 404, null, null, null);
+        TestCaseRequest request = new TestCaseRequest("Ten moi", "mo ta moi", null, null, 404, null, null, null, null, null);
         TestCaseResponse response = testCaseService.update(projectId, endpointId, testCaseId, request);
 
         assertThat(response.name()).isEqualTo("Ten moi");
@@ -140,7 +163,7 @@ class TestCaseServiceTest {
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         when(testCaseRepository.findByIdAndEndpoint(testCaseId, endpoint)).thenReturn(Optional.empty());
 
-        TestCaseRequest request = new TestCaseRequest("Ten", null, null, null, 200, null, null, null);
+        TestCaseRequest request = new TestCaseRequest("Ten", null, null, null, 200, null, null, null, null, null);
 
         assertThatThrownBy(() -> testCaseService.update(projectId, endpointId, testCaseId, request))
                 .isInstanceOf(TestCaseNotFoundException.class);
@@ -201,9 +224,63 @@ class TestCaseServiceTest {
         com.aiapitesting.backend.dto.request.TestCaseDependencyInput badInput =
                 new com.aiapitesting.backend.dto.request.TestCaseDependencyInput(UUID.randomUUID(), "$.id", "petId");
         TestCaseRequest request = new TestCaseRequest(
-                "Test", null, null, null, 200, "/pets", null, List.of(badInput));
+                "Test", null, null, null, 200, "/pets", null, null, List.of(badInput), null);
 
         assertThatThrownBy(() -> testCaseService.create(projectId, endpointId, request))
                 .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+    }
+
+    @Test
+    void create_withAssertions_savesThem() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(testCaseAssertionRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        com.aiapitesting.backend.dto.request.TestCaseAssertionInput assertionInput =
+                new com.aiapitesting.backend.dto.request.TestCaseAssertionInput(
+                        "price", com.aiapitesting.backend.entity.AssertionOperator.EQUALS, "19.99");
+        TestCaseRequest request = new TestCaseRequest(
+                "Test", null, null, "{}", 201, null, null, null, null, List.of(assertionInput));
+
+        TestCaseResponse response = testCaseService.create(projectId, endpointId, request);
+
+        assertThat(response.assertions()).hasSize(1);
+        assertThat(response.assertions().get(0).jsonPath()).isEqualTo("price");
+        assertThat(response.assertions().get(0).expectedValue()).isEqualTo("19.99");
+    }
+
+    @Test
+    void create_assertionEqualsWithoutExpectedValue_throwsInvalidRequest() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        com.aiapitesting.backend.dto.request.TestCaseAssertionInput assertionInput =
+                new com.aiapitesting.backend.dto.request.TestCaseAssertionInput(
+                        "price", com.aiapitesting.backend.entity.AssertionOperator.EQUALS, null);
+        TestCaseRequest request = new TestCaseRequest(
+                "Test", null, null, "{}", 201, null, null, null, null, List.of(assertionInput));
+
+        assertThatThrownBy(() -> testCaseService.create(projectId, endpointId, request))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+    }
+
+    @Test
+    void create_existsAssertionWithoutExpectedValue_isAllowed() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(testCaseAssertionRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        com.aiapitesting.backend.dto.request.TestCaseAssertionInput assertionInput =
+                new com.aiapitesting.backend.dto.request.TestCaseAssertionInput(
+                        "id", com.aiapitesting.backend.entity.AssertionOperator.EXISTS, null);
+        TestCaseRequest request = new TestCaseRequest(
+                "Test", null, null, "{}", 201, null, null, null, null, List.of(assertionInput));
+
+        TestCaseResponse response = testCaseService.create(projectId, endpointId, request);
+
+        assertThat(response.assertions()).hasSize(1);
     }
 }

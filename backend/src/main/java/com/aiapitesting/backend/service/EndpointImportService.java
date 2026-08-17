@@ -7,6 +7,7 @@ import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
@@ -32,6 +33,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -48,6 +50,7 @@ public class EndpointImportService {
     private final TestExecutionRepository testExecutionRepository;
     private final TestExecutionEndpointRepository testExecutionEndpointRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
+    private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
     private final SafeUrlFetcher safeUrlFetcher;
     private final AesEncryptionService aesEncryptionService;
@@ -125,14 +128,15 @@ public class EndpointImportService {
             throw new SwaggerParseException("Tài liệu OpenAPI không chứa endpoint nào");
         }
 
-        // Dọn TestExecutionEndpoint/TestResult/TestExecution/TestCaseDependency/TestGenerationEvent/
-        // test case của các endpoint cũ trước khi xoá endpoint - đều là khoá ngoại NOT NULL, xoá
-        // endpoint trước khi còn bị tham chiếu sẽ vi phạm khoá ngoại (lỗi MySQL 1451, đã gặp nhiều
-        // lần trong dự án này).
+        // Dọn TestExecutionEndpoint/TestResult/TestExecution/TestCaseDependency/TestCaseAssertion/
+        // TestGenerationEvent/test case của các endpoint cũ trước khi xoá endpoint - đều là khoá
+        // ngoại NOT NULL, xoá endpoint trước khi còn bị tham chiếu sẽ vi phạm khoá ngoại (lỗi MySQL
+        // 1451, đã gặp nhiều lần trong dự án này).
         testExecutionEndpointRepository.deleteAllByExecutionProject(project);
         testResultRepository.deleteAllByTestCaseEndpointProject(project);
         testExecutionRepository.deleteAllByProject(project);
         testCaseDependencyRepository.deleteAllByProject(project);
+        testCaseAssertionRepository.deleteAllByTestCaseEndpointProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
         testGenerationEventRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
@@ -181,19 +185,41 @@ public class EndpointImportService {
     }
 
     private Endpoint buildEndpoint(Project project, String path, String method, Operation operation) {
-        String schemaJson;
-        try {
-            schemaJson = objectMapper.writeValueAsString(operation);
-        } catch (Exception e) {
-            schemaJson = "{}";
-        }
-
         return Endpoint.builder()
                 .project(project)
                 .path(path)
                 .method(method)
                 .summary(operation.getSummary())
-                .schema(schemaJson)
+                .schema(buildSchemaJson(operation))
                 .build();
+    }
+
+    /**
+     * Chỉ giữ phần schema AI thực sự cần để sinh test case (parameters, requestBody, danh sách mã
+     * trạng thái đã document) - bỏ hẳn full schema body của từng response code. swagger-parser với
+     * setResolveFully(true) inline nguyên schema (thường trùng lặp gần như y hệt request schema)
+     * vào MỖI response code documented, khiến field "responses" chiếm phần lớn dung lượng schema
+     * (đã đo thực tế: 18191/26519 ký tự - 68% - cho 1 endpoint chỉ có 2 response code) mà không
+     * mang thêm giá trị cho AI ngoài việc biết mã đó có tồn tại - đây là nguyên nhân chính khiến
+     * endpoint có nhiều response code document (PUT/PATCH/GET theo id) hay bị Groq từ chối 413 dù
+     * endpoint đơn giản hơn (POST) vẫn sinh được bình thường.
+     */
+    private String buildSchemaJson(Operation operation) {
+        Map<String, Object> trimmed = new LinkedHashMap<>();
+        trimmed.put("summary", operation.getSummary());
+        if (operation.getParameters() != null && !operation.getParameters().isEmpty()) {
+            trimmed.put("parameters", operation.getParameters());
+        }
+        if (operation.getRequestBody() != null) {
+            trimmed.put("requestBody", operation.getRequestBody());
+        }
+        if (operation.getResponses() != null && !operation.getResponses().isEmpty()) {
+            trimmed.put("responseStatusCodes", new ArrayList<>(operation.getResponses().keySet()));
+        }
+        try {
+            return objectMapper.writeValueAsString(trimmed);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 }

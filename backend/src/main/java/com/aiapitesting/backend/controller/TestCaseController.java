@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.controller;
 
+import com.aiapitesting.backend.dto.request.GenerateTestCasesRequest;
 import com.aiapitesting.backend.dto.request.TestCaseRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.DependencySuggestionResponse;
@@ -36,9 +37,10 @@ public class TestCaseController {
     @PostMapping("/generate-tests")
     public CompletableFuture<ResponseEntity<ApiResponse<List<TestCaseResponse>>>> generate(
             @PathVariable UUID projectId,
-            @PathVariable UUID endpointId
+            @PathVariable UUID endpointId,
+            @RequestBody(required = false) GenerateTestCasesRequest request
     ) {
-        return testCaseGenerationService.generate(projectId, endpointId)
+        return testCaseGenerationService.generate(projectId, endpointId, request)
                 .thenApply(list -> ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(list)));
     }
 
