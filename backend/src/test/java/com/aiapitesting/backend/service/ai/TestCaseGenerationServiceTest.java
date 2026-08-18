@@ -123,7 +123,7 @@ class TestCaseGenerationServiceTest {
 
         assertThat(result).hasSize(2);
         // Chỉ xoá-và-thay test case do AI sinh trước đó, không đụng tới test case tự thêm tay
-        verify(testCaseRepository).deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
+        verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
         // Dọn TestResult + TestCaseDependency (phía consumer) trước khi xoá - tránh lỗi khoá ngoại 1451
         verify(testResultRepository).deleteAllByTestCaseIn(anyList());
         verify(testCaseDependencyRepository).deleteAllByTestCaseIn(anyList());
@@ -202,7 +202,7 @@ class TestCaseGenerationServiceTest {
 
         TestCase existingAiCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint)
                 .source(TestCaseSource.AI_GENERATED).build();
-        when(testCaseRepository.findAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED))
+        when(testCaseRepository.findAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED))
                 .thenReturn(List.of(existingAiCase));
         org.mockito.Mockito.doThrow(new com.aiapitesting.backend.exception.TestCaseHasDependentsException("co nguoi phu thuoc"))
                 .when(testCaseService).ensureNoDependents(List.of(existingAiCase));
@@ -210,7 +210,7 @@ class TestCaseGenerationServiceTest {
         assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
                 .isInstanceOf(com.aiapitesting.backend.exception.TestCaseHasDependentsException.class);
 
-        verify(testCaseRepository, never()).deleteAllByEndpointAndSource(any(), any());
+        verify(testCaseRepository, never()).deleteAllByEndpointAndSourceAndLockedFalse(any(), any());
         verify(testCaseRepository, never()).saveAll(anyList());
     }
 
@@ -225,15 +225,52 @@ class TestCaseGenerationServiceTest {
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
-                projectId, endpointId, new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false));
+                projectId, endpointId,
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, true, true, true));
         future.get();
 
         // Cả 2 nhóm đều được xoá-và-thay đúng phạm vi source riêng - không nhóm nào đụng nhóm kia.
-        verify(testCaseRepository).deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
-        verify(testCaseRepository).deleteAllByEndpointAndSource(endpoint, TestCaseSource.SECURITY);
+        verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
+        verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.SECURITY);
         verify(testCaseRepository, org.mockito.Mockito.times(2)).saveAll(anyList());
         // 2 lần gọi AI thật (Cơ bản + Security) -> 2 dòng lịch sử sinh test case riêng biệt.
         verify(testGenerationEventRepository, org.mockito.Mockito.times(2)).save(any(TestGenerationEvent.class));
+    }
+
+    @Test
+    void generate_noCategorySelected_throwsInvalidRequestWithoutCallingAi() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+
+        assertThatThrownBy(() -> testCaseGenerationService.generate(
+                projectId, endpointId,
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, false, false, false, false)))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+
+        verifyNoInteractions(chatClient);
+        verifyNoInteractions(testCaseRepository);
+    }
+
+    @Test
+    void generate_onlySecuritySelected_skipsBasicGroupEntirely() throws Exception {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        stubAiResponse(List.of(new GeneratedTestCase(
+                "Security - Thieu token", "mo ta", Map.of(), null, 401, "/users",
+                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null)));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
+                projectId, endpointId,
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, false, false, false));
+        future.get();
+
+        // Không tích Positive/Negative/Boundary nào -> không được đụng tới nhóm AI_GENERATED, kể cả
+        // đọc/xoá - chỉ 1 lần gọi AI duy nhất (Security), không lãng phí lời gọi cho nhóm không cần.
+        verify(testCaseRepository, never()).findAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
+        verify(testCaseRepository, never()).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
+        verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.SECURITY);
+        verify(testCaseRepository, org.mockito.Mockito.times(1)).saveAll(anyList());
     }
 
     @SuppressWarnings("unchecked")

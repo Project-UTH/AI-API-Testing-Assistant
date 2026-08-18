@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -127,6 +128,20 @@ public class TestCaseService {
                 assertions.stream().map(TestCaseAssertionResponse::from).toList());
     }
 
+    /**
+     * Bật/tắt khoá 1 test case (Module 9) - test case đang khoá không bị xoá khi "Sinh Test Case"
+     * xoá-và-thay (TestCaseGenerationService.generateGroup()), bất kể source nào. Không cần validate
+     * gì thêm - khoá/mở khoá luôn hợp lệ, kể cả test case đang có dependent khác trỏ vào.
+     */
+    @Transactional
+    public TestCaseResponse setLocked(UUID projectId, UUID endpointId, UUID testCaseId, boolean locked) {
+        Endpoint endpoint = getOwnedEndpoint(projectId, endpointId);
+        TestCase testCase = getOwnedTestCase(endpoint, testCaseId);
+        testCase.setLocked(locked);
+        testCaseRepository.save(testCase);
+        return TestCaseResponse.from(testCase);
+    }
+
     @Transactional
     public void delete(UUID projectId, UUID endpointId, UUID testCaseId) {
         Endpoint endpoint = getOwnedEndpoint(projectId, endpointId);
@@ -174,12 +189,20 @@ public class TestCaseService {
         placeholders.addAll(testCasePathValidator.extractPlaceholders(testCase.getRequestBody()));
         placeholders.addAll(testCasePathValidator.extractPlaceholders(testCase.getRequestHeaders()));
 
+        Set<String> seenPlaceholders = new HashSet<>();
         Map<UUID, TestCase> ownedTestCasesById = new HashMap<>();
         List<TestCaseDependency> toSave = new ArrayList<>();
         for (TestCaseDependencyInput input : inputs) {
             if (!placeholders.contains(input.placeholderName())) {
                 throw new InvalidRequestException(
                         "Tên placeholder '" + input.placeholderName() + "' không khớp token {{}} nào trong test case này");
+            }
+            // Ràng buộc DB (uk_test_case_dependencies_test_case_placeholder) chỉ cho phép đúng 1
+            // dependency mỗi placeholder - chặn sớm ở đây để trả lỗi rõ ràng thay vì lỗi 500 chung
+            // chung từ SQLIntegrityConstraintViolationException khi client (vô tình) gửi trùng.
+            if (!seenPlaceholders.add(input.placeholderName())) {
+                throw new InvalidRequestException(
+                        "Placeholder '" + input.placeholderName() + "' bị gán trùng nhiều hơn 1 dependency");
             }
             TestCase dependsOn = ownedTestCasesById.computeIfAbsent(input.dependsOnTestCaseId(),
                     id -> testCaseRepository.findById(id)

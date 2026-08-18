@@ -52,6 +52,7 @@ export interface TestCase {
   pathParamFallbacks: string | null
   source: TestCaseSource
   authOverride: TestCaseAuthOverride
+  locked: boolean
   createdAt: string
   dependencies: TestCaseDependency[]
   assertions: TestCaseAssertion[]
@@ -73,6 +74,9 @@ export interface TestCaseInput {
 export interface GenerateTestCasesOptions {
   includeSecurity?: boolean
   includeAssertions?: boolean
+  includePositive?: boolean
+  includeNegative?: boolean
+  includeBoundary?: boolean
 }
 
 export function generateTestCases(
@@ -85,7 +89,22 @@ export function generateTestCases(
     body: JSON.stringify({
       includeSecurity: options?.includeSecurity ?? false,
       includeAssertions: options?.includeAssertions ?? false,
+      includePositive: options?.includePositive ?? false,
+      includeNegative: options?.includeNegative ?? false,
+      includeBoundary: options?.includeBoundary ?? false,
     }),
+  })
+}
+
+export function setTestCaseLocked(
+  projectId: string,
+  endpointId: string,
+  testCaseId: string,
+  locked: boolean
+): Promise<TestCase> {
+  return apiFetch<TestCase>(`/projects/${projectId}/endpoints/${endpointId}/test-cases/${testCaseId}/lock`, {
+    method: "PUT",
+    body: JSON.stringify({ locked }),
   })
 }
 

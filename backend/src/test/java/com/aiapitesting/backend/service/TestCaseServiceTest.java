@@ -185,6 +185,23 @@ class TestCaseServiceTest {
     }
 
     @Test
+    void setLocked_true_savesLockedFlagOnTestCase() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        TestCase existing = TestCase.builder()
+                .id(testCaseId).endpoint(endpoint).name("Ten").expectedStatus(200)
+                .source(TestCaseSource.AI_GENERATED).locked(false).build();
+        when(testCaseRepository.findByIdAndEndpoint(testCaseId, endpoint)).thenReturn(Optional.of(existing));
+        when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TestCaseResponse response = testCaseService.setLocked(projectId, endpointId, testCaseId, true);
+
+        assertThat(response.locked()).isTrue();
+        assertThat(existing.isLocked()).isTrue();
+        verify(testCaseRepository).save(existing);
+    }
+
+    @Test
     void delete_testCaseNotFound_throwsTestCaseNotFound() {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
@@ -228,6 +245,34 @@ class TestCaseServiceTest {
 
         assertThatThrownBy(() -> testCaseService.create(projectId, endpointId, request))
                 .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+    }
+
+    @Test
+    void create_duplicateDependencyPlaceholder_throwsInvalidRequestInsteadOfDbConstraintViolation() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testCaseRepository.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TestCase source = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).build();
+        when(testCaseRepository.findById(source.getId())).thenReturn(java.util.Optional.of(source));
+        // testCasePathValidator là @Mock thuần (không @Spy) - extractPlaceholders() mặc định trả
+        // Set rỗng nếu không stub, khiến check "placeholder khớp token {{}}" luôn fail trước khi
+        // chạm tới check trùng lặp đang test ở đây.
+        when(testCasePathValidator.extractPlaceholders(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(new java.util.HashSet<>(List.of("petId")));
+
+        // 2 dependency cùng gán cho đúng 1 placeholder "petId" - vi phạm ràng buộc DB
+        // (uk_test_case_dependencies_test_case_placeholder) nếu không bị chặn sớm ở tầng service.
+        com.aiapitesting.backend.dto.request.TestCaseDependencyInput dup1 =
+                new com.aiapitesting.backend.dto.request.TestCaseDependencyInput(source.getId(), "$.id", "petId");
+        com.aiapitesting.backend.dto.request.TestCaseDependencyInput dup2 =
+                new com.aiapitesting.backend.dto.request.TestCaseDependencyInput(source.getId(), "$.id", "petId");
+        TestCaseRequest request = new TestCaseRequest(
+                "Test", null, null, null, 200, "/pets/{{petId}}", "{\"petId\":\"1\"}", null, List.of(dup1, dup2), null);
+
+        assertThatThrownBy(() -> testCaseService.create(projectId, endpointId, request))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class)
+                .hasMessageContaining("trùng");
     }
 
     @Test

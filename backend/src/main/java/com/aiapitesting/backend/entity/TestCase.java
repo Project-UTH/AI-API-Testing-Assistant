@@ -79,6 +79,15 @@ public class TestCase {
     @Builder.Default
     private TestCaseAuthOverride authOverride = TestCaseAuthOverride.DEFAULT;
 
+    /**
+     * Khoá test case này khỏi bị xoá khi "Sinh Test Case" xoá-và-thay (Positive/Negative/Boundary/
+     * Security) - áp dụng cho MỌI test case bất kể source. Người dùng tự bật/tắt qua nút khoá riêng,
+     * không qua form sửa thường (TestCaseRequest không có field này).
+     */
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean locked = false;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

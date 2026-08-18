@@ -22,6 +22,7 @@ public record TestCaseResponse(
         String pathParamFallbacks,
         TestCaseSource source,
         TestCaseAuthOverride authOverride,
+        boolean locked,
         Instant createdAt,
         List<TestCaseDependencyResponse> dependencies,
         List<TestCaseAssertionResponse> assertions
@@ -51,6 +52,7 @@ public record TestCaseResponse(
                 testCase.getPathParamFallbacks(),
                 testCase.getSource(),
                 testCase.getAuthOverride(),
+                testCase.isLocked(),
                 testCase.getCreatedAt(),
                 dependencies,
                 assertions
