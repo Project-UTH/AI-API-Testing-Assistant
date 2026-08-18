@@ -23,8 +23,15 @@ public interface TestCaseAssertionRepository extends JpaRepository<TestCaseAsser
     @Query("DELETE FROM TestCaseAssertion tca WHERE tca.testCase = :testCase")
     void deleteAllByTestCase(@Param("testCase") TestCase testCase);
 
-    // Dọn trước khi bulk-xoá 1 tập test case (regenerate AI theo source, xoá endpoint khi import lại).
-    void deleteAllByTestCaseIn(List<TestCase> testCases);
+    /**
+     * Dọn trước khi bulk-xoá 1 tập test case (regenerate AI theo source, xoá endpoint khi import lại).
+     * @Modifying bắt buộc cùng lý do như deleteAllByTestCase phía trên: 2 lượt regenerate chồng
+     * nhau cho cùng endpoint (bấm "Sinh Test Case" 2 lần) khiến derived delete thường vỡ
+     * StaleStateException lúc flush vì dòng đã bị lượt trước xoá mất (đã xác nhận qua log thật).
+     */
+    @Modifying
+    @Query("DELETE FROM TestCaseAssertion tca WHERE tca.testCase IN :testCases")
+    void deleteAllByTestCaseIn(@Param("testCases") List<TestCase> testCases);
 
     // Dọn toàn bộ assertion trong 1 project (EndpointImportService.doImport()/ProjectService.delete()).
     @Modifying

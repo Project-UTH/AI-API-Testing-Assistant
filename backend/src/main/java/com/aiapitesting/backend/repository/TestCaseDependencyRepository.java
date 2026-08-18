@@ -29,10 +29,17 @@ public interface TestCaseDependencyRepository extends JpaRepository<TestCaseDepe
     @Query("DELETE FROM TestCaseDependency tcd WHERE tcd.testCase = :testCase")
     void deleteAllByTestCase(@Param("testCase") TestCase testCase);
 
-    // Dọn trước khi bulk-xoá 1 tập test case cụ thể (regenerate AI - TestCaseGenerationService) -
-    // các test case này có thể tự là consumer của dependency khác, không chỉ nguồn (đã chặn ở
-    // ensureNoDependents phía nguồn, nhưng phía consumer vẫn cần dọn để tránh lỗi khoá ngoại 1451.
-    void deleteAllByTestCaseIn(List<TestCase> testCases);
+    /**
+     * Dọn trước khi bulk-xoá 1 tập test case cụ thể (regenerate AI - TestCaseGenerationService) -
+     * các test case này có thể tự là consumer của dependency khác, không chỉ nguồn (đã chặn ở
+     * ensureNoDependents phía nguồn, nhưng phía consumer vẫn cần dọn để tránh lỗi khoá ngoại 1451.
+     * @Modifying bắt buộc cùng lý do như deleteAllByTestCase phía trên: 2 lượt regenerate chồng
+     * nhau cho cùng endpoint (bấm "Sinh Test Case" 2 lần) khiến derived delete thường vỡ
+     * StaleStateException lúc flush vì dòng đã bị lượt trước xoá mất (đã xác nhận qua log thật).
+     */
+    @Modifying
+    @Query("DELETE FROM TestCaseDependency tcd WHERE tcd.testCase IN :testCases")
+    void deleteAllByTestCaseIn(@Param("testCases") List<TestCase> testCases);
 
     @Query("SELECT tcd FROM TestCaseDependency tcd JOIN FETCH tcd.testCase WHERE tcd.dependsOnTestCase.id IN :testCaseIds")
     List<TestCaseDependency> findAllByDependsOnTestCaseIdIn(@Param("testCaseIds") List<UUID> testCaseIds);

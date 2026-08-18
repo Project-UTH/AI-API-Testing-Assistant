@@ -6,6 +6,7 @@ import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -30,11 +31,24 @@ public interface TestCaseRepository extends JpaRepository<TestCase, UUID> {
     @Query("SELECT tc FROM TestCase tc JOIN FETCH tc.endpoint WHERE tc.id IN :ids AND tc.endpoint.project = :project")
     List<TestCase> findAllByIdInAndEndpointProject(@Param("ids") List<UUID> ids, @Param("project") Project project);
 
-    void deleteAllByEndpointAndSource(Endpoint endpoint, TestCaseSource source);
+    /**
+     * @Modifying bắt buộc - derived delete thường vỡ StaleStateException lúc flush khi 2 lượt
+     * "Sinh Test Case" chồng nhau cho cùng endpoint (bấm nút 2 lần liên tiếp), vì lượt sau thấy
+     * dòng đã bị lượt trước xoá mất (đã xác nhận qua log thật, cùng lớp lỗi với
+     * TestResultRepository/TestCaseDependencyRepository/TestCaseAssertionRepository.deleteAllByTestCaseIn
+     * chạy ngay trước lệnh này trong TestCaseGenerationService.generateGroup()).
+     * AndLockedFalse - test case đang bị khoá (nút khoá riêng, mọi source) không bao giờ bị xoá khi
+     * regenerate, bất kể đang xoá-thay nhóm Cơ bản hay Security.
+     */
+    @Modifying
+    @Query("DELETE FROM TestCase tc WHERE tc.endpoint = :endpoint AND tc.source = :source AND tc.locked = false")
+    void deleteAllByEndpointAndSourceAndLockedFalse(@Param("endpoint") Endpoint endpoint, @Param("source") TestCaseSource source);
 
-    // Lấy trước danh sách sắp bị xoá bởi deleteAllByEndpointAndSource - để guard kiểm tra
-    // TestCaseDependency trước khi xoá thật (chặn regenerate nếu còn ai phụ thuộc).
-    List<TestCase> findAllByEndpointAndSource(Endpoint endpoint, TestCaseSource source);
+    // Lấy trước danh sách sắp bị xoá bởi deleteAllByEndpointAndSourceAndLockedFalse - để guard kiểm
+    // tra TestCaseDependency trước khi xoá thật (chặn regenerate nếu còn ai phụ thuộc). Đã lọc sẵn
+    // locked=false nên case đang khoá không lọt vào danh sách "sắp xoá" - không cần check dependents
+    // cho nó vì nó không hề bị đụng tới.
+    List<TestCase> findAllByEndpointAndSourceAndLockedFalse(Endpoint endpoint, TestCaseSource source);
 
     // Dùng cho gợi ý liên kết tự động (Module 7) - lấy test case 2xx tạo sớm nhất của 1 endpoint.
     List<TestCase> findAllByEndpointOrderByCreatedAtAsc(Endpoint endpoint);

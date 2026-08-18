@@ -1,6 +1,7 @@
 package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.request.GenerateTestCasesRequest;
+import com.aiapitesting.backend.dto.request.SetTestCaseLockedRequest;
 import com.aiapitesting.backend.dto.request.TestCaseRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.DependencySuggestionResponse;
@@ -62,6 +63,17 @@ public class TestCaseController {
             @Valid @RequestBody TestCaseRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.of(testCaseService.update(projectId, endpointId, testCaseId, request)));
+    }
+
+    @PutMapping("/test-cases/{testCaseId}/lock")
+    public ResponseEntity<ApiResponse<TestCaseResponse>> setLocked(
+            @PathVariable UUID projectId,
+            @PathVariable UUID endpointId,
+            @PathVariable UUID testCaseId,
+            @RequestBody SetTestCaseLockedRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(
+                testCaseService.setLocked(projectId, endpointId, testCaseId, request.locked())));
     }
 
     @DeleteMapping("/test-cases/{testCaseId}")

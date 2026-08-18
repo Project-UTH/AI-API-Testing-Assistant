@@ -1,6 +1,7 @@
 Bạn là một kỹ sư kiểm thử API chuyên nghiệp. Dựa trên định nghĩa endpoint OpenAPI dưới đây,
 hãy sinh ra một danh sách test case để kiểm thử endpoint này<if(includeSecurity)>, thuộc đúng
-1 nhóm: Security<else>, thuộc đúng 3 nhóm: Positive, Negative, Boundary Value<endif>.
+1 nhóm: Security<else>, CHỈ thuộc đúng (các) nhóm được liệt kê chi tiết trong phần Yêu cầu bên
+dưới - không sinh thêm nhóm nào khác ngoài danh sách đó<endif>.
 
 Method: <method>
 Path: <path>
@@ -11,14 +12,20 @@ Mô tả: <summary>
 
 Yêu cầu:
 <if(!includeSecurity)>
-- Sinh từ 3 đến 6 test case, bao gồm:
+- Chỉ sinh đúng (các) nhóm sau đã được chọn - KHÔNG sinh thêm nhóm nào khác ngoài danh sách này,
+  kể cả khi bạn nghĩ nhóm đó "cũng nên có":
+<if(includePositive)>
   1. Positive Test Case: ít nhất 1 case với dữ liệu hợp lệ đầy đủ, kỳ vọng thành công (2xx).
      BẮT BUỘC: đối chiếu đúng mảng "required" trong JSON Schema của requestBody (nếu schema có
      khai báo) - requestBody phải chứa ĐỦ mọi field liệt kê trong "required", không được thiếu dù
      chỉ 1 field (thiếu 1 field required sẽ khiến API trả lỗi 400 thay vì 2xx, làm sai mục đích
      của Positive Test Case)
+<endif>
+<if(includeNegative)>
   2. Negative Test Case: ít nhất 1-2 case với dữ liệu không hợp lệ - thiếu trường bắt buộc,
      sai kiểu dữ liệu, hoặc giá trị null khi không cho phép - kỳ vọng 400
+<endif>
+<if(includeBoundary)>
   3. Boundary Value Test Case: ít nhất 1 case với giá trị ở biên cho các trường có ràng buộc
      (min/max/length nếu schema có khai báo) - kỳ vọng 2xx nếu biên đó hợp lệ, 400 nếu vượt biên.
      Ưu tiên chọn biên đa dạng, không chỉ giới hạn số/độ dài đơn giản - cân nhắc thêm các dạng biên
@@ -38,6 +45,7 @@ Yêu cầu:
           cũng có thể hợp lệ nếu optional, nhưng với field nested trong 1 object con thì 2 trường
           hợp này có thể cho kết quả khác nhau tuỳ implementation - sinh cả 2 case riêng biệt khi
           endpoint có ít nhất 1 field object lồng nhau hoặc field optional rõ ràng trong schema.
+<endif>
 - Mỗi test case cần: tên ngắn gọn tiếng Việt (ghi rõ thuộc nhóm Positive/Negative/Boundary Value),
   mô tả rõ mục đích kiểm thử, requestHeaders (object, có thể rỗng), requestBody (chuỗi JSON hợp lệ
   nếu method có body, null nếu không cần), và expectedStatus (mã HTTP số nguyên).
@@ -74,11 +82,21 @@ Yêu cầu:
   quy tắc bên dưới) - nếu 1 giá trị tình cờ chứa ký tự "{{" hoặc "}}", phải đảm bảo nó chỉ nằm
   trong requestBody, không được làm hỏng cú pháp token của resolvedPath.
 <if(includeAssertions)>
-- Với MỖI test case kỳ vọng thành công (2xx): thêm tối đa 1 assertion vào field "assertions" (mảng,
-  để [] nếu không có gì đáng kiểm tra), kiểm tra 1 field trong response THẬT SỰ khớp giá trị đã gửi
-  trong requestBody. Mỗi assertion gồm: jsonPath (cú pháp GPath, KHÔNG có "$." ở đầu, ví dụ "name"),
-  operator (đúng 1 trong "EQUALS"/"CONTAINS"/"EXISTS"/"TYPE"), expectedValue (bắt buộc trừ khi
-  operator="EXISTS"). Test case kỳ vọng lỗi (4xx/5xx) luôn để assertions = [].
+- BẮT BUỘC: mọi test case kỳ vọng thành công (2xx) VÀ có requestBody chứa ít nhất 1 field phải có
+  ĐÚNG 1 assertion trong field "assertions" - KHÔNG được để mảng rỗng [] cho case này dưới bất kỳ lý
+  do gì. Chọn 1 field bất kỳ có mặt trong requestBody của chính case đó rồi kiểm tra response trả về
+  đúng giá trị đã gửi. Ví dụ cụ thể: nếu requestBody của case đó là {"name":"Áo thun","price":19.99},
+  PHẢI thêm đúng 1 phần tử vào "assertions" như sau:
+  {"jsonPath":"price","operator":"EQUALS","expectedValue":"19.99"} (jsonPath dùng cú pháp GPath,
+  KHÔNG có "$." ở đầu; operator đúng 1 trong "EQUALS"/"CONTAINS"/"EXISTS"/"TYPE"; expectedValue bắt
+  buộc trừ khi operator="EXISTS").
+- Các trường hợp sau LUÔN để assertions = [] (không có gì hợp lệ để đối chiếu, KHÔNG được phịa ra
+  field không tồn tại):
+  a. Test case kỳ vọng lỗi (4xx/5xx) - không có response hợp lệ để kiểm tra.
+  b. Test case không có requestBody, hoặc requestBody không có field nào (ví dụ DELETE theo id,
+     GET không có body) - không có field nào đã gửi để đối chiếu ngược lại.
+  c. Test case kỳ vọng expectedStatus=204 (No Content) - theo chuẩn HTTP, response 204 không có
+     body, dù requestBody có field cũng không có gì trong response để kiểm tra.
 <endif>
 
 Quy tắc riêng cho resolvedPath và pathParamFallbacks (path tham số dạng {tenThamSo}):
