@@ -4,6 +4,7 @@ import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
 import com.aiapitesting.backend.service.TestCasePathValidator;
@@ -82,6 +83,49 @@ class RestAssuredTestRunnerTest {
         runner.run(project, testCase, Map.of());
 
         assertThat(handler.headers.getFirst("Authorization")).isEqualTo("Bearer secret-token");
+    }
+
+    @Test
+    void run_authOverrideNone_sendsNoAuthorizationHeaderEvenIfProjectHasAuthConfigured() {
+        server.start();
+        AesEncryptionService aesEncryptionService =
+                new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator());
+        project = Project.builder()
+                .targetBaseUrl("http://localhost:" + server.getAddress().getPort())
+                .targetAuthType(TargetAuthType.BEARER_TOKEN)
+                .targetAuthValueEncrypted(aesEncryptionService.encrypt("secret-token"))
+                .build();
+        Endpoint endpoint = Endpoint.builder().method("GET").path("/pets").build();
+        TestCase testCase = TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(401)
+                .authOverride(TestCaseAuthOverride.NONE).build();
+
+        runner.run(project, testCase, Map.of());
+
+        assertThat(handler.headers.getFirst("Authorization")).isNull();
+    }
+
+    @Test
+    void run_authOverrideInvalid_sendsWrongAuthorizationHeaderNotRealSecret() {
+        server.start();
+        AesEncryptionService aesEncryptionService =
+                new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator());
+        project = Project.builder()
+                .targetBaseUrl("http://localhost:" + server.getAddress().getPort())
+                .targetAuthType(TargetAuthType.BEARER_TOKEN)
+                .targetAuthValueEncrypted(aesEncryptionService.encrypt("secret-token"))
+                .build();
+        Endpoint endpoint = Endpoint.builder().method("GET").path("/pets").build();
+        TestCase testCase = TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(401)
+                .authOverride(TestCaseAuthOverride.INVALID).build();
+
+        runner.run(project, testCase, Map.of());
+
+        String sentHeader = handler.headers.getFirst("Authorization");
+        assertThat(sentHeader).isNotNull();
+        assertThat(sentHeader).doesNotContain("secret-token");
+        assertThat(sentHeader).startsWith("Bearer ");
     }
 
     @Test

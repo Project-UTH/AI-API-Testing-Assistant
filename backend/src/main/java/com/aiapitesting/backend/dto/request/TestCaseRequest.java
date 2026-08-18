@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.dto.request;
 
+import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -30,7 +31,12 @@ public record TestCaseRequest(
 
         String pathParamFallbacks,
 
+        TestCaseAuthOverride authOverride,
+
         @Valid
-        List<TestCaseDependencyInput> dependencies
+        List<TestCaseDependencyInput> dependencies,
+
+        @Valid
+        List<TestCaseAssertionInput> assertions
 ) {
 }

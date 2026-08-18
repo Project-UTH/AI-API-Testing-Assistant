@@ -7,6 +7,7 @@ import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
@@ -87,6 +88,9 @@ class EndpointImportServiceTest {
 
     @Mock
     private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private TestCaseAssertionRepository testCaseAssertionRepository;
 
     @Mock
     private TestGenerationEventRepository testGenerationEventRepository;

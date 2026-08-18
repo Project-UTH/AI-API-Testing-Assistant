@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.service.execution;
 
+import com.aiapitesting.backend.dto.response.AssertionResultResponse;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
@@ -18,6 +19,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -48,7 +50,8 @@ public class TestExecutionRunner {
     @Async
     public void runInBackground(
             TestExecution execution, List<TestCase> testCases, Project project,
-            Map<UUID, List<DependencyEdge>> edgesByConsumerId, Set<UUID> autoIncludedIds
+            Map<UUID, List<DependencyEdge>> edgesByConsumerId, Set<UUID> autoIncludedIds,
+            Map<UUID, List<AssertionSpec>> assertionsByTestCaseId
     ) {
         execution.setStatus(ExecutionStatus.RUNNING);
         testExecutionRepository.save(execution);
@@ -62,7 +65,8 @@ public class TestExecutionRunner {
             for (TestCase testCase : testCases) {
                 boolean autoIncluded = autoIncludedIds.contains(testCase.getId());
                 runOne(execution, testCase, project, edgesByConsumerId.getOrDefault(testCase.getId(), List.of()),
-                        statusByTestCaseId, responseBodyByTestCaseId, autoIncluded);
+                        statusByTestCaseId, responseBodyByTestCaseId, autoIncluded,
+                        assertionsByTestCaseId.getOrDefault(testCase.getId(), List.of()));
             }
             execution.setStatus(ExecutionStatus.COMPLETED);
         } catch (Exception e) {
@@ -77,7 +81,7 @@ public class TestExecutionRunner {
     private void runOne(
             TestExecution execution, TestCase testCase, Project project, List<DependencyEdge> edges,
             Map<UUID, TestResultStatus> statusByTestCaseId, Map<UUID, String> responseBodyByTestCaseId,
-            boolean autoIncluded
+            boolean autoIncluded, List<AssertionSpec> assertionSpecs
     ) {
         Set<String> placeholders = new LinkedHashSet<>();
         placeholders.addAll(testCasePathValidator.extractPlaceholders(testCase.getResolvedPath()));
@@ -97,7 +101,7 @@ public class TestExecutionRunner {
                 if (fallback == null) {
                     finish(execution, testCase, TestResultStatus.ERROR, null, null,
                             "Thiếu giá trị cho tham số " + paramName + " - không có dependency cũng không có giá trị dự phòng",
-                            statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded);
+                            statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null);
                     return;
                 }
                 resolvedValues.put(paramName, fallback);
@@ -110,7 +114,7 @@ public class TestExecutionRunner {
             if (sourceStatus != TestResultStatus.PASSED) {
                 finish(execution, testCase, TestResultStatus.BLOCKED, null, null,
                         "Test case nguồn '" + edge.sourceTestCaseName() + "' không PASSED",
-                        statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded);
+                        statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null);
                 return;
             }
             String sourceResponseBody = responseBodyByTestCaseId.get(edge.sourceTestCaseId());
@@ -119,7 +123,7 @@ public class TestExecutionRunner {
                 finish(execution, testCase, TestResultStatus.BLOCKED, null, null,
                         "Không trích được giá trị theo JSONPath '" + edge.jsonPath() + "' từ response của test case nguồn '"
                                 + edge.sourceTestCaseName() + "'",
-                        statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded);
+                        statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null);
                 return;
             }
             resolvedValues.put(paramName, value);
@@ -127,15 +131,25 @@ public class TestExecutionRunner {
 
         try {
             RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
-            TestResultStatus status = Objects.equals(result.statusCode(), testCase.getExpectedStatus())
-                    ? TestResultStatus.PASSED : TestResultStatus.FAILED;
+            boolean statusMatches = Objects.equals(result.statusCode(), testCase.getExpectedStatus());
+
+            // Chấm assertion (Module 9b) - status PASSED chỉ khi status code khớp VÀ mọi assertion
+            // đều đúng. Không chấm nếu status code đã sai (không có ý nghĩa kiểm tra field response
+            // của 1 request được coi là thất bại ngay từ status code).
+            List<AssertionResultResponse> assertionResults = statusMatches
+                    ? evaluateAssertions(result.responseBody(), assertionSpecs)
+                    : List.of();
+            boolean allAssertionsPassed = assertionResults.stream().allMatch(AssertionResultResponse::passed);
+            TestResultStatus status = (statusMatches && allAssertionsPassed) ? TestResultStatus.PASSED : TestResultStatus.FAILED;
+
             finish(execution, testCase, status, result.statusCode(), truncate(result.responseBody()), null,
-                    statusByTestCaseId, responseBodyByTestCaseId, result.responseBody(), autoIncluded);
+                    statusByTestCaseId, responseBodyByTestCaseId, result.responseBody(), autoIncluded,
+                    writeAssertionResultsAsJson(assertionResults));
         } catch (Exception e) {
             log.warn("Loi khi goi target API cho test case {}: {}", testCase.getId(), e.toString());
             finish(execution, testCase, TestResultStatus.ERROR, null, null,
                     "Không gọi được target API: " + e.getMessage(),
-                    statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded);
+                    statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null);
         }
     }
 
@@ -144,7 +158,7 @@ public class TestExecutionRunner {
             TestExecution execution, TestCase testCase, TestResultStatus status,
             Integer responseStatus, String truncatedResponseBody, String errorMessage,
             Map<UUID, TestResultStatus> statusByTestCaseId, Map<UUID, String> responseBodyByTestCaseId,
-            String rawResponseBodyForDependents, boolean autoIncluded
+            String rawResponseBodyForDependents, boolean autoIncluded, String assertionResultsJson
     ) {
         TestResult result = TestResult.builder()
                 .execution(execution)
@@ -154,6 +168,7 @@ public class TestExecutionRunner {
                 .responseBody(truncatedResponseBody)
                 .errorMessage(errorMessage)
                 .autoIncluded(autoIncluded)
+                .assertionResultsJson(assertionResultsJson)
                 .build();
         testResultRepository.save(result);
 
@@ -163,13 +178,74 @@ public class TestExecutionRunner {
         }
     }
 
+    /**
+     * Chấm từng assertion (Module 9b) theo operator - EXISTS chỉ cần khác null, EQUALS/CONTAINS so
+     * chuỗi (đủ dùng cho phần lớn trường hợp thực tế: expectedValue luôn là chuỗi người dùng/AI tự
+     * nhập), TYPE so kiểu Java runtime của giá trị trích được (không stringify trước khi so, khác
+     * hẳn 3 operator kia - stringify sẽ làm mất thông tin kiểu gốc, vd 19.99 vẫn là "19.99" dù kiểu
+     * gốc là số hay chuỗi).
+     */
+    private List<AssertionResultResponse> evaluateAssertions(String responseBody, List<AssertionSpec> specs) {
+        List<AssertionResultResponse> results = new ArrayList<>();
+        for (AssertionSpec spec : specs) {
+            Object raw = extractJsonPathRaw(responseBody, spec.jsonPath());
+            String actual = raw == null ? null : String.valueOf(raw);
+            boolean passed = switch (spec.operator()) {
+                case EXISTS -> raw != null;
+                case EQUALS -> actual != null && actual.equals(spec.expectedValue());
+                case CONTAINS -> actual != null && spec.expectedValue() != null && actual.contains(spec.expectedValue());
+                case TYPE -> describeType(raw).equalsIgnoreCase(
+                        spec.expectedValue() == null ? "" : spec.expectedValue().trim());
+            };
+            results.add(new AssertionResultResponse(spec.jsonPath(), spec.operator(), spec.expectedValue(), actual, passed));
+        }
+        return results;
+    }
+
+    private String describeType(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String) {
+            return "string";
+        }
+        if (value instanceof Boolean) {
+            return "boolean";
+        }
+        if (value instanceof Number) {
+            return "number";
+        }
+        if (value instanceof List) {
+            return "array";
+        }
+        if (value instanceof Map) {
+            return "object";
+        }
+        return "string";
+    }
+
+    private String writeAssertionResultsAsJson(List<AssertionResultResponse> assertionResults) {
+        if (assertionResults == null || assertionResults.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(assertionResults);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private String extractJsonPathValue(String responseBody, String jsonPath) {
+        Object value = extractJsonPathRaw(responseBody, jsonPath);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private Object extractJsonPathRaw(String responseBody, String jsonPath) {
         if (responseBody == null || responseBody.isBlank()) {
             return null;
         }
         try {
-            Object value = JsonPath.from(responseBody).get(normalizeJsonPath(jsonPath));
-            return value == null ? null : String.valueOf(value);
+            return JsonPath.from(responseBody).get(normalizeJsonPath(jsonPath));
         } catch (Exception e) {
             return null;
         }
