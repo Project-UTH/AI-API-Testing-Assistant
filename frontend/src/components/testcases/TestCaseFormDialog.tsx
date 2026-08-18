@@ -219,10 +219,15 @@ export function TestCaseFormDialog({
   }
 
   function applySuggestion(paramName: string, sourceTestCaseId: string, sourceLabel: string, jsonPath: string) {
-    setDependencies((prev) => [
-      ...prev,
-      { dependsOnTestCaseId: sourceTestCaseId, jsonPath, placeholderName: paramName, label: sourceLabel },
-    ]);
+    setDependencies((prev) => {
+      // Chặn double-click/áp dụng lại 1 gợi ý đã có - server chỉ cho phép đúng 1 dependency mỗi
+      // placeholder (uk_test_case_dependencies_test_case_placeholder), thêm trùng sẽ vỡ ràng buộc
+      // lúc lưu và hiện lỗi hệ thống chung chung thay vì lỗi rõ ràng.
+      if (prev.some((d) => d.placeholderName === paramName)) {
+        return prev
+      }
+      return [...prev, { dependsOnTestCaseId: sourceTestCaseId, jsonPath, placeholderName: paramName, label: sourceLabel }]
+    })
   }
 
   function addManualDependency() {
@@ -242,6 +247,10 @@ export function TestCaseFormDialog({
           ? `Placeholder "${placeholderName}" không khớp {{...}} nào trong resolvedPath/body/headers - dùng đúng tên: ${availablePlaceholders.join(", ")}.`
           : `Placeholder "${placeholderName}" không khớp {{...}} nào trong resolvedPath/body/headers.`
       )
+      return
+    }
+    if (dependencies.some((d) => d.placeholderName === placeholderName)) {
+      setDepFormError(`Placeholder "${placeholderName}" đã có phụ thuộc gán sẵn - xoá dòng cũ trước nếu muốn đổi nguồn khác.`)
       return
     }
     const currentId = testCase?.id ?? "__new__"
