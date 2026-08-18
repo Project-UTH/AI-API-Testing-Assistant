@@ -20,9 +20,25 @@ import {
   getDependencySuggestions,
   listTestCases,
   updateTestCase,
+  type AssertionOperator,
   type TestCase,
+  type TestCaseAssertionInput,
+  type TestCaseAuthOverride,
   type TestCaseDependencyInput,
 } from "@/lib/testcases"
+
+const AUTH_OVERRIDE_LABEL: Record<TestCaseAuthOverride, string> = {
+  DEFAULT: "Mặc định (dùng auth thật của Project)",
+  NONE: "Không gửi auth (test case Security - thiếu token)",
+  INVALID: "Gửi auth sai (test case Security - token sai)",
+}
+
+const ASSERTION_OPERATOR_LABEL: Record<AssertionOperator, string> = {
+  EQUALS: "Bằng đúng (EQUALS)",
+  CONTAINS: "Chứa chuỗi (CONTAINS)",
+  EXISTS: "Có mặt field (EXISTS)",
+  TYPE: "Đúng kiểu dữ liệu (TYPE)",
+}
 
 interface TestCaseFormDialogProps {
   open: boolean
@@ -89,6 +105,7 @@ export function TestCaseFormDialog({
   const [requestHeaders, setRequestHeaders] = useState("")
   const [requestBody, setRequestBody] = useState("")
   const [expectedStatus, setExpectedStatus] = useState("200")
+  const [authOverride, setAuthOverride] = useState<TestCaseAuthOverride>("DEFAULT")
   const [resolvedPath, setResolvedPath] = useState("")
   const [pathParamFallbacks, setPathParamFallbacks] = useState("")
   const [dependencies, setDependencies] = useState<LocalDependency[]>([])
@@ -98,6 +115,12 @@ export function TestCaseFormDialog({
   const [newDepJsonPath, setNewDepJsonPath] = useState("$.id")
   const [newDepPlaceholder, setNewDepPlaceholder] = useState("")
 
+  const [assertions, setAssertions] = useState<TestCaseAssertionInput[]>([])
+  const [assertFormError, setAssertFormError] = useState<string | null>(null)
+  const [newAssertJsonPath, setNewAssertJsonPath] = useState("")
+  const [newAssertOperator, setNewAssertOperator] = useState<AssertionOperator>("EQUALS")
+  const [newAssertExpectedValue, setNewAssertExpectedValue] = useState("")
+
   useEffect(() => {
     if (open) {
       setName(testCase?.name ?? "")
@@ -105,6 +128,7 @@ export function TestCaseFormDialog({
       setRequestHeaders(testCase?.requestHeaders ?? "")
       setRequestBody(testCase?.requestBody ?? "")
       setExpectedStatus(testCase ? String(testCase.expectedStatus) : "200")
+      setAuthOverride(testCase?.authOverride ?? "DEFAULT")
       setResolvedPath(testCase?.resolvedPath ?? endpointPath)
       setPathParamFallbacks(testCase?.pathParamFallbacks ?? "")
       setDependencies(
@@ -119,6 +143,17 @@ export function TestCaseFormDialog({
       setNewDepJsonPath("$.id")
       setNewDepPlaceholder("")
       setDepFormError(null)
+      setAssertions(
+        (testCase?.assertions ?? []).map((a) => ({
+          jsonPath: a.jsonPath,
+          operator: a.operator,
+          expectedValue: a.expectedValue,
+        }))
+      )
+      setNewAssertJsonPath("")
+      setNewAssertOperator("EQUALS")
+      setNewAssertExpectedValue("")
+      setAssertFormError(null)
     }
   }, [open, testCase, endpointPath])
 
@@ -157,6 +192,7 @@ export function TestCaseFormDialog({
         requestHeaders,
         requestBody,
         expectedStatus: Number(expectedStatus),
+        authOverride,
         resolvedPath,
         pathParamFallbacks,
         dependencies: dependencies.map(({ dependsOnTestCaseId, jsonPath, placeholderName }) => ({
@@ -164,6 +200,7 @@ export function TestCaseFormDialog({
           jsonPath,
           placeholderName,
         })),
+        assertions,
       }
       return testCase
         ? updateTestCase(projectId, endpointId, testCase.id, input)
@@ -182,10 +219,15 @@ export function TestCaseFormDialog({
   }
 
   function applySuggestion(paramName: string, sourceTestCaseId: string, sourceLabel: string, jsonPath: string) {
-    setDependencies((prev) => [
-      ...prev,
-      { dependsOnTestCaseId: sourceTestCaseId, jsonPath, placeholderName: paramName, label: sourceLabel },
-    ]);
+    setDependencies((prev) => {
+      // Chặn double-click/áp dụng lại 1 gợi ý đã có - server chỉ cho phép đúng 1 dependency mỗi
+      // placeholder (uk_test_case_dependencies_test_case_placeholder), thêm trùng sẽ vỡ ràng buộc
+      // lúc lưu và hiện lỗi hệ thống chung chung thay vì lỗi rõ ràng.
+      if (prev.some((d) => d.placeholderName === paramName)) {
+        return prev
+      }
+      return [...prev, { dependsOnTestCaseId: sourceTestCaseId, jsonPath, placeholderName: paramName, label: sourceLabel }]
+    })
   }
 
   function addManualDependency() {
@@ -205,6 +247,10 @@ export function TestCaseFormDialog({
           ? `Placeholder "${placeholderName}" không khớp {{...}} nào trong resolvedPath/body/headers - dùng đúng tên: ${availablePlaceholders.join(", ")}.`
           : `Placeholder "${placeholderName}" không khớp {{...}} nào trong resolvedPath/body/headers.`
       )
+      return
+    }
+    if (dependencies.some((d) => d.placeholderName === placeholderName)) {
+      setDepFormError(`Placeholder "${placeholderName}" đã có phụ thuộc gán sẵn - xoá dòng cũ trước nếu muốn đổi nguồn khác.`)
       return
     }
     const currentId = testCase?.id ?? "__new__"
@@ -229,6 +275,33 @@ export function TestCaseFormDialog({
 
   function removeDependency(placeholderName: string) {
     setDependencies((prev) => prev.filter((d) => d.placeholderName !== placeholderName))
+  }
+
+  function addAssertion() {
+    setAssertFormError(null)
+    if (!newAssertJsonPath.trim()) {
+      setAssertFormError("Vui lòng nhập JSONPath.")
+      return
+    }
+    if (newAssertOperator !== "EXISTS" && !newAssertExpectedValue.trim()) {
+      setAssertFormError("Operator này bắt buộc phải có giá trị kỳ vọng (trừ EXISTS).")
+      return
+    }
+    setAssertions((prev) => [
+      ...prev,
+      {
+        jsonPath: newAssertJsonPath.trim(),
+        operator: newAssertOperator,
+        expectedValue: newAssertOperator === "EXISTS" ? null : newAssertExpectedValue.trim(),
+      },
+    ])
+    setNewAssertJsonPath("")
+    setNewAssertOperator("EQUALS")
+    setNewAssertExpectedValue("")
+  }
+
+  function removeAssertion(index: number) {
+    setAssertions((prev) => prev.filter((_, i) => i !== index))
   }
 
   return (
@@ -276,6 +349,26 @@ export function TestCaseFormDialog({
               value={expectedStatus}
               onChange={(e) => setExpectedStatus(e.target.value)}
             />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="test-case-auth-override">Xác thực khi gọi target API</Label>
+            <p className="text-xs text-muted-foreground">
+              Chỉ cần đổi khi test case này cố ý kiểm tra thiếu/sai auth (nhóm Security) - bình
+              thường để mặc định.
+            </p>
+            <select
+              id="test-case-auth-override"
+              className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
+              value={authOverride}
+              onChange={(e) => setAuthOverride(e.target.value as TestCaseAuthOverride)}
+            >
+              {(Object.keys(AUTH_OVERRIDE_LABEL) as TestCaseAuthOverride[]).map((value) => (
+                <option key={value} value={value}>
+                  {AUTH_OVERRIDE_LABEL[value]}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -433,6 +526,82 @@ export function TestCaseFormDialog({
             )}
 
             {depFormError && <p className="text-xs text-destructive">{depFormError}</p>}
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            <Label>Assertion</Label>
+            <p className="text-xs text-muted-foreground">
+              Kiểm tra 1 field cụ thể trong response sau khi gọi target API - status PASSED chỉ khi
+              status code lẫn mọi assertion đều đúng.
+            </p>
+
+            {assertions.length > 0 && (
+              <ul className="flex flex-col gap-1.5">
+                {assertions.map((a, index) => (
+                  <li
+                    key={`${a.jsonPath}-${a.operator}-${index}`}
+                    className="flex items-center gap-2 rounded-md border border-border p-2 text-xs"
+                  >
+                    <code className="shrink-0 font-semibold">{a.jsonPath}</code>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      {ASSERTION_OPERATOR_LABEL[a.operator]}
+                      {a.operator !== "EXISTS" && a.expectedValue ? ` — "${a.expectedValue}"` : ""}
+                    </span>
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="ghost"
+                      onClick={() => removeAssertion(index)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end">
+              <div className="flex w-28 flex-col gap-1">
+                <Label htmlFor="assert-jsonpath" className="text-xs">JSONPath</Label>
+                <Input
+                  id="assert-jsonpath"
+                  className="h-8 text-xs"
+                  placeholder="price"
+                  value={newAssertJsonPath}
+                  onChange={(e) => setNewAssertJsonPath(e.target.value)}
+                />
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <Label htmlFor="assert-operator" className="text-xs">Operator</Label>
+                <select
+                  id="assert-operator"
+                  className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-xs outline-none dark:bg-input/30"
+                  value={newAssertOperator}
+                  onChange={(e) => setNewAssertOperator(e.target.value as AssertionOperator)}
+                >
+                  {(Object.keys(ASSERTION_OPERATOR_LABEL) as AssertionOperator[]).map((value) => (
+                    <option key={value} value={value}>
+                      {ASSERTION_OPERATOR_LABEL[value]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex w-28 flex-col gap-1">
+                <Label htmlFor="assert-expected" className="text-xs">Giá trị kỳ vọng</Label>
+                <Input
+                  id="assert-expected"
+                  className="h-8 text-xs"
+                  disabled={newAssertOperator === "EXISTS"}
+                  value={newAssertExpectedValue}
+                  onChange={(e) => setNewAssertExpectedValue(e.target.value)}
+                />
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={addAssertion}>
+                Thêm
+              </Button>
+            </div>
+
+            {assertFormError && <p className="text-xs text-destructive">{assertFormError}</p>}
           </div>
 
           {mutation.isError && (

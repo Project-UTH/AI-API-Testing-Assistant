@@ -1,6 +1,22 @@
 import { apiFetch } from "@/lib/api"
 
-export type TestCaseSource = "AI_GENERATED" | "MANUAL"
+export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY"
+
+export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
+
+export type AssertionOperator = "EQUALS" | "CONTAINS" | "EXISTS" | "TYPE"
+
+export interface TestCaseAssertion {
+  jsonPath: string
+  operator: AssertionOperator
+  expectedValue: string | null
+}
+
+export interface TestCaseAssertionInput {
+  jsonPath: string
+  operator: AssertionOperator
+  expectedValue: string | null
+}
 
 export interface TestCaseDependency {
   dependsOnTestCaseId: string
@@ -35,8 +51,11 @@ export interface TestCase {
   resolvedPath: string | null
   pathParamFallbacks: string | null
   source: TestCaseSource
+  authOverride: TestCaseAuthOverride
+  locked: boolean
   createdAt: string
   dependencies: TestCaseDependency[]
+  assertions: TestCaseAssertion[]
 }
 
 export interface TestCaseInput {
@@ -47,12 +66,45 @@ export interface TestCaseInput {
   expectedStatus: number
   resolvedPath?: string
   pathParamFallbacks?: string
+  authOverride?: TestCaseAuthOverride
   dependencies?: TestCaseDependencyInput[]
+  assertions?: TestCaseAssertionInput[]
 }
 
-export function generateTestCases(projectId: string, endpointId: string): Promise<TestCase[]> {
+export interface GenerateTestCasesOptions {
+  includeSecurity?: boolean
+  includeAssertions?: boolean
+  includePositive?: boolean
+  includeNegative?: boolean
+  includeBoundary?: boolean
+}
+
+export function generateTestCases(
+  projectId: string,
+  endpointId: string,
+  options?: GenerateTestCasesOptions
+): Promise<TestCase[]> {
   return apiFetch<TestCase[]>(`/projects/${projectId}/endpoints/${endpointId}/generate-tests`, {
     method: "POST",
+    body: JSON.stringify({
+      includeSecurity: options?.includeSecurity ?? false,
+      includeAssertions: options?.includeAssertions ?? false,
+      includePositive: options?.includePositive ?? false,
+      includeNegative: options?.includeNegative ?? false,
+      includeBoundary: options?.includeBoundary ?? false,
+    }),
+  })
+}
+
+export function setTestCaseLocked(
+  projectId: string,
+  endpointId: string,
+  testCaseId: string,
+  locked: boolean
+): Promise<TestCase> {
+  return apiFetch<TestCase>(`/projects/${projectId}/endpoints/${endpointId}/test-cases/${testCaseId}/lock`, {
+    method: "PUT",
+    body: JSON.stringify({ locked }),
   })
 }
 

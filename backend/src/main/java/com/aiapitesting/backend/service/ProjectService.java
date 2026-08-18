@@ -11,6 +11,7 @@ import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
@@ -37,6 +38,7 @@ public class ProjectService {
     private final TestExecutionRepository testExecutionRepository;
     private final TestExecutionEndpointRepository testExecutionEndpointRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
+    private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
     private final CurrentUserService currentUserService;
     private final AesEncryptionService aesEncryptionService;
@@ -102,12 +104,13 @@ public class ProjectService {
     public void delete(UUID id) {
         Project project = getOwnedProject(id);
         // Thứ tự bắt buộc để tránh vi phạm khoá ngoại (MySQL 1451): TestExecutionEndpoint/TestResult/
-        // TestExecution/TestCaseDependency tham chiếu TestCase, TestCase tham chiếu Endpoint,
-        // TestGenerationEvent/Endpoint tham chiếu Project.
+        // TestExecution/TestCaseDependency/TestCaseAssertion tham chiếu TestCase, TestCase tham
+        // chiếu Endpoint, TestGenerationEvent/Endpoint tham chiếu Project.
         testExecutionEndpointRepository.deleteAllByExecutionProject(project);
         testResultRepository.deleteAllByTestCaseEndpointProject(project);
         testExecutionRepository.deleteAllByProject(project);
         testCaseDependencyRepository.deleteAllByProject(project);
+        testCaseAssertionRepository.deleteAllByTestCaseEndpointProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
         testGenerationEventRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);

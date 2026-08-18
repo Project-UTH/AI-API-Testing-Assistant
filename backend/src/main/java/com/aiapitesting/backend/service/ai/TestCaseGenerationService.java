@@ -1,15 +1,21 @@
 package com.aiapitesting.backend.service.ai;
 
+import com.aiapitesting.backend.dto.ai.GeneratedAssertion;
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
+import com.aiapitesting.backend.dto.request.GenerateTestCasesRequest;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseAssertion;
+import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
+import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
@@ -28,12 +34,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -56,6 +64,7 @@ public class TestCaseGenerationService {
     private final EndpointRepository endpointRepository;
     private final TestCaseRepository testCaseRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
+    private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestResultRepository testResultRepository;
     private final TestCasePathValidator testCasePathValidator;
     private final TestCaseService testCaseService;
@@ -67,12 +76,56 @@ public class TestCaseGenerationService {
 
     @Async
     @Transactional
-    public CompletableFuture<List<TestCaseResponse>> generate(UUID projectId, UUID endpointId) {
+    public CompletableFuture<List<TestCaseResponse>> generate(UUID projectId, UUID endpointId, GenerateTestCasesRequest request) {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        boolean includeSecurity = request != null && request.includeSecurity();
+        boolean includeAssertions = request != null && request.includeAssertions();
+        // request == null (body thiếu hẳn) giữ đúng hành vi mặc định cũ: sinh cả 3 nhóm Cơ bản.
+        // Khi có body, đọc đúng giá trị đã gửi - cho phép chỉ tích 1-2 trong 3 nhóm (Module 9, tách
+        // Positive/Negative/Boundary thành checkbox riêng, không cần source riêng trong DB vì
+        // regenerate vẫn xoá-và-thay toàn bộ AI_GENERATED như cũ - chỉ khác nội dung sinh ra).
+        boolean includePositive = request == null || request.includePositive();
+        boolean includeNegative = request == null || request.includeNegative();
+        boolean includeBoundary = request == null || request.includeBoundary();
+        if (!includePositive && !includeNegative && !includeBoundary && !includeSecurity) {
+            throw new InvalidRequestException(
+                    "Phải chọn ít nhất 1 loại test case để sinh (Positive/Negative/Boundary/Security)");
+        }
 
-        Prompt prompt = buildPrompt(endpoint);
+        // Nhóm Cơ bản (Positive/Negative/Boundary) chỉ gọi AI khi có ít nhất 1 trong 3 được chọn -
+        // tránh gọi AI vô ích khi người dùng chỉ muốn sinh riêng Security. Nhóm Security (nếu bật)
+        // là 1 lần gọi AI hoàn toàn riêng, xoá/lưu theo đúng source=SECURITY để không đụng tới nhóm
+        // Cơ bản và ngược lại (đúng yêu cầu roadmap Module 9a). includeAssertions áp dụng cho CẢ 2
+        // lần gọi (nếu bật) - không phải 1 nhóm riêng, chỉ là AI có được yêu cầu tự đề xuất thêm
+        // assertion cho mỗi test case đang sinh hay không (đúng chốt trong plan Module 9b).
+        List<TestCase> saved = new ArrayList<>();
+        if (includePositive || includeNegative || includeBoundary) {
+            saved.addAll(generateGroup(endpoint, TestCaseSource.AI_GENERATED, false, includeAssertions,
+                    includePositive, includeNegative, includeBoundary));
+        }
+        if (includeSecurity) {
+            saved.addAll(generateGroup(endpoint, TestCaseSource.SECURITY, true, includeAssertions,
+                    includePositive, includeNegative, includeBoundary));
+        }
+
+        return CompletableFuture.completedFuture(saved.stream().map(TestCaseResponse::from).toList());
+    }
+
+    /**
+     * Sinh + lưu 1 nhóm test case (Cơ bản hoặc Security) - xoá-và-thay đúng phạm vi theo source,
+     * không đụng nhóm khác. Mỗi nhóm là 1 lần gọi AI riêng và 1 dòng lịch sử (TestGenerationEvent)
+     * riêng vì đúng bản chất đã xảy ra 2 lần gọi AI thật khi cả 2 nhóm cùng được yêu cầu.
+     * includePositive/includeNegative/includeBoundary chỉ có ý nghĩa khi includeSecurity=false
+     * (nhánh Security trong prompt không đọc tới 3 field này).
+     */
+    private List<TestCase> generateGroup(
+            Endpoint endpoint, TestCaseSource source, boolean includeSecurity, boolean includeAssertions,
+            boolean includePositive, boolean includeNegative, boolean includeBoundary
+    ) {
+        Prompt prompt = buildPrompt(endpoint, includeSecurity, includeAssertions,
+                includePositive, includeNegative, includeBoundary);
 
         List<GeneratedTestCase> generated;
         try {
@@ -82,24 +135,63 @@ public class TestCaseGenerationService {
         } catch (Exception e) {
             // Log lỗi gốc từ AI provider để chẩn đoán (rate limit, sai key, timeout...) - không log
             // prompt/nội dung nhạy cảm, chỉ log loại lỗi + message do provider trả về.
-            log.warn("Goi AI that bai khi sinh test case cho endpoint {}: {}", endpointId, e.toString());
+            log.warn("Goi AI that bai khi sinh test case cho endpoint {}: {}", endpoint.getId(), e.toString());
             throw new AiGenerationFailedException("Không thể sinh test case từ AI, vui lòng thử lại");
         }
         validate(generated);
 
         // Chặn regenerate nếu còn test case khác (kể cả ở endpoint khác) đang phụ thuộc dữ liệu từ
-        // 1 trong các test case AI_GENERATED sắp bị xoá (Test Data Chaining, Module 7).
-        List<TestCase> existingAiCases = testCaseRepository.findAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
-        testCaseService.ensureNoDependents(existingAiCases);
+        // 1 trong các test case cùng source sắp bị xoá (Test Data Chaining, Module 7). Đã lọc sẵn
+        // locked=false - test case đang khoá (nút khoá riêng, Module 9) không nằm trong "sắp xoá",
+        // được giữ nguyên hoàn toàn khi regenerate, không cần check dependents cho nó.
+        List<TestCase> existing = testCaseRepository.findAllByEndpointAndSourceAndLockedFalse(endpoint, source);
+        testCaseService.ensureNoDependents(existing);
 
-        // Chỉ xoá-và-thay test case do AI sinh trước đó - giữ nguyên test case người dùng tự thêm tay.
-        // Dọn TestResult + TestCaseDependency (phía consumer - chính các test case này có thể tự phụ
-        // thuộc nguồn khác) trước khi xoá, tránh lỗi khoá ngoại 1451 (cùng loại đã fix ở TestCaseService.delete()).
-        testResultRepository.deleteAllByTestCaseIn(existingAiCases);
-        testCaseDependencyRepository.deleteAllByTestCaseIn(existingAiCases);
-        testCaseRepository.deleteAllByEndpointAndSource(endpoint, TestCaseSource.AI_GENERATED);
+        // Dọn TestResult + TestCaseDependency + TestCaseAssertion (phía consumer - chính các test
+        // case này có thể tự phụ thuộc nguồn khác) trước khi xoá, tránh lỗi khoá ngoại 1451 (cùng
+        // loại đã fix ở TestCaseService.delete()).
+        try {
+            testResultRepository.deleteAllByTestCaseIn(existing);
+            testCaseDependencyRepository.deleteAllByTestCaseIn(existing);
+            testCaseAssertionRepository.deleteAllByTestCaseIn(existing);
+            testCaseRepository.deleteAllByEndpointAndSourceAndLockedFalse(endpoint, source);
+        } catch (DataIntegrityViolationException e) {
+            // 2 lượt "Sinh Test Case" cho CÙNG endpoint chạy thật sự đồng thời (vd 2 tab trình
+            // duyệt) hiếm khi vẫn lọt qua được lá chắn ở frontend (chỉ chặn bấm trùng trong 1 tab) -
+            // lượt sau xoá theo (endpoint, source) chung sẽ đụng vào test case MỚI lượt trước vừa
+            // tạo, còn con TestCaseAssertion chưa kịp dọn, vỡ khoá ngoại. Không phải lỗi hệ thống
+            // thật, chỉ cần báo rõ để người dùng tải lại trang và thử lại.
+            log.warn("Xung dot dong thoi khi sinh test case cho endpoint {}: {}", endpoint.getId(), e.toString());
+            throw new AiGenerationFailedException(
+                    "Endpoint này đang được sinh test case ở nơi khác cùng lúc (có thể do mở nhiều tab) - vui lòng tải lại trang và thử lại");
+        }
         List<TestCase> saved = testCaseRepository.saveAll(generated.stream()
-                .map(g -> toEntity(endpoint, g)).toList());
+                .map(g -> toEntity(endpoint, g, source)).toList());
+
+        // saveAll() giữ nguyên thứ tự input -> ghép lại đúng theo index với `generated` để biết
+        // assertion nào (nếu AI có sinh) thuộc về test case nào vừa lưu.
+        List<TestCaseAssertion> assertionsToSave = new ArrayList<>();
+        for (int i = 0; i < saved.size(); i++) {
+            List<GeneratedAssertion> generatedAssertions = generated.get(i).assertions();
+            if (generatedAssertions == null) {
+                continue;
+            }
+            TestCase savedCase = saved.get(i);
+            for (GeneratedAssertion ga : generatedAssertions) {
+                if (ga.jsonPath() == null || ga.jsonPath().isBlank() || ga.operator() == null) {
+                    continue;
+                }
+                assertionsToSave.add(TestCaseAssertion.builder()
+                        .testCase(savedCase)
+                        .jsonPath(ga.jsonPath())
+                        .operator(ga.operator())
+                        .expectedValue(ga.expectedValue())
+                        .build());
+            }
+        }
+        if (!assertionsToSave.isEmpty()) {
+            testCaseAssertionRepository.saveAll(assertionsToSave);
+        }
 
         // Lưu snapshot lịch sử (Module 8) - đúng nội dung AI sinh ra TẠI THỜI ĐIỂM NÀY, tách biệt
         // với bảng test_cases sống vì lần regenerate sau sẽ xoá hẳn bộ này.
@@ -109,10 +201,13 @@ public class TestCaseGenerationService {
                 .snapshotJson(writeSnapshotAsJson(generated))
                 .build());
 
-        return CompletableFuture.completedFuture(saved.stream().map(TestCaseResponse::from).toList());
+        return saved;
     }
 
-    private Prompt buildPrompt(Endpoint endpoint) {
+    private Prompt buildPrompt(
+            Endpoint endpoint, boolean includeSecurity, boolean includeAssertions,
+            boolean includePositive, boolean includeNegative, boolean includeBoundary
+    ) {
         // Đọc rõ UTF-8 thay vì để Resource tự suy ra charset - trên Windows, charset mặc định của
         // tiến trình JVM (sun.jnu.encoding) có thể không phải UTF-8 dù JVM 18+ đã set file.encoding=UTF-8,
         // khiến nội dung .st (tiếng Việt có dấu) bị đọc sai byte, gửi hướng dẫn lỗi font cho AI.
@@ -130,7 +225,12 @@ public class TestCaseGenerationService {
                 "method", endpoint.getMethod(),
                 "path", endpoint.getPath(),
                 "summary", endpoint.getSummary() == null ? "(không có mô tả)" : endpoint.getSummary(),
-                "schemaJson", endpoint.getSchema()));
+                "schemaJson", endpoint.getSchema(),
+                "includeSecurity", includeSecurity,
+                "includeAssertions", includeAssertions,
+                "includePositive", includePositive,
+                "includeNegative", includeNegative,
+                "includeBoundary", includeBoundary));
     }
 
     private void validate(List<GeneratedTestCase> generated) {
@@ -153,7 +253,7 @@ public class TestCaseGenerationService {
         }
     }
 
-    private TestCase toEntity(Endpoint endpoint, GeneratedTestCase generated) {
+    private TestCase toEntity(Endpoint endpoint, GeneratedTestCase generated, TestCaseSource source) {
         return TestCase.builder()
                 .endpoint(endpoint)
                 .name(generated.name())
@@ -163,7 +263,8 @@ public class TestCaseGenerationService {
                 .expectedStatus(generated.expectedStatus())
                 .resolvedPath(generated.resolvedPath())
                 .pathParamFallbacks(writeFallbacksAsJson(generated.pathParamFallbacks()))
-                .source(TestCaseSource.AI_GENERATED)
+                .source(source)
+                .authOverride(generated.authOverride() == null ? TestCaseAuthOverride.DEFAULT : generated.authOverride())
                 .build();
     }
 

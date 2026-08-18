@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
-import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, Loader2, Pencil, Play, Plus, Trash2 } from "lucide-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { ArrowLeft, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn, METHOD_STYLES, selectClassName } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
-import { listTestCases, type TestCase } from "@/lib/testcases"
+import { listTestCases, setTestCaseLocked, type TestCase } from "@/lib/testcases"
 import { triggerExecution } from "@/lib/executions"
 import { TestCaseFormDialog } from "@/components/testcases/TestCaseFormDialog"
 import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialog"
@@ -16,6 +16,13 @@ import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialo
 const SOURCE_STYLES: Record<TestCase["source"], string> = {
   AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   MANUAL: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
+  SECURITY: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+}
+
+const SOURCE_LABEL: Record<TestCase["source"], string> = {
+  AI_GENERATED: "AI",
+  MANUAL: "Tự thêm",
+  SECURITY: "Security",
 }
 
 interface FormState {
@@ -29,8 +36,10 @@ export function TestCasesPage() {
   const { id } = useParams<{ id: string }>()
   const projectId = id!
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const endpointFilter = searchParams.get("endpointId") ?? ""
+  const [lockPendingIds, setLockPendingIds] = useState<Set<string>>(new Set())
 
   const { data: endpointsData } = useQuery({
     queryKey: ["endpoints", projectId],
@@ -86,6 +95,22 @@ export function TestCasesPage() {
   function openDelete(testCase: TestCase) {
     setDeleteTarget(testCase)
     setDeleteOpen(true)
+  }
+
+  async function handleToggleLock(testCase: TestCase) {
+    setLockPendingIds((prev) => new Set(prev).add(testCase.id))
+    try {
+      await setTestCaseLocked(projectId, testCase.endpointId, testCase.id, !testCase.locked)
+      queryClient.invalidateQueries({ queryKey: ["test-cases", projectId] })
+    } catch {
+      // Bỏ qua - trạng thái locked không đổi, người dùng thấy nút vẫn ở icon cũ và có thể bấm lại
+    } finally {
+      setLockPendingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(testCase.id)
+        return next
+      })
+    }
   }
 
   function toggleSelect(testCaseId: string, checked: boolean) {
@@ -199,12 +224,29 @@ export function TestCasesPage() {
                           SOURCE_STYLES[testCase.source]
                         )}
                       >
-                        {testCase.source === "AI_GENERATED" ? "AI" : "Tự thêm"}
+                        {SOURCE_LABEL[testCase.source]}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-sm">{testCase.name}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">
                         → {testCase.expectedStatus}
                       </span>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        disabled={lockPendingIds.has(testCase.id)}
+                        title={
+                          testCase.locked
+                            ? "Đang khoá - sẽ không bị xoá khi Sinh Test Case lại. Bấm để mở khoá."
+                            : "Bấm để khoá - giữ nguyên test case này khi Sinh Test Case lại"
+                        }
+                        onClick={() => handleToggleLock(testCase)}
+                      >
+                        {testCase.locked ? (
+                          <Lock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                        ) : (
+                          <Unlock className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </Button>
                       <Button size="icon-sm" variant="ghost" onClick={() => openEdit(testCase)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>

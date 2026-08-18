@@ -6,11 +6,13 @@ import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseAssertion;
 import com.aiapitesting.backend.entity.TestCaseDependency;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestExecutionEndpoint;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestExecutionNotFoundException;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
@@ -47,6 +49,7 @@ public class TestExecutionService {
     private final ProjectService projectService;
     private final TestCaseRepository testCaseRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
+    private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestExecutionRepository testExecutionRepository;
     private final TestResultRepository testResultRepository;
     private final TestExecutionEndpointRepository testExecutionEndpointRepository;
@@ -98,6 +101,16 @@ public class TestExecutionService {
                                 d.getJsonPath(), d.getPlaceholderName()))
                         .toList()));
 
+        // Nạp assertion (Module 9b) cho toàn bộ tập test case sẽ chạy (kể cả auto-included) ở phần
+        // đồng bộ này rồi tách ra AssertionSpec nhẹ - cùng lý do với DependencyEdge phía trên, tránh
+        // LazyInitializationException khi entity băng qua ranh giới @Async sau khi session đã đóng.
+        List<TestCaseAssertion> allAssertions =
+                testCaseAssertionRepository.findAllByTestCaseIn(List.copyOf(testCaseById.values()));
+        Map<UUID, List<AssertionSpec>> assertionsByTestCaseId = allAssertions.stream()
+                .collect(Collectors.groupingBy(a -> a.getTestCase().getId(), Collectors.mapping(
+                        a -> new AssertionSpec(a.getJsonPath(), a.getOperator(), a.getExpectedValue()),
+                        Collectors.toList())));
+
         TestExecution execution = testExecutionRepository.save(
                 TestExecution.builder().project(project).status(ExecutionStatus.PENDING).build());
 
@@ -113,7 +126,8 @@ public class TestExecutionService {
                 .map(endpoint -> TestExecutionEndpoint.builder().execution(execution).endpoint(endpoint).build())
                 .toList());
 
-        testExecutionRunner.runInBackground(execution, ordered, project, edgesByConsumerId, autoIncludedIds);
+        testExecutionRunner.runInBackground(
+                execution, ordered, project, edgesByConsumerId, autoIncludedIds, assertionsByTestCaseId);
 
         return TestExecutionResponse.pending(execution, List.copyOf(autoIncludedIds));
     }

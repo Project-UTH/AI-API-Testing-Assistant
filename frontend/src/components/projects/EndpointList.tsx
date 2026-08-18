@@ -28,8 +28,18 @@ export function EndpointList({ projectId }: EndpointListProps) {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [generationState, setGenerationState] = useState<Record<string, GenerationState>>({})
+  const [includeSecurity, setIncludeSecurity] = useState(false)
+  const [includeAssertions, setIncludeAssertions] = useState(false)
+  // Mặc định cả 3 đều bật - giữ đúng hành vi cũ (luôn sinh đủ Positive/Negative/Boundary) cho tới
+  // khi người dùng chủ động bỏ tích bớt.
+  const [includePositive, setIncludePositive] = useState(true)
+  const [includeNegative, setIncludeNegative] = useState(true)
+  const [includeBoundary, setIncludeBoundary] = useState(true)
 
   const endpoints = data?.data ?? []
+  // Không có gì để sinh nếu không tích ít nhất 1 trong 4 loại - khớp validate phía backend
+  // (InvalidRequestException "Phải chọn ít nhất 1 loại test case để sinh").
+  const hasAnyCategorySelected = includePositive || includeNegative || includeBoundary || includeSecurity
 
   function toggleSelect(endpointId: string, checked: boolean) {
     setSelectedIds((prev) => {
@@ -47,23 +57,27 @@ export function EndpointList({ projectId }: EndpointListProps) {
     // Gọi thẳng generateTestCases (không qua useMutation) - mỗi endpoint là 1 Promise độc lập,
     // đảm bảo callback của từng cái không bị "đè" khi bấm sinh nhiều endpoint cùng lúc (dùng chung
     // 1 instance useMutation cho nhiều lần mutate() đồng thời chỉ đáng tin cậy với lần gọi cuối).
-    // Endpoint đã sinh thành công tự bỏ chọn ngay sau khi xong (bên dưới) nên mặc định không bị
-    // chọn lại - nếu người dùng CHỦ ĐỘNG tích lại 1 endpoint đã sinh, nghĩa là họ muốn sinh lại
-    // (backend tự xoá bộ cũ và thay bằng bộ mới), nên ở đây không cần bỏ qua nữa.
-    selectedIds.forEach((endpointId) => {
+    // Bỏ chọn NGAY khi bấm (không đợi tới lúc xong) - trước đây chỉ bỏ chọn sau khi thành công,
+    // nghĩa là bấm "Sinh Test Case" 2 lần liên tiếp trong lúc lần đầu còn đang chạy sẽ gửi 2 request
+    // trùng cho cùng 1 endpoint, gây race điều kiện thật ở backend (2 lượt xoá-sinh-lại chồng nhau
+    // cho cùng test case -> StaleStateException). Bỏ chọn ngay khiến nút "Sinh Test Case" tự vô hiệu
+    // hoá (disabled={selectedIds.size===0}) cho tới khi người dùng chủ động tích lại.
+    const idsToGenerate = Array.from(selectedIds)
+    setSelectedIds(new Set())
+    idsToGenerate.forEach((endpointId) => {
       setGenerationState((prev) => ({ ...prev, [endpointId]: { status: "pending" } }))
-      generateTestCases(projectId, endpointId)
+      generateTestCases(projectId, endpointId, {
+        includeSecurity,
+        includeAssertions,
+        includePositive,
+        includeNegative,
+        includeBoundary,
+      })
         .then((created) => {
           setGenerationState((prev) => ({
             ...prev,
             [endpointId]: { status: "success", count: created.length },
           }))
-          // Đã xong - tự bỏ chọn để không bị tính vào lần "Sinh Test Case" tiếp theo
-          setSelectedIds((prev) => {
-            const next = new Set(prev)
-            next.delete(endpointId)
-            return next
-          })
           // Đồng bộ lại testCaseCount thật từ server - để trạng thái "đã sinh" không bị mất
           // khi rời trang rồi quay lại (generationState chỉ sống trong phiên hiện tại)
           queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
@@ -106,11 +120,57 @@ export function EndpointList({ projectId }: EndpointListProps) {
         <span className="text-sm text-muted-foreground">
           {selectedIds.size > 0 ? `Đã chọn ${selectedIds.size} endpoint` : "Chọn endpoint để sinh test case"}
         </span>
-        <Button size="sm" disabled={selectedIds.size === 0} onClick={handleGenerate}>
-          <Sparkles className="h-4 w-4" />
-          Sinh Test Case
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Checkbox
+              checked={includePositive}
+              onCheckedChange={(checked) => setIncludePositive(checked === true)}
+            />
+            Positive
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Checkbox
+              checked={includeNegative}
+              onCheckedChange={(checked) => setIncludeNegative(checked === true)}
+            />
+            Negative
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Checkbox
+              checked={includeBoundary}
+              onCheckedChange={(checked) => setIncludeBoundary(checked === true)}
+            />
+            Boundary
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Checkbox
+              checked={includeSecurity}
+              onCheckedChange={(checked) => setIncludeSecurity(checked === true)}
+            />
+            + Security
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Checkbox
+              checked={includeAssertions}
+              onCheckedChange={(checked) => setIncludeAssertions(checked === true)}
+            />
+            + Assertion
+          </label>
+          <Button
+            size="sm"
+            disabled={selectedIds.size === 0 || !hasAnyCategorySelected}
+            onClick={handleGenerate}
+          >
+            <Sparkles className="h-4 w-4" />
+            Sinh Test Case
+          </Button>
+        </div>
       </div>
+      {!hasAnyCategorySelected && (
+        <p className="text-xs text-destructive">
+          Phải tích ít nhất 1 trong Positive/Negative/Boundary/Security để có thứ sinh ra.
+        </p>
+      )}
 
       <ul className="flex flex-col gap-2">
         {endpoints.map((endpoint) => {
@@ -132,6 +192,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
             >
               <Checkbox
                 checked={selected}
+                disabled={state?.status === "pending"}
                 onCheckedChange={(checked) => toggleSelect(endpoint.id, checked === true)}
               />
               <span
@@ -153,7 +214,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
               )}
               {state?.status === "success" && willRegenerate && (
                 <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
-                  Sinh lại sẽ thay test case AI đã sinh, giữ nguyên test case bạn tự thêm
+                  Sinh lại sẽ thay test case AI đã sinh (trừ case đang khoá 🔒), giữ nguyên test case bạn tự thêm
                 </span>
               )}
               {state?.status === "success" && !willRegenerate && (

@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.service.execution;
 
+import com.aiapitesting.backend.entity.AssertionOperator;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
@@ -70,7 +71,7 @@ class TestExecutionRunnerTest {
         when(restAssuredTestRunner.run(eq(project), eq(testCase), eq(Map.of("petId", "1"))))
                 .thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"id\":1}"));
 
-        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of());
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
 
         ArgumentCaptor<TestResult> resultCaptor = ArgumentCaptor.forClass(TestResult.class);
         verify(testResultRepository).save(resultCaptor.capture());
@@ -90,7 +91,7 @@ class TestExecutionRunnerTest {
         when(restAssuredTestRunner.run(eq(project), eq(testCase), eq(Map.of())))
                 .thenReturn(new RestAssuredTestRunner.RunResult(404, "not found"));
 
-        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of());
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
 
         ArgumentCaptor<TestResult> resultCaptor = ArgumentCaptor.forClass(TestResult.class);
         verify(testResultRepository).save(resultCaptor.capture());
@@ -103,7 +104,7 @@ class TestExecutionRunnerTest {
                 .resolvedPath("/pet/{{petId}}").pathParamFallbacks(null)
                 .expectedStatus(200).createdAt(Instant.now()).build();
 
-        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of());
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
 
         ArgumentCaptor<TestResult> resultCaptor = ArgumentCaptor.forClass(TestResult.class);
         verify(testResultRepository).save(resultCaptor.capture());
@@ -118,7 +119,7 @@ class TestExecutionRunnerTest {
                 .resolvedPath("/pets").expectedStatus(200).createdAt(Instant.now()).build();
         when(restAssuredTestRunner.run(any(), any(), any())).thenThrow(new RuntimeException("connection refused"));
 
-        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of());
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
 
         ArgumentCaptor<TestResult> resultCaptor = ArgumentCaptor.forClass(TestResult.class);
         verify(testResultRepository).save(resultCaptor.capture());
@@ -137,7 +138,7 @@ class TestExecutionRunnerTest {
         when(restAssuredTestRunner.run(any(), any(), any()))
                 .thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
 
-        runner.runInBackground(execution, List.of(first, second), project, Map.of(), Set.of());
+        runner.runInBackground(execution, List.of(first, second), project, Map.of(), Set.of(), Map.of());
 
         verify(restAssuredTestRunner, times(2)).run(eq(project), any(TestCase.class), eq(Map.of()));
         verify(testResultRepository, times(2)).save(any(TestResult.class));
@@ -160,7 +161,7 @@ class TestExecutionRunnerTest {
         Map<UUID, List<DependencyEdge>> edges = Map.of(
                 consumer.getId(), List.of(new DependencyEdge(source.getId(), "Tao pet", "$.id", "petId")));
 
-        runner.runInBackground(execution, List.of(source, consumer), project, edges, Set.of(source.getId()));
+        runner.runInBackground(execution, List.of(source, consumer), project, edges, Set.of(source.getId()), Map.of());
 
         verify(restAssuredTestRunner).run(eq(project), eq(consumer), eq(Map.of("petId", "42")));
         verify(restAssuredTestRunner, never()).run(eq(project), eq(consumer), eq(Map.of("petId", "999")));
@@ -191,7 +192,7 @@ class TestExecutionRunnerTest {
         Map<UUID, List<DependencyEdge>> edges = Map.of(
                 consumer.getId(), List.of(new DependencyEdge(source.getId(), "Tao pet", "$.id", "petId")));
 
-        runner.runInBackground(execution, List.of(source, consumer), project, edges, Set.of());
+        runner.runInBackground(execution, List.of(source, consumer), project, edges, Set.of(), Map.of());
 
         verify(restAssuredTestRunner, never()).run(eq(project), eq(consumer), any());
 
@@ -200,5 +201,88 @@ class TestExecutionRunnerTest {
         TestResult consumerResult = resultCaptor.getAllValues().stream()
                 .filter(r -> r.getTestCase().getId().equals(consumer.getId())).findFirst().orElseThrow();
         assertThat(consumerResult.getStatus()).isEqualTo(TestResultStatus.BLOCKED);
+    }
+
+    @Test
+    void runInBackground_statusMatchesButAssertionFails_savesFailedWithAssertionDetail() {
+        Endpoint noParamEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/products").build();
+        TestCase testCase = TestCase.builder().id(UUID.randomUUID()).endpoint(noParamEndpoint)
+                .resolvedPath("/products").expectedStatus(201).createdAt(Instant.now()).build();
+        when(restAssuredTestRunner.run(eq(project), eq(testCase), eq(Map.of())))
+                .thenReturn(new RestAssuredTestRunner.RunResult(201, "{\"price\":19.99}"));
+
+        Map<UUID, List<AssertionSpec>> assertions = Map.of(
+                testCase.getId(), List.of(new AssertionSpec("price", AssertionOperator.EQUALS, "9.99")));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), assertions);
+
+        ArgumentCaptor<TestResult> resultCaptor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(resultCaptor.capture());
+        TestResult result = resultCaptor.getValue();
+        // Status code khop expectedStatus (201) nhung assertion sai gia tri -> van phai la FAILED
+        assertThat(result.getStatus()).isEqualTo(TestResultStatus.FAILED);
+        assertThat(result.getAssertionResultsJson())
+                .contains("\"passed\":false")
+                .contains("\"actualValue\":\"19.99\"")
+                .contains("\"expectedValue\":\"9.99\"");
+    }
+
+    @Test
+    void runInBackground_statusMatchesAndAssertionPasses_savesPassed() {
+        Endpoint noParamEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/products").build();
+        TestCase testCase = TestCase.builder().id(UUID.randomUUID()).endpoint(noParamEndpoint)
+                .resolvedPath("/products").expectedStatus(201).createdAt(Instant.now()).build();
+        when(restAssuredTestRunner.run(eq(project), eq(testCase), eq(Map.of())))
+                .thenReturn(new RestAssuredTestRunner.RunResult(201, "{\"price\":19.99}"));
+
+        Map<UUID, List<AssertionSpec>> assertions = Map.of(
+                testCase.getId(), List.of(new AssertionSpec("price", AssertionOperator.EQUALS, "19.99")));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), assertions);
+
+        ArgumentCaptor<TestResult> resultCaptor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(resultCaptor.capture());
+        TestResult result = resultCaptor.getValue();
+        assertThat(result.getStatus()).isEqualTo(TestResultStatus.PASSED);
+        assertThat(result.getAssertionResultsJson()).contains("\"passed\":true");
+    }
+
+    @Test
+    void runInBackground_existsAssertionOnMissingField_savesFailed() {
+        Endpoint noParamEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/products").build();
+        TestCase testCase = TestCase.builder().id(UUID.randomUUID()).endpoint(noParamEndpoint)
+                .resolvedPath("/products").expectedStatus(201).createdAt(Instant.now()).build();
+        when(restAssuredTestRunner.run(eq(project), eq(testCase), eq(Map.of())))
+                .thenReturn(new RestAssuredTestRunner.RunResult(201, "{\"name\":\"Ao\"}"));
+
+        Map<UUID, List<AssertionSpec>> assertions = Map.of(
+                testCase.getId(), List.of(new AssertionSpec("stock", AssertionOperator.EXISTS, null)));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), assertions);
+
+        ArgumentCaptor<TestResult> resultCaptor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(resultCaptor.capture());
+        assertThat(resultCaptor.getValue().getStatus()).isEqualTo(TestResultStatus.FAILED);
+    }
+
+    @Test
+    void runInBackground_statusMismatch_doesNotEvaluateAssertionsAtAll() {
+        Endpoint noParamEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/products").build();
+        TestCase testCase = TestCase.builder().id(UUID.randomUUID()).endpoint(noParamEndpoint)
+                .resolvedPath("/products").expectedStatus(201).createdAt(Instant.now()).build();
+        when(restAssuredTestRunner.run(eq(project), eq(testCase), eq(Map.of())))
+                .thenReturn(new RestAssuredTestRunner.RunResult(400, "{\"error\":\"bad request\"}"));
+
+        Map<UUID, List<AssertionSpec>> assertions = Map.of(
+                testCase.getId(), List.of(new AssertionSpec("price", AssertionOperator.EQUALS, "19.99")));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), assertions);
+
+        ArgumentCaptor<TestResult> resultCaptor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(resultCaptor.capture());
+        TestResult result = resultCaptor.getValue();
+        assertThat(result.getStatus()).isEqualTo(TestResultStatus.FAILED);
+        // Status code da sai tu dau - khong co y nghia cham assertion, khong luu ket qua assertion nao.
+        assertThat(result.getAssertionResultsJson()).isNull();
     }
 }
