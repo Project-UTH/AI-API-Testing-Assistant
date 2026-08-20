@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
+import { ArrowLeft, History, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -163,6 +163,19 @@ export function TestCasesPage() {
               </option>
             ))}
           </select>
+          <Button
+            size="sm"
+            variant="outline"
+            nativeButton={false}
+            render={
+              <Link
+                to={`/projects/${projectId}/history?onlyExecution=1${endpointFilter ? `&endpointId=${endpointFilter}` : ""}`}
+              />
+            }
+          >
+            <History className="h-4 w-4" />
+            Lịch sử chạy test
+          </Button>
           <Button size="sm" disabled={selectedIds.size === 0 || isRunning} onClick={handleRun}>
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Chạy Test {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}

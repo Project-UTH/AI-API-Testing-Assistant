@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record TestResultResponse(
+        UUID id,
         UUID testCaseId,
         String testCaseName,
         UUID endpointId,
@@ -23,6 +24,7 @@ public record TestResultResponse(
 
     public static TestResultResponse from(TestResult result) {
         return new TestResultResponse(
+                result.getId(),
                 result.getTestCase().getId(),
                 result.getTestCase().getName(),
                 result.getTestCase().getEndpoint().getId(),

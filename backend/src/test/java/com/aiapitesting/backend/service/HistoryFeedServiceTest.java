@@ -4,6 +4,8 @@ import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.request.HistoryStatusFilter;
 import com.aiapitesting.backend.dto.response.HistoryFeedItemResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
+import com.aiapitesting.backend.entity.BugReportEvent;
+import com.aiapitesting.backend.entity.BugReportEventType;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
@@ -14,6 +16,7 @@ import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.entity.User;
+import com.aiapitesting.backend.repository.BugReportEventRepository;
 import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
@@ -48,6 +51,9 @@ class HistoryFeedServiceTest {
 
     @Mock
     private TestResultRepository testResultRepository;
+
+    @Mock
+    private BugReportEventRepository bugReportEventRepository;
 
     @InjectMocks
     private HistoryFeedService historyFeedService;
@@ -104,6 +110,33 @@ class HistoryFeedServiceTest {
         assertThat(page.data().get(1).type()).isEqualTo("GENERATION"); // 03:00 - som hon
         assertThat(page.data().get(1).projectName()).isEqualTo("project1");
         assertThat(page.totalElements()).isEqualTo(2);
+    }
+
+    @Test
+    void getFeed_mergesBugReportEvents_sortedTogetherWithOthers() {
+        UUID createdBugReportId = UUID.randomUUID();
+        BugReportEvent created = BugReportEvent.builder().id(UUID.randomUUID()).endpoint(endpointA)
+                .actor(owner).bugReportId(createdBugReportId).bugId("B1_001").summary("Loi 500")
+                .eventType(BugReportEventType.CREATED).occurredAt(Instant.parse("2026-08-13T09:00:00Z")).build();
+        BugReportEvent deleted = BugReportEvent.builder().id(UUID.randomUUID()).endpoint(endpointB)
+                .actor(owner).bugId("B2_003").summary("Da xoa").eventType(BugReportEventType.DELETED)
+                .occurredAt(Instant.parse("2026-08-13T20:00:00Z")).build();
+        when(bugReportEventRepository.findAllForHistoryFeed(owner, null, null, null, null))
+                .thenReturn(List.of(created, deleted));
+        when(testGenerationEventRepository.findAllForHistoryFeed(owner, null, null, null, null))
+                .thenReturn(List.of());
+
+        PageResponse<HistoryFeedItemResponse> page = historyFeedService.getFeed(
+                null, null, null, null, HistoryStatusFilter.ALL, PageRequest.of(0, 20));
+
+        assertThat(page.data()).hasSize(2);
+        assertThat(page.data().get(0).type()).isEqualTo("BUG_REPORT_DELETED"); // 20:00 - muon hon, len dau
+        assertThat(page.data().get(0).bugId()).isEqualTo("B2_003");
+        assertThat(page.data().get(0).bugSummary()).isEqualTo("Da xoa");
+        assertThat(page.data().get(1).type()).isEqualTo("BUG_REPORT_CREATED"); // 09:00 - som hon
+        assertThat(page.data().get(1).bugId()).isEqualTo("B1_001");
+        assertThat(page.data().get(1).bugReportId()).isEqualTo(createdBugReportId);
+        assertThat(page.data().get(0).bugReportId()).isNull(); // DELETED khong deep-link duoc
     }
 
     @Test

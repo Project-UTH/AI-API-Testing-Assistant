@@ -18,6 +18,7 @@ import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestCaseHasDependentsException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
+import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -46,6 +47,7 @@ public class TestCaseService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestResultRepository testResultRepository;
+    private final BugReportRepository bugReportRepository;
     private final TestCasePathValidator testCasePathValidator;
 
     public List<TestCaseResponse> listByProject(UUID projectId) {
@@ -147,6 +149,7 @@ public class TestCaseService {
         Endpoint endpoint = getOwnedEndpoint(projectId, endpointId);
         TestCase testCase = getOwnedTestCase(endpoint, testCaseId);
         ensureNoDependents(List.of(testCase));
+        bugReportRepository.deleteAllByTestCaseIn(List.of(testCase));
         testResultRepository.deleteAllByTestCase(testCase);
         testCaseDependencyRepository.deleteAllByTestCase(testCase);
         testCaseAssertionRepository.deleteAllByTestCase(testCase);

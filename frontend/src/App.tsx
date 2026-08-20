@@ -9,6 +9,7 @@ import { TestCasesPage } from "@/pages/TestCasesPage"
 import { TestExecutionPage } from "@/pages/TestExecutionPage"
 import { TestHistoryPage } from "@/pages/TestHistoryPage"
 import { GlobalHistoryPage } from "@/pages/GlobalHistoryPage"
+import { BugReportPage } from "@/pages/BugReportPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
 
@@ -26,6 +27,7 @@ function App() {
           <Route path="/projects/:id" element={<ProjectDetailPage />} />
           <Route path="/projects/:id/test-cases" element={<TestCasesPage />} />
           <Route path="/projects/:id/history" element={<TestHistoryPage />} />
+          <Route path="/projects/:id/bug-reports" element={<BugReportPage />} />
           <Route path="/projects/:id/executions/:executionId" element={<TestExecutionPage />} />
         </Route>
       </Route>

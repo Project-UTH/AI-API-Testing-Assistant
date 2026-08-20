@@ -64,6 +64,11 @@ public class SecurityConfig {
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
+        // Content-Disposition KHÔNG phải "simple header" - fetch() ở frontend không đọc được
+        // response.headers.get("Content-Disposition") (bị ẩn mặc định dù cùng response 200 OK) trừ
+        // khi expose rõ ràng ở đây. Cần cho tính năng xuất file (.xlsx Bug Report) lấy đúng tên file
+        // server đặt thay vì rơi về tên mặc định ở frontend.
+        configuration.setExposedHeaders(List.of("Content-Disposition"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

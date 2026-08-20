@@ -14,6 +14,7 @@ export interface AssertionResult {
 }
 
 export interface TestResult {
+  id: string
   testCaseId: string
   testCaseName: string
   endpointId: string

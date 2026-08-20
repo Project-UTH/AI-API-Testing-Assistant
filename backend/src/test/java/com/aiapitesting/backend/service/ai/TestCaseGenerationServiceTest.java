@@ -10,6 +10,7 @@ import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.ForbiddenException;
+import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -69,6 +70,9 @@ class TestCaseGenerationServiceTest {
 
     @Mock
     private TestResultRepository testResultRepository;
+
+    @Mock
+    private BugReportRepository bugReportRepository;
 
     @Mock
     private TestCasePathValidator testCasePathValidator;
