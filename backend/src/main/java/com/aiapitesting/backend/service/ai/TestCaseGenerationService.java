@@ -14,6 +14,7 @@ import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -66,6 +67,7 @@ public class TestCaseGenerationService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestResultRepository testResultRepository;
+    private final BugReportRepository bugReportRepository;
     private final TestCasePathValidator testCasePathValidator;
     private final TestCaseService testCaseService;
     private final TestGenerationEventRepository testGenerationEventRepository;
@@ -147,10 +149,11 @@ public class TestCaseGenerationService {
         List<TestCase> existing = testCaseRepository.findAllByEndpointAndSourceAndLockedFalse(endpoint, source);
         testCaseService.ensureNoDependents(existing);
 
-        // Dọn TestResult + TestCaseDependency + TestCaseAssertion (phía consumer - chính các test
-        // case này có thể tự phụ thuộc nguồn khác) trước khi xoá, tránh lỗi khoá ngoại 1451 (cùng
-        // loại đã fix ở TestCaseService.delete()).
+        // Dọn BugReport (Module 10) + TestResult + TestCaseDependency + TestCaseAssertion (phía
+        // consumer - chính các test case này có thể tự phụ thuộc nguồn khác) trước khi xoá, tránh
+        // lỗi khoá ngoại 1451 (cùng loại đã fix ở TestCaseService.delete()).
         try {
+            bugReportRepository.deleteAllByTestCaseIn(existing);
             testResultRepository.deleteAllByTestCaseIn(existing);
             testCaseDependencyRepository.deleteAllByTestCaseIn(existing);
             testCaseAssertionRepository.deleteAllByTestCaseIn(existing);

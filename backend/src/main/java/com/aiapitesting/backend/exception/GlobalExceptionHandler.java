@@ -67,6 +67,18 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("TEST_EXECUTION_NOT_FOUND", ex.getMessage()));
     }
 
+    @ExceptionHandler(BugReportNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleBugReportNotFound(BugReportNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiErrorResponse.of("BUG_REPORT_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(TestResultNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleTestResultNotFound(TestResultNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiErrorResponse.of("TEST_RESULT_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(TestCaseHasDependentsException.class)
     public ResponseEntity<ApiErrorResponse> handleTestCaseHasDependents(TestCaseHasDependentsException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)

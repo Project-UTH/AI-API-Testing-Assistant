@@ -1,34 +1,16 @@
 import { useEffect, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Ban,
-  CheckCircle2,
-  ChevronDown,
-  Loader2,
-  SkipForward,
-  XCircle,
-  type LucideIcon,
-} from "lucide-react"
+import { ArrowLeft, CheckCircle2, ChevronDown, Loader2, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { StatusBadge, RESULT_STATUS_STYLES, RESULT_STATUS_LABEL, RESULT_STATUS_ICON } from "@/components/shared/StatusBadge"
+import { cn, formatResponseBody } from "@/lib/utils"
 import { getExecution, type ExecutionStatus, type TestResult, type TestResultStatus } from "@/lib/executions"
 
 // Thứ tự cố định (khớp RESULT_STATUS_LABEL bên dưới) - dùng để vẽ donut theo 1 thứ tự nhất quán,
 // không lệ thuộc thứ tự dữ liệu trả về.
 const STATUS_ORDER: TestResultStatus[] = ["PASSED", "FAILED", "ERROR", "BLOCKED", "SKIPPED"]
-
-function formatBody(body: string | null): string | null {
-  if (body === null || body === "") return null
-  try {
-    return JSON.stringify(JSON.parse(body), null, 2)
-  } catch {
-    return body
-  }
-}
 
 const EXECUTION_STATUS_LABEL: Record<ExecutionStatus, string> = {
   PENDING: "Đang chờ",
@@ -42,30 +24,6 @@ const EXECUTION_STATUS_STYLES: Record<ExecutionStatus, string> = {
   RUNNING: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   COMPLETED: "bg-green-500/10 text-green-600 dark:text-green-400",
   FAILED: "bg-destructive/10 text-destructive",
-}
-
-const RESULT_STATUS_STYLES: Record<TestResultStatus, string> = {
-  PASSED: "bg-green-500/10 text-green-600 dark:text-green-400",
-  FAILED: "bg-destructive/10 text-destructive",
-  ERROR: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  BLOCKED: "bg-muted text-muted-foreground",
-  SKIPPED: "bg-muted text-muted-foreground",
-}
-
-const RESULT_STATUS_LABEL: Record<TestResultStatus, string> = {
-  PASSED: "Pass",
-  FAILED: "Fail",
-  ERROR: "Lỗi",
-  BLOCKED: "Bị chặn",
-  SKIPPED: "Bỏ qua",
-}
-
-const RESULT_STATUS_ICON: Record<TestResultStatus, LucideIcon> = {
-  PASSED: CheckCircle2,
-  FAILED: XCircle,
-  ERROR: AlertTriangle,
-  BLOCKED: Ban,
-  SKIPPED: SkipForward,
 }
 
 export function TestExecutionPage() {
@@ -137,7 +95,7 @@ export function TestExecutionPage() {
       <ul className="mt-4 flex flex-col gap-2">
         {filteredResults.map((result) => {
           const isExpanded = expandedId === result.testCaseId
-          const formattedBody = formatBody(result.responseBody)
+          const formattedBody = formatResponseBody(result.responseBody)
           return (
             <li key={result.testCaseId} className="rounded-md border border-border">
               <button
@@ -145,14 +103,7 @@ export function TestExecutionPage() {
                 onClick={() => setExpandedId(isExpanded ? null : result.testCaseId)}
                 className="flex w-full flex-col gap-2 p-3 text-left sm:flex-row sm:items-center"
               >
-                <span
-                  className={cn(
-                    "w-16 shrink-0 rounded-md px-2 py-0.5 text-center text-xs font-semibold",
-                    RESULT_STATUS_STYLES[result.status]
-                  )}
-                >
-                  {RESULT_STATUS_LABEL[result.status]}
-                </span>
+                <StatusBadge status={result.status} />
                 <span className="min-w-0 flex-1 truncate text-sm">{result.testCaseName}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   Kỳ vọng {result.expectedStatus} → thực tế {result.responseStatus ?? "—"}
@@ -176,13 +127,13 @@ export function TestExecutionPage() {
                     </div>
                   )}
                   <div>
-                    <p className="mb-1 text-xs font-medium text-muted-foreground">Response body</p>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">Nội dung phản hồi</p>
                     {formattedBody ? (
                       <pre className="max-h-80 overflow-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap break-all">
                         {formattedBody}
                       </pre>
                     ) : (
-                      <p className="text-xs text-muted-foreground">Không có response body.</p>
+                      <p className="text-xs text-muted-foreground">Không có nội dung phản hồi.</p>
                     )}
                   </div>
                   {result.assertionResults.length > 0 && (

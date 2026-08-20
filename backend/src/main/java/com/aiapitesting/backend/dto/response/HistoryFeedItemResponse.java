@@ -12,7 +12,7 @@ import java.util.UUID;
  */
 public record HistoryFeedItemResponse(
         UUID id,
-        String type, // "GENERATION" | "EXECUTION"
+        String type, // "GENERATION" | "EXECUTION" | "BUG_REPORT_CREATED" | "BUG_REPORT_DELETED"
         Instant occurredAt,
         UUID projectId,
         String projectName,
@@ -27,7 +27,13 @@ public record HistoryFeedItemResponse(
         Integer selectedCount,
         Integer passCount,
         Integer failCount,
-        Integer otherEndpointCount
+        Integer otherEndpointCount,
+        // Chỉ có giá trị khi type = BUG_REPORT_CREATED | BUG_REPORT_DELETED
+        String bugId,
+        String bugSummary,
+        // Chỉ có giá trị khi type = BUG_REPORT_CREATED (bug còn tồn tại) - "Xem chi tiết" dùng field
+        // này để mở thẳng dialog sửa đúng bug đó; null ở BUG_REPORT_DELETED vì bug đã không còn.
+        UUID bugReportId
 ) {
     public static HistoryFeedItemResponse generation(
             UUID id, Instant occurredAt, UUID projectId, String projectName,
@@ -36,7 +42,7 @@ public record HistoryFeedItemResponse(
     ) {
         return new HistoryFeedItemResponse(
                 id, "GENERATION", occurredAt, projectId, projectName, endpointId, endpointMethod, endpointPath,
-                generatedCount, snapshotItems, null, null, null, null, null);
+                generatedCount, snapshotItems, null, null, null, null, null, null, null, null);
     }
 
     public static HistoryFeedItemResponse execution(
@@ -46,6 +52,16 @@ public record HistoryFeedItemResponse(
     ) {
         return new HistoryFeedItemResponse(
                 id, "EXECUTION", occurredAt, projectId, projectName, endpointId, endpointMethod, endpointPath,
-                null, null, executionId, selectedCount, passCount, failCount, otherEndpointCount);
+                null, null, executionId, selectedCount, passCount, failCount, otherEndpointCount, null, null, null);
+    }
+
+    public static HistoryFeedItemResponse bugReportEvent(
+            UUID id, String type, Instant occurredAt, UUID projectId, String projectName,
+            UUID endpointId, String endpointMethod, String endpointPath,
+            String bugId, String bugSummary, UUID bugReportId
+    ) {
+        return new HistoryFeedItemResponse(
+                id, type, occurredAt, projectId, projectName, endpointId, endpointMethod, endpointPath,
+                null, null, null, null, null, null, null, bugId, bugSummary, bugReportId);
     }
 }

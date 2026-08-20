@@ -86,6 +86,33 @@ export async function apiFetch<T>(
   return (body as { data: T }).data
 }
 
+/**
+ * Tải file nhị phân (VD .xlsx export) - KHÔNG dùng apiFetch vì response không phải JSON
+ * {data, meta}, xem ngoại lệ ở mục 4c của skill api-contract. Lỗi (project/bug report không tồn
+ * tại...) vẫn trả JSON chuẩn nên vẫn parse qua response.json() như rawFetch.
+ */
+export async function apiFetchBlob(path: string): Promise<{ blob: Blob; filename: string | null }> {
+  const token = getToken()
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new ApiError(
+      body ?? {
+        code: "INTERNAL_ERROR",
+        message: "Đã xảy ra lỗi hệ thống, vui lòng thử lại sau",
+        timestamp: new Date().toISOString(),
+      }
+    )
+  }
+
+  const disposition = response.headers.get("Content-Disposition")
+  const filenameMatch = disposition?.match(/filename="([^"]+)"/)
+  return { blob: await response.blob(), filename: filenameMatch?.[1] ?? null }
+}
+
 export interface PagedResult<T> {
   data: T[]
   page: number

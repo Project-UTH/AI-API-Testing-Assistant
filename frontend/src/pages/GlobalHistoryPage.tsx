@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronDown, ChevronLeft, ChevronRight, Play, Sparkles } from "lucide-react"
+import { Bug, ChevronDown, ChevronLeft, ChevronRight, Play, Sparkles, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -153,7 +153,7 @@ export function GlobalHistoryPage() {
         </select>
         {status !== "ALL" && (
           <p className="mt-1 text-xs text-muted-foreground">
-            Bộ lọc trạng thái chỉ áp dụng cho sự kiện Chạy test — sự kiện Sinh test case bị ẩn khi lọc.
+            Bộ lọc trạng thái chỉ áp dụng cho sự kiện Chạy test — sự kiện Sinh test case và Bug Report bị ẩn khi lọc.
           </p>
         )}
       </div>
@@ -165,18 +165,22 @@ export function GlobalHistoryPage() {
       )}
 
       <div className="mt-4 flex flex-col gap-3">
-        {items.map((item) =>
-          item.type === "GENERATION" ? (
-            <GenerationFeedRow
-              key={item.id}
-              item={item}
-              isExpanded={expandedIds.has(item.id)}
-              onToggle={() => toggleExpanded(item.id)}
-            />
-          ) : (
-            <ExecutionFeedRow key={item.id} item={item} />
-          )
-        )}
+        {items.map((item) => {
+          if (item.type === "GENERATION") {
+            return (
+              <GenerationFeedRow
+                key={item.id}
+                item={item}
+                isExpanded={expandedIds.has(item.id)}
+                onToggle={() => toggleExpanded(item.id)}
+              />
+            )
+          }
+          if (item.type === "BUG_REPORT_CREATED" || item.type === "BUG_REPORT_DELETED") {
+            return <BugReportFeedRow key={item.id} item={item} />
+          }
+          return <ExecutionFeedRow key={item.id} item={item} />
+        })}
       </div>
 
       {totalPages > 1 && (
@@ -291,6 +295,40 @@ function ExecutionFeedRow({ item }: { item: HistoryFeedItem }) {
           Chạy chung với {item.otherEndpointCount} endpoint khác
         </p>
       )}
+    </div>
+  )
+}
+
+function BugReportFeedRow({ item }: { item: HistoryFeedItem }) {
+  const isDeleted = item.type === "BUG_REPORT_DELETED"
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <FeedRowHeader item={item} />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {isDeleted ? (
+            <Trash2 className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+          ) : (
+            <Bug className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          )}
+          <span className="text-sm font-medium">
+            {isDeleted ? "Xoá Bug Report" : "Tạo Bug Report"} · {formatDateTime(item.occurredAt)}
+          </span>
+        </div>
+        {!isDeleted && item.bugReportId && (
+          <Button
+            size="sm"
+            variant="ghost"
+            nativeButton={false}
+            render={<Link to={`/projects/${item.projectId}/bug-reports?bugReportId=${item.bugReportId}`} />}
+          >
+            Xem chi tiết
+          </Button>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {item.bugId} · {item.bugSummary}
+      </p>
     </div>
   )
 }
