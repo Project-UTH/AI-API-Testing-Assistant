@@ -113,6 +113,19 @@ export async function apiFetchBlob(path: string): Promise<{ blob: Blob; filename
   return { blob: await response.blob(), filename: filenameMatch?.[1] ?? null }
 }
 
+/** Kích hoạt tải 1 blob về máy qua thẻ <a> ẩn - dùng chung cho mọi nút "Xuất Excel" trong app. */
+export async function downloadFile(path: string, fallbackFilename: string): Promise<void> {
+  const { blob, filename } = await apiFetchBlob(path)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename ?? fallbackFilename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 export interface PagedResult<T> {
   data: T[]
   page: number

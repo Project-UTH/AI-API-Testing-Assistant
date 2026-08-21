@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchBlob } from "@/lib/api"
+import { apiFetch, downloadFile } from "@/lib/api"
 import type { AssertionResult, TestResultStatus } from "@/lib/executions"
 
 export type BugStatus =
@@ -51,6 +51,8 @@ export interface TestCaseBugSummary {
   testCaseId: string
   testCaseName: string
   bugs: BugReport[]
+  /** Id các lần chạy Fail CHƯA có bug của test case này - dùng cho checkbox "Sinh Bug Report tuỳ chọn". */
+  generatableResultIds: string[]
 }
 
 export interface EndpointBugSummary {
@@ -188,14 +190,47 @@ export async function exportAllBugReports(projectId: string, fallbackFilename: s
   await downloadFile(`/projects/${projectId}/bug-reports/export`, fallbackFilename)
 }
 
-async function downloadFile(path: string, fallbackFilename: string): Promise<void> {
-  const { blob, filename } = await apiFetchBlob(path)
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
-  link.href = url
-  link.download = filename ?? fallbackFilename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
+/** Tải file .xlsx CHỈ gồm các bug report đã tick chọn (theo endpoint/test case) trên trang Bug Report. */
+export async function exportSelectedBugReports(
+  projectId: string,
+  bugReportIds: string[],
+  fallbackFilename: string
+): Promise<void> {
+  const query = bugReportIds.map((id) => `bugReportId=${id}`).join("&")
+  await downloadFile(`/projects/${projectId}/bug-reports/export?${query}`, fallbackFilename)
+}
+
+export interface GenerateBugReportsResult {
+  created: BugReport[]
+  skippedCount: number
+}
+
+/**
+ * Sinh Bug Report hàng loạt thẳng từ trang Kết quả thực thi - testResultIds null = "Sinh tất cả"
+ * (toàn bộ Fail của execution chưa có bug), mảng cụ thể = "Sinh theo lựa chọn".
+ */
+export function generateBugReports(
+  projectId: string,
+  executionId: string,
+  testResultIds: string[] | null
+): Promise<GenerateBugReportsResult> {
+  return apiFetch<GenerateBugReportsResult>(`/projects/${projectId}/bug-reports/generate`, {
+    method: "POST",
+    body: JSON.stringify({ executionId, testResultIds }),
+  })
+}
+
+/**
+ * Sinh Bug Report hàng loạt thẳng từ trang Bug Report - quét TOÀN BỘ project (không giới hạn 1
+ * execution), testResultIds null = "Sinh tất cả" (mọi kết quả Fail của project chưa có bug), mảng
+ * cụ thể = "Sinh theo lựa chọn" (tick từng lần chạy Fail ở Tầng 3).
+ */
+export function generateBugReportsForProject(
+  projectId: string,
+  testResultIds: string[] | null
+): Promise<GenerateBugReportsResult> {
+  return apiFetch<GenerateBugReportsResult>(`/projects/${projectId}/bug-reports/generate-batch`, {
+    method: "POST",
+    body: JSON.stringify({ testResultIds }),
+  })
 }

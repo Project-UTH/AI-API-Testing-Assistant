@@ -1,8 +1,10 @@
 package com.aiapitesting.backend.repository;
 
 import com.aiapitesting.backend.entity.BugReport;
+import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -13,6 +15,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
+
+    // Trang Tổng quan (Module 8/11) - số bug "Đang mở" (khác CLOSED) trên TOÀN BỘ project user sở
+    // hữu, cùng định nghĩa "open" với buildDashboardSummary() ở BugReportService (totalCount - closed).
+    long countByProjectOwnerAndStatusNot(User owner, BugStatus status);
 
     // JOIN FETCH đủ quan hệ lazy sẽ đọc tới ở BugReportResponse/gộp-theo-endpoint (BugReportService)
     // để tránh LazyInitializationException sau khi session đóng (spring.jpa.open-in-view=false) -
@@ -39,6 +45,12 @@ public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
     List<BugReport> findAllByTestCase(TestCase testCase);
 
     boolean existsBySourceTestResultId(UUID sourceTestResultId);
+
+    // Dùng bởi TestExecutionService.getExecution() để hiện rõ dòng nào ở trang Kết quả thực thi đã
+    // có Bug Report rồi (không JOIN FETCH gì thêm - chỉ đọc id/bugId/sourceTestResult.id, đều là cột
+    // trực tiếp hoặc id trên proxy LAZY, không cần initialize đầy đủ association).
+    @Query("SELECT b FROM BugReport b WHERE b.sourceTestResult.id IN :testResultIds")
+    List<BugReport> findAllBySourceTestResultIdIn(@Param("testResultIds") List<UUID> testResultIds);
 
     // MAX chứ không phải COUNT: sau khi xoá 1 bug ở giữa (VD B1_002), COUNT sẽ hụt và tính lại đúng
     // seqInProject của 1 bug CÒN TỒN TẠI (VD count=3 -> "B1_004" trùng bug có sẵn) -> DataIntegrityViolationException.

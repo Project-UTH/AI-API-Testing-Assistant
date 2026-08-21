@@ -1,8 +1,11 @@
 package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.request.CreateBugReportRequest;
+import com.aiapitesting.backend.dto.request.GenerateBugReportsForProjectRequest;
+import com.aiapitesting.backend.dto.request.GenerateBugReportsRequest;
 import com.aiapitesting.backend.dto.request.UpdateBugReportRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
+import com.aiapitesting.backend.dto.response.BugReportBatchGenerateResponse;
 import com.aiapitesting.backend.dto.response.BugReportDraftResponse;
 import com.aiapitesting.backend.dto.response.BugReportPageResponse;
 import com.aiapitesting.backend.dto.response.BugReportResponse;
@@ -64,6 +67,38 @@ public class BugReportController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(response));
     }
 
+    /**
+     * Sinh Bug Report hàng loạt thẳng từ trang Kết quả thực thi - tiện hơn phải mở từng cái ở trang
+     * Bug Report. testResultIds null/rỗng = "Sinh tất cả" (toàn bộ Fail của execution chưa có bug),
+     * có truyền = "Sinh theo lựa chọn". Dòng nào không hợp lệ (không phải Fail/đã có bug) chỉ bị bỏ
+     * qua (skippedCount), không làm fail cả request.
+     */
+    @PostMapping("/generate")
+    public ResponseEntity<ApiResponse<BugReportBatchGenerateResponse>> generate(
+            @PathVariable UUID projectId,
+            @Valid @RequestBody GenerateBugReportsRequest request
+    ) {
+        BugReportBatchGenerateResponse response =
+                bugReportService.generateForExecution(projectId, request.executionId(), request.testResultIds());
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(response));
+    }
+
+    /**
+     * Sinh Bug Report hàng loạt thẳng từ trang Bug Report - quét TOÀN BỘ project (không giới hạn 1
+     * execution), 1 test case Fail nhiều lần ở nhiều execution khác nhau thì mỗi lần chưa có bug đều
+     * sinh được riêng (không chỉ lấy lần gần nhất). testResultIds null/rỗng = "Sinh tất cả", có
+     * truyền = "Sinh theo lựa chọn" (tick từng lần chạy Fail cụ thể ở Tầng 3).
+     */
+    @PostMapping("/generate-batch")
+    public ResponseEntity<ApiResponse<BugReportBatchGenerateResponse>> generateBatch(
+            @PathVariable UUID projectId,
+            @RequestBody(required = false) GenerateBugReportsForProjectRequest request
+    ) {
+        BugReportBatchGenerateResponse response =
+                bugReportService.generateForProject(projectId, request == null ? null : request.testResultIds());
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(response));
+    }
+
     @PutMapping("/{bugReportId}")
     public ResponseEntity<ApiResponse<BugReportResponse>> update(
             @PathVariable UUID projectId,
@@ -110,10 +145,17 @@ public class BugReportController {
         return excelFileResponse(bugReportService.exportToExcel(projectId, bugReportId));
     }
 
-    /** Xuất TOÀN BỘ bug report của project vào 1 file .xlsx (nhiều dòng) - nút "Xuất tất cả" trên trang Bug Report. */
+    /**
+     * Xuất bug report của project vào 1 file .xlsx (nhiều dòng). Không truyền bugReportId = xuất
+     * TOÀN BỘ (nút "Xuất tất cả"); có truyền (>=1, query lặp) = chỉ xuất đúng các bug đã tick (nút
+     * "Xuất theo lựa chọn").
+     */
     @GetMapping("/export")
-    public ResponseEntity<byte[]> exportAll(@PathVariable UUID projectId) {
-        return excelFileResponse(bugReportService.exportAllToExcel(projectId));
+    public ResponseEntity<byte[]> exportAll(
+            @PathVariable UUID projectId,
+            @RequestParam(required = false) List<UUID> bugReportId
+    ) {
+        return excelFileResponse(bugReportService.exportAllToExcel(projectId, bugReportId));
     }
 
     private ResponseEntity<byte[]> excelFileResponse(BugReportService.ExportFile file) {

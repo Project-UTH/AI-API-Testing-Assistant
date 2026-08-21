@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.request.CreateBugReportRequest;
 import com.aiapitesting.backend.dto.request.UpdateBugReportRequest;
 import com.aiapitesting.backend.dto.response.BugDashboardSummaryResponse;
+import com.aiapitesting.backend.dto.response.BugReportBatchGenerateResponse;
 import com.aiapitesting.backend.dto.response.BugReportDraftResponse;
 import com.aiapitesting.backend.dto.response.BugReportPageResponse;
 import com.aiapitesting.backend.dto.response.BugReportResponse;
@@ -13,24 +14,30 @@ import com.aiapitesting.backend.dto.response.EndpointBugSummaryResponse;
 import com.aiapitesting.backend.dto.response.TestCaseBugSummaryResponse;
 import com.aiapitesting.backend.dto.response.TestResultHistoryItemResponse;
 import com.aiapitesting.backend.entity.AssertionOperator;
+import com.aiapitesting.backend.entity.BugFrequency;
+import com.aiapitesting.backend.entity.BugPriority;
 import com.aiapitesting.backend.entity.BugReport;
 import com.aiapitesting.backend.entity.BugReportEvent;
 import com.aiapitesting.backend.entity.BugReportEventType;
+import com.aiapitesting.backend.entity.BugSeverity;
 import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.BugReportNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
+import com.aiapitesting.backend.exception.TestExecutionNotFoundException;
 import com.aiapitesting.backend.exception.TestResultNotFoundException;
 import com.aiapitesting.backend.repository.BugReportEventRepository;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -62,6 +69,7 @@ public class BugReportService {
     private final ProjectRepository projectRepository;
     private final TestCaseRepository testCaseRepository;
     private final TestResultRepository testResultRepository;
+    private final TestExecutionRepository testExecutionRepository;
     private final BugReportRepository bugReportRepository;
     private final BugReportEventRepository bugReportEventRepository;
     private final CurrentUserService currentUserService;
@@ -87,6 +95,14 @@ public class BugReportService {
         Set<UUID> testCaseIdsWithRuns = new HashSet<>(
                 testResultRepository.findDistinctTestCaseIdsWithResultsByProject(project));
 
+        // Cho checkbox "Sinh Bug Report tuỳ chọn" ở Tầng 1/2 (không cần mở Tầng 3 mới thấy) - id các
+        // lần chạy Fail CHƯA có bug, nhóm theo test case. 1 query duy nhất cho cả project.
+        Set<UUID> resultIdsWithBug = bugs.stream().map(b -> b.getSourceTestResult().getId()).collect(Collectors.toSet());
+        Map<UUID, List<UUID>> generatableResultIdsByTestCaseId = testResultRepository.findAllFailedByProject(project).stream()
+                .filter(r -> !resultIdsWithBug.contains(r.getId()))
+                .collect(Collectors.groupingBy(r -> r.getTestCase().getId(),
+                        Collectors.mapping(TestResult::getId, Collectors.toList())));
+
         // Gộp theo endpoint -> test case trong bộ nhớ từ 1 query đã tải sẵn (đúng pattern
         // TestHistoryService/HistoryFeedService) - không N+1 theo từng endpoint/test case.
         Map<UUID, Endpoint> endpointById = new LinkedHashMap<>();
@@ -107,7 +123,8 @@ public class BugReportService {
                     .map(testCase -> new TestCaseBugSummaryResponse(
                             testCase.getId(), testCase.getName(),
                             bugsByTestCaseId.getOrDefault(testCase.getId(), List.of()).stream()
-                                    .map(BugReportResponse::from).toList()))
+                                    .map(BugReportResponse::from).toList(),
+                            generatableResultIdsByTestCaseId.getOrDefault(testCase.getId(), List.of())))
                     .toList();
             if (testCases.isEmpty()) {
                 continue; // Endpoint không có test case nào đã chạy - không hiện trong Tầng 1.
@@ -186,6 +203,10 @@ public class BugReportService {
 
         sb.append("Các bước tái hiện:\n");
         sb.append("1. Gửi ").append(endpoint.getMethod()).append(" ").append(path).append("\n");
+        String requestBody = testCase.getRequestBody();
+        if (requestBody != null && !requestBody.isBlank()) {
+            sb.append("   Request body:\n").append(indentEachLine(prettyPrintJson(requestBody))).append("\n");
+        }
         sb.append("2. Đợi response trả về.\n");
         sb.append("3. Kiểm tra status code và nội dung response.\n\n");
 
@@ -250,6 +271,11 @@ public class BugReportService {
         }
     }
 
+    /** Thụt lề mỗi dòng - cho request body nằm lồng dưới bước "1. Gửi ..." thay vì trôi thẳng lề trái. */
+    private String indentEachLine(String text) {
+        return text.lines().map(line -> "   " + line).collect(Collectors.joining("\n"));
+    }
+
     @Transactional
     public BugReportResponse create(UUID projectId, CreateBugReportRequest request) {
         Project project = projectService.getOwnedProject(projectId);
@@ -257,8 +283,79 @@ public class BugReportService {
         if (bugReportRepository.existsBySourceTestResultId(sourceResult.getId())) {
             throw new InvalidRequestException("Lần chạy này đã có Bug Report rồi");
         }
-
         User currentUser = currentUserService.getCurrentUser();
+        BugReport bug = buildAndSaveBugReport(project, sourceResult, currentUser,
+                request.summary(), request.testEnvironment(), request.stepsToReproduce(),
+                request.actualResult(), request.expectedResult(),
+                request.severity(), request.frequency(), request.priority(),
+                request.attachmentUrl(), request.build());
+        return BugReportResponse.from(bug);
+    }
+
+    /**
+     * Sinh Bug Report hàng loạt thẳng từ trang Kết quả thực thi (tiện hơn phải mở từng cái ở trang
+     * Bug Report) - testResultIds null/rỗng = xét TOÀN BỘ kết quả của execution ("Sinh tất cả"), có
+     * truyền = chỉ xét đúng các dòng đã tick ("Sinh theo lựa chọn"). KHÔNG throw khi 1 dòng không
+     * hợp lệ (không phải Fail, hoặc đã có Bug Report rồi) - chỉ đếm vào skippedCount, vì đây là thao
+     * tác hàng loạt best-effort, không phải tạo đơn lẻ như create(). Severity/Frequency/Priority lấy
+     * mặc định của entity (Nhẹ/Hiếm khi/Không đáng kể) - người dùng sửa lại sau qua dialog sửa có sẵn
+     * nếu cần, giống hệt cách 1 bug tạo thủ công có thể sửa lại.
+     */
+    @Transactional
+    public BugReportBatchGenerateResponse generateForExecution(UUID projectId, UUID executionId, List<UUID> testResultIds) {
+        Project project = projectService.getOwnedProject(projectId);
+        TestExecution execution = testExecutionRepository.findByIdAndProject(executionId, project)
+                .orElseThrow(() -> new TestExecutionNotFoundException("Không tìm thấy lần thực thi với id đã cho"));
+
+        List<TestResult> candidates = testResultRepository.findAllByExecutionOrderByTestCaseCreatedAt(execution);
+        if (testResultIds != null && !testResultIds.isEmpty()) {
+            Set<UUID> idSet = new HashSet<>(testResultIds);
+            candidates = candidates.stream().filter(r -> idSet.contains(r.getId())).toList();
+        }
+        return generateFromCandidates(project, candidates);
+    }
+
+    /**
+     * Sinh Bug Report hàng loạt thẳng từ trang Bug Report (nút "Sinh Bug Report tuỳ chọn"/"Sinh tất
+     * cả" cạnh "Xuất tất cả") - khác {@link #generateForExecution} ở chỗ quét TOÀN BỘ project, không
+     * giới hạn 1 execution: 1 test case có thể Fail nhiều lần ở nhiều execution khác nhau, MỖI lần
+     * Fail chưa có bug đều sinh được 1 bug riêng (không chỉ lấy lần gần nhất - theo đúng yêu cầu
+     * người dùng, tick từng lần chạy cụ thể như đang tự bấm "Báo lỗi" từng cái ở Tầng 3). Cùng logic
+     * bỏ qua best-effort với generateForExecution nên dùng chung generateFromCandidates().
+     */
+    @Transactional
+    public BugReportBatchGenerateResponse generateForProject(UUID projectId, List<UUID> testResultIds) {
+        Project project = projectService.getOwnedProject(projectId);
+        List<TestResult> candidates = (testResultIds != null && !testResultIds.isEmpty())
+                ? testResultRepository.findAllByIdInAndTestCaseEndpointProject(testResultIds, project)
+                : testResultRepository.findAllFailedByProject(project);
+        return generateFromCandidates(project, candidates);
+    }
+
+    private BugReportBatchGenerateResponse generateFromCandidates(Project project, List<TestResult> candidates) {
+        User currentUser = currentUserService.getCurrentUser();
+        List<BugReportResponse> created = new ArrayList<>();
+        int skipped = 0;
+        for (TestResult result : candidates) {
+            if (result.getStatus() != TestResultStatus.FAILED || bugReportRepository.existsBySourceTestResultId(result.getId())) {
+                skipped++;
+                continue;
+            }
+            Endpoint endpoint = result.getTestCase().getEndpoint();
+            String summary = "Fail: " + result.getTestCase().getName();
+            String description = buildDescription(project, endpoint, result.getTestCase(), result);
+            BugReport bug = buildAndSaveBugReport(project, result, currentUser, summary, null, description, null, null,
+                    BugSeverity.MINOR, BugFrequency.SELDOM, BugPriority.TRIVIAL, null, null);
+            created.add(BugReportResponse.from(bug));
+        }
+        return new BugReportBatchGenerateResponse(created, skipped);
+    }
+
+    private BugReport buildAndSaveBugReport(
+            Project project, TestResult sourceResult, User currentUser,
+            String summary, String testEnvironment, String stepsToReproduce, String actualResult, String expectedResult,
+            BugSeverity severity, BugFrequency frequency, BugPriority priority, String attachmentUrl, String buildLabel
+    ) {
         if (project.getBugReportProjectSeq() == null) {
             int nextProjectSeq = projectRepository.findMaxBugReportProjectSeqByOwner(currentUser).orElse(0) + 1;
             project.setBugReportProjectSeq(nextProjectSeq);
@@ -268,7 +365,7 @@ public class BugReportService {
         String bugId = "B" + project.getBugReportProjectSeq() + "_" + String.format("%03d", seqInProject);
 
         TestCase testCase = sourceResult.getTestCase();
-        String build = (request.build() == null || request.build().isBlank()) ? project.getName() : request.build();
+        String build = (buildLabel == null || buildLabel.isBlank()) ? project.getName() : buildLabel;
 
         BugReport bug = BugReport.builder()
                 .project(project)
@@ -278,15 +375,15 @@ public class BugReportService {
                 .bugId(bugId)
                 .projectSeq(project.getBugReportProjectSeq())
                 .seqInProject(seqInProject)
-                .severity(request.severity())
-                .priority(request.priority())
-                .frequency(request.frequency())
-                .summary(request.summary())
-                .testEnvironment(request.testEnvironment())
-                .stepsToReproduce(request.stepsToReproduce())
-                .actualResult(request.actualResult())
-                .expectedResult(request.expectedResult())
-                .attachmentUrl(request.attachmentUrl())
+                .severity(severity)
+                .priority(priority)
+                .frequency(frequency)
+                .summary(summary)
+                .testEnvironment(testEnvironment)
+                .stepsToReproduce(stepsToReproduce)
+                .actualResult(actualResult)
+                .expectedResult(expectedResult)
+                .attachmentUrl(attachmentUrl)
                 .build(build)
                 .reporter(currentUser)
                 .build();
@@ -299,7 +396,7 @@ public class BugReportService {
             throw new InvalidRequestException("Bug report vừa được tạo bởi 1 thao tác khác, vui lòng thử lại");
         }
         recordEvent(testCase.getEndpoint(), currentUser, bug.getId(), bug.getBugId(), bug.getSummary(), BugReportEventType.CREATED);
-        return BugReportResponse.from(bug);
+        return bug;
     }
 
     @Transactional
@@ -368,11 +465,17 @@ public class BugReportService {
         return new ExportFile(bug.getBugId() + ".xlsx", content);
     }
 
-    public ExportFile exportAllToExcel(UUID projectId) {
+    public ExportFile exportAllToExcel(UUID projectId, List<UUID> bugReportIds) {
         Project project = projectService.getOwnedProject(projectId);
         List<BugReport> bugs = bugReportRepository.findAllByProject(project);
+        boolean filtered = bugReportIds != null && !bugReportIds.isEmpty();
+        if (filtered) {
+            Set<UUID> idSet = new HashSet<>(bugReportIds);
+            bugs = bugs.stream().filter(b -> idSet.contains(b.getId())).toList();
+        }
         byte[] content = bugReportExportService.exportBugsToExcel(bugs);
-        return new ExportFile(sanitizeFilename(project.getName()) + "_BugReports.xlsx", content);
+        String suffix = filtered ? "_DaChon" : "";
+        return new ExportFile(sanitizeFilename(project.getName()) + "_BugReports" + suffix + ".xlsx", content);
     }
 
     private String sanitizeFilename(String value) {

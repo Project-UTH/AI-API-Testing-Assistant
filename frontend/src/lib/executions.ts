@@ -24,6 +24,9 @@ export interface TestResult {
   responseBody: string | null
   errorMessage: string | null
   assertionResults: AssertionResult[]
+  /** Bug Report đã tồn tại từ lần chạy này (nếu có) - null nếu chưa ai tạo. */
+  existingBugReportId: string | null
+  existingBugId: string | null
 }
 
 export interface TestExecution {

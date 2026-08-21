@@ -1,7 +1,7 @@
 import { useState, type ComponentType, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { CircleCheck, FolderKanban, ListChecks, PieChart, Plug, Plus, Sparkles, TriangleAlert, X } from "lucide-react"
+import { Bug, CircleCheck, FolderKanban, ListChecks, PieChart, Plug, Plus, Sparkles, Trash2, TriangleAlert, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,7 +45,7 @@ export function DashboardPage() {
 
       {data && data.totalProjects > 0 && (
         <div className="grid gap-5">
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
             <KpiCard icon={FolderKanban} label="Project" value={data.totalProjects} index={0} />
             <KpiCard icon={Plug} label="Endpoint" value={data.totalEndpoints} index={1} />
             <KpiCard icon={ListChecks} label="Test case" value={data.totalTestCases} index={2} />
@@ -68,6 +68,13 @@ export function DashboardPage() {
                 </>
               )}
             </KpiCard>
+            <KpiCard
+              icon={Bug}
+              label="Bug Report đang mở"
+              value={data.totalOpenBugs}
+              valueClassName={data.totalOpenBugs > 0 ? "text-amber-500" : "text-foreground"}
+              index={4}
+            />
           </div>
 
           <div className="grid gap-5 lg:grid-cols-3">
@@ -284,18 +291,28 @@ function ActivityFeedPanel({ items, isLoading }: { items: HistoryFeedItem[] | un
 
 function ActivityRow({ item }: { item: HistoryFeedItem }) {
   const isExecution = item.type === "EXECUTION"
+  const isBugDeleted = item.type === "BUG_REPORT_DELETED"
+  const isBugReport = item.type === "BUG_REPORT_CREATED" || isBugDeleted
   const hasFail = isExecution && (item.failCount ?? 0) > 0
 
-  const Icon = isExecution ? (hasFail ? TriangleAlert : CircleCheck) : Sparkles
-  const iconClassName = isExecution ? (hasFail ? "text-rose-500" : "text-emerald-500") : "text-violet-500"
+  const Icon = isExecution ? (hasFail ? TriangleAlert : CircleCheck) : isBugReport ? (isBugDeleted ? Trash2 : Bug) : Sparkles
+  const iconClassName = isExecution
+    ? (hasFail ? "text-rose-500" : "text-emerald-500")
+    : isBugReport
+      ? (isBugDeleted ? "text-rose-500" : "text-amber-500")
+      : "text-violet-500"
 
   const title = isExecution
     ? `${item.projectName} · ${item.endpointMethod} ${item.endpointPath}`
-    : `${item.projectName} · Sinh ${item.generatedCount} test case`
+    : isBugReport
+      ? `${item.projectName} · ${isBugDeleted ? "Xoá" : "Tạo"} Bug Report${item.bugId ? ` ${item.bugId}` : ""}`
+      : `${item.projectName} · Sinh ${item.generatedCount} test case`
 
   const subtitle = isExecution
     ? `${item.passCount}/${item.selectedCount} pass · ${formatEventTime(item.occurredAt)}`
-    : formatEventTime(item.occurredAt)
+    : isBugReport
+      ? `${item.bugSummary ? `${item.bugSummary} · ` : ""}${formatEventTime(item.occurredAt)}`
+      : formatEventTime(item.occurredAt)
 
   return (
     <li className="flex items-start gap-3">

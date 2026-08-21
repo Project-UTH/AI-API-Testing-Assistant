@@ -68,4 +68,17 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
     // xem) - 1 query duy nhất cho cả project, không N+1 theo từng test case.
     @Query("SELECT DISTINCT tr.testCase.id FROM TestResult tr WHERE tr.testCase.endpoint.project = :project")
     List<UUID> findDistinctTestCaseIdsWithResultsByProject(@Param("project") Project project);
+
+    // BugReportService.generateForProject() - "Sinh tất cả" ở trang Bug Report: TOÀN BỘ lần chạy
+    // Fail trong project (không giới hạn 1 execution như generateForExecution), để rồi service lọc
+    // tiếp dòng nào đã có bug. JOIN FETCH đủ testCase/endpoint để buildDescription() đọc được.
+    @Query("SELECT tr FROM TestResult tr JOIN FETCH tr.testCase tc JOIN FETCH tc.endpoint "
+            + "WHERE tc.endpoint.project = :project AND tr.status = com.aiapitesting.backend.entity.TestResultStatus.FAILED")
+    List<TestResult> findAllFailedByProject(@Param("project") Project project);
+
+    // BugReportService.generateForProject() - "Sinh theo lựa chọn": ownership check qua
+    // tc.endpoint.project ngay trong query (id không thuộc project sẽ tự bị loại, không lỗi 404).
+    @Query("SELECT tr FROM TestResult tr JOIN FETCH tr.testCase tc JOIN FETCH tc.endpoint "
+            + "WHERE tr.id IN :ids AND tc.endpoint.project = :project")
+    List<TestResult> findAllByIdInAndTestCaseEndpointProject(@Param("ids") List<UUID> ids, @Param("project") Project project);
 }
