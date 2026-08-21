@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-21 (Module 10 - Bug Report: "Xuất theo lựa chọn", "Sinh Bug Report" ở cả trang Kết quả thực thi VÀ trang Bug Report (tick từng lần chạy Fail hoặc cascade cả Endpoint/Test Case), chấm đỏ báo Fail chưa xử lý, nút "Báo lỗi" + ô "Bug Report đã sinh", sửa lỗ hổng bug_id unique toàn cục, thêm request body vào mô tả bug (rà soát toàn luồng theo yêu cầu người dùng); thêm thẻ "Bug Report đang mở" vào trang Tổng quan + sửa lỗi "Sinh null test case" ở Hoạt động gần đây; verify bằng API thật + Playwright)
+> Cập nhật lần cuối: 2026-08-21 (Thêm Module 11 "Trang Admin quản lý hệ thống" — mở rộng phạm vi ngoài kế hoạch MVP gốc theo yêu cầu người dùng, đánh số lại "Hoàn thiện & Demo" thành Module 12; cập nhật `CLAUDE.md` bỏ "Multi-role phân quyền" khỏi danh sách Không làm)
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -18,7 +18,8 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 8. Lịch sử & Dashboard | ✅ Xong |
 | 9. Nâng cao Test Case AI sinh (Security, Assertion, Test Data) | ✅ Xong |
 | 10. Bug Report (quy trình QA) | ✅ Xong |
-| 11. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
+| 11. Trang Admin quản lý hệ thống | ⬜ Chưa bắt đầu |
+| 12. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
 
@@ -492,8 +493,39 @@ Người dùng vừa hoàn thiện Module 10 (Bug Report) và cho rằng tính n
 
 ---
 
-## 11. Hoàn thiện & Demo
-*Phụ thuộc: tất cả module MVP (1-8) đã xong*
+## 11. Trang Admin quản lý hệ thống
+*Phụ thuộc: Module 1 (auth), dùng dữ liệu từ mọi module 2-10 nhưng không sửa nghiệp vụ của chúng*
+
+**Bối cảnh:** mở rộng phạm vi ngoài kế hoạch MVP gốc — `CLAUDE.md` trước đây liệt kê "Multi-role phân quyền phức tạp (admin/user)" vào mục "Không làm", nay đã đổi quyết định theo yêu cầu người dùng. Mục tiêu: 1 trang admin quản lý được **toàn bộ hệ thống** (mọi user, không chỉ dữ liệu của người đang đăng nhập) — khác hẳn Dashboard hiện có ở Module 8 vốn luôn giới hạn theo `owner`.
+
+**Phạm vi đã chốt:**
+- Thêm role thật (`USER`/`ADMIN`) trên `User`, không phải giả lập ở frontend — mọi endpoint `/api/v1/admin/**` phải được Spring Security chặn ở tầng backend theo role, không chỉ ẩn UI
+- Xem dữ liệu của user khác chỉ ở chế độ **đọc** (review/hỗ trợ) — không sửa hộ dữ liệu nghiệp vụ (test case, bug report...) của user khác qua trang admin, tránh lẫn lộn trách nhiệm/quyền sở hữu dữ liệu
+- Tái dùng tối đa service/API hiện có (bỏ điều kiện lọc `owner` khi caller có role `ADMIN`) thay vì viết lại song song — theo đúng nguyên tắc kiến trúc hiện hành của dự án
+
+**Backend**
+- [ ] `User` entity thêm field `role` (enum `UserRole`: `USER`/`ADMIN`, mặc định `USER`, `columnDefinition=VARCHAR` theo đúng bài học đã rút ra ở Module 9 bug #3 — tránh lỗi enum MySQL không tự ALTER khi `ddl-auto=update`)
+- [ ] `SecurityConfig` thêm rule chặn `/api/v1/admin/**` chỉ cho `hasRole("ADMIN")`; JWT payload/`UserDetails` mang theo `role` để Spring Security đọc được ngay từ token, không cần query DB lại mỗi request
+- [ ] `AdminUserController`/`AdminUserService` (package `admin/` hoặc `service/admin/` — cân nhắc lúc code theo skill `springboot-architecture`): `GET /admin/users` (phân trang, kèm số project/test case/bug report mỗi user, tránh N+1), `GET /admin/users/{id}`, `PUT /admin/users/{id}/status` (khoá/mở tài khoản), `PUT /admin/users/{id}/role` (đổi role)
+- [ ] `AdminDashboardController`/`AdminDashboardService` — số liệu toàn hệ thống (không giới hạn owner, khác hẳn `DashboardService` của Module 8): tổng user/project/endpoint/test case/execution/bug report, tỷ lệ pass toàn hệ thống, xu hướng theo thời gian
+- [ ] Cho phép admin xem Project/Endpoint/TestCase/BugReport của bất kỳ user nào — mở rộng đúng service hiện có (`ProjectService`, `TestCaseService`, `BugReportService`...) để bỏ qua check `owner` khi người gọi có role `ADMIN`, không tạo API đọc riêng trùng lặp
+- [ ] Theo dõi sử dụng AI: đếm số lần gọi `generate-tests` theo user/ngày (tái dùng `TestGenerationEvent` đã có sẵn từ Module 8, không cần entity mới); ghi log token usage nếu Spring AI/Anthropic trả metadata sẵn có trong response
+- [ ] Giám sát thực thi test: liệt kê execution đang `PENDING`/`RUNNING` quá lâu bất thường (nghi treo do lỗi luồng `@Async`)
+- [ ] Audit log hành động nhạy cảm (khoá tài khoản, đổi role, admin xoá dữ liệu hộ user) — cân nhắc tái dùng đúng pattern snapshot-event đã hình thành nhất quán trong dự án (`TestGenerationEvent`/`BugReportEvent`) thay vì thiết kế mới
+- [ ] Mã lỗi mới nếu cần (`FORBIDDEN_ADMIN_ONLY` hoặc tái dùng 403 sẵn có) — cập nhật bảng mã lỗi ở skill `api-contract`
+
+**Frontend**
+- [ ] Route `/admin/*`, mục sidebar "Quản trị" chỉ hiện khi `user.role === "ADMIN"` (đọc từ JWT decode hoặc `/auth/me` đã có)
+- [ ] `AdminUsersPage` — bảng user (phân trang), khoá/mở tài khoản, đổi role, xem nhanh số liệu mỗi user
+- [ ] `AdminDashboardPage` — KPI toàn hệ thống, biểu đồ AI usage/execution theo thời gian (tái dùng cách tự vẽ SVG đã dùng ở `DashboardPage.tsx`, không thêm thư viện chart mới nếu không thật cần)
+- [ ] Xem dữ liệu user khác: cân nhắc kỹ giữa (a) tái dùng nguyên `ProjectDetailPage`/`TestCasesPage`/`BugReportPage` qua 1 query param admin-context, hay (b) trang riêng gọn hơn chỉ hiển thị — quyết định lúc bắt đầu code, tránh nhân bản logic hiển thị đã có
+
+**Mốc xác nhận:** (điền khi hoàn thành) `./mvnw test` xanh, `npx tsc -b` sạch, verify bằng API thật + Playwright: tài khoản `ADMIN` xem được toàn bộ user/số liệu hệ thống, tài khoản `USER` thường gọi `/api/v1/admin/**` nhận đúng 403, khoá tài khoản 1 user test khiến user đó không đăng nhập được nữa.
+
+---
+
+## 12. Hoàn thiện & Demo
+*Phụ thuộc: tất cả module MVP (1-11) đã xong*
 
 - [ ] Polish UI, fix bug toàn luồng
 - [ ] Viết tài liệu kỹ thuật
