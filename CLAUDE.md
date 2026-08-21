@@ -43,7 +43,7 @@ AI-API-Testing-Assistant/
 - **Response API**: luôn theo format trong `.claude/skills/api-contract/SKILL.md` — không tự ý đổi cấu trúc response
 - **Kiến trúc backend**: theo `.claude/skills/springboot-architecture/SKILL.md` — Controller mỏng, business logic ở Service
 - **Bảo mật**: API Key/Token của target API phải mã hoá AES-256 trước khi lưu DB, không log ra console/file dưới mọi hình thức
-- **Auth**: JWT, mọi endpoint trừ `/auth/*` đều yêu cầu token hợp lệ
+- **Auth**: JWT, mọi endpoint trừ `/auth/*` đều yêu cầu token hợp lệ. `User` có `role` (`USER`/`ADMIN`) — route `/api/v1/admin/**` chỉ `ADMIN` mới gọi được (xem Module 11 Trang Admin trong roadmap)
 - **Async**: sinh test case AI và thực thi test suite không được block request chính — dùng `@Async`
 - **Prompt AI**: mọi prompt gửi cho LLM phải nằm trong `backend/src/main/resources/prompts/*.st`, load qua Spring AI `PromptTemplate` — không hardcode prompt string trực tiếp trong Java code. Sửa prompt = sửa file `.st`, không sửa logic Java
 
@@ -80,6 +80,7 @@ File `docs/ROADMAP.md` theo dõi tiến độ dự án theo module (không theo 
 ## Không làm (ngoài phạm vi MVP hiện tại)
 
 - OAuth / đăng nhập qua Google-GitHub
-- Multi-role phân quyền phức tạp (admin/user)
 - Docker hoá (chưa cần ở giai đoạn này)
 - Refresh token — access token sống 24h là đủ
+
+**Đã đổi phạm vi:** Multi-role phân quyền (admin/user) từng nằm trong danh sách "Không làm" — nay đã CHỐT làm, xem Module 11 (Trang Admin quản lý hệ thống) trong `docs/ROADMAP.md`.
