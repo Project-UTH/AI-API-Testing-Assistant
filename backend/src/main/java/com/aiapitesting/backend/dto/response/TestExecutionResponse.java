@@ -1,11 +1,13 @@
 package com.aiapitesting.backend.dto.response;
 
+import com.aiapitesting.backend.entity.BugReport;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestResult;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record TestExecutionResponse(
@@ -23,13 +25,18 @@ public record TestExecutionResponse(
                 List.of(), autoIncludedTestCaseIds);
     }
 
-    public static TestExecutionResponse from(TestExecution execution, List<TestResult> results) {
+    public static TestExecutionResponse from(
+            TestExecution execution, List<TestResult> results, Map<UUID, BugReport> existingBugByResultId
+    ) {
         List<UUID> autoIncludedTestCaseIds = results.stream()
                 .filter(TestResult::isAutoIncluded)
                 .map(r -> r.getTestCase().getId())
                 .toList();
         return new TestExecutionResponse(
                 execution.getId(), execution.getStatus(), execution.getStartedAt(), execution.getFinishedAt(),
-                results.stream().map(TestResultResponse::from).toList(), autoIncludedTestCaseIds);
+                results.stream()
+                        .map(r -> TestResultResponse.from(r, existingBugByResultId.get(r.getId())))
+                        .toList(),
+                autoIncludedTestCaseIds);
     }
 }

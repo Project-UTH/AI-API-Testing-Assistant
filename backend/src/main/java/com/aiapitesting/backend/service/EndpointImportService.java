@@ -6,6 +6,8 @@ import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.SwaggerParseException;
+import com.aiapitesting.backend.repository.BugReportEventRepository;
+import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -52,6 +54,8 @@ public class EndpointImportService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
+    private final BugReportRepository bugReportRepository;
+    private final BugReportEventRepository bugReportEventRepository;
     private final SafeUrlFetcher safeUrlFetcher;
     private final AesEncryptionService aesEncryptionService;
     private final TargetAuthHeaderResolver targetAuthHeaderResolver;
@@ -128,10 +132,12 @@ public class EndpointImportService {
             throw new SwaggerParseException("Tài liệu OpenAPI không chứa endpoint nào");
         }
 
-        // Dọn TestExecutionEndpoint/TestResult/TestExecution/TestCaseDependency/TestCaseAssertion/
-        // TestGenerationEvent/test case của các endpoint cũ trước khi xoá endpoint - đều là khoá
-        // ngoại NOT NULL, xoá endpoint trước khi còn bị tham chiếu sẽ vi phạm khoá ngoại (lỗi MySQL
-        // 1451, đã gặp nhiều lần trong dự án này).
+        // Dọn BugReport (Module 10)/BugReportEvent/TestExecutionEndpoint/TestResult/TestExecution/
+        // TestCaseDependency/TestCaseAssertion/TestGenerationEvent/test case của các endpoint cũ
+        // trước khi xoá endpoint - đều là khoá ngoại NOT NULL, xoá endpoint trước khi còn bị tham
+        // chiếu sẽ vi phạm khoá ngoại (lỗi MySQL 1451, đã gặp nhiều lần trong dự án này).
+        bugReportRepository.deleteAllByProject(project);
+        bugReportEventRepository.deleteAllByEndpointProject(project);
         testExecutionEndpointRepository.deleteAllByExecutionProject(project);
         testResultRepository.deleteAllByTestCaseEndpointProject(project);
         testExecutionRepository.deleteAllByProject(project);

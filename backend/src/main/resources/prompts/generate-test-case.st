@@ -120,19 +120,29 @@ Quy tắc riêng cho resolvedPath và pathParamFallbacks (path tham số dạng 
   không tồn tại hoặc tồn tại nhưng dùng cho mục đích khác), khiến request luôn thất bại.
 
 Quy tắc cho tham số query (parameters có "in": "query" trong định nghĩa OpenAPI):
-- Endpoint OpenAPI KHÔNG khai báo request body cho những tham số này (chúng không nằm trong
-  requestBody) - chúng phải được gắn vào NGAY SAU phần path đã đầy đủ (đã áp dụng đúng quy tắc giữ
-  nguyên segment tĩnh phía trên, kể cả segment tĩnh sau tham số path) dưới dạng query string, dùng
-  ĐÚNG cùng cú pháp {{tenThamSo}} như tham số path. Ví dụ Path "/pet/{petId}" với query "name",
-  "status" -> resolvedPath "/pet/{{petId}}?name={{name}}&status={{status}}". Ví dụ PHỨC TẠP HƠN -
-  Path "/pet/{petId}/stock" (có segment tĩnh "stock" sau tham số path) với query "quantity" ->
-  resolvedPath PHẢI là "/pet/{{petId}}/stock?quantity={{quantity}}", KHÔNG được bỏ sót "/stock"
-  thành "/pet/{{petId}}?quantity={{quantity}}". Tuyệt đối không bỏ sót query parameter required
-  rồi để requestBody/resolvedPath trống - endpoint sẽ báo lỗi thiếu tham số.
-- Áp dụng đúng logic như path param: nếu test case không cố ý kiểm tra sai giá trị của tham số
-  query đó, dùng {{tenThamSo}} và thêm giá trị đoán hợp lý vào pathParamFallbacks (cùng object với
-  path param, ví dụ {"petId": "1", "name": "Buddy", "status": "available"}). Nếu chính tham số
-  query đó là thứ đang bị kiểm tra sai/biên, dùng thẳng giá trị cụ thể invalid/biên trong
-  resolvedPath thay vì {{ }}.
-- Chỉ thêm query parameter có "required": true bắt buộc; query parameter tuỳ chọn ("required" vắng
-  mặt hoặc false) chỉ thêm khi chính test case đó cố ý kiểm tra tham số tuỳ chọn này.
+- BẮT BUỘC chốt trước danh sách tham số query cần dùng cho MỖI test case, TRƯỚC KHI viết
+  resolvedPath: chỉ gồm (a) mọi query parameter có "required": true, CỘNG (b) đúng tham số tuỳ chọn
+  mà chính test case đó đang cố ý kiểm tra (nếu có) - TUYỆT ĐỐI không thêm bất kỳ tham số tuỳ chọn
+  nào khác dù endpoint có khai báo, kể cả khi "thêm cho đủ" hay "thêm cho giống ví dụ mẫu bên dưới".
+  Đây là lỗi RẤT HAY GẶP, ví dụ cụ thể: endpoint có 2 query param tuỳ chọn "name" và "minPrice", 1
+  test case Boundary chỉ cố ý test "minPrice=0" - resolvedPath ĐÚNG là "/api/products?minPrice=0",
+  SAI là "/api/products?name={{name}}&minPrice=0" (tự thêm "name" dù case không liên quan gì tới
+  "name"). Ngược lại, case Boundary khác cố ý test riêng "name" thì resolvedPath ĐÚNG chỉ có "name",
+  KHÔNG được tự thêm kèm "minPrice={{minPrice}}". Case Positive muốn xác nhận NHIỀU query param hợp
+  lệ hoạt động đúng cùng lúc là ngoại lệ duy nhất được liệt kê đủ các param liên quan.
+- Sau khi đã chốt đúng danh sách tham số cần dùng ở trên (không phải toàn bộ query param của
+  endpoint), gắn chúng vào NGAY SAU phần path đã đầy đủ (đã áp dụng đúng quy tắc giữ nguyên segment
+  tĩnh phía trên, kể cả segment tĩnh sau tham số path) dưới dạng query string, dùng ĐÚNG cùng cú
+  pháp {{tenThamSo}} như tham số path. Ví dụ Path "/pet/{petId}" có query "status" (required) và
+  "name" (tuỳ chọn), cho 1 case CHỈ cố ý test "status" -> resolvedPath
+  "/pet/{{petId}}?status={{status}}" (KHÔNG có "name" vì "name" không "required" và case này không
+  cố ý test "name"). Ví dụ PHỨC TẠP HƠN - Path "/pet/{petId}/stock" (có segment tĩnh "stock" sau
+  tham số path) với query
+  "quantity" required -> resolvedPath PHẢI là "/pet/{{petId}}/stock?quantity={{quantity}}", KHÔNG
+  được bỏ sót "/stock" thành "/pet/{{petId}}?quantity={{quantity}}". Tuyệt đối không bỏ sót query
+  parameter required rồi để requestBody/resolvedPath trống - endpoint sẽ báo lỗi thiếu tham số.
+- Với mỗi tham số đã được chọn đưa vào resolvedPath ở trên: nếu test case không cố ý kiểm tra sai
+  giá trị của chính tham số đó, dùng {{tenThamSo}} và thêm giá trị đoán hợp lý vào
+  pathParamFallbacks (cùng object với path param, ví dụ {"petId": "1", "status": "available"}). Nếu
+  chính tham số query đó là thứ đang bị kiểm tra sai/biên, dùng thẳng giá trị cụ thể invalid/biên
+  trong resolvedPath thay vì {{ }}.

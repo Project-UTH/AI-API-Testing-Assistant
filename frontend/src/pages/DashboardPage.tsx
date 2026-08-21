@@ -1,9 +1,10 @@
-import type { ComponentType, ReactNode } from "react"
+import { useState, type ComponentType, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { CircleCheck, FolderKanban, ListChecks, PieChart, Plug, Plus, Sparkles, TriangleAlert } from "lucide-react"
+import { Bug, CircleCheck, FolderKanban, ListChecks, PieChart, Plug, Plus, Sparkles, Trash2, TriangleAlert, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { getCurrentUserEmail } from "@/lib/api"
 import { getDashboardSummary } from "@/lib/dashboard"
 import { getHistoryFeed, type HistoryFeedItem } from "@/lib/history"
@@ -14,10 +15,12 @@ export function DashboardPage() {
     queryFn: () => getDashboardSummary(),
   })
 
-  const { data: historyData, isLoading: isHistoryLoading } = useQuery({
+  const hasData = !!data && data.totalProjects > 0
+
+  const { data: activityData, isLoading: isActivityLoading } = useQuery({
     queryKey: ["dashboard-recent-activity"],
     queryFn: () => getHistoryFeed({ page: 0 }),
-    enabled: !!data && data.totalProjects > 0,
+    enabled: hasData,
   })
 
   const username = getCurrentUserEmail()?.split("@")[0]
@@ -42,7 +45,7 @@ export function DashboardPage() {
 
       {data && data.totalProjects > 0 && (
         <div className="grid gap-5">
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
             <KpiCard icon={FolderKanban} label="Project" value={data.totalProjects} index={0} />
             <KpiCard icon={Plug} label="Endpoint" value={data.totalEndpoints} index={1} />
             <KpiCard icon={ListChecks} label="Test case" value={data.totalTestCases} index={2} />
@@ -65,11 +68,18 @@ export function DashboardPage() {
                 </>
               )}
             </KpiCard>
+            <KpiCard
+              icon={Bug}
+              label="Bug Report đang mở"
+              value={data.totalOpenBugs}
+              valueClassName={data.totalOpenBugs > 0 ? "text-amber-500" : "text-foreground"}
+              index={4}
+            />
           </div>
 
           <div className="grid gap-5 lg:grid-cols-3">
-            <TrendChartPanel items={historyData?.data} isLoading={isHistoryLoading} />
-            <ActivityFeedPanel items={historyData?.data} isLoading={isHistoryLoading} />
+            <TrendChartPanel enabled={hasData} />
+            <ActivityFeedPanel items={activityData?.data} isLoading={isActivityLoading} />
           </div>
         </div>
       )}
@@ -122,8 +132,20 @@ function KpiCard({
   )
 }
 
-function TrendChartPanel({ items, isLoading }: { items: HistoryFeedItem[] | undefined; isLoading: boolean }) {
-  const executions = (items ?? []).filter(
+function TrendChartPanel({ enabled }: { enabled: boolean }) {
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
+  const hasDateFilter = Boolean(from || to)
+
+  // size=50 (thay vì mặc định 20) - có lọc theo ngày thì số lần chạy khớp bộ lọc có thể nằm rải rác
+  // qua nhiều trang hơn mức mặc định, cần đủ dữ liệu để lấy ra 8 lần chạy gần nhất TRONG khoảng đã lọc.
+  const { data: trendData, isLoading } = useQuery({
+    queryKey: ["dashboard-trend", from, to],
+    queryFn: () => getHistoryFeed({ page: 0, size: 50, from: from || undefined, to: to || undefined }),
+    enabled,
+  })
+
+  const executions = (trendData?.data ?? []).filter(
     (item): item is HistoryFeedItem & { passCount: number; selectedCount: number } =>
       item.type === "EXECUTION" && !!item.selectedCount
   )
@@ -132,15 +154,49 @@ function TrendChartPanel({ items, isLoading }: { items: HistoryFeedItem[] | unde
 
   return (
     <div className="animate-rise rounded-2xl border border-border bg-card p-6 shadow-sm lg:col-span-2" style={{ animationDelay: "420ms" }}>
-      <h2 className="text-sm font-semibold text-foreground">
-        {points.length >= 2 ? `Xu hướng pass rate, ${points.length} lần chạy gần nhất` : "Xu hướng pass rate"}
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-foreground">
+          {points.length >= 2 ? `Xu hướng pass rate, ${points.length} lần chạy gần nhất` : "Xu hướng pass rate"}
+        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="h-8 w-[9.5rem] text-xs"
+            aria-label="Từ ngày"
+          />
+          <span className="text-xs text-muted-foreground">–</span>
+          <Input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="h-8 w-[9.5rem] text-xs"
+            aria-label="Đến ngày"
+          />
+          {hasDateFilter && (
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              onClick={() => {
+                setFrom("")
+                setTo("")
+              }}
+              title="Xoá lọc ngày"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </div>
 
       {isLoading ? (
         <div className="mt-4 h-[220px] animate-pulse rounded-xl bg-muted" />
       ) : points.length < 2 ? (
         <p className="mt-10 text-sm text-muted-foreground">
-          Chưa đủ dữ liệu để hiển thị xu hướng. Chạy thêm test để xem biểu đồ.
+          {hasDateFilter
+            ? "Không đủ lần chạy trong khoảng ngày đã lọc để hiển thị xu hướng."
+            : "Chưa đủ dữ liệu để hiển thị xu hướng. Chạy thêm test để xem biểu đồ."}
         </p>
       ) : (
         <TrendChart points={points} />
@@ -235,18 +291,28 @@ function ActivityFeedPanel({ items, isLoading }: { items: HistoryFeedItem[] | un
 
 function ActivityRow({ item }: { item: HistoryFeedItem }) {
   const isExecution = item.type === "EXECUTION"
+  const isBugDeleted = item.type === "BUG_REPORT_DELETED"
+  const isBugReport = item.type === "BUG_REPORT_CREATED" || isBugDeleted
   const hasFail = isExecution && (item.failCount ?? 0) > 0
 
-  const Icon = isExecution ? (hasFail ? TriangleAlert : CircleCheck) : Sparkles
-  const iconClassName = isExecution ? (hasFail ? "text-rose-500" : "text-emerald-500") : "text-violet-500"
+  const Icon = isExecution ? (hasFail ? TriangleAlert : CircleCheck) : isBugReport ? (isBugDeleted ? Trash2 : Bug) : Sparkles
+  const iconClassName = isExecution
+    ? (hasFail ? "text-rose-500" : "text-emerald-500")
+    : isBugReport
+      ? (isBugDeleted ? "text-rose-500" : "text-amber-500")
+      : "text-violet-500"
 
   const title = isExecution
     ? `${item.projectName} · ${item.endpointMethod} ${item.endpointPath}`
-    : `${item.projectName} · Sinh ${item.generatedCount} test case`
+    : isBugReport
+      ? `${item.projectName} · ${isBugDeleted ? "Xoá" : "Tạo"} Bug Report${item.bugId ? ` ${item.bugId}` : ""}`
+      : `${item.projectName} · Sinh ${item.generatedCount} test case`
 
   const subtitle = isExecution
     ? `${item.passCount}/${item.selectedCount} pass · ${formatEventTime(item.occurredAt)}`
-    : formatEventTime(item.occurredAt)
+    : isBugReport
+      ? `${item.bugSummary ? `${item.bugSummary} · ` : ""}${formatEventTime(item.occurredAt)}`
+      : formatEventTime(item.occurredAt)
 
   return (
     <li className="flex items-start gap-3">

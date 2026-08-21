@@ -1,21 +1,41 @@
 import { useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, ChevronDown, Play, Sparkles } from "lucide-react"
+import { ArrowLeft, ChevronDown, Play, Sparkles, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { StatusBadge } from "@/components/shared/StatusBadge"
 import { cn, formatDateTime, METHOD_STYLES } from "@/lib/utils"
 import { getProjectHistory, type HistoryEvent } from "@/lib/history"
 
 export function TestHistoryPage() {
   const { id } = useParams<{ id: string }>()
   const projectId = id!
+  const [searchParams, setSearchParams] = useSearchParams()
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
-  const { data: history, isLoading, isError } = useQuery({
+  // Đến từ nút "Lịch sử chạy test" ở TestCasesPage (?endpointId=...&onlyExecution=1) - lọc còn
+  // đúng 1 endpoint và ẩn hẳn sự kiện "Sinh test case" (AI), chỉ giữ lại "Chạy test" thật sự.
+  const endpointFilter = searchParams.get("endpointId")
+  const onlyExecution = searchParams.get("onlyExecution") === "1"
+  const isFiltered = Boolean(endpointFilter) || onlyExecution
+
+  const { data: rawHistory, isLoading, isError } = useQuery({
     queryKey: ["history", projectId],
     queryFn: () => getProjectHistory(projectId),
   })
+
+  const history = rawHistory
+    ?.filter((endpointHistory) => !endpointFilter || endpointHistory.endpointId === endpointFilter)
+    .map((endpointHistory) => ({
+      ...endpointHistory,
+      events: onlyExecution
+        ? endpointHistory.events.filter((event) => event.type === "EXECUTION")
+        : endpointHistory.events,
+    }))
+    // Endpoint chỉ có sự kiện "Sinh test case" (chưa chạy lần nào) không có gì để hiện khi đang lọc
+    // "chỉ lần chạy" - ẩn hẳn thay vì hiện 1 khối trống gây khó hiểu.
+    .filter((endpointHistory) => !onlyExecution || endpointHistory.events.length > 0)
 
   function toggleExpanded(eventId: string) {
     setExpandedIds((prev) => {
@@ -36,12 +56,31 @@ export function TestHistoryPage() {
         Quay lại Project
       </Button>
 
-      <h1 className="mt-4 text-2xl font-semibold">Lịch sử kiểm thử</h1>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold">Lịch sử kiểm thử</h1>
+        {isFiltered && (
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => setSearchParams({})}
+          >
+            <X className="h-3 w-3" />
+            Bỏ lọc, xem tất cả lịch sử
+          </Button>
+        )}
+      </div>
+      {onlyExecution && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Đang lọc: chỉ hiện lần chạy test{endpointFilter ? " của endpoint đang chọn" : ""} — đã ẩn sự kiện "Sinh test case".
+        </p>
+      )}
 
       {isLoading && <p className="mt-6 text-muted-foreground">Đang tải...</p>}
       {isError && <p className="mt-6 text-destructive">Không tải được lịch sử kiểm thử, vui lòng thử lại.</p>}
       {!isLoading && !isError && history?.length === 0 && (
-        <p className="mt-6 text-muted-foreground">Chưa có lịch sử kiểm thử nào.</p>
+        <p className="mt-6 text-muted-foreground">
+          {isFiltered ? "Không có lịch sử nào khớp bộ lọc." : "Chưa có lịch sử kiểm thử nào."}
+        </p>
       )}
 
       <div className="mt-4 flex flex-col gap-4">
@@ -154,10 +193,18 @@ function ExecutionEventRow({
           Xem chi tiết
         </Button>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {event.selectedCount}/{currentTestCaseCount} test case · {event.passCount} pass
-        {(event.failCount ?? 0) > 0 && <> · {event.failCount} fail</>}
-      </p>
+      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <span>{event.selectedCount}/{currentTestCaseCount} test case</span>
+        <span>·</span>
+        <StatusBadge status="PASSED" compact />
+        <span>{event.passCount}</span>
+        {(event.failCount ?? 0) > 0 && (
+          <>
+            <StatusBadge status="FAILED" compact />
+            <span>{event.failCount}</span>
+          </>
+        )}
+      </div>
       {(event.otherEndpointCount ?? 0) > 0 && (
         <p className="mt-0.5 text-xs text-muted-foreground italic">
           Chạy chung với {event.otherEndpointCount} endpoint khác

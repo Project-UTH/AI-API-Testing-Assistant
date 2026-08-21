@@ -26,6 +26,11 @@ public interface TestCaseRepository extends JpaRepository<TestCase, UUID> {
     @Query("SELECT tc FROM TestCase tc JOIN FETCH tc.endpoint WHERE tc.id = :id AND tc.endpoint = :endpoint")
     Optional<TestCase> findByIdAndEndpoint(@Param("id") UUID id, @Param("endpoint") Endpoint endpoint);
 
+    // Bug Report (Module 10) - ownership check khi chỉ có testCaseId (không biết trước endpointId),
+    // vd GET .../bug-reports/test-cases/{testCaseId}/run-history.
+    @Query("SELECT tc FROM TestCase tc JOIN FETCH tc.endpoint WHERE tc.id = :id AND tc.endpoint.project = :project")
+    Optional<TestCase> findByIdAndEndpointProject(@Param("id") UUID id, @Param("project") Project project);
+
     // JOIN FETCH endpoint để entity còn dùng được (RestAssuredTestRunner đọc endpoint.getMethod())
     // sau khi băng qua @Async - entity truyền vào luồng khác, session gốc đã đóng.
     @Query("SELECT tc FROM TestCase tc JOIN FETCH tc.endpoint WHERE tc.id IN :ids AND tc.endpoint.project = :project")

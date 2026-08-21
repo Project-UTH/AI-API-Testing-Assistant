@@ -1,6 +1,6 @@
 import { apiFetch, apiFetchPaged, type PagedResult } from "@/lib/api"
 
-export type HistoryEventType = "GENERATION" | "EXECUTION"
+export type HistoryEventType = "GENERATION" | "EXECUTION" | "BUG_REPORT_CREATED" | "BUG_REPORT_DELETED"
 
 export interface GenerationSnapshotItem {
   name: string
@@ -21,6 +21,11 @@ export interface HistoryEvent {
   passCount?: number
   failCount?: number
   otherEndpointCount?: number
+  // Chỉ có giá trị khi type = "BUG_REPORT_CREATED" | "BUG_REPORT_DELETED"
+  bugId?: string
+  bugSummary?: string
+  // Chỉ có giá trị khi type = "BUG_REPORT_CREATED" (bug còn tồn tại, dùng để deep-link mở dialog sửa)
+  bugReportId?: string
 }
 
 export interface EndpointHistory {
@@ -57,10 +62,16 @@ export interface HistoryFeedItem {
   passCount?: number
   failCount?: number
   otherEndpointCount?: number
+  // Chỉ có giá trị khi type = "BUG_REPORT_CREATED" | "BUG_REPORT_DELETED"
+  bugId?: string
+  bugSummary?: string
+  // Chỉ có giá trị khi type = "BUG_REPORT_CREATED" (bug còn tồn tại, dùng để deep-link mở dialog sửa)
+  bugReportId?: string
 }
 
 export interface HistoryFeedFilters {
   page?: number
+  size?: number
   projectId?: string
   endpointId?: string
   from?: string
@@ -69,7 +80,7 @@ export interface HistoryFeedFilters {
 }
 
 export function getHistoryFeed(filters: HistoryFeedFilters): Promise<PagedResult<HistoryFeedItem>> {
-  const params = new URLSearchParams({ page: String(filters.page ?? 0), size: "20" })
+  const params = new URLSearchParams({ page: String(filters.page ?? 0), size: String(filters.size ?? 20) })
   if (filters.projectId) params.set("projectId", filters.projectId)
   if (filters.endpointId) params.set("endpointId", filters.endpointId)
   if (filters.from) params.set("from", filters.from)

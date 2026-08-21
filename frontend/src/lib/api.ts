@@ -86,6 +86,46 @@ export async function apiFetch<T>(
   return (body as { data: T }).data
 }
 
+/**
+ * Tải file nhị phân (VD .xlsx export) - KHÔNG dùng apiFetch vì response không phải JSON
+ * {data, meta}, xem ngoại lệ ở mục 4c của skill api-contract. Lỗi (project/bug report không tồn
+ * tại...) vẫn trả JSON chuẩn nên vẫn parse qua response.json() như rawFetch.
+ */
+export async function apiFetchBlob(path: string): Promise<{ blob: Blob; filename: string | null }> {
+  const token = getToken()
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new ApiError(
+      body ?? {
+        code: "INTERNAL_ERROR",
+        message: "Đã xảy ra lỗi hệ thống, vui lòng thử lại sau",
+        timestamp: new Date().toISOString(),
+      }
+    )
+  }
+
+  const disposition = response.headers.get("Content-Disposition")
+  const filenameMatch = disposition?.match(/filename="([^"]+)"/)
+  return { blob: await response.blob(), filename: filenameMatch?.[1] ?? null }
+}
+
+/** Kích hoạt tải 1 blob về máy qua thẻ <a> ẩn - dùng chung cho mọi nút "Xuất Excel" trong app. */
+export async function downloadFile(path: string, fallbackFilename: string): Promise<void> {
+  const { blob, filename } = await apiFetchBlob(path)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename ?? fallbackFilename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 export interface PagedResult<T> {
   data: T[]
   page: number

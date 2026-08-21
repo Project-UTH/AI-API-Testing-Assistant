@@ -56,6 +56,8 @@ Ví dụ — tạo project thành công:
 | `TEST_CASE_NOT_FOUND` | 404 | Không tìm thấy test case |
 | `TEST_EXECUTION_NOT_FOUND` | 404 | Không tìm thấy lần thực thi test |
 | `TEST_CASE_HAS_DEPENDENTS` | 409 | Không xoá/sinh lại test case vì đang có test case khác phụ thuộc (Test Data Chaining) |
+| `BUG_REPORT_NOT_FOUND` | 404 | Không tìm thấy bug report |
+| `TEST_RESULT_NOT_FOUND` | 404 | Không tìm thấy lần chạy (TestResult) |
 | `SWAGGER_PARSE_FAILED` | 422 | Không parse được file/URL OpenAPI |
 | `AI_GENERATION_FAILED` | 502 | LLM lỗi hoặc trả về sai định dạng khi sinh test case |
 | `TEST_EXECUTION_FAILED` | 500 | Lỗi khi thực thi test (không phải lỗi của API được test) |
@@ -108,6 +110,10 @@ Không được tự thêm giá trị khác cho cả 2 enum trên mà không c�
 ## 4b. Cấu hình xác thực Target API độc lập với import
 
 `PUT /api/v1/projects/{projectId}/target-auth` — body `{ "authType": "NONE" | "API_KEY" | "BEARER_TOKEN", "authValue": "..." }`. Dùng khi cần đặt/đổi/xoá auth gọi API thật (Module 6) mà **không** phải qua lại luồng import (vd sau khi import bằng file - file không gọi ra ngoài nên không có auth nào được set). Khác với auth nhập lúc `POST /endpoints/import` (`authType: "NONE"` ở đó nghĩa là "giữ nguyên auth cũ, không đụng vào"), ở endpoint này `authType: "NONE"` là hành động rõ ràng: xoá auth hiện có. `ProjectResponse` trả kèm `targetBaseUrl`/`targetAuthType` (không bao giờ trả `targetAuthValueEncrypted` hay giá trị gốc ra ngoài).
+
+## 4c. Ngoại lệ: tải file nhị phân (export)
+
+`GET /api/v1/projects/{projectId}/bug-reports/{bugReportId}/export` trả thẳng `.xlsx` (`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, header `Content-Disposition: attachment; filename="..."`) — **không** bọc trong envelope `{data, meta}` ở mục 1, vì đây là nội dung nhị phân không phải JSON. Đây là ngoại lệ hợp lệ DUY NHẤT cho quy tắc envelope, chỉ áp dụng cho endpoint tải file. Lỗi (project/bug report không tồn tại...) vẫn trả theo đúng format lỗi chuẩn ở mục 2 (Spring tự chuyển `ResponseEntity<byte[]>` thành JSON lỗi qua `GlobalExceptionHandler` khi exception được ném trước lúc build response). Frontend gọi bằng fetch thường (không qua `apiFetch`/`apiFetchPaged`), đọc `response.blob()`.
 
 ## 5. Naming convention endpoint
 
