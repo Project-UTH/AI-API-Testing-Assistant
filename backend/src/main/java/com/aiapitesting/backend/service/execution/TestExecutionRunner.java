@@ -9,6 +9,7 @@ import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
+import com.aiapitesting.backend.service.BugReportStatusService;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,6 +46,7 @@ public class TestExecutionRunner {
     private final TestResultRepository testResultRepository;
     private final RestAssuredTestRunner restAssuredTestRunner;
     private final TestCasePathValidator testCasePathValidator;
+    private final BugReportStatusService bugReportStatusService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Async
@@ -171,6 +173,9 @@ public class TestExecutionRunner {
                 .assertionResultsJson(assertionResultsJson)
                 .build();
         testResultRepository.save(result);
+        // Module 10 - quy tắc hẹp tự động Reopen/gợi ý Đóng bug report theo kết quả vừa lưu. Đặt
+        // ngay sau save() vì đây là điểm DUY NHẤT mọi TestResult được lưu, không bỏ sót lần chạy nào.
+        bugReportStatusService.onNewTestResult(result);
 
         statusByTestCaseId.put(testCase.getId(), status);
         if (rawResponseBodyForDependents != null) {

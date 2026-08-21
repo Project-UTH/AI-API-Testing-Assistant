@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
@@ -47,4 +48,37 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
     // testCase.endpoint để nhóm theo endpoint mà không cần query thêm.
     @Query("SELECT tr FROM TestResult tr JOIN FETCH tr.testCase tc JOIN FETCH tc.endpoint WHERE tr.execution IN :executions")
     List<TestResult> findAllByExecutionIn(@Param("executions") List<TestExecution> executions);
+
+    // Tầng 3 Bug Report (Module 10) - toàn bộ lần chạy của ĐÚNG 1 test case, sắp theo thời điểm chạy
+    // thật (execution.startedAt, không phải TestResult.createdAt - cùng ý nghĩa nhưng startedAt là
+    // mốc người dùng hiểu là "lúc chạy"). JOIN FETCH execution (đọc startedAt) VÀ testCase (đọc
+    // expectedStatus ở TestResultHistoryItemResponse.from()) - thiếu JOIN FETCH testCase gây
+    // LazyInitializationException "no session" vì testCase truyền vào param chỉ dùng để so khớp
+    // WHERE, không tự làm association tr.testCase của kết quả trả về được init sẵn.
+    @Query("SELECT tr FROM TestResult tr JOIN FETCH tr.execution ex JOIN FETCH tr.testCase WHERE tr.testCase = :testCase ORDER BY ex.startedAt ASC")
+    List<TestResult> findAllByTestCaseOrderByExecutionStartedAtAsc(@Param("testCase") TestCase testCase);
+
+    // Nguồn dữ liệu cho BugReportService.getDraft()/create() - ownership check + JOIN FETCH đủ để
+    // đọc testCase/endpoint mà không cần query thêm.
+    @Query("SELECT tr FROM TestResult tr JOIN FETCH tr.testCase tc JOIN FETCH tc.endpoint WHERE tr.id = :id AND tc.endpoint.project = :project")
+    Optional<TestResult> findByIdAndTestCaseEndpointProject(@Param("id") UUID id, @Param("project") Project project);
+
+    // BugReportService.getBugReports() - tập testCaseId ĐÃ TỪNG chạy ít nhất 1 lần trong project,
+    // dùng để tính TestCaseBugSummaryResponse.hasRuns (disable nút mở Tầng 3 khi chưa có gì để
+    // xem) - 1 query duy nhất cho cả project, không N+1 theo từng test case.
+    @Query("SELECT DISTINCT tr.testCase.id FROM TestResult tr WHERE tr.testCase.endpoint.project = :project")
+    List<UUID> findDistinctTestCaseIdsWithResultsByProject(@Param("project") Project project);
+
+    // BugReportService.generateForProject() - "Sinh tất cả" ở trang Bug Report: TOÀN BỘ lần chạy
+    // Fail trong project (không giới hạn 1 execution như generateForExecution), để rồi service lọc
+    // tiếp dòng nào đã có bug. JOIN FETCH đủ testCase/endpoint để buildDescription() đọc được.
+    @Query("SELECT tr FROM TestResult tr JOIN FETCH tr.testCase tc JOIN FETCH tc.endpoint "
+            + "WHERE tc.endpoint.project = :project AND tr.status = com.aiapitesting.backend.entity.TestResultStatus.FAILED")
+    List<TestResult> findAllFailedByProject(@Param("project") Project project);
+
+    // BugReportService.generateForProject() - "Sinh theo lựa chọn": ownership check qua
+    // tc.endpoint.project ngay trong query (id không thuộc project sẽ tự bị loại, không lỗi 404).
+    @Query("SELECT tr FROM TestResult tr JOIN FETCH tr.testCase tc JOIN FETCH tc.endpoint "
+            + "WHERE tr.id IN :ids AND tc.endpoint.project = :project")
+    List<TestResult> findAllByIdInAndTestCaseEndpointProject(@Param("ids") List<UUID> ids, @Param("project") Project project);
 }

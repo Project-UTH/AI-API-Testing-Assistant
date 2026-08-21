@@ -10,6 +10,7 @@ import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
+import com.aiapitesting.backend.service.BugReportStatusService;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,9 @@ class TestExecutionRunnerTest {
     @Spy
     private TestCasePathValidator testCasePathValidator = new TestCasePathValidator();
 
+    @Mock
+    private BugReportStatusService bugReportStatusService;
+
     private TestExecutionRunner runner;
 
     private Project project;
@@ -56,7 +60,9 @@ class TestExecutionRunnerTest {
 
     @BeforeEach
     void setUp() {
-        runner = new TestExecutionRunner(testExecutionRepository, testResultRepository, restAssuredTestRunner, testCasePathValidator);
+        runner = new TestExecutionRunner(
+                testExecutionRepository, testResultRepository, restAssuredTestRunner,
+                testCasePathValidator, bugReportStatusService);
         project = Project.builder().id(UUID.randomUUID()).targetBaseUrl("https://petstore.example.com").build();
         endpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("GET").path("/pet/{petId}").build();
         execution = TestExecution.builder().id(UUID.randomUUID()).project(project)

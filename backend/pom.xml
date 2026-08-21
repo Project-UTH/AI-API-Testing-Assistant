@@ -58,6 +58,14 @@
 				<artifactId>groovy-json</artifactId>
 				<version>4.0.28</version>
 			</dependency>
+			<!-- swagger-parser (khai bao truoc trong pom, "nearest declaration" thang) ghim commons-io
+			     2.15.1, cu hon ban 2.16.1 ma poi-ooxml can (BoundedInputStream.builder() moi co tu
+			     2.16.1) - NoSuchMethodError luc doc lai file .xlsx vua ghi. Ghim ro rang ban moi hon. -->
+			<dependency>
+				<groupId>commons-io</groupId>
+				<artifactId>commons-io</artifactId>
+				<version>2.16.1</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 	<dependencies>
@@ -118,6 +126,11 @@
 			<groupId>io.rest-assured</groupId>
 			<artifactId>rest-assured</artifactId>
 			<version>5.5.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>5.3.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

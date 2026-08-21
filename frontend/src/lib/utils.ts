@@ -25,3 +25,13 @@ export function formatDateTime(iso: string): string {
     minute: "2-digit",
   })
 }
+
+/** Pretty-print JSON response body nếu parse được, giữ nguyên chuỗi gốc nếu không (vd body rỗng/không phải JSON). */
+export function formatResponseBody(body: string | null): string | null {
+  if (body === null || body === "") return null
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2)
+  } catch {
+    return body
+  }
+}

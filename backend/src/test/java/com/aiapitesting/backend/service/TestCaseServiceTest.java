@@ -8,6 +8,7 @@ import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
+import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -52,6 +53,9 @@ class TestCaseServiceTest {
 
     @Mock
     private TestResultRepository testResultRepository;
+
+    @Mock
+    private BugReportRepository bugReportRepository;
 
     @Mock
     private TestCasePathValidator testCasePathValidator;

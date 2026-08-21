@@ -52,6 +52,15 @@ public class Project {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
+    /**
+     * Số thứ tự Project dùng để sinh bugId dạng "B{n}_{seq}" (Module 10) - đánh theo project nào
+     * CÓ BUG ĐẦU TIÊN trong phạm vi owner hiện tại (không phải toàn hệ thống, tránh rò rỉ hoạt động
+     * giữa các user không liên quan). Null = project này chưa có bug report nào; cột mới nullable
+     * trên bảng đã có dữ liệu cũ nên an toàn tuyệt đối với ddl-auto=update.
+     */
+    @Column(name = "bug_report_project_seq")
+    private Integer bugReportProjectSeq;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = Instant.now();

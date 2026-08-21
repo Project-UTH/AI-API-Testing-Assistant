@@ -5,6 +5,8 @@ import com.aiapitesting.backend.dto.request.HistoryStatusFilter;
 import com.aiapitesting.backend.dto.response.GenerationSnapshotItemResponse;
 import com.aiapitesting.backend.dto.response.HistoryFeedItemResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
+import com.aiapitesting.backend.entity.BugReportEvent;
+import com.aiapitesting.backend.entity.BugReportEventType;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestExecution;
@@ -13,6 +15,7 @@ import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.entity.User;
+import com.aiapitesting.backend.repository.BugReportEventRepository;
 import com.aiapitesting.backend.repository.TestExecutionEndpointRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
@@ -48,6 +51,7 @@ public class HistoryFeedService {
     private final TestGenerationEventRepository testGenerationEventRepository;
     private final TestExecutionEndpointRepository testExecutionEndpointRepository;
     private final TestResultRepository testResultRepository;
+    private final BugReportEventRepository bugReportEventRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public PageResponse<HistoryFeedItemResponse> getFeed(
@@ -57,10 +61,14 @@ public class HistoryFeedService {
         User owner = currentUserService.getCurrentUser();
         HistoryStatusFilter effectiveStatus = status == null ? HistoryStatusFilter.ALL : status;
 
-        // status != ALL chỉ áp dụng cho sự kiện "Chạy test" - sự kiện "Sinh test case" không có khái
-        // niệm pass/fail nên bị ẩn hẳn khi lọc trạng thái; không cần tốn công truy vấn/parse snapshot.
+        // status != ALL chỉ áp dụng cho sự kiện "Chạy test" - sự kiện "Sinh test case"/"Bug Report"
+        // không có khái niệm pass/fail nên bị ẩn hẳn khi lọc trạng thái; không cần tốn công truy vấn.
         List<TestGenerationEvent> generations = effectiveStatus == HistoryStatusFilter.ALL
                 ? testGenerationEventRepository.findAllForHistoryFeed(owner, projectId, endpointId, from, to)
+                : List.of();
+
+        List<BugReportEvent> bugReportEvents = effectiveStatus == HistoryStatusFilter.ALL
+                ? bugReportEventRepository.findAllForHistoryFeed(owner, projectId, endpointId, from, to)
                 : List.of();
 
         // CỐ Ý không lọc endpointId ở đây (xem ghi chú trong TestExecutionEndpointRepository) -
@@ -95,6 +103,17 @@ public class HistoryFeedService {
                     event.getId(), event.getCreatedAt(), project.getId(), project.getName(),
                     endpoint.getId(), endpoint.getMethod(), endpoint.getPath(),
                     event.getTestCaseCount(), parseSnapshot(event.getSnapshotJson())));
+        }
+
+        for (BugReportEvent event : bugReportEvents) {
+            Endpoint endpoint = event.getEndpoint();
+            Project project = endpoint.getProject();
+            String type = event.getEventType() == BugReportEventType.CREATED
+                    ? "BUG_REPORT_CREATED" : "BUG_REPORT_DELETED";
+            items.add(HistoryFeedItemResponse.bugReportEvent(
+                    event.getId(), type, event.getOccurredAt(), project.getId(), project.getName(),
+                    endpoint.getId(), endpoint.getMethod(), endpoint.getPath(),
+                    event.getBugId(), event.getSummary(), event.getBugReportId()));
         }
 
         for (TestExecutionEndpoint link : executionLinks) {

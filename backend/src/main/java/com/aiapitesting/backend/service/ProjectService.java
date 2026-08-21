@@ -9,6 +9,8 @@ import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
+import com.aiapitesting.backend.repository.BugReportEventRepository;
+import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
@@ -40,6 +42,8 @@ public class ProjectService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
+    private final BugReportRepository bugReportRepository;
+    private final BugReportEventRepository bugReportEventRepository;
     private final CurrentUserService currentUserService;
     private final AesEncryptionService aesEncryptionService;
 
@@ -103,9 +107,12 @@ public class ProjectService {
     @Transactional
     public void delete(UUID id) {
         Project project = getOwnedProject(id);
-        // Thứ tự bắt buộc để tránh vi phạm khoá ngoại (MySQL 1451): TestExecutionEndpoint/TestResult/
+        // Thứ tự bắt buộc để tránh vi phạm khoá ngoại (MySQL 1451): BugReport tham chiếu TestResult/
+        // TestCase/Endpoint/Project (Module 10) nên xoá TRƯỚC hết; TestExecutionEndpoint/TestResult/
         // TestExecution/TestCaseDependency/TestCaseAssertion tham chiếu TestCase, TestCase tham
-        // chiếu Endpoint, TestGenerationEvent/Endpoint tham chiếu Project.
+        // chiếu Endpoint, TestGenerationEvent/BugReportEvent tham chiếu Endpoint/Project.
+        bugReportRepository.deleteAllByProject(project);
+        bugReportEventRepository.deleteAllByEndpointProject(project);
         testExecutionEndpointRepository.deleteAllByExecutionProject(project);
         testResultRepository.deleteAllByTestCaseEndpointProject(project);
         testExecutionRepository.deleteAllByProject(project);
