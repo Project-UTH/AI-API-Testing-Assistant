@@ -47,8 +47,16 @@ public class BugReport {
     @JoinColumn(name = "source_test_result_id", nullable = false)
     private TestResult sourceTestResult;
 
-    /** Mã hiển thị dạng B{projectSeq}_{seqInProject} (VD "B1_001") - xem BugReportService.create(). */
-    @Column(name = "bug_id", nullable = false, unique = true)
+    /**
+     * Mã hiển thị dạng B{projectSeq}_{seqInProject} (VD "B1_001") - xem BugReportService.create().
+     * CHỈ để hiển thị (tên file export, nhãn UI) - KHÔNG dùng làm khoá tra cứu ở đâu (mọi query thật
+     * đều qua id UUID hoặc sourceTestResultId). KHÔNG unique toàn cục trong DB - projectSeq chỉ đảm
+     * bảo duy nhất TRONG PHẠM VI 1 owner (findMaxBugReportProjectSeqByOwner), nên 2 user khác nhau
+     * hoàn toàn có thể cùng ra "B1_001" cho bug đầu tiên của họ. Uniqueness THẬT SỰ cần (không trùng
+     * số trong cùng 1 project) đã có sẵn qua unique constraint (project_id, seq_in_project) ở dưới -
+     * đủ để tránh double-submit, không cần global unique ở cột này.
+     */
+    @Column(name = "bug_id", nullable = false)
     private String bugId;
 
     @Column(name = "project_seq", nullable = false)

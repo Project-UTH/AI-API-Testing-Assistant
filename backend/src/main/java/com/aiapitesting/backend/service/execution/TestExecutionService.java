@@ -2,6 +2,7 @@ package com.aiapitesting.backend.service.execution;
 
 import com.aiapitesting.backend.dto.request.TestExecutionRequest;
 import com.aiapitesting.backend.dto.response.TestExecutionResponse;
+import com.aiapitesting.backend.entity.BugReport;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
@@ -10,8 +11,10 @@ import com.aiapitesting.backend.entity.TestCaseAssertion;
 import com.aiapitesting.backend.entity.TestCaseDependency;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestExecutionEndpoint;
+import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestExecutionNotFoundException;
+import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
@@ -34,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -54,6 +58,7 @@ public class TestExecutionService {
     private final TestResultRepository testResultRepository;
     private final TestExecutionEndpointRepository testExecutionEndpointRepository;
     private final TestExecutionRunner testExecutionRunner;
+    private final BugReportRepository bugReportRepository;
 
     public TestExecutionResponse trigger(UUID projectId, TestExecutionRequest request) {
         Project project = projectService.getOwnedProject(projectId);
@@ -136,7 +141,15 @@ public class TestExecutionService {
         Project project = projectService.getOwnedProject(projectId);
         TestExecution execution = testExecutionRepository.findByIdAndProject(executionId, project)
                 .orElseThrow(() -> new TestExecutionNotFoundException("Không tìm thấy lần thực thi với id đã cho"));
-        return TestExecutionResponse.from(execution, testResultRepository.findAllByExecutionOrderByTestCaseCreatedAt(execution));
+        List<TestResult> results = testResultRepository.findAllByExecutionOrderByTestCaseCreatedAt(execution);
+
+        // Cho trang Kết quả thực thi biết dòng nào ĐÃ có Bug Report rồi (nút "Sinh Bug Report") - 1
+        // query duy nhất cho cả execution, không N+1 theo từng dòng.
+        List<UUID> resultIds = results.stream().map(TestResult::getId).toList();
+        Map<UUID, BugReport> existingBugByResultId = bugReportRepository.findAllBySourceTestResultIdIn(resultIds).stream()
+                .collect(Collectors.toMap(b -> b.getSourceTestResult().getId(), Function.identity()));
+
+        return TestExecutionResponse.from(execution, results, existingBugByResultId);
     }
 
     private List<TestCase> resolveOwnedTestCases(Project project, List<UUID> testCaseIds) {

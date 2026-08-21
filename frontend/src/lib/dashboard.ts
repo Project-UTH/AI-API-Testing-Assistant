@@ -7,6 +7,8 @@ export interface DashboardSummary {
   totalTestResults: number
   /** Tỷ lệ pass toàn thời gian (0-100) - null nếu chưa từng chạy test nào. */
   overallPassRate: number | null
+  /** Bug Report đang mở (khác Đã đóng) trên toàn bộ project. */
+  totalOpenBugs: number
 }
 
 export function getDashboardSummary(): Promise<DashboardSummary> {

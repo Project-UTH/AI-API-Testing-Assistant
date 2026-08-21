@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, CheckCircle2, ChevronDown, Download, Pencil, Trash2, XCircle } from "lucide-react"
+import { ArrowLeft, Bug, CheckCircle2, ChevronDown, Download, ListChecks, Pencil, Trash2, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { BUG_PRIORITY_LABEL, BugStatusBadge } from "@/components/shared/BugStatusBadge"
 import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog"
@@ -15,12 +16,15 @@ import {
   confirmCloseBugReport,
   dismissCloseSuggestion,
   exportAllBugReports,
+  exportSelectedBugReports,
+  generateBugReportsForProject,
   getBugReports,
   getRunHistory,
   type BugDashboardSummary,
   type BugPriority,
   type BugReport,
   type EndpointBugSummary,
+  type GenerateBugReportsResult,
   type TestCaseBugSummary,
 } from "@/lib/bugReports"
 
@@ -36,6 +40,18 @@ function toggleInSet(set: Set<string>, value: string): Set<string> {
   return next
 }
 
+function bugIdsOfTestCase(testCase: TestCaseBugSummary): string[] {
+  return testCase.bugs.map((b) => b.id)
+}
+
+function bugIdsOfEndpoint(endpoint: EndpointBugSummary): string[] {
+  return endpoint.testCases.flatMap(bugIdsOfTestCase)
+}
+
+function generatableIdsOfEndpoint(endpoint: EndpointBugSummary): string[] {
+  return endpoint.testCases.flatMap((tc) => tc.generatableResultIds)
+}
+
 export function BugReportPage() {
   const { id } = useParams<{ id: string }>()
   const projectId = id!
@@ -46,9 +62,17 @@ export function BugReportPage() {
   const [deletingBug, setDeletingBug] = useState<BugReport | null>(null)
   const [createBugResultId, setCreateBugResultId] = useState<string | null>(null)
   const [deepLinkNotFound, setDeepLinkNotFound] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedBugIds, setSelectedBugIds] = useState<Set<string>>(new Set())
+  const [generateSelectionMode, setGenerateSelectionMode] = useState(false)
+  const [selectedGenerateResultIds, setSelectedGenerateResultIds] = useState<Set<string>>(new Set())
+  const [lastGenerateResult, setLastGenerateResult] = useState<GenerateBugReportsResult | null>(null)
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["bug-reports", projectId],
+  const queryClient = useQueryClient()
+  const bugReportsQueryKey = ["bug-reports", projectId]
+
+  const { data, isLoading, isError, isFetching } = useQuery({
+    queryKey: bugReportsQueryKey,
     queryFn: () => getBugReports(projectId),
   })
 
@@ -56,12 +80,96 @@ export function BugReportPage() {
     mutationFn: () => exportAllBugReports(projectId, "BugReports.xlsx"),
   })
 
-  // Đến từ "Xem chi tiết" ở Lịch sử tổng (?bugReportId=...) - tự mở thẳng dialog sửa đúng bug đó
-  // thay vì chỉ đưa về trang danh sách rồi bắt người dùng tự tìm. Xoá param khỏi URL ngay sau khi xử
-  // lý (dù tìm thấy hay không) để refresh/đóng dialog không lặp lại hành vi này.
+  const exportSelectedMutation = useMutation({
+    mutationFn: () => exportSelectedBugReports(projectId, Array.from(selectedBugIds), "BugReports_DaChon.xlsx"),
+    onSuccess: () => {
+      setSelectionMode(false)
+      setSelectedBugIds(new Set())
+    },
+  })
+
+  // "Sinh tất cả" xét TOÀN BỘ kết quả Fail của CẢ PROJECT (không chỉ 1 execution) - 1 test case Fail
+  // nhiều lần ở nhiều lần chạy khác nhau thì mỗi lần chưa có bug đều sinh riêng, không chỉ lấy lần
+  // gần nhất (theo đúng yêu cầu người dùng - tick từng lần chạy cụ thể như tự bấm "Báo lỗi" từng cái).
+  const generateAllMutation = useMutation({
+    mutationFn: () => generateBugReportsForProject(projectId, null),
+    onSuccess: (data) => {
+      setLastGenerateResult(data)
+      queryClient.invalidateQueries({ queryKey: bugReportsQueryKey })
+    },
+  })
+
+  const generateSelectedMutation = useMutation({
+    mutationFn: () => generateBugReportsForProject(projectId, Array.from(selectedGenerateResultIds)),
+    onSuccess: (data) => {
+      setLastGenerateResult(data)
+      setGenerateSelectionMode(false)
+      setSelectedGenerateResultIds(new Set())
+      queryClient.invalidateQueries({ queryKey: bugReportsQueryKey })
+    },
+  })
+
+  function toggleBugSelection(ids: string[], checked: boolean) {
+    setSelectedBugIds((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) {
+        if (checked) {
+          next.add(id)
+        } else {
+          next.delete(id)
+        }
+      }
+      return next
+    })
+  }
+
+  function exitSelectionMode() {
+    setSelectionMode(false)
+    setSelectedBugIds(new Set())
+  }
+
+  // 2 selection mode (xuất bug có sẵn / sinh bug mới) độc lập nhau nhưng loại trừ lẫn nhau khi bật -
+  // tránh 2 nút "Huỷ" cùng hiện 1 lúc gây khó hiểu đang huỷ cái nào.
+  function enterSelectionMode() {
+    setGenerateSelectionMode(false)
+    setSelectedGenerateResultIds(new Set())
+    setSelectionMode(true)
+  }
+
+  function enterGenerateSelectionMode() {
+    setSelectionMode(false)
+    setSelectedBugIds(new Set())
+    setGenerateSelectionMode(true)
+  }
+
+  function toggleGenerateSelection(testResultIds: string[], checked: boolean) {
+    setSelectedGenerateResultIds((prev) => {
+      const next = new Set(prev)
+      for (const id of testResultIds) {
+        if (checked) {
+          next.add(id)
+        } else {
+          next.delete(id)
+        }
+      }
+      return next
+    })
+  }
+
+  function exitGenerateSelectionMode() {
+    setGenerateSelectionMode(false)
+    setSelectedGenerateResultIds(new Set())
+  }
+
+  // Đến từ "Xem chi tiết" ở Lịch sử tổng, hoặc từ chip Bug vừa sinh ở trang Kết quả thực thi
+  // (?bugReportId=...) - tự mở thẳng dialog sửa đúng bug đó thay vì chỉ đưa về trang danh sách rồi
+  // bắt người dùng tự tìm. Phải đợi `!isFetching` mới kết luận "không tìm thấy": nếu trang này đã có
+  // cache cũ từ lần ghé trước (React Query trả `data` cache ngay trong lúc âm thầm fetch lại phía
+  // sau), bug MỚI vừa tạo/sinh sẽ chưa có trong `data` cache đó dù đã tồn tại thật trên server - xử
+  // lý sớm sẽ báo nhầm "đã bị xoá". Đợi fetch mới nhất xong rồi mới so khớp, tránh race condition này.
   useEffect(() => {
     const bugReportId = searchParams.get("bugReportId")
-    if (!bugReportId || !data) return
+    if (!bugReportId || !data || isFetching) return
 
     for (const endpoint of data.endpoints) {
       for (const testCase of endpoint.testCases) {
@@ -86,7 +194,7 @@ export function BugReportPage() {
       return next
     }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data])
+  }, [data, isFetching])
 
   return (
     <div>
@@ -95,22 +203,116 @@ export function BugReportPage() {
         Quay lại Project
       </Button>
 
-      <div className="mt-4 flex items-center justify-between gap-4">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Bug Report</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={exportAllMutation.isPending || !data || data.summary.totalCount === 0}
-          onClick={() => exportAllMutation.mutate()}
-        >
-          <Download className="h-4 w-4" />
-          {exportAllMutation.isPending ? "Đang xuất..." : "Xuất tất cả (Excel)"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {!selectionMode &&
+            (generateSelectionMode ? (
+              <>
+                <Button variant="ghost" size="sm" onClick={exitGenerateSelectionMode}>
+                  Huỷ
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={selectedGenerateResultIds.size === 0 || generateSelectedMutation.isPending}
+                  onClick={() => generateSelectedMutation.mutate()}
+                >
+                  <Bug className="h-4 w-4" />
+                  {generateSelectedMutation.isPending ? "Đang sinh..." : `Sinh đã chọn (${selectedGenerateResultIds.size})`}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={enterGenerateSelectionMode}>
+                  <ListChecks className="h-4 w-4" />
+                  Sinh Bug Report tuỳ chọn
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={generateAllMutation.isPending}
+                  onClick={() => generateAllMutation.mutate()}
+                >
+                  <Bug className="h-4 w-4" />
+                  {generateAllMutation.isPending ? "Đang sinh..." : "Sinh tất cả Bug Report"}
+                </Button>
+              </>
+            ))}
+          {!generateSelectionMode &&
+            (selectionMode ? (
+              <>
+                <Button variant="ghost" size="sm" onClick={exitSelectionMode}>
+                  Huỷ
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={selectedBugIds.size === 0 || exportSelectedMutation.isPending}
+                  onClick={() => exportSelectedMutation.mutate()}
+                >
+                  <Download className="h-4 w-4" />
+                  {exportSelectedMutation.isPending ? "Đang xuất..." : `Xuất đã chọn (${selectedBugIds.size})`}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!data || data.summary.totalCount === 0}
+                  onClick={enterSelectionMode}
+                >
+                  <ListChecks className="h-4 w-4" />
+                  Xuất theo lựa chọn
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={exportAllMutation.isPending || !data || data.summary.totalCount === 0}
+                  onClick={() => exportAllMutation.mutate()}
+                >
+                  <Download className="h-4 w-4" />
+                  {exportAllMutation.isPending ? "Đang xuất..." : "Xuất tất cả (Excel)"}
+                </Button>
+              </>
+            ))}
+        </div>
       </div>
-      {exportAllMutation.isError && (
+      {(exportAllMutation.isError || exportSelectedMutation.isError) && (
         <p className="mt-2 text-sm text-destructive">
-          {exportAllMutation.error instanceof ApiError ? exportAllMutation.error.message : "Không xuất được file, vui lòng thử lại"}
+          {exportAllMutation.error instanceof ApiError
+            ? exportAllMutation.error.message
+            : exportSelectedMutation.error instanceof ApiError
+              ? exportSelectedMutation.error.message
+              : "Không xuất được file, vui lòng thử lại"}
         </p>
+      )}
+      {(generateAllMutation.isError || generateSelectedMutation.isError) && (
+        <p className="mt-2 text-sm text-destructive">
+          {generateAllMutation.error instanceof ApiError
+            ? generateAllMutation.error.message
+            : generateSelectedMutation.error instanceof ApiError
+              ? generateSelectedMutation.error.message
+              : "Không sinh được Bug Report, vui lòng thử lại"}
+        </p>
+      )}
+      {lastGenerateResult && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>
+            Đã tạo {lastGenerateResult.created.length} Bug Report
+            {lastGenerateResult.skippedCount > 0 &&
+              ` (bỏ qua ${lastGenerateResult.skippedCount} dòng đã có Bug Report hoặc không phải Fail)`}
+            {lastGenerateResult.created.length > 0 && ":"}
+          </span>
+          {lastGenerateResult.created.map((bug) => (
+            <Link
+              key={bug.id}
+              to={`/projects/${projectId}/bug-reports?bugReportId=${bug.id}`}
+              className="rounded-md border border-border bg-card px-2 py-0.5 font-mono text-xs text-primary hover:underline"
+            >
+              {bug.bugId}
+            </Link>
+          ))}
+        </div>
       )}
       {deepLinkNotFound && (
         <p className="mt-2 text-sm text-destructive">Không tìm thấy bug report này — có thể đã bị xoá.</p>
@@ -143,6 +345,12 @@ export function BugReportPage() {
                   onEditBug={setEditingBug}
                   onDeleteBug={setDeletingBug}
                   onCreateBug={setCreateBugResultId}
+                  selectionMode={selectionMode}
+                  selectedBugIds={selectedBugIds}
+                  onToggleBugSelection={toggleBugSelection}
+                  generateSelectionMode={generateSelectionMode}
+                  selectedGenerateResultIds={selectedGenerateResultIds}
+                  onToggleGenerateSelection={toggleGenerateSelection}
                 />
               ))}
             </div>
@@ -256,6 +464,12 @@ function EndpointRow({
   onEditBug,
   onDeleteBug,
   onCreateBug,
+  selectionMode,
+  selectedBugIds,
+  onToggleBugSelection,
+  generateSelectionMode,
+  selectedGenerateResultIds,
+  onToggleGenerateSelection,
 }: {
   endpoint: EndpointBugSummary
   projectId: string
@@ -266,22 +480,59 @@ function EndpointRow({
   onEditBug: (bug: BugReport) => void
   onDeleteBug: (bug: BugReport) => void
   onCreateBug: (testResultId: string) => void
+  selectionMode: boolean
+  selectedBugIds: Set<string>
+  onToggleBugSelection: (ids: string[], checked: boolean) => void
+  generateSelectionMode: boolean
+  selectedGenerateResultIds: Set<string>
+  onToggleGenerateSelection: (testResultIds: string[], checked: boolean) => void
 }) {
+  const bugIds = bugIdsOfEndpoint(endpoint)
+  const allSelected = bugIds.length > 0 && bugIds.every((id) => selectedBugIds.has(id))
+  const someSelected = bugIds.some((id) => selectedBugIds.has(id))
+  const generatableIds = generatableIdsOfEndpoint(endpoint)
+  const allGenerateSelected = generatableIds.length > 0 && generatableIds.every((id) => selectedGenerateResultIds.has(id))
+  const someGenerateSelected = generatableIds.some((id) => selectedGenerateResultIds.has(id))
+
   return (
     <div className="rounded-lg border border-border p-4">
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 text-left">
-        <span
-          className={cn(
-            "w-16 shrink-0 rounded-md px-2 py-0.5 text-center text-xs font-semibold",
-            METHOD_STYLES[endpoint.endpointMethod] ?? "bg-muted text-muted-foreground"
+      <div className="flex w-full items-center gap-3">
+        {/* Ẩn hẳn (không chỉ disable) khi rỗng - checkbox disabled trông giống hệt checkbox tickable
+            được, người dùng phải mở ra thử mới biết. Ẩn hẳn để nhìn là biết ngay có tick được không. */}
+        {selectionMode && bugIds.length > 0 && (
+          <Checkbox
+            checked={allSelected}
+            indeterminate={!allSelected && someSelected}
+            onCheckedChange={(checked) => onToggleBugSelection(bugIds, checked === true)}
+          />
+        )}
+        {generateSelectionMode && generatableIds.length > 0 && (
+          <Checkbox
+            checked={allGenerateSelected}
+            indeterminate={!allGenerateSelected && someGenerateSelected}
+            onCheckedChange={(checked) => onToggleGenerateSelection(generatableIds, checked === true)}
+          />
+        )}
+        <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <span
+            className={cn(
+              "w-16 shrink-0 rounded-md px-2 py-0.5 text-center text-xs font-semibold",
+              METHOD_STYLES[endpoint.endpointMethod] ?? "bg-muted text-muted-foreground"
+            )}
+          >
+            {endpoint.endpointMethod}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.endpointPath}</span>
+          {generatableIds.length > 0 && (
+            <span
+              className="size-2 shrink-0 rounded-full bg-destructive"
+              title="Có test case với lần chạy Fail chưa báo lỗi"
+            />
           )}
-        >
-          {endpoint.endpointMethod}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.endpointPath}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">{endpoint.testCases.length} test case</span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
-      </button>
+          <span className="shrink-0 text-xs text-muted-foreground">{endpoint.testCases.length} test case</span>
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
+        </button>
+      </div>
 
       {isExpanded && (
         <div className="mt-4 ml-1 flex flex-col gap-3 border-l border-border pl-5">
@@ -295,6 +546,12 @@ function EndpointRow({
               onEditBug={onEditBug}
               onDeleteBug={onDeleteBug}
               onCreateBug={onCreateBug}
+              selectionMode={selectionMode}
+              selectedBugIds={selectedBugIds}
+              onToggleBugSelection={onToggleBugSelection}
+              generateSelectionMode={generateSelectionMode}
+              selectedGenerateResultIds={selectedGenerateResultIds}
+              onToggleGenerateSelection={onToggleGenerateSelection}
             />
           ))}
         </div>
@@ -311,6 +568,12 @@ function TestCaseRow({
   onEditBug,
   onDeleteBug,
   onCreateBug,
+  selectionMode,
+  selectedBugIds,
+  onToggleBugSelection,
+  generateSelectionMode,
+  selectedGenerateResultIds,
+  onToggleGenerateSelection,
 }: {
   testCase: TestCaseBugSummary
   projectId: string
@@ -319,12 +582,46 @@ function TestCaseRow({
   onEditBug: (bug: BugReport) => void
   onDeleteBug: (bug: BugReport) => void
   onCreateBug: (testResultId: string) => void
+  selectionMode: boolean
+  selectedBugIds: Set<string>
+  onToggleBugSelection: (ids: string[], checked: boolean) => void
+  generateSelectionMode: boolean
+  selectedGenerateResultIds: Set<string>
+  onToggleGenerateSelection: (testResultIds: string[], checked: boolean) => void
 }) {
   const pendingBugs = testCase.bugs.filter((b) => b.pendingCloseSuggestion)
+  const bugIds = bugIdsOfTestCase(testCase)
+  const allSelected = bugIds.length > 0 && bugIds.every((id) => selectedBugIds.has(id))
+  const someSelected = bugIds.some((id) => selectedBugIds.has(id))
+  const generatableIds = testCase.generatableResultIds
+  const allGenerateSelected = generatableIds.length > 0 && generatableIds.every((id) => selectedGenerateResultIds.has(id))
+  const someGenerateSelected = generatableIds.some((id) => selectedGenerateResultIds.has(id))
 
   return (
     <div className="rounded-md border border-border p-3">
-      <p className="text-base font-semibold text-foreground">{testCase.testCaseName}</p>
+      <div className="flex items-center gap-2">
+        {selectionMode && bugIds.length > 0 && (
+          <Checkbox
+            checked={allSelected}
+            indeterminate={!allSelected && someSelected}
+            onCheckedChange={(checked) => onToggleBugSelection(bugIds, checked === true)}
+          />
+        )}
+        {generateSelectionMode && generatableIds.length > 0 && (
+          <Checkbox
+            checked={allGenerateSelected}
+            indeterminate={!allGenerateSelected && someGenerateSelected}
+            onCheckedChange={(checked) => onToggleGenerateSelection(generatableIds, checked === true)}
+          />
+        )}
+        {generatableIds.length > 0 && (
+          <span
+            className="size-2 shrink-0 rounded-full bg-destructive"
+            title="Có lần chạy Fail chưa báo lỗi"
+          />
+        )}
+        <p className="text-base font-semibold text-foreground">{testCase.testCaseName}</p>
+      </div>
 
       {testCase.bugs.length > 0 && (
         <div className="mt-2 flex flex-col gap-2">
@@ -339,6 +636,12 @@ function TestCaseRow({
               key={bug.id}
               className="flex flex-wrap items-center gap-1.5 rounded-md border border-amber-200 border-l-4 border-l-amber-500 bg-amber-50 p-2 dark:border-amber-900/40 dark:border-l-amber-500 dark:bg-amber-500/10"
             >
+              {selectionMode && (
+                <Checkbox
+                  checked={selectedBugIds.has(bug.id)}
+                  onCheckedChange={(checked) => onToggleBugSelection([bug.id], checked === true)}
+                />
+              )}
               <code className="text-xs font-semibold text-muted-foreground">{bug.bugId}</code>
               <BugStatusBadge status={bug.status} className="text-[0.8rem]" />
               <span className="text-xs text-muted-foreground">
@@ -370,6 +673,9 @@ function TestCaseRow({
           testCaseId={testCase.testCaseId}
           bugs={testCase.bugs}
           onCreateBug={onCreateBug}
+          generateSelectionMode={generateSelectionMode}
+          selectedGenerateResultIds={selectedGenerateResultIds}
+          onToggleGenerateSelection={onToggleGenerateSelection}
         />
       )}
     </div>
@@ -422,11 +728,17 @@ function RunHistoryList({
   testCaseId,
   bugs,
   onCreateBug,
+  generateSelectionMode,
+  selectedGenerateResultIds,
+  onToggleGenerateSelection,
 }: {
   projectId: string
   testCaseId: string
   bugs: BugReport[]
   onCreateBug: (testResultId: string) => void
+  generateSelectionMode: boolean
+  selectedGenerateResultIds: Set<string>
+  onToggleGenerateSelection: (testResultIds: string[], checked: boolean) => void
 }) {
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null)
   const bugBySourceResultId = new Map(bugs.map((bug) => [bug.sourceTestResultId, bug]))
@@ -461,25 +773,33 @@ function RunHistoryList({
             />
             {/* Nền trắng/border thường - KHÔNG tô cả hàng, chỉ badge Fail/Pass và nhãn "Nguồn của"
                 mang màu để mắt bắt đúng chỗ cần chú ý, tránh mọi hàng đều vàng gây rối mắt. */}
-            <button
-              type="button"
-              onClick={() => setExpandedRunId(isExpanded ? null : run.testResultId)}
-              className="flex w-full items-center gap-2 rounded-md border border-border bg-card p-2 text-left text-xs"
-            >
-              <span className="text-muted-foreground">{formatDateTime(run.occurredAt)}</span>
-              <StatusBadge status={run.status} compact />
-              {sourceOfBug && (
-                <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[0.7rem] font-semibold text-amber-700 dark:text-amber-400">
-                  Nguồn của {sourceOfBug.bugId}
-                </span>
+            <div className="flex items-center gap-2">
+              {generateSelectionMode && run.status === "FAILED" && !sourceOfBug && (
+                <Checkbox
+                  checked={selectedGenerateResultIds.has(run.testResultId)}
+                  onCheckedChange={(checked) => onToggleGenerateSelection([run.testResultId], checked === true)}
+                />
               )}
-              <ChevronDown
-                className={cn(
-                  "ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-                  isExpanded && "rotate-180"
+              <button
+                type="button"
+                onClick={() => setExpandedRunId(isExpanded ? null : run.testResultId)}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-card p-2 text-left text-xs"
+              >
+                <span className="text-muted-foreground">{formatDateTime(run.occurredAt)}</span>
+                <StatusBadge status={run.status} compact />
+                {sourceOfBug && (
+                  <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[0.7rem] font-semibold text-amber-700 dark:text-amber-400">
+                    Nguồn của {sourceOfBug.bugId}
+                  </span>
                 )}
-              />
-            </button>
+                <ChevronDown
+                  className={cn(
+                    "ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                    isExpanded && "rotate-180"
+                  )}
+                />
+              </button>
+            </div>
             {isExpanded && (
               <div className="mt-1 flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-2 text-xs">
                 <p>
@@ -527,7 +847,7 @@ function RunHistoryList({
                     </ul>
                   </div>
                 )}
-                {run.status === "FAILED" && (
+                {run.status === "FAILED" && !sourceOfBug && (
                   <Button size="xs" variant="outline" className="self-end" onClick={() => onCreateBug(run.testResultId)}>
                     Báo lỗi
                   </Button>

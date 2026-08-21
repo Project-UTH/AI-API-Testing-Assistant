@@ -34,9 +34,13 @@ interface CreateBugReportDialogProps {
   projectId: string
   /** null khi dialog đang đóng - useQuery chỉ enabled khi có giá trị thật. */
   sourceTestResultId: string | null
+  /** Gọi thêm sau khi tạo thành công, ngoài việc tự invalidate ["bug-reports", projectId] - dùng khi
+   *  nơi gọi (VD TestExecutionPage) cần tự invalidate thêm query riêng của nó (VD execution, để dòng
+   *  vừa tạo bug cập nhật ngay `existingBugReportId` mà không cần F5). */
+  onCreated?: () => void
 }
 
-export function CreateBugReportDialog({ open, onOpenChange, projectId, sourceTestResultId }: CreateBugReportDialogProps) {
+export function CreateBugReportDialog({ open, onOpenChange, projectId, sourceTestResultId, onCreated }: CreateBugReportDialogProps) {
   const queryClient = useQueryClient()
   const [summary, setSummary] = useState("")
   // Gộp Môi trường/Các bước tái hiện/Kết quả mong đợi/Kết quả thực tế thành 1 Mô tả duy nhất
@@ -83,6 +87,7 @@ export function CreateBugReportDialog({ open, onOpenChange, projectId, sourceTes
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bug-reports", projectId] })
+      onCreated?.()
       onOpenChange(false)
     },
   })
