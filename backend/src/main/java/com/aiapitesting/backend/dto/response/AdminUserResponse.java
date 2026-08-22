@@ -15,9 +15,11 @@ public record AdminUserResponse(
         long totalProjects,
         long totalTestCases,
         long totalBugReports,
-        /** Tổng token AI đã dùng HÔM NAY (giờ UTC) - dùng để đối chiếu với quota `ai.quota.daily-token-limit`. */
+        /** Tổng token AI đã dùng HÔM NAY (giờ UTC) - dùng để đối chiếu với quota hiệu lực của user này. */
         long aiTokensToday,
-        long aiCallsToday
+        long aiCallsToday,
+        /** null = dùng quota mặc định hệ thống (`ai.quota.daily-token-limit`); có giá trị = admin đã ghi đè riêng cho user này. */
+        Integer aiDailyTokenLimitOverride
 ) {
     public static AdminUserResponse from(
             User user, long totalProjects, long totalTestCases, long totalBugReports,
@@ -25,6 +27,7 @@ public record AdminUserResponse(
     ) {
         return new AdminUserResponse(
                 user.getId(), user.getEmail(), user.getRole(), user.isEnabled(), user.getCreatedAt(),
-                totalProjects, totalTestCases, totalBugReports, aiTokensToday, aiCallsToday);
+                totalProjects, totalTestCases, totalBugReports, aiTokensToday, aiCallsToday,
+                user.getAiDailyTokenLimitOverride());
     }
 }

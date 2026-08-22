@@ -18,7 +18,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 8. Lịch sử & Dashboard | ✅ Xong |
 | 9. Nâng cao Test Case AI sinh (Security, Assertion, Test Data) | ✅ Xong |
 | 10. Bug Report (quy trình QA) | ✅ Xong |
-| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a-d xong, còn giám sát execution treo - hạ ưu tiên) |
+| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a-e xong, còn giám sát execution treo - hạ ưu tiên) |
 | 12. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
@@ -604,6 +604,31 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 - [x] `AdminAuditLogPage.tsx` mới (route `/admin/audit-log`, tab "Nhật ký" thứ 3 cạnh "Tổng quan"/"Người dùng") - danh sách phẳng, icon khoá/mở khác màu theo hành động
 
 **Mốc xác nhận:** `./mvnw test` xanh (138/138, thêm test cho token usage capture/quota chặn sớm ở `TestCaseGenerationServiceTest`, AI usage mapping + audit event ghi đúng ở `AdminUserServiceTest`, `AdminDashboardServiceTest`, `AdminAuditLogServiceTest` mới), `npx tsc -b --force` sạch, `npm run build` thành công. **Đã verify bằng ĐÚNG 1 lần gọi AI thật** (project tạm trong tài khoản `freshtest@aiapi.local`, xoá sạch ngay sau khi xong, không đụng 74 test case/1 bug report gốc): sinh 1 test case Positive cho `GET /api/products/{id}` → DB lưu đúng `prompt_tokens=4711, completion_tokens=300, total_tokens=5011` khớp response thật từ Anthropic → set tạm `ai.quota.daily-token-limit=10` (qua tham số dòng lệnh, không sửa code) → gọi sinh test case lần 2 → bị chặn `429 AI_QUOTA_EXCEEDED` NGAY LẬP TỨC, xác nhận qua DB **không có dòng `test_generation_events` mới** (0 token phát sinh cho lần bị chặn). **Đã verify UI thật bằng Playwright**: Admin Dashboard hiện đúng "Token AI đã dùng hôm nay: 5.011"; trang Người dùng hiện đúng dòng `freshtest@aiapi.local` "5.011 / 10" tô đỏ (vượt quota giả lập); khoá 1 tài khoản test → trang Nhật ký hiện đúng "verify-admin3@aiapi.local Khoá tài khoản verify-lockme@aiapi.local" kèm thời gian. Đã khởi động lại backend KHÔNG override để xác nhận quota trở về đúng mặc định 100000. Toàn bộ tài khoản/project test đã xoá sạch.
+
+---
+
+### 11e. Biểu đồ usage theo ngày/tuần/tháng + Admin chỉnh quota riêng từng user ✅
+
+**Bối cảnh:** người dùng muốn: (1) trang Dashboard của chính user hiện thống kê token AI đã dùng theo ngày/tuần/tháng, (2) Admin xem được usage AI theo TỪNG user hoặc TOÀN HỆ THỐNG, (3) Admin chỉnh được quota token/ngày RIÊNG cho từng user (khác quota chung `ai.quota.daily-token-limit` ở 11d), (4) trang Nhật ký (11d) ghi lại luôn cả thao tác đổi quota, không chỉ khoá/mở tài khoản.
+
+**Backend**
+- [x] `User` thêm `aiDailyTokenLimitOverride` (Integer, nullable, KHÔNG cần `DEFAULT` vì cột nullable trên bảng đã có dữ liệu — khác gotcha VARCHAR/TINYINT đã gặp ở Module 9a) — `null` = dùng quota mặc định hệ thống, có giá trị = ghi đè riêng cho user đó
+- [x] `TestCaseGenerationService.ensureWithinDailyQuota()`: đọc `project.getOwner().getAiDailyTokenLimitOverride()` trước, `null` mới fallback về `dailyTokenLimit` (config chung)
+- [x] `TestGenerationEventRepository` thêm `findUsagePointsByOwnerSince`/`findAllUsagePointsSince` (projection `UsagePoint`: `createdAt` + `totalTokens`) — nguồn dữ liệu thô cho bucket theo ngày, KHÔNG gộp sẵn trong SQL vì cần gộp linh hoạt theo ngày/tuần/tháng ở tầng service (dùng lại được cho cả 2 khoảng gộp)
+- [x] `AiUsageService` mới — `bucketByDay()` gộp theo NGÀY trong cửa sổ 90 ngày gần nhất, ĐIỀN ĐỦ 0 cho ngày không có lượt gọi nào (không bỏ trống) để frontend vẽ biểu đồ liên tục; expose `getMyUsage()` (public, dùng cho `DashboardController`), `getUsageForOwner()`/`getSystemUsage()` (package-private, dùng riêng cho Admin service, không lộ ra API công khai)
+- [x] 3 endpoint GET mới: `/api/v1/dashboard/ai-usage` (usage của chính user đang đăng nhập), `/api/v1/admin/users/{userId}/ai-usage` (usage của 1 user cụ thể), `/api/v1/admin/dashboard/ai-usage` (usage gộp toàn hệ thống)
+- [x] `PUT /api/v1/admin/users/{id}/ai-quota` (`AdminUserAiQuotaRequest{ dailyTokenLimit: Integer? }`, `null` = xoá ghi đè/về mặc định) — `AdminUserService.setAiQuota()` validate không âm, ghi `AdminAuditEvent` (action mới `AI_QUOTA_CHANGED`, kèm field `detail` mô tả "Đặt giới hạn riêng: X token/ngày" hoặc "Đặt lại về mặc định hệ thống")
+- [x] `AdminAuditEvent` thêm field `detail` (nullable) — bản ghi cũ (`USER_LOCKED`/`USER_UNLOCKED`) không có detail vẫn hợp lệ, không cần backfill
+- [x] `AdminUserResponse` thêm `aiDailyTokenLimitOverride` để frontend hiện đúng trạng thái quota hiện tại của từng user
+
+**Frontend**
+- [x] `components/shared/AiUsageChart.tsx` mới — biểu đồ cột SVG tự vẽ (theo đúng pattern `TrendChart` có sẵn, không thêm thư viện chart ngoài), toggle Ngày/Tuần/Tháng gộp dữ liệu NGAY TRÊN CLIENT từ cùng 1 response 90 ngày (không gọi lại API khi đổi granularity) — dùng chung cho cả 3 nơi hiển thị (Dashboard user, Admin Dashboard, Admin chi tiết user)
+- [x] `DashboardPage.tsx` — panel "Token AI đã dùng" mới dưới biểu đồ pass rate
+- [x] `AdminDashboardPage.tsx` — panel "Token AI đã dùng - toàn hệ thống"
+- [x] `AdminUserDetailPage.tsx` — thêm hẳn 1 khối đầu trang: email + quota hiện tại + form đổi quota riêng (input + nút "Lưu"/"Về mặc định") + biểu đồ usage của riêng user đó, phía trên danh sách Project (chỉ đọc) đã có từ 11b. Đây là chỉnh sửa DUY NHẤT admin được phép làm trên "dữ liệu do admin quản lý" (quota), khác hẳn phần Project/TestCase/BugReport của user vẫn giữ nguyên chỉ đọc
+- [x] `AdminAuditLogPage.tsx` — thêm nhãn hành động `AI_QUOTA_CHANGED` ("Đổi quota AI", icon Coins tím) + hiện text `detail` sau tên user nếu có
+
+**Mốc xác nhận:** `./mvnw test` xanh (148/148, thêm test cho quota override trong `TestCaseGenerationServiceTest`, `AiUsageServiceTest` mới, `setAiQuota` trong `AdminUserServiceTest`, delegate methods trong `AdminUserDataServiceTest`/`AdminDashboardServiceTest`), `npx tsc -b --force` sạch, `npm run build` thành công. **Verify UI thật bằng Playwright** (đăng nhập bằng `freshtest@aiapi.local` có sẵn — KHÔNG sinh test case mới, đúng ràng buộc đang áp dụng; tạo thêm 1 tài khoản `admintest@aiapi.local` rồi cấp ADMIN bằng SQL trực tiếp để có tài khoản test phía admin, giữ lại làm tài khoản admin dùng chung lâu dài như `freshtest@aiapi.local`): panel "Token AI đã dùng" hiện đúng ở Dashboard user (empty-state hợp lệ vì DB dev hiện không còn dòng `test_generation_events` nào có token thật — dữ liệu verify thật của 11d đã bị xoá sạch sau khi xác nhận xong); Admin Dashboard hiện đúng panel toàn hệ thống; trang chi tiết user: đặt quota riêng 55000 → hiện đúng "55.000 token (đã ghi đè riêng)" → bấm "Về mặc định" → về lại "Mặc định hệ thống"; trang Nhật ký hiện đúng 2 dòng "Đổi quota AI" kèm `detail` tương ứng, không ảnh hưởng dòng cũ từ 11d.
 
 ---
 

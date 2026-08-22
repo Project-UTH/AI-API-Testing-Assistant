@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.controller;
 
+import com.aiapitesting.backend.dto.request.AdminUserAiQuotaRequest;
 import com.aiapitesting.backend.dto.request.AdminUserStatusRequest;
 import com.aiapitesting.backend.dto.response.AdminUserResponse;
 import com.aiapitesting.backend.dto.response.ApiResponse;
@@ -48,5 +49,13 @@ public class AdminUserController {
             @RequestBody AdminUserStatusRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.of(adminUserService.setEnabled(id, request.enabled())));
+    }
+
+    @PutMapping("/{id}/ai-quota")
+    public ResponseEntity<ApiResponse<AdminUserResponse>> setAiQuota(
+            @PathVariable UUID id,
+            @RequestBody AdminUserAiQuotaRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(adminUserService.setAiQuota(id, request.dailyTokenLimit())));
     }
 }

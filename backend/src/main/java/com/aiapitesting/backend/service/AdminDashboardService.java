@@ -1,6 +1,7 @@
 package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.response.AdminDashboardSummaryResponse;
+import com.aiapitesting.backend.dto.response.AiUsageResponse;
 import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.repository.BugReportRepository;
@@ -34,6 +35,7 @@ public class AdminDashboardService {
     private final TestResultRepository testResultRepository;
     private final BugReportRepository bugReportRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
+    private final AiUsageService aiUsageService;
 
     @Value("${ai.quota.daily-token-limit}")
     private long dailyTokenLimit;
@@ -60,5 +62,9 @@ public class AdminDashboardService {
         return new AdminDashboardSummaryResponse(
                 totalUsers, totalProjects, totalEndpoints, totalTestCases, totalTestResults,
                 overallPassRate, totalOpenBugs, totalGenerationEvents, totalAiTokensToday, dailyTokenLimit);
+    }
+
+    public AiUsageResponse getSystemAiUsage() {
+        return aiUsageService.getSystemUsage();
     }
 }

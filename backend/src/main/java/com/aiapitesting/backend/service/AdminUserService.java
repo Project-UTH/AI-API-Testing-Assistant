@@ -94,6 +94,32 @@ public class AdminUserService {
         return buildResponse(user);
     }
 
+    /**
+     * Ghi đè quota AI/ngày riêng cho 1 user - dailyTokenLimit null nghĩa là XOÁ ghi đè (quay lại
+     * dùng mặc định hệ thống), khác 0 (giới hạn thật sự bằng 0, chặn hoàn toàn AI cho user đó).
+     */
+    public AdminUserResponse setAiQuota(UUID id, Integer dailyTokenLimit) {
+        if (dailyTokenLimit != null && dailyTokenLimit < 0) {
+            throw new InvalidRequestException("Giới hạn token không được âm");
+        }
+
+        User user = getUser(id);
+        User currentAdmin = currentUserService.getCurrentUser();
+        user.setAiDailyTokenLimitOverride(dailyTokenLimit);
+        userRepository.save(user);
+
+        adminAuditEventRepository.save(AdminAuditEvent.builder()
+                .adminEmail(currentAdmin.getEmail())
+                .targetEmail(user.getEmail())
+                .action(AdminAuditAction.AI_QUOTA_CHANGED)
+                .detail(dailyTokenLimit == null
+                        ? "Đặt lại về mặc định hệ thống"
+                        : "Đặt giới hạn riêng: " + dailyTokenLimit + " token/ngày")
+                .build());
+
+        return buildResponse(user);
+    }
+
     private AdminUserResponse buildResponse(User user) {
         Instant startOfToday = Instant.now().truncatedTo(ChronoUnit.DAYS);
         Instant startOfTomorrow = startOfToday.plus(1, ChronoUnit.DAYS);

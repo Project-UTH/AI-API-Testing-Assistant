@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.controller;
 
+import com.aiapitesting.backend.dto.response.AiUsageResponse;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.BugReportPageResponse;
 import com.aiapitesting.backend.dto.response.EndpointResponse;
@@ -75,5 +76,11 @@ public class AdminUserDataController {
             @PathVariable UUID userId, @PathVariable UUID projectId, @PathVariable UUID testCaseId
     ) {
         return ResponseEntity.ok(ApiResponse.of(adminUserDataService.getRunHistory(userId, projectId, testCaseId)));
+    }
+
+    /** Usage token AI của ĐÚNG user này (khác /admin/dashboard/ai-usage - toàn hệ thống). */
+    @GetMapping("/ai-usage")
+    public ResponseEntity<ApiResponse<AiUsageResponse>> aiUsage(@PathVariable UUID userId) {
+        return ResponseEntity.ok(ApiResponse.of(adminUserDataService.getAiUsage(userId)));
     }
 }

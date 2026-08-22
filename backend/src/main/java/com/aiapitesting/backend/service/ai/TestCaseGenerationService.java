@@ -136,9 +136,13 @@ public class TestCaseGenerationService {
         Instant startOfTomorrow = startOfToday.plus(1, ChronoUnit.DAYS);
         long usedToday = testGenerationEventRepository.sumTotalTokensByOwnerAndCreatedAtBetween(
                 project.getOwner(), startOfToday, startOfTomorrow);
-        if (usedToday >= dailyTokenLimit) {
+        // Admin có thể ghi đè quota riêng cho 1 user (Module 11d) qua User.aiDailyTokenLimitOverride
+        // - null nghĩa là chưa ghi đè, dùng mặc định hệ thống (ai.quota.daily-token-limit).
+        Integer override = project.getOwner().getAiDailyTokenLimitOverride();
+        long effectiveLimit = override != null ? override : dailyTokenLimit;
+        if (usedToday >= effectiveLimit) {
             throw new AiQuotaExceededException(
-                    "Đã đạt giới hạn " + dailyTokenLimit + " token AI hôm nay, vui lòng thử lại vào ngày mai");
+                    "Đã đạt giới hạn " + effectiveLimit + " token AI hôm nay, vui lòng thử lại vào ngày mai");
         }
     }
 

@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronLeft, ChevronRight, Lock, Unlock } from "lucide-react"
+import { ChevronLeft, ChevronRight, Coins, Lock, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { formatDateTime } from "@/lib/utils"
@@ -10,6 +10,7 @@ import { AdminTabs } from "@/pages/AdminDashboardPage"
 const ACTION_LABEL: Record<string, string> = {
   USER_LOCKED: "Khoá tài khoản",
   USER_UNLOCKED: "Mở khoá tài khoản",
+  AI_QUOTA_CHANGED: "Đổi quota AI",
 }
 
 export function AdminAuditLogPage() {
@@ -58,12 +59,15 @@ export function AdminAuditLogPage() {
           <div key={event.id} className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm">
             {event.action === "USER_LOCKED" ? (
               <Lock className="h-4 w-4 shrink-0 text-destructive" />
-            ) : (
+            ) : event.action === "USER_UNLOCKED" ? (
               <Unlock className="h-4 w-4 shrink-0 text-emerald-500" />
+            ) : (
+              <Coins className="h-4 w-4 shrink-0 text-violet-500" />
             )}
             <span className="min-w-0 flex-1">
               <span className="font-medium">{event.adminEmail}</span> {ACTION_LABEL[event.action] ?? event.action}{" "}
               <span className="font-medium">{event.targetEmail}</span>
+              {event.detail && <span className="text-muted-foreground"> - {event.detail}</span>}
             </span>
             <span className="shrink-0 text-xs text-muted-foreground">{formatDateTime(event.createdAt)}</span>
           </div>

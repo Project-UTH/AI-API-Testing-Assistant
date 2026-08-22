@@ -48,6 +48,9 @@ public class AdminAuditEvent {
     @Column(nullable = false, columnDefinition = "VARCHAR(30)")
     private AdminAuditAction action;
 
+    /** Chi tiết bổ sung tuỳ hành động (VD "Đặt giới hạn: 5000 token/ngày") - null với hành động tự giải thích đủ qua action (khoá/mở). */
+    private String detail;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

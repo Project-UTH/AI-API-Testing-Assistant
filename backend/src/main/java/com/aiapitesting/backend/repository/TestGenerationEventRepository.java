@@ -62,4 +62,22 @@ public interface TestGenerationEventRepository extends JpaRepository<TestGenerat
         Long getTotalTokens();
         Long getCallCount();
     }
+
+    // Biểu đồ usage theo ngày/tuần/tháng (Module 11 - trang Tổng quan user + Admin). Chỉ lấy đúng 2
+    // cột cần để gộp theo ngày Ở TẦNG JAVA (cùng cách tiếp cận "gộp trong Java" đã dùng ở
+    // TestHistoryService/HistoryFeedService, tránh phải viết hàm ngày/tuần/tháng theo phương ngữ SQL
+    // của MySQL) - AiUsageService tự bucket theo ngày rồi cộng dồn thành tuần/tháng phía client.
+    @Query("SELECT e.createdAt AS createdAt, e.totalTokens AS totalTokens FROM TestGenerationEvent e "
+            + "WHERE e.endpoint.project.owner = :owner AND e.createdAt >= :since ORDER BY e.createdAt ASC")
+    List<UsagePoint> findUsagePointsByOwnerSince(@Param("owner") User owner, @Param("since") Instant since);
+
+    // Bản KHÔNG lọc owner - Admin xem usage TOÀN HỆ THỐNG (mọi user gộp lại).
+    @Query("SELECT e.createdAt AS createdAt, e.totalTokens AS totalTokens FROM TestGenerationEvent e "
+            + "WHERE e.createdAt >= :since ORDER BY e.createdAt ASC")
+    List<UsagePoint> findAllUsagePointsSince(@Param("since") Instant since);
+
+    interface UsagePoint {
+        Instant getCreatedAt();
+        Integer getTotalTokens();
+    }
 }
