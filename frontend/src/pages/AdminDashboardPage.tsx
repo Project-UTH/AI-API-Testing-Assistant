@@ -4,12 +4,18 @@ import { useQuery } from "@tanstack/react-query"
 import { Bug, Coins, FolderKanban, ListChecks, PieChart, Plug, Sparkles, Users } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { getAdminDashboardSummary } from "@/lib/admin"
+import { getAdminAiUsage, getAdminDashboardSummary } from "@/lib/admin"
+import { AiUsageChart } from "@/components/shared/AiUsageChart"
 
 export function AdminDashboardPage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-dashboard-summary"],
     queryFn: () => getAdminDashboardSummary(),
+  })
+
+  const { data: aiUsage, isLoading: isAiUsageLoading } = useQuery({
+    queryKey: ["admin-ai-usage"],
+    queryFn: () => getAdminAiUsage(),
   })
 
   return (
@@ -64,6 +70,11 @@ export function AdminDashboardPage() {
           Quota mỗi user: {data.aiDailyTokenLimit.toLocaleString("vi-VN")} token/ngày (xem chi tiết theo từng user ở tab "Người dùng").
         </p>
       )}
+
+      <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <h2 className="text-sm font-semibold text-foreground">Token AI đã dùng - toàn hệ thống</h2>
+        <AiUsageChart daily={aiUsage?.daily} isLoading={isAiUsageLoading} />
+      </div>
     </div>
   )
 }

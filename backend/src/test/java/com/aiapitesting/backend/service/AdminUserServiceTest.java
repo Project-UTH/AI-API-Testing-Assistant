@@ -177,6 +177,45 @@ class AdminUserServiceTest {
     }
 
     @Test
+    void setAiQuota_setsOverride_andWritesAuditEventWithDetail() {
+        when(userRepository.findById(user1.getId())).thenReturn(Optional.of(user1));
+        when(currentUserService.getCurrentUser()).thenReturn(admin);
+
+        AdminUserResponse response = adminUserService.setAiQuota(user1.getId(), 5000);
+
+        assertThat(response.aiDailyTokenLimitOverride()).isEqualTo(5000);
+        assertThat(user1.getAiDailyTokenLimitOverride()).isEqualTo(5000);
+
+        ArgumentCaptor<AdminAuditEvent> auditCaptor = ArgumentCaptor.forClass(AdminAuditEvent.class);
+        verify(adminAuditEventRepository).save(auditCaptor.capture());
+        AdminAuditEvent audit = auditCaptor.getValue();
+        assertThat(audit.getAction()).isEqualTo(AdminAuditAction.AI_QUOTA_CHANGED);
+        assertThat(audit.getAdminEmail()).isEqualTo(admin.getEmail());
+        assertThat(audit.getTargetEmail()).isEqualTo(user1.getEmail());
+        assertThat(audit.getDetail()).contains("5000");
+    }
+
+    @Test
+    void setAiQuota_nullResetsToSystemDefault() {
+        user1.setAiDailyTokenLimitOverride(5000);
+        when(userRepository.findById(user1.getId())).thenReturn(Optional.of(user1));
+        when(currentUserService.getCurrentUser()).thenReturn(admin);
+
+        AdminUserResponse response = adminUserService.setAiQuota(user1.getId(), null);
+
+        assertThat(response.aiDailyTokenLimitOverride()).isNull();
+        ArgumentCaptor<AdminAuditEvent> auditCaptor = ArgumentCaptor.forClass(AdminAuditEvent.class);
+        verify(adminAuditEventRepository).save(auditCaptor.capture());
+        assertThat(auditCaptor.getValue().getDetail()).contains("mặc định");
+    }
+
+    @Test
+    void setAiQuota_negativeValue_throwsInvalidRequest() {
+        assertThatThrownBy(() -> adminUserService.setAiQuota(user1.getId(), -1))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
     void setEnabled_lockingSelf_throwsInvalidRequest() {
         when(userRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
         when(currentUserService.getCurrentUser()).thenReturn(admin);

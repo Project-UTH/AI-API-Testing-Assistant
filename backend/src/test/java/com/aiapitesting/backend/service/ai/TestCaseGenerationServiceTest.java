@@ -7,6 +7,7 @@ import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
+import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.ForbiddenException;
@@ -99,7 +100,11 @@ class TestCaseGenerationServiceTest {
     void setUp() {
         projectId = UUID.randomUUID();
         endpointId = UUID.randomUUID();
-        project = Project.builder().id(projectId).build();
+        // owner bắt buộc phải có (khác null như DB thật) - ensureWithinDailyQuota() đọc thẳng
+        // project.getOwner().getAiDailyTokenLimitOverride() (Module 11d), thiếu owner sẽ NPE ngay ở
+        // MỌI test gọi generate(), không chỉ test quota.
+        User owner = User.builder().id(UUID.randomUUID()).email("owner@test.com").build();
+        project = Project.builder().id(projectId).owner(owner).build();
         endpoint = Endpoint.builder()
                 .id(endpointId)
                 .project(project)
@@ -180,6 +185,41 @@ class TestCaseGenerationServiceTest {
         // "chan som" da thiet ke, khong phai chi bat loi sau khi da lo goi).
         verifyNoInteractions(chatClient);
         verify(testCaseRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void generate_ownerHasQuotaOverride_usesOverrideInsteadOfGlobalDefault() {
+        // dailyTokenLimit toan he thong rat lon (100_000, set o setUp) nhung owner co override rieng
+        // rat nho (500) - phai bi chan theo override, khong phai theo gia tri toan he thong.
+        project.getOwner().setAiDailyTokenLimitOverride(500);
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testGenerationEventRepository.sumTotalTokensByOwnerAndCreatedAtBetween(any(), any(), any()))
+                .thenReturn(500L);
+
+        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
+                .isInstanceOf(com.aiapitesting.backend.exception.AiQuotaExceededException.class)
+                .hasMessageContaining("500");
+
+        verifyNoInteractions(chatClient);
+    }
+
+    @Test
+    void generate_ownerHasHigherQuotaOverride_allowsPastGlobalDefault() throws Exception {
+        // Nguoc lai: override CAO hon mac dinh he thong - phai duoc goi AI dù vuot mac dinh he thong.
+        org.springframework.test.util.ReflectionTestUtils.setField(testCaseGenerationService, "dailyTokenLimit", 100L);
+        project.getOwner().setAiDailyTokenLimitOverride(1_000_000);
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testGenerationEventRepository.sumTotalTokensByOwnerAndCreatedAtBetween(any(), any(), any()))
+                .thenReturn(500L); // vuot 100 (mac dinh he thong) nhung con xa 1_000_000 (override)
+        stubAiResponse(List.of(new GeneratedTestCase(
+                "Positive", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null)));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get();
+
+        assertThat(result).hasSize(1);
     }
 
     @Test

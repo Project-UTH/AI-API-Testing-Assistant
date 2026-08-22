@@ -1,6 +1,7 @@
 package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.response.AdminDashboardSummaryResponse;
+import com.aiapitesting.backend.dto.response.AiUsageResponse;
 import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.repository.BugReportRepository;
@@ -46,6 +47,9 @@ class AdminDashboardServiceTest {
     @Mock
     private TestGenerationEventRepository testGenerationEventRepository;
 
+    @Mock
+    private AiUsageService aiUsageService;
+
     @InjectMocks
     private AdminDashboardService adminDashboardService;
 
@@ -88,5 +92,15 @@ class AdminDashboardServiceTest {
         AdminDashboardSummaryResponse summary = adminDashboardService.getSystemSummary();
 
         assertThat(summary.overallPassRate()).isNull();
+    }
+
+    @Test
+    void getSystemAiUsage_delegatesToAiUsageService() {
+        AiUsageResponse expected = new AiUsageResponse(java.util.List.of());
+        when(aiUsageService.getSystemUsage()).thenReturn(expected);
+
+        AiUsageResponse result = adminDashboardService.getSystemAiUsage();
+
+        assertThat(result).isSameAs(expected);
     }
 }

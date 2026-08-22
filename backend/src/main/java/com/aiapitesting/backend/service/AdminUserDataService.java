@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.service;
 
+import com.aiapitesting.backend.dto.response.AiUsageResponse;
 import com.aiapitesting.backend.dto.response.BugReportPageResponse;
 import com.aiapitesting.backend.dto.response.EndpointResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
@@ -44,6 +45,7 @@ public class AdminUserDataService {
     private final EndpointRepository endpointRepository;
     private final TestCaseRepository testCaseRepository;
     private final BugReportService bugReportService;
+    private final AiUsageService aiUsageService;
 
     public PageResponse<ProjectResponse> listProjects(UUID userId, Pageable pageable) {
         User owner = getUser(userId);
@@ -82,6 +84,10 @@ public class AdminUserDataService {
     public List<TestResultHistoryItemResponse> getRunHistory(UUID userId, UUID projectId, UUID testCaseId) {
         Project project = getOwnedProject(userId, projectId);
         return bugReportService.getRunHistoryForProject(project, testCaseId);
+    }
+
+    public AiUsageResponse getAiUsage(UUID userId) {
+        return aiUsageService.getUsageForOwner(getUser(userId));
     }
 
     private Project getOwnedProject(UUID userId, UUID projectId) {

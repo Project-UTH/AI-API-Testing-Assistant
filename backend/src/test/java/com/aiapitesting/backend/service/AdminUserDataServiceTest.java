@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.service;
 
+import com.aiapitesting.backend.dto.response.AiUsageResponse;
 import com.aiapitesting.backend.dto.response.BugDashboardSummaryResponse;
 import com.aiapitesting.backend.dto.response.BugReportPageResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
@@ -53,6 +54,9 @@ class AdminUserDataServiceTest {
 
     @Mock
     private BugReportService bugReportService;
+
+    @Mock
+    private AiUsageService aiUsageService;
 
     @InjectMocks
     private AdminUserDataService adminUserDataService;
@@ -149,6 +153,17 @@ class AdminUserDataServiceTest {
 
         List<TestResultHistoryItemResponse> result =
                 adminUserDataService.getRunHistory(targetUser.getId(), project.getId(), testCaseId);
+
+        assertThat(result).isSameAs(expected);
+    }
+
+    @Test
+    void getAiUsage_delegatesToAiUsageServiceWithResolvedTargetUser() {
+        AiUsageResponse expected = new AiUsageResponse(List.of());
+        when(userRepository.findById(targetUser.getId())).thenReturn(Optional.of(targetUser));
+        when(aiUsageService.getUsageForOwner(targetUser)).thenReturn(expected);
+
+        AiUsageResponse result = adminUserDataService.getAiUsage(targetUser.getId());
 
         assertThat(result).isSameAs(expected);
     }

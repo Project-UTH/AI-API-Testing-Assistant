@@ -51,6 +51,12 @@ public class User {
     @Builder.Default
     private boolean enabled = true;
 
+    // Ghi đè quota AI/ngày (token) riêng cho user này (Module 11) - null = dùng mặc định hệ thống
+    // (ai.quota.daily-token-limit). KHÁC role/enabled ở trên: cột này nullable nên không cần
+    // columnDefinition kèm DEFAULT - null vốn đã là giá trị hợp lệ và an toàn cho mọi dòng có sẵn
+    // khi cột được ALTER vào bảng đã có dữ liệu (không có lớp lỗi "default ngầm sai" như 2 cột trên).
+    private Integer aiDailyTokenLimitOverride;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = Instant.now();

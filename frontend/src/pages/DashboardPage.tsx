@@ -6,8 +6,9 @@ import { Bug, CircleCheck, FolderKanban, ListChecks, PieChart, Plug, Plus, Spark
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { getCurrentUserEmail } from "@/lib/api"
-import { getDashboardSummary } from "@/lib/dashboard"
+import { getDashboardSummary, getMyAiUsage } from "@/lib/dashboard"
 import { getHistoryFeed, type HistoryFeedItem } from "@/lib/history"
+import { AiUsageChart } from "@/components/shared/AiUsageChart"
 
 export function DashboardPage() {
   const { data, isLoading, isError } = useQuery({
@@ -81,6 +82,8 @@ export function DashboardPage() {
             <TrendChartPanel enabled={hasData} />
             <ActivityFeedPanel items={activityData?.data} isLoading={isActivityLoading} />
           </div>
+
+          <AiUsagePanel enabled={hasData} />
         </div>
       )}
 
@@ -255,6 +258,21 @@ function TrendChart({ points }: { points: number[] }) {
         <circle key={i} cx={xFor(i)} cy={yFor(v)} r="4" fill="#10b981" stroke="var(--color-card)" strokeWidth="2" />
       ))}
     </svg>
+  )
+}
+
+function AiUsagePanel({ enabled }: { enabled: boolean }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["dashboard-ai-usage"],
+    queryFn: () => getMyAiUsage(),
+    enabled,
+  })
+
+  return (
+    <div className="animate-rise rounded-2xl border border-border bg-card p-6 shadow-sm" style={{ animationDelay: "540ms" }}>
+      <h2 className="text-sm font-semibold text-foreground">Token AI đã dùng</h2>
+      <AiUsageChart daily={data?.daily} isLoading={isLoading} />
+    </div>
   )
 }
 

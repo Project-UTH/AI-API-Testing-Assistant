@@ -7,10 +7,11 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record AdminAuditEventResponse(
-        UUID id, String adminEmail, String targetEmail, AdminAuditAction action, Instant createdAt
+        UUID id, String adminEmail, String targetEmail, AdminAuditAction action, String detail, Instant createdAt
 ) {
     public static AdminAuditEventResponse from(AdminAuditEvent event) {
         return new AdminAuditEventResponse(
-                event.getId(), event.getAdminEmail(), event.getTargetEmail(), event.getAction(), event.getCreatedAt());
+                event.getId(), event.getAdminEmail(), event.getTargetEmail(), event.getAction(),
+                event.getDetail(), event.getCreatedAt());
     }
 }
