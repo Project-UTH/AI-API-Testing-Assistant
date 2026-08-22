@@ -50,7 +50,16 @@ public class SecurityConfig {
                         // này nên không có gì xác thực - phải permit riêng dispatch loại ASYNC, request gốc
                         // (DispatcherType.REQUEST) vẫn đã được xác thực đầy đủ như bình thường.
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
-                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        // Chỉ 2 endpoint này thật sự công khai - "/api/v1/auth/**" trước đây permitAll
+                        // NGUYÊN CỤM khiến /auth/me (thêm ở Module 11) cũng bị coi là public, nhưng
+                        // CurrentUserService.getCurrentUser() bên trong lại giả định luôn có người
+                        // đăng nhập -> gọi không kèm token bị crash 500 (IllegalStateException lọt
+                        // xuống handler Exception.class) thay vì 401 sạch qua JwtAuthEntryPoint như
+                        // mọi endpoint yêu cầu auth khác. Liệt kê rõ 2 path thay vì dùng wildcard.
+                        .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        // role ROLE_ADMIN chỉ có được qua cột User.role - không có API nào trong hệ
+                        // thống cấp/đổi quyền này (xem UserRole), phải tự set bằng SQL trực tiếp.
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.response.DashboardSummaryResponse;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.entity.User;
+import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
@@ -36,6 +37,9 @@ class DashboardServiceTest {
 
     @Mock
     private TestResultRepository testResultRepository;
+
+    @Mock
+    private BugReportRepository bugReportRepository;
 
     @InjectMocks
     private DashboardService dashboardService;

@@ -1,6 +1,8 @@
 import { NavLink } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
-import { FolderKanban, History, LayoutDashboard } from "lucide-react"
+import { FolderKanban, History, LayoutDashboard, ShieldCheck } from "lucide-react"
+import { getCurrentUserInfo } from "@/lib/auth"
 
 const navItems = [
   { to: "/", label: "Tổng quan", icon: LayoutDashboard, end: true },
@@ -9,6 +11,14 @@ const navItems = [
 ]
 
 export function Sidebar() {
+  // Cùng queryKey với RequireAdmin - dùng chung cache React Query, không gọi thêm request nếu
+  // trang hiện tại đã nằm trong /admin/* (RequireAdmin đã fetch trước đó).
+  const { data } = useQuery({
+    queryKey: ["current-user-info"],
+    queryFn: () => getCurrentUserInfo(),
+  })
+  const isAdmin = data?.role === "ADMIN"
+
   return (
     <aside className="hidden w-56 shrink-0 border-r border-border bg-card md:block">
       <div className="flex h-14 items-center border-b border-border px-4">
@@ -33,6 +43,23 @@ export function Sidebar() {
             {label}
           </NavLink>
         ))}
+
+        {isAdmin && (
+          <NavLink
+            to="/admin"
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )
+            }
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Quản trị
+          </NavLink>
+        )}
       </nav>
     </aside>
   )

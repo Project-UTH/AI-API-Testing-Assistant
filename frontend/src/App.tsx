@@ -2,7 +2,10 @@ import { Navigate, Route, Routes } from "react-router-dom"
 
 import { AppLayout } from "@/components/layout/AppLayout"
 import { RequireAuth } from "@/components/RequireAuth"
+import { RequireAdmin } from "@/components/RequireAdmin"
 import { DashboardPage } from "@/pages/DashboardPage"
+import { AdminDashboardPage } from "@/pages/AdminDashboardPage"
+import { AdminUsersPage } from "@/pages/AdminUsersPage"
 import { ProjectsPage } from "@/pages/ProjectsPage"
 import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
 import { TestCasesPage } from "@/pages/TestCasesPage"
@@ -29,6 +32,11 @@ function App() {
           <Route path="/projects/:id/history" element={<TestHistoryPage />} />
           <Route path="/projects/:id/bug-reports" element={<BugReportPage />} />
           <Route path="/projects/:id/executions/:executionId" element={<TestExecutionPage />} />
+
+          <Route element={<RequireAdmin />}>
+            <Route path="/admin" element={<AdminDashboardPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
+          </Route>
         </Route>
       </Route>
 

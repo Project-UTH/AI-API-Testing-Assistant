@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-21 (Thêm Module 11 "Trang Admin quản lý hệ thống" — mở rộng phạm vi ngoài kế hoạch MVP gốc theo yêu cầu người dùng, đánh số lại "Hoàn thiện & Demo" thành Module 12; cập nhật `CLAUDE.md` bỏ "Multi-role phân quyền" khỏi danh sách Không làm)
+> Cập nhật lần cuối: 2026-08-22 (Module 11a - Lõi Trang Admin: role `ADMIN` cấp qua SQL trực tiếp - không có API cấp/đổi role; khoá/mở tài khoản với guard tự-khoá-chính-mình; Dashboard hệ thống + danh sách user; `GET /auth/me`; đã verify API thật + Playwright, xoá sạch dữ liệu test. Nhân tiện sửa 3 bug/gap có sẵn từ trước chặn build/test: `BugReportServiceTest` thiếu tham số, 2 test thiếu mock `BugReportRepository`, `node_modules` thiếu package mới sau lần pull trước)
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -18,7 +18,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 8. Lịch sử & Dashboard | ✅ Xong |
 | 9. Nâng cao Test Case AI sinh (Security, Assertion, Test Data) | ✅ Xong |
 | 10. Bug Report (quy trình QA) | ✅ Xong |
-| 11. Trang Admin quản lý hệ thống | ⬜ Chưa bắt đầu |
+| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a Lõi xong, còn xem dữ liệu user khác/audit log/AI usage chi tiết) |
 | 12. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
@@ -503,24 +503,38 @@ Người dùng vừa hoàn thiện Module 10 (Bug Report) và cho rằng tính n
 - Xem dữ liệu của user khác chỉ ở chế độ **đọc** (review/hỗ trợ) — không sửa hộ dữ liệu nghiệp vụ (test case, bug report...) của user khác qua trang admin, tránh lẫn lộn trách nhiệm/quyền sở hữu dữ liệu
 - Tái dùng tối đa service/API hiện có (bỏ điều kiện lọc `owner` khi caller có role `ADMIN`) thay vì viết lại song song — theo đúng nguyên tắc kiến trúc hiện hành của dự án
 
+### 11a. Lõi — role + quản lý user + dashboard hệ thống ✅
+
+**Quyết định quan trọng khác kế hoạch gốc (theo yêu cầu người dùng):** role `ADMIN` **không có bất kỳ API nào để tự cấp/đổi** — chỉ gán được bằng SQL trực tiếp trên DB (`UPDATE users SET role='ADMIN' WHERE email=...`), tránh hẳn bề mặt tấn công leo quyền qua HTTP. Vì vậy checklist gốc "`PUT /admin/users/{id}/role`" **bị loại bỏ khỏi phạm vi**, không làm.
+
 **Backend**
-- [ ] `User` entity thêm field `role` (enum `UserRole`: `USER`/`ADMIN`, mặc định `USER`, `columnDefinition=VARCHAR` theo đúng bài học đã rút ra ở Module 9 bug #3 — tránh lỗi enum MySQL không tự ALTER khi `ddl-auto=update`)
-- [ ] `SecurityConfig` thêm rule chặn `/api/v1/admin/**` chỉ cho `hasRole("ADMIN")`; JWT payload/`UserDetails` mang theo `role` để Spring Security đọc được ngay từ token, không cần query DB lại mỗi request
-- [ ] `AdminUserController`/`AdminUserService` (package `admin/` hoặc `service/admin/` — cân nhắc lúc code theo skill `springboot-architecture`): `GET /admin/users` (phân trang, kèm số project/test case/bug report mỗi user, tránh N+1), `GET /admin/users/{id}`, `PUT /admin/users/{id}/status` (khoá/mở tài khoản), `PUT /admin/users/{id}/role` (đổi role)
-- [ ] `AdminDashboardController`/`AdminDashboardService` — số liệu toàn hệ thống (không giới hạn owner, khác hẳn `DashboardService` của Module 8): tổng user/project/endpoint/test case/execution/bug report, tỷ lệ pass toàn hệ thống, xu hướng theo thời gian
-- [ ] Cho phép admin xem Project/Endpoint/TestCase/BugReport của bất kỳ user nào — mở rộng đúng service hiện có (`ProjectService`, `TestCaseService`, `BugReportService`...) để bỏ qua check `owner` khi người gọi có role `ADMIN`, không tạo API đọc riêng trùng lặp
-- [ ] Theo dõi sử dụng AI: đếm số lần gọi `generate-tests` theo user/ngày (tái dùng `TestGenerationEvent` đã có sẵn từ Module 8, không cần entity mới); ghi log token usage nếu Spring AI/Anthropic trả metadata sẵn có trong response
-- [ ] Giám sát thực thi test: liệt kê execution đang `PENDING`/`RUNNING` quá lâu bất thường (nghi treo do lỗi luồng `@Async`)
-- [ ] Audit log hành động nhạy cảm (khoá tài khoản, đổi role, admin xoá dữ liệu hộ user) — cân nhắc tái dùng đúng pattern snapshot-event đã hình thành nhất quán trong dự án (`TestGenerationEvent`/`BugReportEvent`) thay vì thiết kế mới
-- [ ] Mã lỗi mới nếu cần (`FORBIDDEN_ADMIN_ONLY` hoặc tái dùng 403 sẵn có) — cập nhật bảng mã lỗi ở skill `api-contract`
+- [x] `User` entity thêm field `role` (enum `UserRole`, `VARCHAR(20)` — cùng lý do tránh ENUM MySQL đã rút ra ở Module 9 bug #3) và `enabled` (khoá/mở tài khoản, `TINYINT(1)`) — **khác Module 9 bug #3**: cả 2 cột đều phải khai rõ `DEFAULT` ngay trong `columnDefinition` (`VARCHAR(20) DEFAULT 'USER'`, `TINYINT(1) DEFAULT 1`), vì VARCHAR/TINYINT không có default ngầm hợp lệ như ENUM (ENUM tự lấy giá trị khai báo đầu tiên khi thêm cột mới vào bảng đã có dữ liệu và sql_mode không strict — nhưng VARCHAR ngầm định là chuỗi rỗng `''`, không map được vào `@Enumerated(STRING)`, sẽ vỡ ngay khi đọc lại; TINYINT ngầm định `0` sẽ khoá NGAY LẬP TỨC toàn bộ user có sẵn). Đã verify thật: DB có sẵn 22 user thật, sau khi Hibernate tự ALTER (`ddl-auto=update`, không cần chạy tay SQL nào) toàn bộ đều nhận đúng `role='USER'`, `enabled=1` — không ai bị khoá nhầm.
+- [x] `CustomUserDetailsService` đọc `authorities("ROLE_" + role)` + `disabled(!enabled)` — load lại từ DB **mỗi request** (không phải từ JWT), để việc cấp/thu quyền qua SQL trực tiếp có hiệu lực ngay ở request tiếp theo, không cần đăng xuất/đăng nhập lại
+- [x] `JwtAuthFilter` tự kiểm `userDetails.isEnabled()` trước khi set `SecurityContext` — bắt buộc vì filter tự dựng `UsernamePasswordAuthenticationToken` thủ công, không đi qua `DaoAuthenticationProvider` (nơi bình thường Spring Security tự chặn tài khoản disabled); thiếu bước này thì khoá tài khoản không có tác dụng cho tới khi JWT hết hạn (24h)
+- [x] `AuthService.login()` chặn thêm tài khoản `enabled=false` (`AccountDisabledException` → 403 `ACCOUNT_DISABLED`) — khác `JwtAuthFilter` (chặn request của token ĐÃ phát hành trước đó), đây chặn phát hành token MỚI
+- [x] `SecurityConfig`: `/api/v1/admin/**` yêu cầu `hasRole("ADMIN")`
+- [x] `AdminUserController`/`AdminUserService` (package phẳng `controller`/`service`, không tạo subpackage riêng — theo đúng quy ước hiện có, `admin` là 1 domain như Project/TestCase chứ không phải mối quan tâm kỹ thuật như `ai/`/`execution/`): `GET /admin/users` (phân trang, kèm số project/test case/bug report mỗi user qua 3 query `GROUP BY` riêng, không N+1), `GET /admin/users/{id}`, `PUT /admin/users/{id}/status` (khoá/mở) — có guard chặn tự khoá chính mình (`InvalidRequestException`)
+- [x] `AdminDashboardController`/`AdminDashboardService` — số liệu toàn hệ thống dùng thẳng `JpaRepository.count()` cho các tổng không lọc điều kiện, chỉ thêm 2 method repository mới cho phần cần lọc status (`TestResultRepository.countByStatus`, `BugReportRepository.countByStatusNot`, bản KHÔNG giới hạn owner, khác hẳn bản đã có ở Module 8)
+- [x] `GET /api/v1/auth/me` (mới) trả `{email, role}` đọc fresh từ DB — để frontend biết role hiện tại mà không cần đăng nhập lại; `AuthResponse` (`/auth/login`, `/auth/register`) trả kèm `role` luôn
+- [x] Mã lỗi mới `ACCOUNT_DISABLED` (403), `USER_NOT_FOUND` (404) — đã cập nhật bảng mã lỗi + mục 4d (giải thích cơ chế phân quyền) ở skill `api-contract`
+- [x] *(Bug thật phát hiện lúc verify bằng API thật, nghiêm trọng)* `GET /auth/me` ban đầu nằm trong `requestMatchers("/api/v1/auth/**").permitAll()` — permitAll nguyên cụm khiến request KHÔNG kèm token cũng lọt qua tới controller, nhưng `CurrentUserService.getCurrentUser()` bên trong lại giả định luôn có người đăng nhập (`SecurityContextHolder...getAuthentication().getName()` trả `"anonymousUser"` khi không có token) → `userRepository.findByEmail("anonymousUser")` rỗng → ném `IllegalStateException` không được `GlobalExceptionHandler` bắt riêng, rơi xuống handler `Exception.class` chung → 500 `INTERNAL_ERROR` thay vì 401 sạch. Fix: liệt kê rõ đúng 2 path công khai thật (`/api/v1/auth/register`, `/api/v1/auth/login`), bỏ wildcard.
+- [ ] *(Chưa làm — để đợt sau)* Cho phép admin xem Project/Endpoint/TestCase/BugReport của bất kỳ user nào (chỉ mới có số đếm tổng hợp, chưa xem được chi tiết dữ liệu)
+- [ ] *(Chưa làm — để đợt sau)* Theo dõi sử dụng AI chi tiết theo user/ngày (Dashboard hiện chỉ có 1 con số `totalGenerationEvents` toàn hệ thống, chưa breakdown)
+- [ ] *(Chưa làm — để đợt sau)* Giám sát execution treo, audit log hành động nhạy cảm, quota AI/ngày
 
 **Frontend**
-- [ ] Route `/admin/*`, mục sidebar "Quản trị" chỉ hiện khi `user.role === "ADMIN"` (đọc từ JWT decode hoặc `/auth/me` đã có)
-- [ ] `AdminUsersPage` — bảng user (phân trang), khoá/mở tài khoản, đổi role, xem nhanh số liệu mỗi user
-- [ ] `AdminDashboardPage` — KPI toàn hệ thống, biểu đồ AI usage/execution theo thời gian (tái dùng cách tự vẽ SVG đã dùng ở `DashboardPage.tsx`, không thêm thư viện chart mới nếu không thật cần)
-- [ ] Xem dữ liệu user khác: cân nhắc kỹ giữa (a) tái dùng nguyên `ProjectDetailPage`/`TestCasesPage`/`BugReportPage` qua 1 query param admin-context, hay (b) trang riêng gọn hơn chỉ hiển thị — quyết định lúc bắt đầu code, tránh nhân bản logic hiển thị đã có
+- [x] `lib/auth.ts` thêm `UserRole`, `getCurrentUserInfo()` (gọi `/auth/me`); `lib/admin.ts` mới (API client cho dashboard/users)
+- [x] `RequireAdmin.tsx` (lồng trong `RequireAuth`, dùng `useQuery(["current-user-info"])`) — redirect về `/` nếu role khác `ADMIN` hoặc lỗi
+- [x] `Sidebar.tsx` thêm mục "Quản trị" (icon `ShieldCheck`), chỉ hiện khi `role === "ADMIN"` — dùng CHUNG `queryKey: ["current-user-info"]` với `RequireAdmin` nên không gọi API thừa khi cả 2 cùng mount
+- [x] `AdminDashboardPage.tsx` (route `/admin`) — 8 thẻ KPI hệ thống, tự vẽ giống pattern `DashboardPage.tsx` (không thêm thư viện mới); `AdminUsersPage.tsx` (route `/admin/users`) — bảng user (không dùng `<table>`, cùng kiểu layout div/grid như `EndpointList`), khoá/mở tài khoản (nút disabled + tooltip khi là chính mình), phân trang Prev/Next kiểu `GlobalHistoryPage`
+- [x] 2 trang dùng chung 1 `AdminTabs` (tab "Tổng quan"/"Người dùng") thay vì sidebar phụ riêng
 
-**Mốc xác nhận:** (điền khi hoàn thành) `./mvnw test` xanh, `npx tsc -b` sạch, verify bằng API thật + Playwright: tài khoản `ADMIN` xem được toàn bộ user/số liệu hệ thống, tài khoản `USER` thường gọi `/api/v1/admin/**` nhận đúng 403, khoá tài khoản 1 user test khiến user đó không đăng nhập được nữa.
+**Mốc xác nhận:** `./mvnw test` xanh (127/127, gồm `AdminUserServiceTest`/`AdminDashboardServiceTest`/`AuthServiceTest` mới), `npx tsc -b --force` sạch, `npm run build` thành công. **Đã verify bằng API thật (curl) qua tài khoản test riêng, xoá sạch sau khi xong:** đăng ký 1 user → cấp `ADMIN` bằng `UPDATE users SET role='ADMIN'` trực tiếp → dùng ĐÚNG token cũ (phát hành TRƯỚC khi cấp quyền) gọi `/auth/me` → trả về `role:"ADMIN"` ngay, không cần đăng nhập lại → gọi `/api/v1/admin/dashboard/summary` thành công, trả đúng số liệu toàn hệ thống (không giới hạn 1 owner); tài khoản `USER` thường gọi cùng endpoint nhận đúng `403 FORBIDDEN`; admin khoá 1 user → **request đang dùng token cũ của user đó bị chặn ngay** (401, không cần đợi hết hạn) và **đăng nhập mới bị từ chối** (`403 ACCOUNT_DISABLED`) → mở khoá lại → đăng nhập lại thành công; admin tự khoá chính mình bị chặn (`400 VALIDATION_ERROR`). **Đã verify UI thật bằng Playwright** (đăng ký 2 tài khoản qua UI, cấp ADMIN cho 1 tài khoản bằng SQL, tài khoản còn lại giữ USER): user thường không thấy mục "Quản trị" và bị đẩy khỏi `/admin` khi cố vào thẳng URL; admin thấy mục "Quản trị", Dashboard hệ thống + bảng Người dùng render đúng; bấm "Khoá" trên 1 dòng → đổi thành "Mở khoá" ngay không cần F5; tài khoản vừa bị khoá đăng nhập lại thấy đúng thông báo lỗi trên trang login; mở khoá lại thành công. Dữ liệu test đã xoá sạch qua SQL, không đụng 24 user thật có sẵn.
+
+**Bug thật khác phát hiện khi verify (không liên quan trực tiếp Module 11, sửa luôn vì chặn build/test):**
+- `BugReportServiceTest` gọi `exportAllToExcel(projectId)` thiếu tham số `List<UUID> bugReportIds` đã thêm ở Module 10 đợt 4 ("Xuất theo lựa chọn") — lỗi biên dịch test có sẵn từ trước, chặn `./mvnw test` chạy được bất kỳ test nào. Fix: truyền `null` (giữ đúng hành vi "xuất tất cả" cũ).
+- `DashboardServiceTest`/`TestExecutionServiceTest` thiếu `@Mock BugReportRepository` — 2 service này đã được tiêm thêm field `bugReportRepository` ở Module 10/11 (`totalOpenBugs`, `existingBugReportId`) nhưng test dùng `@InjectMocks` không được cập nhật theo, gây `NullPointerException` khi chạy. Fix: thêm `@Mock` còn thiếu.
+- `frontend/node_modules` thiếu `@fontsource/instrument-serif` dù đã khai trong `package.json` — do lần `git pull` mang commit thêm dependency này về nhưng chưa `npm install` lại, khiến `npm run build` báo lỗi resolve module. Fix: chạy `npm install` (không phải lỗi code).
 
 ---
 

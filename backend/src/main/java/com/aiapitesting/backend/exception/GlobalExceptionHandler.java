@@ -25,6 +25,18 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("INVALID_CREDENTIALS", ex.getMessage()));
     }
 
+    @ExceptionHandler(AccountDisabledException.class)
+    public ResponseEntity<ApiErrorResponse> handleAccountDisabled(AccountDisabledException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiErrorResponse.of("ACCOUNT_DISABLED", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleUserNotFound(UserNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiErrorResponse.of("USER_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(ProjectNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleProjectNotFound(ProjectNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

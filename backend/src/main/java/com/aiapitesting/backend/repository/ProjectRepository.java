@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,4 +21,14 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     // phạm vi trong owner hiện tại để không rò rỉ hoạt động giữa các user không liên quan.
     @Query("SELECT MAX(p.bugReportProjectSeq) FROM Project p WHERE p.owner = :owner")
     Optional<Integer> findMaxBugReportProjectSeqByOwner(@Param("owner") User owner);
+
+    // Trang Admin (Module 11) - tổng project theo từng owner trong 1 trang user, gộp 1 query GROUP BY
+    // thay vì gọi countByOwner() lặp lại cho từng user (N+1).
+    @Query("SELECT p.owner.id AS ownerId, COUNT(p) AS count FROM Project p WHERE p.owner.id IN :ownerIds GROUP BY p.owner.id")
+    List<OwnerCount> countGroupedByOwnerIds(@Param("ownerIds") List<UUID> ownerIds);
+
+    interface OwnerCount {
+        UUID getOwnerId();
+        long getCount();
+    }
 }

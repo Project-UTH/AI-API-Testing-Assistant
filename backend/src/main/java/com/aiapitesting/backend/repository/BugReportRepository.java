@@ -20,6 +20,21 @@ public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
     // hữu, cùng định nghĩa "open" với buildDashboardSummary() ở BugReportService (totalCount - closed).
     long countByProjectOwnerAndStatusNot(User owner, BugStatus status);
 
+    // Trang Admin (Module 11) - tổng bug report của 1 user (không lọc status), dùng ở danh sách/chi
+    // tiết user. Bản KHÔNG giới hạn owner (khác 2 method trên) cho Dashboard hệ thống.
+    long countByProjectOwner(User owner);
+
+    long countByStatusNot(BugStatus status);
+
+    @Query("SELECT b.project.owner.id AS ownerId, COUNT(b) AS count FROM BugReport b "
+            + "WHERE b.project.owner.id IN :ownerIds GROUP BY b.project.owner.id")
+    List<OwnerBugReportCount> countGroupedByOwnerIds(@Param("ownerIds") List<UUID> ownerIds);
+
+    interface OwnerBugReportCount {
+        UUID getOwnerId();
+        long getCount();
+    }
+
     // JOIN FETCH đủ quan hệ lazy sẽ đọc tới ở BugReportResponse/gộp-theo-endpoint (BugReportService)
     // để tránh LazyInitializationException sau khi session đóng (spring.jpa.open-in-view=false) -
     // 1 query duy nhất cho cả Dashboard lẫn cấu trúc lồng 3 tầng, không N+1 theo từng endpoint/test case.
