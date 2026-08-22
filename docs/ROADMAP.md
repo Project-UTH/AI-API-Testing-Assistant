@@ -493,6 +493,18 @@ Người dùng vừa hoàn thiện Module 10 (Bug Report) và cho rằng tính n
 
 ---
 
+## Ghi chú: Reset toàn bộ DB dev + test lại bằng dữ liệu mới qua `shop-api-target` (2026-08-22)
+
+Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nhật hệ thống" (tích luỹ qua nhiều tháng test thủ công, một phần đã bị bug `auth_override=''` ở Module 11b) — theo yêu cầu người dùng, đã **backup rồi xoá sạch** (`mysqldump` toàn bộ trước, sau đó `DROP DATABASE`; Hibernate `ddl-auto=update` + `createDatabaseIfNotExist=true` tự tạo lại schema sạch khi backend khởi động lại) và test lại từ đầu bằng dữ liệu thật hoàn toàn mới qua `shop-api-target`.
+
+**Luồng đã verify (tài khoản `freshtest@aiapi.local`, project "Shop API Target - Fresh E2E", CỐ Ý GIỮ LẠI làm baseline mới, không xoá sau khi test — khác các đợt verify trước):** đăng ký → tạo project → import OpenAPI từ file (tải `/v3/api-docs` từ `shop-api-target` bằng token thật) → 7 endpoint đúng → tích đủ Positive/Negative/Boundary/Security/Assertion cho cả 7 endpoint, bấm "Sinh Test Case" 1 lần → cấu hình Target Auth (Bearer token thật từ `shop-api-target`) → chạy 73 test case → 28 PASS/45 FAIL/**0 ERROR** (không có lỗi hạ tầng — mọi FAIL đều do AI đoán sai kỳ vọng/không có Test Data Chaining nên path-param đoán id không tồn tại → 404, đúng giới hạn đã biết của hệ thống, không phải bug) → Dashboard hiện đúng số liệu mới → sinh 1 Bug Report thật (mô tả đầy đủ request/response thật) → Admin Dashboard/Users (tài khoản admin verify riêng, đã xoá sau khi xong) hiện đúng số liệu, admin xem chi tiết dữ liệu `freshtest` không lỗi.
+
+**2 bug thật phát hiện thêm trong lúc test:**
+1. *(UI, đã sửa)* Sau khi Import OpenAPI, `ImportOpenApiDialog.tsx` chỉ `invalidateQueries(["endpoints", projectId])`, quên `["projects", projectId]` — khối "Target Base URL"/"Xác thực" ở đầu `ProjectDetailPage` hiện sai giá trị CŨ (rỗng lúc mới tạo project) dù backend đã lưu đúng `targetBaseUrl` suy ra từ `servers[]`, cho tới khi người dùng tự tải lại trang. Fix: thêm `invalidateQueries(["projects", projectId])` vào `onSuccess`.
+2. *(Backend, ghi nhận - KHÔNG sửa, xem lý do dưới)* Chọn **nhiều endpoint cùng lúc** (đã thử 7) rồi bấm "Sinh Test Case" 1 lần → tuy mỗi endpoint gọi AI độc lập (đúng thiết kế, xem Module 4) nhưng phần INSERT hàng loạt `test_cases` của nhiều endpoint chạy đồng thời có thể đụng `CannotAcquireLockException: Deadlock found when trying to get lock` trên MySQL InnoDB (xác nhận qua log thật, 1/7 endpoint bị rớt, 6/7 thành công) — khác hẳn lớp bug đồng thời đã sửa ở Module 9a bug #9 (đó là 2 request cho **CÙNG 1** endpoint). Đây là đặc tính InnoDB khi nhiều transaction insert đồng thời vào cùng 1 bảng dưới `REPEATABLE READ` (mặc định), không phải lỗi logic nghiệp vụ. **Không engineer retry-transaction tự động** (cân nhắc effort/lợi ích cho đồ án môn học) — bấm "Sinh Test Case" lại riêng cho (các) endpoint bị lỗi là đủ (đã verify retry thành công). Nếu muốn sinh cho nhiều endpoint, cân nhắc làm tuần tự thay vì chọn hết 1 lần nếu gặp lại lỗi này.
+
+---
+
 ## 11. Trang Admin quản lý hệ thống
 *Phụ thuộc: Module 1 (auth), dùng dữ liệu từ mọi module 2-10 nhưng không sửa nghiệp vụ của chúng*
 
