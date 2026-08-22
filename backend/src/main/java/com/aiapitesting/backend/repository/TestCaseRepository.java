@@ -68,4 +68,15 @@ public interface TestCaseRepository extends JpaRepository<TestCase, UUID> {
         UUID getEndpointId();
         long getCount();
     }
+
+    // Trang Admin (Module 11) - tổng test case theo từng owner trong 1 trang user, cùng công thức
+    // GROUP BY tránh N+1 đã dùng cho countByEndpointIds ở trên.
+    @Query("SELECT tc.endpoint.project.owner.id AS ownerId, COUNT(tc) AS count FROM TestCase tc "
+            + "WHERE tc.endpoint.project.owner.id IN :ownerIds GROUP BY tc.endpoint.project.owner.id")
+    List<OwnerTestCaseCount> countGroupedByOwnerIds(@Param("ownerIds") List<UUID> ownerIds);
+
+    interface OwnerTestCaseCount {
+        UUID getOwnerId();
+        long getCount();
+    }
 }

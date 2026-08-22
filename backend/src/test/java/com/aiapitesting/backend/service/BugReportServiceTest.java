@@ -385,7 +385,7 @@ class BugReportServiceTest {
         byte[] fakeXlsx = {4, 5, 6};
         when(bugReportExportService.exportBugsToExcel(bugs)).thenReturn(fakeXlsx);
 
-        BugReportService.ExportFile file = bugReportService.exportAllToExcel(projectId);
+        BugReportService.ExportFile file = bugReportService.exportAllToExcel(projectId, null);
 
         // "Shop API" (có khoảng trắng) -> khoảng trắng thay bằng "_" để an toàn cho Content-Disposition.
         assertThat(file.filename()).isEqualTo("Shop_API_BugReports.xlsx");

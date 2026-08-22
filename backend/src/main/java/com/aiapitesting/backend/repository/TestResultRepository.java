@@ -37,6 +37,10 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
 
     long countByTestCaseEndpointProjectOwnerAndStatus(User owner, TestResultStatus status);
 
+    // Trang Admin (Module 11) - tỷ lệ pass TOÀN HỆ THỐNG (mọi owner), khác 2 method trên (giới hạn
+    // theo 1 owner, dùng cho Dashboard cá nhân Module 8).
+    long countByStatus(TestResultStatus status);
+
     // JOIN FETCH testCase + testCase.endpoint để TestResultResponse.from() đọc được
     // testCase.getName()/getExpectedStatus()/getEndpoint().getId() sau khi session đã đóng
     // (spring.jpa.open-in-view=false) - tránh LazyInitializationException.

@@ -64,6 +64,8 @@ Ví dụ — tạo project thành công:
 | `INTERNAL_ERROR` | 500 | Lỗi hệ thống chung, không xác định được nguyên nhân cụ thể |
 | `EMAIL_ALREADY_EXISTS` | 409 | Email đã được đăng ký |
 | `INVALID_CREDENTIALS` | 401 | Sai email hoặc mật khẩu |
+| `ACCOUNT_DISABLED` | 403 | Tài khoản đã bị khoá bởi admin (không cho đăng nhập/gọi API) |
+| `USER_NOT_FOUND` | 404 | Không tìm thấy user (trang Admin) |
 
 ## 3. Pagination (dùng cho mọi API trả danh sách)
 
@@ -114,6 +116,14 @@ Không được tự thêm giá trị khác cho cả 2 enum trên mà không c�
 ## 4c. Ngoại lệ: tải file nhị phân (export)
 
 `GET /api/v1/projects/{projectId}/bug-reports/{bugReportId}/export` trả thẳng `.xlsx` (`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, header `Content-Disposition: attachment; filename="..."`) — **không** bọc trong envelope `{data, meta}` ở mục 1, vì đây là nội dung nhị phân không phải JSON. Đây là ngoại lệ hợp lệ DUY NHẤT cho quy tắc envelope, chỉ áp dụng cho endpoint tải file. Lỗi (project/bug report không tồn tại...) vẫn trả theo đúng format lỗi chuẩn ở mục 2 (Spring tự chuyển `ResponseEntity<byte[]>` thành JSON lỗi qua `GlobalExceptionHandler` khi exception được ném trước lúc build response). Frontend gọi bằng fetch thường (không qua `apiFetch`/`apiFetchPaged`), đọc `response.blob()`.
+
+## 4d. Phân quyền Admin (Module 11)
+
+`User` có field `role` (`USER`/`ADMIN`, mặc định `USER`) và `enabled` (khoá/mở tài khoản). **Không có API nào cấp/đổi role** - ADMIN chỉ gán được bằng SQL trực tiếp trên DB (`UPDATE users SET role='ADMIN' WHERE email='...'`), cố ý tránh bề mặt tấn công leo quyền qua HTTP. Toàn bộ `/api/v1/admin/**` yêu cầu `role=ADMIN` (403 `FORBIDDEN` nếu không đủ quyền, do `JwtAccessDeniedHandler` xử lý tự động qua Spring Security `hasRole`, không cần check thủ công trong Controller/Service).
+
+`GET /api/v1/auth/me` trả `{ email, role }` của user hiện tại - đọc **fresh từ DB mỗi lần gọi** (không phải từ claim JWT, JWT chỉ mang `email`), để việc cấp quyền ADMIN qua SQL hoặc khoá tài khoản có hiệu lực ngay từ request tiếp theo mà không cần đăng nhập lại. `AuthResponse` (`POST /auth/login`, `/auth/register`) cũng trả kèm `role` để frontend có ngay không cần gọi `/auth/me` lần đầu.
+
+Admin xem được dữ liệu Project/TestCase/BugReport của MỌI user (không giới hạn owner) nhưng chỉ ở endpoint riêng dưới `/api/v1/admin/**` - không đổi hành vi ownership check của các endpoint thường (`/api/v1/projects/**` vẫn luôn giới hạn theo owner đang đăng nhập, kể cả khi người gọi là ADMIN).
 
 ## 5. Naming convention endpoint
 
