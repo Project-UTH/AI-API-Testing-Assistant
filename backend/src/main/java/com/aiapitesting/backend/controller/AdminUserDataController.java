@@ -1,10 +1,12 @@
 package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.response.ApiResponse;
+import com.aiapitesting.backend.dto.response.BugReportPageResponse;
 import com.aiapitesting.backend.dto.response.EndpointResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.dto.response.ProjectResponse;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
+import com.aiapitesting.backend.dto.response.TestResultHistoryItemResponse;
 import com.aiapitesting.backend.service.AdminUserDataService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -59,5 +61,19 @@ public class AdminUserDataController {
             @PathVariable UUID userId, @PathVariable UUID projectId
     ) {
         return ResponseEntity.ok(ApiResponse.of(adminUserDataService.listTestCases(userId, projectId)));
+    }
+
+    @GetMapping("/projects/{projectId}/bug-reports")
+    public ResponseEntity<ApiResponse<BugReportPageResponse>> getBugReports(
+            @PathVariable UUID userId, @PathVariable UUID projectId
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(adminUserDataService.getBugReports(userId, projectId)));
+    }
+
+    @GetMapping("/projects/{projectId}/bug-reports/test-cases/{testCaseId}/run-history")
+    public ResponseEntity<ApiResponse<List<TestResultHistoryItemResponse>>> getRunHistory(
+            @PathVariable UUID userId, @PathVariable UUID projectId, @PathVariable UUID testCaseId
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(adminUserDataService.getRunHistory(userId, projectId, testCaseId)));
     }
 }

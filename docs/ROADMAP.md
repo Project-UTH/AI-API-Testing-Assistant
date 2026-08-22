@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-22 (Module 11b - Admin xem chỉ đọc Project/Endpoint/TestCase của user khác. Phát hiện + fix 1 bug thật NGHIÊM TRỌNG có sẵn từ Module 9a, ảnh hưởng CẢ trang Test Case bình thường của user thật (không riêng admin): 99/99 test case trong DB có `auth_override=''` do thiếu backfill khi ALTER cột NOT NULL vào bảng đã có dữ liệu — 500 lỗi khi đọc. Đã backfill xong bằng UPDATE, ghi rõ lưu ý cho máy khác. Cũng sửa 1 bug UI thật (skeleton loading không loại trừ danh sách thật). 135/135 test pass, verify API thật + Playwright bằng dữ liệu thật có sẵn trong DB)
+> Cập nhật lần cuối: 2026-08-22 (Module 11c - Admin xem chỉ đọc Bug Report của user khác, hoàn thiện bộ 3 11a/11b/11c. Trước đó: reset toàn bộ DB dev (backup rồi xoá) theo yêu cầu người dùng, test lại bằng dữ liệu thật qua shop-api-target, phát hiện+fix bug UI (header Target Base URL không tự cập nhật sau import) + ghi nhận 1 giới hạn MySQL deadlock khi sinh test case đồng thời nhiều endpoint. **Từ nay KHÔNG dùng tính năng AI sinh test case nữa (tốn token thật) — mọi verify dùng lại dữ liệu có sẵn trong tài khoản `freshtest@aiapi.local`/`freshtest123`.** 134/134 test pass.)
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -18,7 +18,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 8. Lịch sử & Dashboard | ✅ Xong |
 | 9. Nâng cao Test Case AI sinh (Security, Assertion, Test Data) | ✅ Xong |
 | 10. Bug Report (quy trình QA) | ✅ Xong |
-| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a+11b xong, còn AI usage chi tiết/giám sát execution/audit log/quota) |
+| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a+11b+11c xong, còn AI usage chi tiết/giám sát execution/audit log/quota) |
 | 12. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
@@ -532,6 +532,18 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 - [x] *(Bug thật phát hiện lúc verify bằng API thật, nghiêm trọng)* `GET /auth/me` ban đầu nằm trong `requestMatchers("/api/v1/auth/**").permitAll()` — permitAll nguyên cụm khiến request KHÔNG kèm token cũng lọt qua tới controller, nhưng `CurrentUserService.getCurrentUser()` bên trong lại giả định luôn có người đăng nhập (`SecurityContextHolder...getAuthentication().getName()` trả `"anonymousUser"` khi không có token) → `userRepository.findByEmail("anonymousUser")` rỗng → ném `IllegalStateException` không được `GlobalExceptionHandler` bắt riêng, rơi xuống handler `Exception.class` chung → 500 `INTERNAL_ERROR` thay vì 401 sạch. Fix: liệt kê rõ đúng 2 path công khai thật (`/api/v1/auth/register`, `/api/v1/auth/login`), bỏ wildcard.
 - [ ] *(Chưa làm — để đợt sau)* Theo dõi sử dụng AI chi tiết theo user/ngày (Dashboard hiện chỉ có 1 con số `totalGenerationEvents` toàn hệ thống, chưa breakdown)
 - [ ] *(Chưa làm — để đợt sau)* Giám sát execution treo, audit log hành động nhạy cảm, quota AI/ngày
+
+### 11c. Admin xem (chỉ đọc) Bug Report của user khác ✅
+
+**Backend**
+- [x] `BugReportService.getBugReports(UUID)`/`getRunHistory(UUID, UUID)` refactor: tách phần logic thật ra `getBugReportsForProject(Project)`/`getRunHistoryForProject(Project, UUID)` (package-private, cùng package `service/`) - bản public giữ nguyên hành vi cũ (resolve `Project` qua `CurrentUserService` rồi gọi bản tách), `AdminUserDataService` gọi thẳng bản tách với `Project` đã resolve theo owner CHỈ ĐỊNH - không sao chép lại toàn bộ logic gộp Dashboard + lồng 3 tầng (khá phức tạp, nhiều query) như cách đã làm thủ công ở 11b cho Project/Endpoint/TestCase
+- [x] `AdminUserDataService` tiêm thêm `BugReportService`; `AdminUserDataController` thêm `GET .../projects/{projectId}/bug-reports`, `GET .../projects/{projectId}/bug-reports/test-cases/{testCaseId}/run-history` - route khớp đúng cấu trúc `BugReportController` thường (`/bug-reports`, `/bug-reports/test-cases/{id}/run-history`)
+
+**Frontend**
+- [x] `lib/admin.ts` thêm `getAdminUserBugReports`/`getAdminUserRunHistory` - tái dùng nguyên type `BugReportPage`/`TestResultHistoryItem` từ `lib/bugReports.ts`
+- [x] `AdminProjectBugReportsPage.tsx` (route `/admin/users/:userId/projects/:projectId/bug-reports`, link "Xem Bug Report" từ `AdminProjectDataPage`) - KPI Đang mở/Đã đóng/Tổng số, lồng Endpoint → TestCase (bug hiện inline dạng khung viền trái, dùng `BugStatusBadge` có sẵn) → mở rộng TestCase lazy-fetch Tầng 3 (`RunHistoryList`, dùng `StatusBadge` có sẵn) - hoàn toàn chỉ đọc, không có nút tạo/sửa/xoá bug nào
+
+**Mốc xác nhận:** `./mvnw test` xanh (134/134, thêm 3 test cho `getBugReports`/`getRunHistory` ở `AdminUserDataServiceTest` - mock `BugReportService` để verify đúng việc uỷ quyền + resolve project theo owner chỉ định, không lặp lại test logic nội bộ `BugReportService` đã có sẵn ở `BugReportServiceTest`), `npx tsc -b --force` sạch, `npm run build` thành công. **Đã verify bằng UI thật qua Playwright** (tài khoản admin test riêng, KHÔNG sinh test case mới - dùng lại dữ liệu có sẵn của `freshtest@aiapi.local`, xem [[ghi chú reset DB]] phía trên): vào `/admin/users` → click email → click project → "Xem Bug Report" → Dashboard hiện đúng "Đang mở: 1, Đã đóng: 0, Tổng số: 1" → mở rộng đúng endpoint `POST /auth/login` → thấy đúng bug `B1_001` (badge "Mới", khung viền trái vàng) gắn đúng vào test case "Positive - Đăng nhập thành công..." → mở rộng test case đó → Tầng 3 hiện đúng "Fail | 11:12 22/08/2026 | Kỳ vọng 200 → thực tế 401" khớp 100% dữ liệu thật. Tài khoản admin test đã xoá sạch sau khi xong.
 
 ### 11b. Admin xem (chỉ đọc) Project/Endpoint/TestCase của user khác ✅
 

@@ -8,6 +8,7 @@ import { AdminDashboardPage } from "@/pages/AdminDashboardPage"
 import { AdminUsersPage } from "@/pages/AdminUsersPage"
 import { AdminUserDetailPage } from "@/pages/AdminUserDetailPage"
 import { AdminProjectDataPage } from "@/pages/AdminProjectDataPage"
+import { AdminProjectBugReportsPage } from "@/pages/AdminProjectBugReportsPage"
 import { ProjectsPage } from "@/pages/ProjectsPage"
 import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
 import { TestCasesPage } from "@/pages/TestCasesPage"
@@ -40,6 +41,7 @@ function App() {
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/users/:userId/projects/:projectId" element={<AdminProjectDataPage />} />
+            <Route path="/admin/users/:userId/projects/:projectId/bug-reports" element={<AdminProjectBugReportsPage />} />
           </Route>
         </Route>
       </Route>
