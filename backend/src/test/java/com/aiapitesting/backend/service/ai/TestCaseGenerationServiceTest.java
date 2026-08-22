@@ -30,6 +30,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ResponseEntity;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.core.ParameterizedTypeReference;
 
 import java.util.List;
@@ -104,6 +108,12 @@ class TestCaseGenerationServiceTest {
                 .summary("Create user")
                 .schema("{\"requestBody\":{}}")
                 .build();
+        // @Value không được @InjectMocks tự set (không phải mock, cần Spring context để resolve
+        // placeholder) - mặc định còn lại 0 nếu không set tay, khiến MỌI test generate() luôn bị
+        // chặn bởi quota (0 token dùng >= 0 token giới hạn). Set 1 giá trị đủ lớn để các test hiện
+        // có (không liên quan quota) giữ nguyên hành vi cũ.
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                testCaseGenerationService, "dailyTokenLimit", 100_000L);
     }
 
     @Test
@@ -148,6 +158,28 @@ class TestCaseGenerationServiceTest {
         assertThat(event.getSnapshotJson())
                 .contains("Positive - Tao user hop le")
                 .contains("Negative - Thieu email");
+        // Token usage thật lấy từ ChatResponse.getMetadata().getUsage() (Module 11, theo dõi chi
+        // phí AI) - phải khớp đúng giá trị stubAiResponse() đã set (100/50/150).
+        assertThat(event.getPromptTokens()).isEqualTo(100);
+        assertThat(event.getCompletionTokens()).isEqualTo(50);
+        assertThat(event.getTotalTokens()).isEqualTo(150);
+    }
+
+    @Test
+    void generate_dailyQuotaAlreadyReached_throwsAiQuotaExceeded_neverCallsAi() {
+        org.springframework.test.util.ReflectionTestUtils.setField(testCaseGenerationService, "dailyTokenLimit", 1000L);
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testGenerationEventRepository.sumTotalTokensByOwnerAndCreatedAtBetween(any(), any(), any()))
+                .thenReturn(1000L);
+
+        assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
+                .isInstanceOf(com.aiapitesting.backend.exception.AiQuotaExceededException.class);
+
+        // Chan SOM truoc khi goi AI - khong ton request AI nao khi da vuot quota (dung tinh chat
+        // "chan som" da thiet ke, khong phai chi bat loi sau khi da lo goi).
+        verifyNoInteractions(chatClient);
+        verify(testCaseRepository, never()).saveAll(anyList());
     }
 
     @Test
@@ -279,8 +311,12 @@ class TestCaseGenerationServiceTest {
 
     @SuppressWarnings("unchecked")
     private void stubAiResponse(List<GeneratedTestCase> result) {
+        ChatResponseMetadata metadata = ChatResponseMetadata.builder()
+                .usage(new DefaultUsage(100, 50, 150))
+                .build();
+        ChatResponse chatResponse = new ChatResponse(List.of(), metadata);
         when(chatClient.prompt(any(Prompt.class)).call()
-                .entity(any(ParameterizedTypeReference.class)))
-                .thenReturn(result);
+                .responseEntity(any(ParameterizedTypeReference.class)))
+                .thenReturn(new ResponseEntity<>(chatResponse, result));
     }
 }

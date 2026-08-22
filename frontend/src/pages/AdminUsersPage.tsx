@@ -4,10 +4,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight, Lock, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { formatDateTime } from "@/lib/utils"
-import { listAdminUsers, setAdminUserEnabled } from "@/lib/admin"
+import { cn, formatDateTime } from "@/lib/utils"
+import { getAdminDashboardSummary, listAdminUsers, setAdminUserEnabled } from "@/lib/admin"
 import { getCurrentUserInfo } from "@/lib/auth"
 import { AdminTabs } from "@/pages/AdminDashboardPage"
+
+const GRID_COLS = "grid-cols-[1fr_80px_70px_70px_80px_110px_130px_120px]"
 
 export function AdminUsersPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -21,6 +23,12 @@ export function AdminUsersPage() {
     queryKey: ["admin-users", page],
     queryFn: () => listAdminUsers(page),
   })
+
+  const { data: summary } = useQuery({
+    queryKey: ["admin-dashboard-summary"],
+    queryFn: () => getAdminDashboardSummary(),
+  })
+  const dailyLimit = summary?.aiDailyTokenLimit ?? 0
 
   const users = data?.data ?? []
   const totalPages = data?.totalPages ?? 0
@@ -66,23 +74,25 @@ export function AdminUsersPage() {
 
       {!isLoading && !isError && (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <div className="min-w-[720px]">
-            <div className="grid grid-cols-[1fr_100px_100px_100px_100px_140px_120px] gap-2 border-b border-border bg-muted/40 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="min-w-[860px]">
+            <div className={cn("grid gap-2 border-b border-border bg-muted/40 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground", GRID_COLS)}>
               <span>Email</span>
               <span>Role</span>
               <span>Project</span>
               <span>Test case</span>
               <span>Bug report</span>
+              <span>AI/ngày</span>
               <span>Ngày tạo</span>
               <span className="text-right">Trạng thái</span>
             </div>
             {users.map((user) => {
               const isSelf = me?.email === user.email
               const isPending = pendingIds.has(user.id)
+              const nearOrOverQuota = dailyLimit > 0 && user.aiTokensToday >= dailyLimit
               return (
                 <div
                   key={user.id}
-                  className="grid grid-cols-[1fr_100px_100px_100px_100px_140px_120px] items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-b-0"
+                  className={cn("grid items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-b-0", GRID_COLS)}
                 >
                   <Link
                     to={`/admin/users/${user.id}`}
@@ -103,6 +113,13 @@ export function AdminUsersPage() {
                   <span className="tabular-nums text-muted-foreground">{user.totalProjects}</span>
                   <span className="tabular-nums text-muted-foreground">{user.totalTestCases}</span>
                   <span className="tabular-nums text-muted-foreground">{user.totalBugReports}</span>
+                  <span
+                    className={cn("truncate text-xs tabular-nums", nearOrOverQuota ? "font-semibold text-destructive" : "text-muted-foreground")}
+                    title={`${user.aiCallsToday} lần gọi AI hôm nay`}
+                  >
+                    {user.aiTokensToday.toLocaleString("vi-VN")}
+                    {dailyLimit > 0 && ` / ${dailyLimit.toLocaleString("vi-VN")}`}
+                  </span>
                   <span className="text-xs text-muted-foreground">{formatDateTime(user.createdAt)}</span>
                   <div className="flex justify-end">
                     {user.enabled ? (

@@ -1,7 +1,7 @@
 import { type ComponentType } from "react"
 import { NavLink } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Bug, FolderKanban, ListChecks, PieChart, Plug, Sparkles, Users } from "lucide-react"
+import { Bug, Coins, FolderKanban, ListChecks, PieChart, Plug, Sparkles, Users } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { getAdminDashboardSummary } from "@/lib/admin"
@@ -55,16 +55,24 @@ export function AdminDashboardPage() {
             valueClassName={data.totalOpenBugs > 0 ? "text-amber-500" : "text-foreground"}
           />
           <KpiCard icon={Sparkles} label="Lượt AI sinh test case" value={data.totalGenerationEvents} />
+          <KpiCard icon={Coins} label="Token AI đã dùng hôm nay (mọi user)" value={data.totalAiTokensToday.toLocaleString("vi-VN")} />
         </div>
+      )}
+
+      {data && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Quota mỗi user: {data.aiDailyTokenLimit.toLocaleString("vi-VN")} token/ngày (xem chi tiết theo từng user ở tab "Người dùng").
+        </p>
       )}
     </div>
   )
 }
 
-export function AdminTabs({ active }: { active: "dashboard" | "users" }) {
-  const tabs: { to: string; key: "dashboard" | "users"; label: string }[] = [
+export function AdminTabs({ active }: { active: "dashboard" | "users" | "audit-log" }) {
+  const tabs: { to: string; key: "dashboard" | "users" | "audit-log"; label: string }[] = [
     { to: "/admin", key: "dashboard", label: "Tổng quan" },
     { to: "/admin/users", key: "users", label: "Người dùng" },
+    { to: "/admin/audit-log", key: "audit-log", label: "Nhật ký" },
   ]
 
   return (

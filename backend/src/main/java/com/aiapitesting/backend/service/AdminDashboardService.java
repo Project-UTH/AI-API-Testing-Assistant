@@ -11,7 +11,11 @@ import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 /**
  * Số liệu toàn hệ thống cho trang Admin (Module 11) - khác hẳn DashboardService (Module 8) vốn
@@ -31,6 +35,9 @@ public class AdminDashboardService {
     private final BugReportRepository bugReportRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
 
+    @Value("${ai.quota.daily-token-limit}")
+    private long dailyTokenLimit;
+
     public AdminDashboardSummaryResponse getSystemSummary() {
         long totalUsers = userRepository.count();
         long totalProjects = projectRepository.count();
@@ -41,12 +48,17 @@ public class AdminDashboardService {
         long totalOpenBugs = bugReportRepository.countByStatusNot(BugStatus.CLOSED);
         long totalGenerationEvents = testGenerationEventRepository.count();
 
+        Instant startOfToday = Instant.now().truncatedTo(ChronoUnit.DAYS);
+        Instant startOfTomorrow = startOfToday.plus(1, ChronoUnit.DAYS);
+        long totalAiTokensToday =
+                testGenerationEventRepository.sumTotalTokensByCreatedAtBetween(startOfToday, startOfTomorrow);
+
         Integer overallPassRate = totalTestResults == 0
                 ? null
                 : (int) Math.round(passedTestResults * 100.0 / totalTestResults);
 
         return new AdminDashboardSummaryResponse(
                 totalUsers, totalProjects, totalEndpoints, totalTestCases, totalTestResults,
-                overallPassRate, totalOpenBugs, totalGenerationEvents);
+                overallPassRate, totalOpenBugs, totalGenerationEvents, totalAiTokensToday, dailyTokenLimit);
     }
 }
