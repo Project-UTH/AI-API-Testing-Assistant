@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight, Lock, Unlock } from "lucide-react"
 
@@ -84,7 +84,13 @@ export function AdminUsersPage() {
                   key={user.id}
                   className="grid grid-cols-[1fr_100px_100px_100px_100px_140px_120px] items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-b-0"
                 >
-                  <span className="truncate font-medium">{user.email}</span>
+                  <Link
+                    to={`/admin/users/${user.id}`}
+                    className="truncate font-medium text-primary hover:underline"
+                    title="Xem project/test case của user này"
+                  >
+                    {user.email}
+                  </Link>
                   <span
                     className={
                       user.role === "ADMIN"

@@ -123,7 +123,7 @@ Không được tự thêm giá trị khác cho cả 2 enum trên mà không c�
 
 `GET /api/v1/auth/me` trả `{ email, role }` của user hiện tại - đọc **fresh từ DB mỗi lần gọi** (không phải từ claim JWT, JWT chỉ mang `email`), để việc cấp quyền ADMIN qua SQL hoặc khoá tài khoản có hiệu lực ngay từ request tiếp theo mà không cần đăng nhập lại. `AuthResponse` (`POST /auth/login`, `/auth/register`) cũng trả kèm `role` để frontend có ngay không cần gọi `/auth/me` lần đầu.
 
-Admin xem được dữ liệu Project/TestCase/BugReport của MỌI user (không giới hạn owner) nhưng chỉ ở endpoint riêng dưới `/api/v1/admin/**` - không đổi hành vi ownership check của các endpoint thường (`/api/v1/projects/**` vẫn luôn giới hạn theo owner đang đăng nhập, kể cả khi người gọi là ADMIN).
+Admin xem được dữ liệu Project/Endpoint/TestCase của MỌI user (không giới hạn owner) nhưng chỉ ở endpoint riêng dưới `/api/v1/admin/users/{userId}/**` (`GET .../projects`, `GET .../projects/{projectId}`, `GET .../projects/{projectId}/endpoints`, `GET .../projects/{projectId}/test-cases` - CHỈ ĐỌC, không có method ghi) - không đổi hành vi ownership check của các endpoint thường (`/api/v1/projects/**` vẫn luôn giới hạn theo owner đang đăng nhập, kể cả khi người gọi là ADMIN). BugReport chưa có bản admin-xem-của-user-khác (để đợt sau, do cấu trúc lồng 3 tầng phức tạp hơn).
 
 ## 5. Naming convention endpoint
 
