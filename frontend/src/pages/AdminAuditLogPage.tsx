@@ -5,7 +5,6 @@ import { ChevronLeft, ChevronRight, Coins, Lock, Unlock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { formatDateTime } from "@/lib/utils"
 import { listAdminAuditLog } from "@/lib/admin"
-import { AdminTabs } from "@/pages/AdminDashboardPage"
 
 const ACTION_LABEL: Record<string, string> = {
   USER_LOCKED: "Khoá tài khoản",
@@ -31,8 +30,6 @@ export function AdminAuditLogPage() {
         <h1 className="text-2xl font-semibold">Quản trị hệ thống</h1>
         <p className="mt-1 text-muted-foreground">Nhật ký hành động nhạy cảm của admin (khoá/mở tài khoản).</p>
       </div>
-
-      <AdminTabs active="audit-log" />
 
       {isLoading && (
         <div className="space-y-2">

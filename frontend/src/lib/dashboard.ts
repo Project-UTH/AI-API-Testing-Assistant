@@ -10,6 +10,11 @@ export interface DashboardSummary {
   overallPassRate: number | null
   /** Bug Report đang mở (khác Đã đóng) trên toàn bộ project. */
   totalOpenBugs: number
+  /** Token AI CHÍNH user này đã dùng hôm nay (giờ UTC). */
+  aiTokensToday: number
+  /** Giới hạn token/ngày HIỆU LỰC cho CHÍNH user này (đã resolve sẵn ở server: ghi đè riêng nếu
+   *  admin có đặt, không thì mặc định hệ thống). */
+  aiDailyTokenLimit: number
 }
 
 export function getDashboardSummary(): Promise<DashboardSummary> {

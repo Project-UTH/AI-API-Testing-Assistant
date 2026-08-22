@@ -1,6 +1,7 @@
 package com.aiapitesting.backend.dto.response;
 
 public record AdminDashboardSummaryResponse(
+        /** Chỉ đếm role USER - tài khoản ADMIN không tính vào đây (xem AdminDashboardService). */
         long totalUsers,
         long totalProjects,
         long totalEndpoints,

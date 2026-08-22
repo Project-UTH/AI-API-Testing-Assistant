@@ -4,6 +4,7 @@ import com.aiapitesting.backend.dto.response.AdminDashboardSummaryResponse;
 import com.aiapitesting.backend.dto.response.AiUsageResponse;
 import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.TestResultStatus;
+import com.aiapitesting.backend.entity.UserRole;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
@@ -41,7 +42,10 @@ public class AdminDashboardService {
     private long dailyTokenLimit;
 
     public AdminDashboardSummaryResponse getSystemSummary() {
-        long totalUsers = userRepository.count();
+        // Chỉ đếm role USER - tài khoản ADMIN là người quản trị hệ thống, không phải người dùng
+        // ứng dụng, không nên cộng dồn vào số liệu "Người dùng" (gây hiểu lầm đã có N người dùng
+        // thật trong khi 1 trong số đó là chính admin đang xem trang này).
+        long totalUsers = userRepository.countByRole(UserRole.USER);
         long totalProjects = projectRepository.count();
         long totalEndpoints = endpointRepository.count();
         long totalTestCases = testCaseRepository.count();

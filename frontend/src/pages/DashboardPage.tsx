@@ -1,10 +1,11 @@
 import { useState, type ComponentType, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Bug, CircleCheck, FolderKanban, ListChecks, PieChart, Plug, Plus, Sparkles, Trash2, TriangleAlert, X } from "lucide-react"
+import { Bug, CircleCheck, Coins, FolderKanban, ListChecks, PieChart, Plug, Plus, Sparkles, Trash2, TriangleAlert, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
 import { getCurrentUserEmail } from "@/lib/api"
 import { getDashboardSummary, getMyAiUsage } from "@/lib/dashboard"
 import { getHistoryFeed, type HistoryFeedItem } from "@/lib/history"
@@ -83,7 +84,7 @@ export function DashboardPage() {
             <ActivityFeedPanel items={activityData?.data} isLoading={isActivityLoading} />
           </div>
 
-          <AiUsagePanel enabled={hasData} />
+          <AiUsagePanel enabled={hasData} todayTokens={data.aiTokensToday} dailyLimit={data.aiDailyTokenLimit} />
         </div>
       )}
 
@@ -261,16 +262,41 @@ function TrendChart({ points }: { points: number[] }) {
   )
 }
 
-function AiUsagePanel({ enabled }: { enabled: boolean }) {
+function AiUsagePanel({
+  enabled,
+  todayTokens,
+  dailyLimit,
+}: {
+  enabled: boolean
+  todayTokens: number
+  dailyLimit: number
+}) {
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard-ai-usage"],
     queryFn: () => getMyAiUsage(),
     enabled,
   })
+  const nearOrOverQuota = dailyLimit > 0 && todayTokens >= dailyLimit
 
   return (
     <div className="animate-rise rounded-2xl border border-border bg-card p-6 shadow-sm" style={{ animationDelay: "540ms" }}>
-      <h2 className="text-sm font-semibold text-foreground">Token AI đã dùng</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-foreground">Token AI đã dùng</h2>
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-full border px-3 py-1 text-sm",
+            nearOrOverQuota ? "border-destructive/40 bg-destructive/5" : "border-violet-500/30 bg-violet-500/5"
+          )}
+        >
+          <Coins className={cn("h-4 w-4 shrink-0", nearOrOverQuota ? "text-destructive" : "text-violet-500")} />
+          <span
+            className={cn("text-base font-bold tabular-nums", nearOrOverQuota ? "text-destructive" : "text-foreground")}
+          >
+            {todayTokens.toLocaleString("vi-VN")} / {dailyLimit.toLocaleString("vi-VN")}
+          </span>
+          <span className="text-muted-foreground">hôm nay</span>
+        </div>
+      </div>
       <AiUsageChart daily={data?.daily} isLoading={isLoading} />
     </div>
   )
