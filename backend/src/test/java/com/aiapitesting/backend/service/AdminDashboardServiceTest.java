@@ -4,6 +4,7 @@ import com.aiapitesting.backend.dto.response.AdminDashboardSummaryResponse;
 import com.aiapitesting.backend.dto.response.AiUsageResponse;
 import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.TestResultStatus;
+import com.aiapitesting.backend.entity.UserRole;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
@@ -61,7 +62,7 @@ class AdminDashboardServiceTest {
 
     @Test
     void getSystemSummary_countsAcrossAllUsers_notLimitedToOneOwner() {
-        when(userRepository.count()).thenReturn(5L);
+        when(userRepository.countByRole(UserRole.USER)).thenReturn(5L);
         when(projectRepository.count()).thenReturn(8L);
         when(endpointRepository.count()).thenReturn(30L);
         when(testCaseRepository.count()).thenReturn(120L);

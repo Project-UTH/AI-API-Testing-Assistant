@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { cn, formatDateTime } from "@/lib/utils"
 import { getAdminDashboardSummary, listAdminUsers, setAdminUserEnabled } from "@/lib/admin"
 import { getCurrentUserInfo } from "@/lib/auth"
-import { AdminTabs } from "@/pages/AdminDashboardPage"
 
 const GRID_COLS = "grid-cols-[1fr_80px_70px_70px_80px_110px_130px_120px]"
 
@@ -56,8 +55,6 @@ export function AdminUsersPage() {
         <p className="mt-1 text-muted-foreground">Toàn bộ user đã đăng ký - khoá/mở tài khoản khi cần.</p>
       </div>
 
-      <AdminTabs active="users" />
-
       {isLoading && (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -88,7 +85,9 @@ export function AdminUsersPage() {
             {users.map((user) => {
               const isSelf = me?.email === user.email
               const isPending = pendingIds.has(user.id)
-              const nearOrOverQuota = dailyLimit > 0 && user.aiTokensToday >= dailyLimit
+              // aiDailyTokenLimitOverride null = chưa ghi đè riêng, dùng mặc định hệ thống.
+              const effectiveLimit = user.aiDailyTokenLimitOverride ?? dailyLimit
+              const nearOrOverQuota = effectiveLimit > 0 && user.aiTokensToday >= effectiveLimit
               return (
                 <div
                   key={user.id}
@@ -115,10 +114,10 @@ export function AdminUsersPage() {
                   <span className="tabular-nums text-muted-foreground">{user.totalBugReports}</span>
                   <span
                     className={cn("truncate text-xs tabular-nums", nearOrOverQuota ? "font-semibold text-destructive" : "text-muted-foreground")}
-                    title={`${user.aiCallsToday} lần gọi AI hôm nay`}
+                    title={`${user.aiCallsToday} lần gọi AI hôm nay${user.aiDailyTokenLimitOverride != null ? " · đã ghi đè quota riêng" : ""}`}
                   >
                     {user.aiTokensToday.toLocaleString("vi-VN")}
-                    {dailyLimit > 0 && ` / ${dailyLimit.toLocaleString("vi-VN")}`}
+                    {effectiveLimit > 0 && ` / ${effectiveLimit.toLocaleString("vi-VN")}`}
                   </span>
                   <span className="text-xs text-muted-foreground">{formatDateTime(user.createdAt)}</span>
                   <div className="flex justify-end">

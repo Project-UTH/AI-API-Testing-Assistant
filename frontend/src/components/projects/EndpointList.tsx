@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Sparkles } from "lucide-react"
+import { Coins, Loader2, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,6 +9,7 @@ import { cn, METHOD_STYLES } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
 import { generateTestCases } from "@/lib/testcases"
+import { getDashboardSummary } from "@/lib/dashboard"
 
 interface EndpointListProps {
   projectId: string
@@ -24,6 +25,14 @@ export function EndpointList({ projectId }: EndpointListProps) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["endpoints", projectId],
     queryFn: () => listEndpoints(projectId),
+  })
+
+  // Cùng queryKey với Dashboard - dùng chung cache, không gọi thêm request nếu đã ghé trang Tổng
+  // quan trước đó. Hiện ngay tại đây (trước khi bấm Sinh Test Case) để người dùng biết còn bao
+  // nhiêu token trước khi tốn tiền thật, thay vì chỉ biết sau khi bị 429 AI_QUOTA_EXCEEDED.
+  const { data: summary } = useQuery({
+    queryKey: ["dashboard-summary"],
+    queryFn: () => getDashboardSummary(),
   })
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -114,8 +123,36 @@ export function EndpointList({ projectId }: EndpointListProps) {
     )
   }
 
+  const todayTokens = summary?.aiTokensToday ?? 0
+  const dailyLimit = summary?.aiDailyTokenLimit ?? 0
+  const nearOrOverQuota = dailyLimit > 0 && todayTokens >= dailyLimit
+
   return (
     <div className="mt-4 flex flex-col gap-3">
+      {summary && (
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm",
+            nearOrOverQuota
+              ? "border-destructive/40 bg-destructive/5"
+              : "border-violet-500/30 bg-violet-500/5"
+          )}
+        >
+          <Coins className={cn("h-4 w-4 shrink-0", nearOrOverQuota ? "text-destructive" : "text-violet-500")} />
+          <span className="text-muted-foreground">Token AI đã dùng hôm nay:</span>
+          <span
+            className={cn(
+              "text-base font-bold tabular-nums",
+              nearOrOverQuota ? "text-destructive" : "text-foreground"
+            )}
+          >
+            {todayTokens.toLocaleString("vi-VN")} / {dailyLimit.toLocaleString("vi-VN")}
+          </span>
+          {nearOrOverQuota && (
+            <span className="font-medium text-destructive">Đã đạt giới hạn hôm nay - Sinh Test Case sẽ bị chặn</span>
+          )}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
           {selectedIds.size > 0 ? `Đã chọn ${selectedIds.size} endpoint` : "Chọn endpoint để sinh test case"}

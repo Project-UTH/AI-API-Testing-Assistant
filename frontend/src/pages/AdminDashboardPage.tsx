@@ -1,9 +1,7 @@
 import { type ComponentType } from "react"
-import { NavLink } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Bug, Coins, FolderKanban, ListChecks, PieChart, Plug, Sparkles, Users } from "lucide-react"
 
-import { cn } from "@/lib/utils"
 import { getAdminAiUsage, getAdminDashboardSummary } from "@/lib/admin"
 import { AiUsageChart } from "@/components/shared/AiUsageChart"
 
@@ -24,8 +22,6 @@ export function AdminDashboardPage() {
         <h1 className="text-2xl font-semibold">Quản trị hệ thống</h1>
         <p className="mt-1 text-muted-foreground">Số liệu toàn hệ thống - không giới hạn theo 1 user.</p>
       </div>
-
-      <AdminTabs active="dashboard" />
 
       {isLoading && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -67,7 +63,7 @@ export function AdminDashboardPage() {
 
       {data && (
         <p className="mt-3 text-xs text-muted-foreground">
-          Quota mỗi user: {data.aiDailyTokenLimit.toLocaleString("vi-VN")} token/ngày (xem chi tiết theo từng user ở tab "Người dùng").
+          Quota mỗi user: {data.aiDailyTokenLimit.toLocaleString("vi-VN")} token/ngày (xem chi tiết theo từng user ở mục "Người dùng").
         </p>
       )}
 
@@ -75,34 +71,6 @@ export function AdminDashboardPage() {
         <h2 className="text-sm font-semibold text-foreground">Token AI đã dùng - toàn hệ thống</h2>
         <AiUsageChart daily={aiUsage?.daily} isLoading={isAiUsageLoading} />
       </div>
-    </div>
-  )
-}
-
-export function AdminTabs({ active }: { active: "dashboard" | "users" | "audit-log" }) {
-  const tabs: { to: string; key: "dashboard" | "users" | "audit-log"; label: string }[] = [
-    { to: "/admin", key: "dashboard", label: "Tổng quan" },
-    { to: "/admin/users", key: "users", label: "Người dùng" },
-    { to: "/admin/audit-log", key: "audit-log", label: "Nhật ký" },
-  ]
-
-  return (
-    <div className="mb-6 flex gap-2 border-b border-border">
-      {tabs.map((tab) => (
-        <NavLink
-          key={tab.key}
-          to={tab.to}
-          end={tab.to === "/admin"}
-          className={cn(
-            "border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-            active === tab.key
-              ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
-        >
-          {tab.label}
-        </NavLink>
-      ))}
     </div>
   )
 }
