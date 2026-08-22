@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-22 (Module 11a - Lõi Trang Admin: role `ADMIN` cấp qua SQL trực tiếp - không có API cấp/đổi role; khoá/mở tài khoản với guard tự-khoá-chính-mình; Dashboard hệ thống + danh sách user; `GET /auth/me`; đã verify API thật + Playwright, xoá sạch dữ liệu test. Nhân tiện sửa 3 bug/gap có sẵn từ trước chặn build/test: `BugReportServiceTest` thiếu tham số, 2 test thiếu mock `BugReportRepository`, `node_modules` thiếu package mới sau lần pull trước)
+> Cập nhật lần cuối: 2026-08-22 (Module 11b - Admin xem chỉ đọc Project/Endpoint/TestCase của user khác. Phát hiện + fix 1 bug thật NGHIÊM TRỌNG có sẵn từ Module 9a, ảnh hưởng CẢ trang Test Case bình thường của user thật (không riêng admin): 99/99 test case trong DB có `auth_override=''` do thiếu backfill khi ALTER cột NOT NULL vào bảng đã có dữ liệu — 500 lỗi khi đọc. Đã backfill xong bằng UPDATE, ghi rõ lưu ý cho máy khác. Cũng sửa 1 bug UI thật (skeleton loading không loại trừ danh sách thật). 135/135 test pass, verify API thật + Playwright bằng dữ liệu thật có sẵn trong DB)
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -18,7 +18,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 8. Lịch sử & Dashboard | ✅ Xong |
 | 9. Nâng cao Test Case AI sinh (Security, Assertion, Test Data) | ✅ Xong |
 | 10. Bug Report (quy trình QA) | ✅ Xong |
-| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a Lõi xong, còn xem dữ liệu user khác/audit log/AI usage chi tiết) |
+| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a+11b xong, còn AI usage chi tiết/giám sát execution/audit log/quota) |
 | 12. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
@@ -518,9 +518,23 @@ Người dùng vừa hoàn thiện Module 10 (Bug Report) và cho rằng tính n
 - [x] `GET /api/v1/auth/me` (mới) trả `{email, role}` đọc fresh từ DB — để frontend biết role hiện tại mà không cần đăng nhập lại; `AuthResponse` (`/auth/login`, `/auth/register`) trả kèm `role` luôn
 - [x] Mã lỗi mới `ACCOUNT_DISABLED` (403), `USER_NOT_FOUND` (404) — đã cập nhật bảng mã lỗi + mục 4d (giải thích cơ chế phân quyền) ở skill `api-contract`
 - [x] *(Bug thật phát hiện lúc verify bằng API thật, nghiêm trọng)* `GET /auth/me` ban đầu nằm trong `requestMatchers("/api/v1/auth/**").permitAll()` — permitAll nguyên cụm khiến request KHÔNG kèm token cũng lọt qua tới controller, nhưng `CurrentUserService.getCurrentUser()` bên trong lại giả định luôn có người đăng nhập (`SecurityContextHolder...getAuthentication().getName()` trả `"anonymousUser"` khi không có token) → `userRepository.findByEmail("anonymousUser")` rỗng → ném `IllegalStateException` không được `GlobalExceptionHandler` bắt riêng, rơi xuống handler `Exception.class` chung → 500 `INTERNAL_ERROR` thay vì 401 sạch. Fix: liệt kê rõ đúng 2 path công khai thật (`/api/v1/auth/register`, `/api/v1/auth/login`), bỏ wildcard.
-- [ ] *(Chưa làm — để đợt sau)* Cho phép admin xem Project/Endpoint/TestCase/BugReport của bất kỳ user nào (chỉ mới có số đếm tổng hợp, chưa xem được chi tiết dữ liệu)
 - [ ] *(Chưa làm — để đợt sau)* Theo dõi sử dụng AI chi tiết theo user/ngày (Dashboard hiện chỉ có 1 con số `totalGenerationEvents` toàn hệ thống, chưa breakdown)
 - [ ] *(Chưa làm — để đợt sau)* Giám sát execution treo, audit log hành động nhạy cảm, quota AI/ngày
+
+### 11b. Admin xem (chỉ đọc) Project/Endpoint/TestCase của user khác ✅
+
+**Backend**
+- [x] `ProjectRepository.findByIdAndOwner(id, owner)` — ownership check theo owner CHỈ ĐỊNH (không phải `CurrentUserService`)
+- [x] `AdminUserDataService`/`AdminUserDataController` (`GET /api/v1/admin/users/{userId}/projects`, `.../projects/{projectId}`, `.../projects/{projectId}/endpoints`, `.../projects/{projectId}/test-cases`) — **cố ý không tái dùng** `ProjectService`/`EndpointImportService`/`TestCaseService` (luôn ràng buộc theo `CurrentUserService`, tức "user đang đăng nhập") — tự truy vấn thẳng repository, tái dùng nguyên `ProjectResponse`/`EndpointResponse`/`TestCaseResponse.from()` đã có. CHỈ ĐỌC, không có method ghi nào (đúng quyết định đã ghi ở skill `api-contract` 4d) — chưa có bản BugReport (cấu trúc lồng 3 tầng phức tạp hơn, để đợt sau)
+- [x] *(Bug thật nghiêm trọng phát hiện khi verify bằng dữ liệu thật, KHÔNG liên quan tới code Module 11 — ảnh hưởng CẢ trang Test Case bình thường của user thật, không riêng gì admin)* `GET .../test-cases` trả `500 INTERNAL_ERROR` — `InvalidDataAccessApiUsageException: No enum constant TestCaseAuthOverride.` khi Hibernate hydrate `TestCase` có `auth_override=''`. Kiểm tra trực tiếp DB: **100% (99/99) test case hiện có trong DB** có `auth_override=''` (rỗng, không phải NULL — xác nhận bằng `HEX()`), toàn bộ tạo trong khoảng 2026-08-09→11. Nguyên nhân: cột `auth_override` được thêm ở Module 9a bug #3 bằng `columnDefinition = "VARCHAR(20)"` **không kèm `DEFAULT`** — khi Hibernate `ddl-auto=update` ALTER cột NOT NULL này vào bảng `test_cases` đã có sẵn dữ liệu (tạo trước Module 9a), MySQL tự điền `''` (default ngầm của VARCHAR) cho các dòng cũ vì `sql_mode` không bật strict (đúng cơ chế đã ghi ở Module 5, nhưng lần này KHÔNG phải ENUM nên default ngầm không phải là 1 giá trị hợp lệ). Code Java (`TestCaseService`/`TestCaseGenerationService`) đã luôn set đúng giá trị cho mọi dòng MỚI (có fallback `== null ? DEFAULT : ...`) nên bug không tái diễn cho dữ liệu tạo sau đó — chỉ 99 dòng "hoá thạch" từ đúng thời điểm ALTER chạy bị kẹt lại. Note cũ ở Module 9a bug #3 ("Lưu ý cho máy khác... ALTER TABLE ... MODIFY COLUMN") chỉ đổi kiểu cột, KHÔNG backfill giá trị dòng cũ — đây là lỗ hổng còn sót lại của chính fix đó. **Fix: `UPDATE test_cases SET auth_override='DEFAULT' WHERE auth_override='';`** (đã chạy trên DB dev hiện tại, 99 dòng). **Lưu ý cho máy khác có DB cũ tạo trước Module 9a:** ngoài `ALTER TABLE` đổi kiểu cột đã ghi ở Module 9a bug #3, cần chạy thêm đúng câu `UPDATE` này 1 lần để backfill giá trị, nếu không trang Test Case/Thực thi Test/Bug Report đều có thể 500 khi đụng phải dòng cũ.
+- [x] *(Bug UI thật phát hiện khi verify — component mới, không liên quan bug trên)* `AdminProjectDataPage.tsx`: khối skeleton loading (`isLoading &&`) và khối danh sách endpoint thật không loại trừ nhau (danh sách thật render KHÔNG điều kiện, độc lập với `isLoading` gộp từ 2 query riêng biệt endpoints+test-cases) — bắt được qua ảnh chụp Playwright thấy 3 khối trắng rỗng chồng lên đầu danh sách thật khi 1 trong 2 query xong trước. Fix: bọc khối danh sách thật trong `{!isLoading && (...)}`.
+
+**Frontend**
+- [x] `lib/admin.ts` thêm 4 hàm gọi API mới — tái dùng nguyên type `Project`/`Endpoint`/`TestCase` từ `lib/projects.ts`/`lib/endpoints.ts`/`lib/testcases.ts` (response backend khớp 100%, không định nghĩa type riêng trùng lặp)
+- [x] `AdminUserDetailPage.tsx` (route `/admin/users/:userId`) — danh sách project của 1 user (link từ email ở `AdminUsersPage`), phân trang Prev/Next
+- [x] `AdminProjectDataPage.tsx` (route `/admin/users/:userId/projects/:projectId`) — danh sách endpoint (mở rộng xem test case bên trong, nhóm theo `endpointId` phía client từ 1 lần gọi `listAdminUserTestCases`, cùng cách tiếp cận `TestCasesPage.tsx` đã dùng), badge method/source, không có nút sửa/xoá/import/sinh test case nào
+
+**Mốc xác nhận:** `./mvnw test` xanh (131/131, thêm `AdminUserDataServiceTest`), `npx tsc -b --force` sạch, `npm run build` thành công. **Đã verify bằng API thật + Playwright** qua tài khoản admin test riêng, xem THẬT dữ liệu của 1 tài khoản test cũ còn sót lại trong DB (`test-e2e-...@example.com`, project "Full E2E Shop Target", 7 endpoint/13 test case thật): danh sách project → click vào → đúng 7 endpoint với badge method/số test case đúng → mở rộng 1 endpoint → **phát hiện 2 bug thật ở bước này** (ghi ở trên) → sau khi sửa cả 2, mở rộng lại đúng 5 test case của endpoint `PATCH .../stock` (tên, badge nguồn AI, expected status đều khớp dữ liệu thật). Không sửa/xoá gì trong lúc xem (đúng thiết kế chỉ đọc). Dữ liệu test (tài khoản admin) đã xoá sạch, KHÔNG đụng 99 test case thật/24 user thật có sẵn (chỉ backfill đúng 1 cột bị lỗi).
 
 **Frontend**
 - [x] `lib/auth.ts` thêm `UserRole`, `getCurrentUserInfo()` (gọi `/auth/me`); `lib/admin.ts` mới (API client cho dashboard/users)

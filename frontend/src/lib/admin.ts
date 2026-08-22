@@ -1,5 +1,8 @@
 import { apiFetch, apiFetchPaged, type PagedResult } from "@/lib/api"
 import type { UserRole } from "@/lib/auth"
+import type { Project } from "@/lib/projects"
+import type { Endpoint } from "@/lib/endpoints"
+import type { TestCase } from "@/lib/testcases"
 
 export interface AdminUser {
   id: string
@@ -36,4 +39,24 @@ export function setAdminUserEnabled(userId: string, enabled: boolean): Promise<A
     method: "PUT",
     body: JSON.stringify({ enabled }),
   })
+}
+
+// Xem (chỉ đọc) dữ liệu Project/Endpoint/TestCase của 1 user cụ thể khác - phục vụ hỗ trợ/điều
+// tra. Tái dùng nguyên type Project/Endpoint/TestCase (response backend khớp 100%, xem
+// AdminUserDataService) - không định nghĩa type riêng trùng lặp.
+
+export function listAdminUserProjects(userId: string, page: number): Promise<PagedResult<Project>> {
+  return apiFetchPaged<Project>(`/admin/users/${userId}/projects?page=${page}&size=20`)
+}
+
+export function getAdminUserProject(userId: string, projectId: string): Promise<Project> {
+  return apiFetch<Project>(`/admin/users/${userId}/projects/${projectId}`)
+}
+
+export function listAdminUserEndpoints(userId: string, projectId: string): Promise<PagedResult<Endpoint>> {
+  return apiFetchPaged<Endpoint>(`/admin/users/${userId}/projects/${projectId}/endpoints?page=0&size=100`)
+}
+
+export function listAdminUserTestCases(userId: string, projectId: string): Promise<TestCase[]> {
+  return apiFetch<TestCase[]>(`/admin/users/${userId}/projects/${projectId}/test-cases`)
 }

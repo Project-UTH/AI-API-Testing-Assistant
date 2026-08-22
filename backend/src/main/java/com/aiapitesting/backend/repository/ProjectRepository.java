@@ -17,6 +17,10 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     long countByOwner(User owner);
 
+    // Trang Admin (Module 11) - admin xem (chỉ đọc) project của 1 user CỤ THỂ khác, không phải
+    // owner đang đăng nhập - khác hẳn getOwnedProject() ở ProjectService (luôn dùng CurrentUserService).
+    Optional<Project> findByIdAndOwner(UUID id, User owner);
+
     // BugReportService.create() - tính projectSeq tiếp theo khi 1 project lần đầu có bug (Module 10),
     // phạm vi trong owner hiện tại để không rò rỉ hoạt động giữa các user không liên quan.
     @Query("SELECT MAX(p.bugReportProjectSeq) FROM Project p WHERE p.owner = :owner")

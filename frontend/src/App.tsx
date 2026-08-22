@@ -6,6 +6,8 @@ import { RequireAdmin } from "@/components/RequireAdmin"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { AdminDashboardPage } from "@/pages/AdminDashboardPage"
 import { AdminUsersPage } from "@/pages/AdminUsersPage"
+import { AdminUserDetailPage } from "@/pages/AdminUserDetailPage"
+import { AdminProjectDataPage } from "@/pages/AdminProjectDataPage"
 import { ProjectsPage } from "@/pages/ProjectsPage"
 import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
 import { TestCasesPage } from "@/pages/TestCasesPage"
@@ -36,6 +38,8 @@ function App() {
           <Route element={<RequireAdmin />}>
             <Route path="/admin" element={<AdminDashboardPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
+            <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
+            <Route path="/admin/users/:userId/projects/:projectId" element={<AdminProjectDataPage />} />
           </Route>
         </Route>
       </Route>
