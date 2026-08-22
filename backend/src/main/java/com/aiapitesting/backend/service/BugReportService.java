@@ -83,6 +83,15 @@ public class BugReportService {
 
     public BugReportPageResponse getBugReports(UUID projectId) {
         Project project = projectService.getOwnedProject(projectId);
+        return getBugReportsForProject(project);
+    }
+
+    /**
+     * Tách khỏi getBugReports(UUID) để AdminUserDataService (Module 11c) tái dùng được với 1
+     * Project đã resolve theo owner CHỈ ĐỊNH (không phải CurrentUserService) - package-private vì
+     * chỉ gọi từ cùng package service/, không phải API công khai.
+     */
+    BugReportPageResponse getBugReportsForProject(Project project) {
         // Nguồn Tầng 1+2 là TOÀN BỘ test case của project (giống TestCaseService.listByProject) -
         // không lọc riêng test case đang có bug, để trang này duyệt được hết mọi test case/endpoint
         // giống cách trang Lịch sử liệt kê hết, chỉ khác ở chỗ có thêm Tầng 3 (lịch sử chạy riêng
@@ -158,6 +167,11 @@ public class BugReportService {
 
     public List<TestResultHistoryItemResponse> getRunHistory(UUID projectId, UUID testCaseId) {
         Project project = projectService.getOwnedProject(projectId);
+        return getRunHistoryForProject(project, testCaseId);
+    }
+
+    /** Tách khỏi getRunHistory(UUID, UUID) - cùng lý do đã ghi ở getBugReportsForProject(). */
+    List<TestResultHistoryItemResponse> getRunHistoryForProject(Project project, UUID testCaseId) {
         TestCase testCase = testCaseRepository.findByIdAndEndpointProject(testCaseId, project)
                 .orElseThrow(() -> new TestCaseNotFoundException("Không tìm thấy test case với id đã cho"));
         return testResultRepository.findAllByTestCaseOrderByExecutionStartedAtAsc(testCase).stream()

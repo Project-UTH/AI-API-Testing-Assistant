@@ -1,9 +1,11 @@
 package com.aiapitesting.backend.service;
 
+import com.aiapitesting.backend.dto.response.BugReportPageResponse;
 import com.aiapitesting.backend.dto.response.EndpointResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.dto.response.ProjectResponse;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
+import com.aiapitesting.backend.dto.response.TestResultHistoryItemResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.User;
@@ -41,6 +43,7 @@ public class AdminUserDataService {
     private final ProjectRepository projectRepository;
     private final EndpointRepository endpointRepository;
     private final TestCaseRepository testCaseRepository;
+    private final BugReportService bugReportService;
 
     public PageResponse<ProjectResponse> listProjects(UUID userId, Pageable pageable) {
         User owner = getUser(userId);
@@ -69,6 +72,16 @@ public class AdminUserDataService {
         return testCaseRepository.findAllByEndpointProject(project).stream()
                 .map(TestCaseResponse::from)
                 .toList();
+    }
+
+    public BugReportPageResponse getBugReports(UUID userId, UUID projectId) {
+        Project project = getOwnedProject(userId, projectId);
+        return bugReportService.getBugReportsForProject(project);
+    }
+
+    public List<TestResultHistoryItemResponse> getRunHistory(UUID userId, UUID projectId, UUID testCaseId) {
+        Project project = getOwnedProject(userId, projectId);
+        return bugReportService.getRunHistoryForProject(project, testCaseId);
     }
 
     private Project getOwnedProject(UUID userId, UUID projectId) {

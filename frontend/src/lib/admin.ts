@@ -3,6 +3,7 @@ import type { UserRole } from "@/lib/auth"
 import type { Project } from "@/lib/projects"
 import type { Endpoint } from "@/lib/endpoints"
 import type { TestCase } from "@/lib/testcases"
+import type { BugReportPage, TestResultHistoryItem } from "@/lib/bugReports"
 
 export interface AdminUser {
   id: string
@@ -59,4 +60,18 @@ export function listAdminUserEndpoints(userId: string, projectId: string): Promi
 
 export function listAdminUserTestCases(userId: string, projectId: string): Promise<TestCase[]> {
   return apiFetch<TestCase[]>(`/admin/users/${userId}/projects/${projectId}/test-cases`)
+}
+
+export function getAdminUserBugReports(userId: string, projectId: string): Promise<BugReportPage> {
+  return apiFetch<BugReportPage>(`/admin/users/${userId}/projects/${projectId}/bug-reports`)
+}
+
+export function getAdminUserRunHistory(
+  userId: string,
+  projectId: string,
+  testCaseId: string
+): Promise<TestResultHistoryItem[]> {
+  return apiFetch<TestResultHistoryItem[]>(
+    `/admin/users/${userId}/projects/${projectId}/bug-reports/test-cases/${testCaseId}/run-history`
+  )
 }

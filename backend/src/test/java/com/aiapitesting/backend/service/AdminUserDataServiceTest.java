@@ -1,8 +1,11 @@
 package com.aiapitesting.backend.service;
 
+import com.aiapitesting.backend.dto.response.BugDashboardSummaryResponse;
+import com.aiapitesting.backend.dto.response.BugReportPageResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.dto.response.ProjectResponse;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
+import com.aiapitesting.backend.dto.response.TestResultHistoryItemResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
@@ -25,6 +28,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,6 +50,9 @@ class AdminUserDataServiceTest {
 
     @Mock
     private TestCaseRepository testCaseRepository;
+
+    @Mock
+    private BugReportService bugReportService;
 
     @InjectMocks
     private AdminUserDataService adminUserDataService;
@@ -107,5 +114,42 @@ class AdminUserDataServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).endpointPath()).isEqualTo("/api/products");
         assertThat(result.get(0).name()).isEqualTo("Positive case");
+    }
+
+    @Test
+    void getBugReports_delegatesToBugReportServiceWithProjectResolvedByTargetUser() {
+        BugReportPageResponse expected = new BugReportPageResponse(
+                new BugDashboardSummaryResponse(Map.of(), List.of(), 0, 0, 0), List.of());
+        when(userRepository.findById(targetUser.getId())).thenReturn(Optional.of(targetUser));
+        when(projectRepository.findByIdAndOwner(project.getId(), targetUser)).thenReturn(Optional.of(project));
+        when(bugReportService.getBugReportsForProject(project)).thenReturn(expected);
+
+        BugReportPageResponse result = adminUserDataService.getBugReports(targetUser.getId(), project.getId());
+
+        assertThat(result).isSameAs(expected);
+    }
+
+    @Test
+    void getBugReports_projectNotOwnedByTargetUser_throwsProjectNotFound_neverCallsBugReportService() {
+        UUID otherProjectId = UUID.randomUUID();
+        when(userRepository.findById(targetUser.getId())).thenReturn(Optional.of(targetUser));
+        when(projectRepository.findByIdAndOwner(otherProjectId, targetUser)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adminUserDataService.getBugReports(targetUser.getId(), otherProjectId))
+                .isInstanceOf(ProjectNotFoundException.class);
+    }
+
+    @Test
+    void getRunHistory_delegatesToBugReportServiceWithProjectResolvedByTargetUser() {
+        UUID testCaseId = UUID.randomUUID();
+        List<TestResultHistoryItemResponse> expected = List.of();
+        when(userRepository.findById(targetUser.getId())).thenReturn(Optional.of(targetUser));
+        when(projectRepository.findByIdAndOwner(project.getId(), targetUser)).thenReturn(Optional.of(project));
+        when(bugReportService.getRunHistoryForProject(project, testCaseId)).thenReturn(expected);
+
+        List<TestResultHistoryItemResponse> result =
+                adminUserDataService.getRunHistory(targetUser.getId(), project.getId(), testCaseId);
+
+        assertThat(result).isSameAs(expected);
     }
 }

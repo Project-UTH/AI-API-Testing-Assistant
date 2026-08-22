@@ -75,10 +75,15 @@ export function AdminProjectDataPage() {
         Quay lại danh sách project
       </Button>
 
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold">{project?.name ?? "Project"}</h1>
-        {project?.description && <p className="mt-1 text-muted-foreground">{project.description}</p>}
-        <p className="mt-1 text-xs text-muted-foreground">Chế độ chỉ xem - phục vụ hỗ trợ/điều tra.</p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">{project?.name ?? "Project"}</h1>
+          {project?.description && <p className="mt-1 text-muted-foreground">{project.description}</p>}
+          <p className="mt-1 text-xs text-muted-foreground">Chế độ chỉ xem - phục vụ hỗ trợ/điều tra.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => navigate(`/admin/users/${userId}/projects/${projectId}/bug-reports`)}>
+          Xem Bug Report
+        </Button>
       </div>
 
       {isLoading && (
