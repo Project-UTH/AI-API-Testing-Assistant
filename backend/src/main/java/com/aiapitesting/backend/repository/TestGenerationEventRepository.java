@@ -32,4 +32,34 @@ public interface TestGenerationEventRepository extends JpaRepository<TestGenerat
             @Param("from") Instant from, @Param("to") Instant to);
 
     void deleteAllByEndpointProject(Project project);
+
+    // Quota AI/ngày (Module 11) - tổng token đã dùng của 1 owner trong khoảng [from, to) - TestCaseGenerationService
+    // gọi TRƯỚC khi gọi AI để chặn sớm, không tốn thêm lệnh gọi AI nào nếu đã vượt quota.
+    @Query("SELECT COALESCE(SUM(e.totalTokens), 0) FROM TestGenerationEvent e "
+            + "WHERE e.endpoint.project.owner = :owner AND e.createdAt >= :from AND e.createdAt < :to")
+    long sumTotalTokensByOwnerAndCreatedAtBetween(
+            @Param("owner") User owner, @Param("from") Instant from, @Param("to") Instant to);
+
+    // Dashboard Admin (Module 11) - tổng token AI TOÀN HỆ THỐNG (mọi user) trong khoảng [from, to).
+    @Query("SELECT COALESCE(SUM(e.totalTokens), 0) FROM TestGenerationEvent e "
+            + "WHERE e.createdAt >= :from AND e.createdAt < :to")
+    long sumTotalTokensByCreatedAtBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    // Trang Admin (Module 11) - tổng token/số lần gọi AI theo TỪNG owner trong 1 trang user, gộp 1
+    // query GROUP BY (đúng pattern countGroupedByOwnerIds đã dùng cho Project/TestCase/BugReport ở
+    // AdminUserService) - from/to null = không giới hạn (toàn thời gian).
+    @Query("SELECT ep.project.owner.id AS ownerId, COALESCE(SUM(e.totalTokens), 0) AS totalTokens, COUNT(e) AS callCount "
+            + "FROM TestGenerationEvent e JOIN e.endpoint ep "
+            + "WHERE ep.project.owner.id IN :ownerIds "
+            + "AND (:from IS NULL OR e.createdAt >= :from) "
+            + "AND (:to IS NULL OR e.createdAt < :to) "
+            + "GROUP BY ep.project.owner.id")
+    List<OwnerAiUsage> sumUsageGroupedByOwnerIds(
+            @Param("ownerIds") List<UUID> ownerIds, @Param("from") Instant from, @Param("to") Instant to);
+
+    interface OwnerAiUsage {
+        UUID getOwnerId();
+        Long getTotalTokens();
+        Long getCallCount();
+    }
 }

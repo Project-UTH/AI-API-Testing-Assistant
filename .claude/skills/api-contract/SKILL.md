@@ -60,6 +60,7 @@ Ví dụ — tạo project thành công:
 | `TEST_RESULT_NOT_FOUND` | 404 | Không tìm thấy lần chạy (TestResult) |
 | `SWAGGER_PARSE_FAILED` | 422 | Không parse được file/URL OpenAPI |
 | `AI_GENERATION_FAILED` | 502 | LLM lỗi hoặc trả về sai định dạng khi sinh test case |
+| `AI_QUOTA_EXCEEDED` | 429 | Đã vượt quota token AI/ngày của user (xem `ai.quota.daily-token-limit`) |
 | `TEST_EXECUTION_FAILED` | 500 | Lỗi khi thực thi test (không phải lỗi của API được test) |
 | `INTERNAL_ERROR` | 500 | Lỗi hệ thống chung, không xác định được nguyên nhân cụ thể |
 | `EMAIL_ALREADY_EXISTS` | 409 | Email đã được đăng ký |
@@ -124,6 +125,10 @@ Không được tự thêm giá trị khác cho cả 2 enum trên mà không c�
 `GET /api/v1/auth/me` trả `{ email, role }` của user hiện tại - đọc **fresh từ DB mỗi lần gọi** (không phải từ claim JWT, JWT chỉ mang `email`), để việc cấp quyền ADMIN qua SQL hoặc khoá tài khoản có hiệu lực ngay từ request tiếp theo mà không cần đăng nhập lại. `AuthResponse` (`POST /auth/login`, `/auth/register`) cũng trả kèm `role` để frontend có ngay không cần gọi `/auth/me` lần đầu.
 
 Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI user (không giới hạn owner) nhưng chỉ ở endpoint riêng dưới `/api/v1/admin/users/{userId}/**` (`GET .../projects`, `GET .../projects/{projectId}`, `GET .../projects/{projectId}/endpoints`, `GET .../projects/{projectId}/test-cases`, `GET .../projects/{projectId}/bug-reports`, `GET .../projects/{projectId}/bug-reports/test-cases/{testCaseId}/run-history` - CHỈ ĐỌC, không có method ghi) - không đổi hành vi ownership check của các endpoint thường (`/api/v1/projects/**` vẫn luôn giới hạn theo owner đang đăng nhập, kể cả khi người gọi là ADMIN). `BugReportService.getBugReportsForProject(Project)`/`getRunHistoryForProject(Project, UUID)` (package-private) tách riêng khỏi bản `UUID projectId` công khai để `AdminUserDataService` tái dùng với `Project` đã resolve theo owner chỉ định - không nhân bản logic tổng hợp Dashboard/lồng 3 tầng.
+
+**Quota AI/ngày (Module 11d):** mỗi user có giới hạn TOKEN/NGÀY (giờ UTC, config `ai.quota.daily-token-limit`, mặc định 100000) để sinh test case AI. Vượt quota → `POST .../generate-tests` trả `429 AI_QUOTA_EXCEEDED` - chặn TRƯỚC khi gọi AI (không tốn request AI nào cho lần bị chặn). `AdminUserResponse`/`AdminDashboardSummaryResponse` trả kèm mức dùng token thật hôm nay (`aiTokensToday`/`totalAiTokensToday`) lấy từ `usage` thật của Anthropic (`ChatResponse.getMetadata().getUsage()`), không phải ước lượng.
+
+**Audit log (Module 11d):** `GET /api/v1/admin/audit-log` (paged, mới nhất trước) - ghi lại hành động khoá/mở tài khoản của admin. `AdminAuditEvent` lưu SNAPSHOT email (không FK tới `User`) để không mất dấu vết khi tài khoản liên quan bị xoá sau này.
 
 ## 5. Naming convention endpoint
 

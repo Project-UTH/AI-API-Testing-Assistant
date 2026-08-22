@@ -12,6 +12,7 @@ import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
+import com.aiapitesting.backend.exception.AiQuotaExceededException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.repository.BugReportRepository;
@@ -28,6 +29,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ResponseEntity;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.template.st.StTemplateRenderer;
@@ -42,6 +46,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -76,12 +82,16 @@ public class TestCaseGenerationService {
     @Value("classpath:prompts/generate-test-case.st")
     private Resource promptResource = new ClassPathResource("prompts/generate-test-case.st");
 
+    @Value("${ai.quota.daily-token-limit}")
+    private long dailyTokenLimit;
+
     @Async
     @Transactional
     public CompletableFuture<List<TestCaseResponse>> generate(UUID projectId, UUID endpointId, GenerateTestCasesRequest request) {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        ensureWithinDailyQuota(project);
         boolean includeSecurity = request != null && request.includeSecurity();
         boolean includeAssertions = request != null && request.includeAssertions();
         // request == null (body thiếu hẳn) giữ đúng hành vi mặc định cũ: sinh cả 3 nhóm Cơ bản.
@@ -116,6 +126,23 @@ public class TestCaseGenerationService {
     }
 
     /**
+     * Quota AI/ngày (Module 11, theo user, mốc ngày UTC) - chặn SỚM trước khi gọi AI, không tốn
+     * request nào nếu đã vượt quota trong ngày. Kiểm tra 1 LẦN ở đầu generate() (không phải trong
+     * generateGroup()) - nếu 1 lần "Sinh Test Case" kéo theo 2 lệnh gọi AI (Cơ bản + Security), cả
+     * 2 phải cùng bị chặn hoặc cùng được phép, không chặn nửa chừng giữa 2 lệnh.
+     */
+    private void ensureWithinDailyQuota(Project project) {
+        Instant startOfToday = Instant.now().truncatedTo(ChronoUnit.DAYS);
+        Instant startOfTomorrow = startOfToday.plus(1, ChronoUnit.DAYS);
+        long usedToday = testGenerationEventRepository.sumTotalTokensByOwnerAndCreatedAtBetween(
+                project.getOwner(), startOfToday, startOfTomorrow);
+        if (usedToday >= dailyTokenLimit) {
+            throw new AiQuotaExceededException(
+                    "Đã đạt giới hạn " + dailyTokenLimit + " token AI hôm nay, vui lòng thử lại vào ngày mai");
+        }
+    }
+
+    /**
      * Sinh + lưu 1 nhóm test case (Cơ bản hoặc Security) - xoá-và-thay đúng phạm vi theo source,
      * không đụng nhóm khác. Mỗi nhóm là 1 lần gọi AI riêng và 1 dòng lịch sử (TestGenerationEvent)
      * riêng vì đúng bản chất đã xảy ra 2 lần gọi AI thật khi cả 2 nhóm cùng được yêu cầu.
@@ -130,10 +157,16 @@ public class TestCaseGenerationService {
                 includePositive, includeNegative, includeBoundary);
 
         List<GeneratedTestCase> generated;
+        Usage usage;
         try {
-            generated = chatClient.prompt(prompt).call()
-                    .entity(new ParameterizedTypeReference<List<GeneratedTestCase>>() {
+            // responseEntity() (thay vì entity()) lấy ĐƯỢC CẢ ChatResponse gốc (chứa usage token
+            // thật) VÀ danh sách đã parse trong CÙNG 1 lệnh gọi - không tốn thêm lượt gọi AI nào so
+            // với trước (Module 11, theo dõi chi phí AI theo user/ngày).
+            ResponseEntity<ChatResponse, List<GeneratedTestCase>> response = chatClient.prompt(prompt).call()
+                    .responseEntity(new ParameterizedTypeReference<List<GeneratedTestCase>>() {
                     });
+            generated = response.entity();
+            usage = response.response().getMetadata().getUsage();
         } catch (Exception e) {
             // Log lỗi gốc từ AI provider để chẩn đoán (rate limit, sai key, timeout...) - không log
             // prompt/nội dung nhạy cảm, chỉ log loại lỗi + message do provider trả về.
@@ -202,6 +235,9 @@ public class TestCaseGenerationService {
                 .endpoint(endpoint)
                 .testCaseCount(saved.size())
                 .snapshotJson(writeSnapshotAsJson(generated))
+                .promptTokens(usage == null ? null : usage.getPromptTokens())
+                .completionTokens(usage == null ? null : usage.getCompletionTokens())
+                .totalTokens(usage == null ? null : usage.getTotalTokens())
                 .build());
 
         return saved;

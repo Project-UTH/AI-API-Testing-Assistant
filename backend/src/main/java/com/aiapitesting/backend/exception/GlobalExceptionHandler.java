@@ -67,6 +67,12 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("AI_GENERATION_FAILED", ex.getMessage()));
     }
 
+    @ExceptionHandler(AiQuotaExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiQuotaExceeded(AiQuotaExceededException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ApiErrorResponse.of("AI_QUOTA_EXCEEDED", ex.getMessage()));
+    }
+
     @ExceptionHandler(TestCaseNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleTestCaseNotFound(TestCaseNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

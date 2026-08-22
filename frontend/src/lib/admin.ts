@@ -14,6 +14,9 @@ export interface AdminUser {
   totalProjects: number
   totalTestCases: number
   totalBugReports: number
+  /** Tổng token AI đã dùng HÔM NAY (giờ UTC) - đối chiếu với AdminDashboardSummary.aiDailyTokenLimit. */
+  aiTokensToday: number
+  aiCallsToday: number
 }
 
 export interface AdminDashboardSummary {
@@ -25,6 +28,22 @@ export interface AdminDashboardSummary {
   overallPassRate: number | null
   totalOpenBugs: number
   totalGenerationEvents: number
+  totalAiTokensToday: number
+  aiDailyTokenLimit: number
+}
+
+export type AdminAuditAction = "USER_LOCKED" | "USER_UNLOCKED"
+
+export interface AdminAuditEvent {
+  id: string
+  adminEmail: string
+  targetEmail: string
+  action: AdminAuditAction
+  createdAt: string
+}
+
+export function listAdminAuditLog(page: number): Promise<PagedResult<AdminAuditEvent>> {
+  return apiFetchPaged<AdminAuditEvent>(`/admin/audit-log?page=${page}&size=20`)
 }
 
 export function getAdminDashboardSummary(): Promise<AdminDashboardSummary> {

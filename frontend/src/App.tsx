@@ -9,6 +9,7 @@ import { AdminUsersPage } from "@/pages/AdminUsersPage"
 import { AdminUserDetailPage } from "@/pages/AdminUserDetailPage"
 import { AdminProjectDataPage } from "@/pages/AdminProjectDataPage"
 import { AdminProjectBugReportsPage } from "@/pages/AdminProjectBugReportsPage"
+import { AdminAuditLogPage } from "@/pages/AdminAuditLogPage"
 import { ProjectsPage } from "@/pages/ProjectsPage"
 import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
 import { TestCasesPage } from "@/pages/TestCasesPage"
@@ -42,6 +43,7 @@ function App() {
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/users/:userId/projects/:projectId" element={<AdminProjectDataPage />} />
             <Route path="/admin/users/:userId/projects/:projectId/bug-reports" element={<AdminProjectBugReportsPage />} />
+            <Route path="/admin/audit-log" element={<AdminAuditLogPage />} />
           </Route>
         </Route>
       </Route>

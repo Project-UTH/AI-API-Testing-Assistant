@@ -2,20 +2,26 @@ package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.response.AdminUserResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
+import com.aiapitesting.backend.entity.AdminAuditAction;
+import com.aiapitesting.backend.entity.AdminAuditEvent;
 import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.entity.UserRole;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.UserNotFoundException;
+import com.aiapitesting.backend.repository.AdminAuditEventRepository;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.BugReportRepository.OwnerBugReportCount;
 import com.aiapitesting.backend.repository.ProjectRepository;
 import com.aiapitesting.backend.repository.ProjectRepository.OwnerCount;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository.OwnerTestCaseCount;
+import com.aiapitesting.backend.repository.TestGenerationEventRepository;
+import com.aiapitesting.backend.repository.TestGenerationEventRepository.OwnerAiUsage;
 import com.aiapitesting.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -30,8 +36,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +56,12 @@ class AdminUserServiceTest {
 
     @Mock
     private BugReportRepository bugReportRepository;
+
+    @Mock
+    private TestGenerationEventRepository testGenerationEventRepository;
+
+    @Mock
+    private AdminAuditEventRepository adminAuditEventRepository;
 
     @Mock
     private CurrentUserService currentUserService;
@@ -108,13 +122,58 @@ class AdminUserServiceTest {
     }
 
     @Test
-    void setEnabled_lockingAnotherUser_succeeds() {
+    void listUsers_mapsAiTokenUsageFromGroupedQuery_userWithNoUsageDefaultsToZero() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(userRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(user1, user2), pageable, 2));
+
+        OwnerAiUsage usage = mock(OwnerAiUsage.class);
+        when(usage.getOwnerId()).thenReturn(user1.getId());
+        when(usage.getTotalTokens()).thenReturn(1500L);
+        when(usage.getCallCount()).thenReturn(3L);
+        when(testGenerationEventRepository.sumUsageGroupedByOwnerIds(anyList(), any(), any()))
+                .thenReturn(List.of(usage));
+
+        PageResponse<AdminUserResponse> result = adminUserService.listUsers(pageable);
+
+        AdminUserResponse response1 = result.data().stream()
+                .filter(r -> r.id().equals(user1.getId())).findFirst().orElseThrow();
+        assertThat(response1.aiTokensToday()).isEqualTo(1500);
+        assertThat(response1.aiCallsToday()).isEqualTo(3);
+
+        AdminUserResponse response2 = result.data().stream()
+                .filter(r -> r.id().equals(user2.getId())).findFirst().orElseThrow();
+        assertThat(response2.aiTokensToday()).isZero();
+        assertThat(response2.aiCallsToday()).isZero();
+    }
+
+    @Test
+    void setEnabled_lockingAnotherUser_succeeds_andWritesAuditEvent() {
         when(userRepository.findById(user1.getId())).thenReturn(Optional.of(user1));
         when(currentUserService.getCurrentUser()).thenReturn(admin);
 
         AdminUserResponse response = adminUserService.setEnabled(user1.getId(), false);
 
         assertThat(response.enabled()).isFalse();
+
+        ArgumentCaptor<AdminAuditEvent> auditCaptor = ArgumentCaptor.forClass(AdminAuditEvent.class);
+        verify(adminAuditEventRepository).save(auditCaptor.capture());
+        AdminAuditEvent audit = auditCaptor.getValue();
+        assertThat(audit.getAdminEmail()).isEqualTo(admin.getEmail());
+        assertThat(audit.getTargetEmail()).isEqualTo(user1.getEmail());
+        assertThat(audit.getAction()).isEqualTo(AdminAuditAction.USER_LOCKED);
+    }
+
+    @Test
+    void setEnabled_unlockingUser_writesUnlockedAuditEvent() {
+        user1.setEnabled(false);
+        when(userRepository.findById(user1.getId())).thenReturn(Optional.of(user1));
+        when(currentUserService.getCurrentUser()).thenReturn(admin);
+
+        adminUserService.setEnabled(user1.getId(), true);
+
+        ArgumentCaptor<AdminAuditEvent> auditCaptor = ArgumentCaptor.forClass(AdminAuditEvent.class);
+        verify(adminAuditEventRepository).save(auditCaptor.capture());
+        assertThat(auditCaptor.getValue().getAction()).isEqualTo(AdminAuditAction.USER_UNLOCKED);
     }
 
     @Test

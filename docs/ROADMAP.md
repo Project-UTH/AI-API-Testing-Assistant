@@ -1,6 +1,6 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-22 (Module 11c - Admin xem chỉ đọc Bug Report của user khác, hoàn thiện bộ 3 11a/11b/11c. Trước đó: reset toàn bộ DB dev (backup rồi xoá) theo yêu cầu người dùng, test lại bằng dữ liệu thật qua shop-api-target, phát hiện+fix bug UI (header Target Base URL không tự cập nhật sau import) + ghi nhận 1 giới hạn MySQL deadlock khi sinh test case đồng thời nhiều endpoint. **Từ nay KHÔNG dùng tính năng AI sinh test case nữa (tốn token thật) — mọi verify dùng lại dữ liệu có sẵn trong tài khoản `freshtest@aiapi.local`/`freshtest123`.** 134/134 test pass.)
+> Cập nhật lần cuối: 2026-08-22 (Module 11d - AI usage/quota theo user/ngày (token thật từ Anthropic, không phải đếm lượt) + Audit log khoá/mở tài khoản, theo yêu cầu người dùng vì đồ án cần kiểm soát chi phí AI thật. Đã dùng ĐÚNG 1 lần gọi AI thật để verify token capture + quota chặn sớm (0 chi phí cho lần bị chặn) — ngoài lần đó, **vẫn giữ nguyên nguyên tắc không dùng tính năng AI sinh test case nữa**, mọi verify khác dùng lại dữ liệu có sẵn trong tài khoản `freshtest@aiapi.local`/`freshtest123`. Module 11a-d đã xong (Lõi, xem dữ liệu Project/Endpoint/TestCase/BugReport của user khác, AI usage+quota+audit log); còn "giám sát execution treo" hạ ưu tiên. 138/138 test pass.)
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -18,7 +18,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 8. Lịch sử & Dashboard | ✅ Xong |
 | 9. Nâng cao Test Case AI sinh (Security, Assertion, Test Data) | ✅ Xong |
 | 10. Bug Report (quy trình QA) | ✅ Xong |
-| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a+11b+11c xong, còn AI usage chi tiết/giám sát execution/audit log/quota) |
+| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a-d xong, còn giám sát execution treo - hạ ưu tiên) |
 | 12. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
@@ -530,8 +530,7 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 - [x] `GET /api/v1/auth/me` (mới) trả `{email, role}` đọc fresh từ DB — để frontend biết role hiện tại mà không cần đăng nhập lại; `AuthResponse` (`/auth/login`, `/auth/register`) trả kèm `role` luôn
 - [x] Mã lỗi mới `ACCOUNT_DISABLED` (403), `USER_NOT_FOUND` (404) — đã cập nhật bảng mã lỗi + mục 4d (giải thích cơ chế phân quyền) ở skill `api-contract`
 - [x] *(Bug thật phát hiện lúc verify bằng API thật, nghiêm trọng)* `GET /auth/me` ban đầu nằm trong `requestMatchers("/api/v1/auth/**").permitAll()` — permitAll nguyên cụm khiến request KHÔNG kèm token cũng lọt qua tới controller, nhưng `CurrentUserService.getCurrentUser()` bên trong lại giả định luôn có người đăng nhập (`SecurityContextHolder...getAuthentication().getName()` trả `"anonymousUser"` khi không có token) → `userRepository.findByEmail("anonymousUser")` rỗng → ném `IllegalStateException` không được `GlobalExceptionHandler` bắt riêng, rơi xuống handler `Exception.class` chung → 500 `INTERNAL_ERROR` thay vì 401 sạch. Fix: liệt kê rõ đúng 2 path công khai thật (`/api/v1/auth/register`, `/api/v1/auth/login`), bỏ wildcard.
-- [ ] *(Chưa làm — để đợt sau)* Theo dõi sử dụng AI chi tiết theo user/ngày (Dashboard hiện chỉ có 1 con số `totalGenerationEvents` toàn hệ thống, chưa breakdown)
-- [ ] *(Chưa làm — để đợt sau)* Giám sát execution treo, audit log hành động nhạy cảm, quota AI/ngày
+- [ ] *(Chưa làm — để đợt sau, quyết định hạ ưu tiên)* Giám sát execution treo
 
 ### 11c. Admin xem (chỉ đọc) Bug Report của user khác ✅
 
@@ -573,6 +572,38 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 - `BugReportServiceTest` gọi `exportAllToExcel(projectId)` thiếu tham số `List<UUID> bugReportIds` đã thêm ở Module 10 đợt 4 ("Xuất theo lựa chọn") — lỗi biên dịch test có sẵn từ trước, chặn `./mvnw test` chạy được bất kỳ test nào. Fix: truyền `null` (giữ đúng hành vi "xuất tất cả" cũ).
 - `DashboardServiceTest`/`TestExecutionServiceTest` thiếu `@Mock BugReportRepository` — 2 service này đã được tiêm thêm field `bugReportRepository` ở Module 10/11 (`totalOpenBugs`, `existingBugReportId`) nhưng test dùng `@InjectMocks` không được cập nhật theo, gây `NullPointerException` khi chạy. Fix: thêm `@Mock` còn thiếu.
 - `frontend/node_modules` thiếu `@fontsource/instrument-serif` dù đã khai trong `package.json` — do lần `git pull` mang commit thêm dependency này về nhưng chưa `npm install` lại, khiến `npm run build` báo lỗi resolve module. Fix: chạy `npm install` (không phải lỗi code).
+
+---
+
+### 11d. AI usage/quota theo user/ngày + Audit log ✅
+
+**Bối cảnh:** người dùng chủ động yêu cầu làm 3/4 mục còn lại của Module 11 (bỏ qua "giám sát execution treo" - đánh giá không cấp thiết), vì đây là đồ án liên quan trực tiếp tới chi phí AI thật, cần quản lý được mức dùng và giới hạn để tránh phát sinh chi phí ngoài kiểm soát khi có nhiều người dùng. Có 2 lựa chọn khi thiết kế "AI usage": đếm SỐ LẦN gọi AI (không tốn token nào để verify) hay đếm TOKEN THẬT (chính xác hơn về chi phí nhưng cần 1 lần gọi AI thật để xác nhận code đọc đúng response) - người dùng chọn phương án token thật, chấp nhận tốn 1 lần gọi AI để verify (xem mốc xác nhận).
+
+**Backend - Token usage thật**
+- [x] `TestCaseGenerationService.generateGroup()`: đổi `chatClient.prompt(prompt).call().entity(...)` thành `.responseEntity(...)` — lấy được CẢ `ChatResponse` gốc (chứa `usage` token thật từ Anthropic) LẪN danh sách đã parse trong CÙNG 1 lệnh gọi, không tốn thêm request AI nào so với trước
+- [x] `TestGenerationEvent` thêm 3 field nullable `promptTokens`/`completionTokens`/`totalTokens` (lấy từ `chatResponse.getMetadata().getUsage()`) — nullable vì dữ liệu lịch sử cũ (trước field này tồn tại) và trường hợp provider không trả usage đều hợp lệ, không backfill được
+
+**Backend - Quota AI/ngày**
+- [x] Config mới `ai.quota.daily-token-limit` (mặc định 100000, `application.properties`) — giới hạn TOKEN/NGÀY (giờ UTC) CHO MỖI USER, không phải quota chung toàn hệ thống
+- [x] `TestCaseGenerationService.generate()`: `ensureWithinDailyQuota(project)` chặn NGAY ĐẦU HÀM (trước khi vào `generateGroup()`/gọi AI) — nếu 1 lần "Sinh Test Case" kéo theo 2 lệnh gọi AI (Cơ bản + Security), cả 2 cùng bị chặn hoặc cùng được phép, không chặn nửa chừng. `AiQuotaExceededException` → 429 `AI_QUOTA_EXCEEDED`. **Chặn SỚM = không tốn request AI nào khi đã vượt quota** (khác kiểu "gọi AI trước, kiểm tra sau" sẽ vẫn mất tiền cho lần vượt quota)
+- [x] `TestGenerationEventRepository` thêm `sumTotalTokensByOwnerAndCreatedAtBetween` (quota check, 1 user) + `sumUsageGroupedByOwnerIds`/`sumTotalTokensByCreatedAtBetween` (trang Admin, xem dưới)
+
+**Backend - Audit log**
+- [x] Entity mới `AdminAuditEvent` (`adminEmail`/`targetEmail`/`action`/`createdAt`) - cố ý lưu SNAPSHOT email, không phải `@ManyToOne` tới `User` (cùng lý do đã áp dụng cho `BugReportEvent.bugReportId`: nếu là FK thật, xoá tài khoản sau này sẽ vỡ khoá ngoại hoặc mất dấu vết đúng lúc audit log cần giữ lại nhất)
+- [x] `AdminUserService.setEnabled()` ghi 1 `AdminAuditEvent` (`USER_LOCKED`/`USER_UNLOCKED`) mỗi lần khoá/mở thành công - hiện là hành động nhạy cảm DUY NHẤT trong hệ thống (không có hành động đổi role qua API, xem 11a)
+- [x] `GET /api/v1/admin/audit-log` (paged, mới nhất trước) - `AdminAuditLogController`/`AdminAuditLogService`
+
+**Backend - Hiển thị cho Admin**
+- [x] `AdminUserResponse` thêm `aiTokensToday`/`aiCallsToday` - `AdminUserService.listUsers()`/`getUserDetail()`/`setEnabled()` tính qua `sumUsageGroupedByOwnerIds` (cùng công thức GROUP BY tránh N+1 đã dùng cho project/test case/bug report ở 11a)
+- [x] `AdminDashboardSummaryResponse` thêm `totalAiTokensToday` (toàn hệ thống) + `aiDailyTokenLimit` (giá trị config, để frontend không cần hardcode)
+- [x] Mã lỗi mới `AI_QUOTA_EXCEEDED` (429) - cập nhật skill `api-contract`
+
+**Frontend**
+- [x] `AdminDashboardPage.tsx` thêm KPI "Token AI đã dùng hôm nay (mọi user)" + dòng ghi chú quota/user
+- [x] `AdminUsersPage.tsx` thêm cột "AI/ngày" (`X / limit`, chuyển màu đỏ đậm khi ≥ limit, tooltip hiện số lần gọi)
+- [x] `AdminAuditLogPage.tsx` mới (route `/admin/audit-log`, tab "Nhật ký" thứ 3 cạnh "Tổng quan"/"Người dùng") - danh sách phẳng, icon khoá/mở khác màu theo hành động
+
+**Mốc xác nhận:** `./mvnw test` xanh (138/138, thêm test cho token usage capture/quota chặn sớm ở `TestCaseGenerationServiceTest`, AI usage mapping + audit event ghi đúng ở `AdminUserServiceTest`, `AdminDashboardServiceTest`, `AdminAuditLogServiceTest` mới), `npx tsc -b --force` sạch, `npm run build` thành công. **Đã verify bằng ĐÚNG 1 lần gọi AI thật** (project tạm trong tài khoản `freshtest@aiapi.local`, xoá sạch ngay sau khi xong, không đụng 74 test case/1 bug report gốc): sinh 1 test case Positive cho `GET /api/products/{id}` → DB lưu đúng `prompt_tokens=4711, completion_tokens=300, total_tokens=5011` khớp response thật từ Anthropic → set tạm `ai.quota.daily-token-limit=10` (qua tham số dòng lệnh, không sửa code) → gọi sinh test case lần 2 → bị chặn `429 AI_QUOTA_EXCEEDED` NGAY LẬP TỨC, xác nhận qua DB **không có dòng `test_generation_events` mới** (0 token phát sinh cho lần bị chặn). **Đã verify UI thật bằng Playwright**: Admin Dashboard hiện đúng "Token AI đã dùng hôm nay: 5.011"; trang Người dùng hiện đúng dòng `freshtest@aiapi.local` "5.011 / 10" tô đỏ (vượt quota giả lập); khoá 1 tài khoản test → trang Nhật ký hiện đúng "verify-admin3@aiapi.local Khoá tài khoản verify-lockme@aiapi.local" kèm thời gian. Đã khởi động lại backend KHÔNG override để xác nhận quota trở về đúng mặc định 100000. Toàn bộ tài khoản/project test đã xoá sạch.
 
 ---
 

@@ -40,6 +40,15 @@ public class TestGenerationEvent {
     @Column(name = "snapshot_json", columnDefinition = "TEXT", nullable = false)
     private String snapshotJson;
 
+    // Nullable (khác mọi field khác ở đây) - lấy từ ChatResponse.getMetadata().getUsage() của
+    // Anthropic (Module 11, theo dõi chi phí AI). Có thể null nếu provider không trả usage, hoặc
+    // với các dòng sự kiện tạo TRƯỚC khi field này tồn tại (không backfill được dữ liệu đã mất).
+    private Integer promptTokens;
+
+    private Integer completionTokens;
+
+    private Integer totalTokens;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
