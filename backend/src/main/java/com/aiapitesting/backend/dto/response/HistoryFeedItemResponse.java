@@ -5,10 +5,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 1 dòng trong feed Lịch sử tổng (Module 8) - gộp sự kiện "Sinh test case" + "Chạy test" của MỌI
- * project thuộc user hiện tại. Giống {@link HistoryEventResponse} (record phẳng, field null theo
- * loại sự kiện) nhưng có thêm context project/endpoint vì feed tổng không có chỗ "treo" context
- * như {@code EndpointHistoryResponse} đang làm ở bản lịch sử theo-project.
+ * 1 dòng trong feed Lịch sử tổng - gộp sự kiện "Sinh test case"/"Chạy test"/Bug Report của mọi
+ * project thuộc user hiện tại. Record phẳng, field null theo loại sự kiện.
  */
 public record HistoryFeedItemResponse(
         UUID id,

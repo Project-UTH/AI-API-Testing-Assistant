@@ -43,11 +43,9 @@ public class TestCase {
     private Integer expectedStatus;
 
     /**
-     * Path đã thay tham số OpenAPI dạng {tenThamSo} bằng token {{tenThamSo}} (không phải giá trị
-     * cụ thể) - vd "/pet/{{petId}}". Tham số query (OpenAPI "in": "query") không có field riêng -
-     * gắn thẳng vào cuối path dùng cùng cú pháp, vd "/pet/{{petId}}?name={{name}}". Giá trị thật
-     * cho token được resolve lúc thực thi (Module 6/7), ưu tiên TestCaseDependency (Module 7)
-     * trước, rồi mới tới pathParamFallbacks.
+     * Path đã thay tham số OpenAPI dạng {tenThamSo} bằng token {{tenThamSo}}, vd "/pet/{{petId}}".
+     * Tham số query gắn thẳng vào cuối path cùng cú pháp, vd "/pet/{{petId}}?name={{name}}". Giá
+     * trị thật cho token resolve lúc thực thi, ưu tiên TestCaseDependency trước, rồi pathParamFallbacks.
      */
     @Column(columnDefinition = "TEXT")
     private String resolvedPath;
@@ -60,30 +58,24 @@ public class TestCase {
     @Column(columnDefinition = "TEXT")
     private String pathParamFallbacks;
 
-    // columnDefinition = VARCHAR thay vì để Hibernate tự suy ra MySQL ENUM(...) - ddl-auto=update
-    // KHÔNG bao giờ tự nới rộng danh sách giá trị của 1 cột ENUM đã tồn tại khi enum Java có thêm
-    // hằng số mới (đã gặp thật: thêm SECURITY vào TestCaseSource làm insert lỗi "Data truncated for
-    // column 'source'" trên DB cũ dù code Java đã build đúng) - VARCHAR tránh hẳn lớp lỗi này.
+    // columnDefinition = VARCHAR thay vì để Hibernate tự suy MySQL ENUM(...) - ddl-auto=update
+    // không tự nới rộng ENUM đã tồn tại khi thêm hằng số Java mới (đã gặp lỗi "Data truncated" thật
+    // khi thêm SECURITY vào TestCaseSource) - VARCHAR tránh hẳn lớp lỗi này.
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "VARCHAR(30)")
     private TestCaseSource source;
 
     /**
-     * Ghi đè cách gắn auth target API lúc thực thi (Module 9a) - DEFAULT giữ nguyên hành vi cũ
-     * (gắn auth thật của Project), NONE/INVALID dùng cho case Security cố tình test thiếu/sai auth.
-     * Enum khai báo DEFAULT trước tiên để khớp default ngầm của MySQL khi cột mới thêm vào (giống
-     * cách TestCaseSource.AI_GENERATED đã làm ở Module 4/5).
+     * Ghi đè cách gắn auth target API lúc thực thi - DEFAULT giữ hành vi cũ (auth thật của
+     * Project), NONE/INVALID dùng cho case Security cố tình test thiếu/sai auth. Enum khai báo
+     * DEFAULT trước tiên để khớp default ngầm của MySQL khi cột mới thêm vào.
      */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "VARCHAR(20)")
     @Builder.Default
     private TestCaseAuthOverride authOverride = TestCaseAuthOverride.DEFAULT;
 
-    /**
-     * Khoá test case này khỏi bị xoá khi "Sinh Test Case" xoá-và-thay (Positive/Negative/Boundary/
-     * Security) - áp dụng cho MỌI test case bất kể source. Người dùng tự bật/tắt qua nút khoá riêng,
-     * không qua form sửa thường (TestCaseRequest không có field này).
-     */
+    /** Khoá test case khỏi bị xoá khi "Sinh Test Case" xoá-và-thay - bật/tắt qua nút khoá riêng. */
     @Column(nullable = false)
     @Builder.Default
     private boolean locked = false;

@@ -1,9 +1,10 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, ChevronRight, Lock, Unlock } from "lucide-react"
+import { ChevronLeft, ChevronRight, Lock, Search, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { cn, formatDateTime } from "@/lib/utils"
 import { getAdminDashboardSummary, listAdminUsers, setAdminUserEnabled } from "@/lib/admin"
 import { getCurrentUserInfo } from "@/lib/auth"
@@ -13,14 +14,33 @@ const GRID_COLS = "grid-cols-[1fr_80px_70px_70px_80px_110px_130px_120px]"
 export function AdminUsersPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const page = Number(searchParams.get("page") ?? "0")
+  const search = searchParams.get("search") ?? ""
+  const [searchInput, setSearchInput] = useState(search)
   const queryClient = useQueryClient()
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
 
   const { data: me } = useQuery({ queryKey: ["current-user-info"], queryFn: () => getCurrentUserInfo() })
 
+  // Debounce 300ms trước khi gọi API - tránh 1 request cho mỗi ký tự gõ vào.
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (searchInput === search) return
+      const next = new URLSearchParams(searchParams)
+      if (searchInput) {
+        next.set("search", searchInput)
+      } else {
+        next.delete("search")
+      }
+      next.set("page", "0")
+      setSearchParams(next, { replace: true })
+    }, 300)
+    return () => clearTimeout(timeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput])
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["admin-users", page],
-    queryFn: () => listAdminUsers(page),
+    queryKey: ["admin-users", page, search],
+    queryFn: () => listAdminUsers(page, search),
   })
 
   const { data: summary } = useQuery({
@@ -55,6 +75,16 @@ export function AdminUsersPage() {
         <p className="mt-1 text-muted-foreground">Toàn bộ user đã đăng ký - khoá/mở tài khoản khi cần.</p>
       </div>
 
+      <div className="relative mb-4 max-w-sm">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Tìm theo email..."
+          className="pl-8"
+        />
+      </div>
+
       {isLoading && (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -69,7 +99,13 @@ export function AdminUsersPage() {
         </div>
       )}
 
-      {!isLoading && !isError && (
+      {!isLoading && !isError && users.length === 0 && (
+        <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+          {search ? `Không tìm thấy user nào khớp "${search}".` : "Chưa có user nào."}
+        </div>
+      )}
+
+      {!isLoading && !isError && users.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-border">
           <div className="min-w-[860px]">
             <div className={cn("grid gap-2 border-b border-border bg-muted/40 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground", GRID_COLS)}>
@@ -158,7 +194,7 @@ export function AdminUsersPage() {
             variant="outline"
             size="sm"
             disabled={page <= 0}
-            onClick={() => setSearchParams({ page: String(page - 1) })}
+            onClick={() => setSearchParams({ ...(search && { search }), page: String(page - 1) })}
           >
             <ChevronLeft className="h-4 w-4" />
             Trước
@@ -170,7 +206,7 @@ export function AdminUsersPage() {
             variant="outline"
             size="sm"
             disabled={page + 1 >= totalPages}
-            onClick={() => setSearchParams({ page: String(page + 1) })}
+            onClick={() => setSearchParams({ ...(search && { search }), page: String(page + 1) })}
           >
             Sau
             <ChevronRight className="h-4 w-4" />

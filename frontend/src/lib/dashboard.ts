@@ -5,8 +5,14 @@ export interface DashboardSummary {
   totalProjects: number
   totalEndpoints: number
   totalTestCases: number
+  /** Số test case phân biệt đã chạy ít nhất 1 lần (khác totalTestResults - test case chạy nhiều
+   *  lần vẫn chỉ tính 1). */
+  executedTestCaseCount: number
+  /** Tổng số lượt chạy, kể cả chạy lại - mẫu số của overallPassRate. */
   totalTestResults: number
-  /** Tỷ lệ pass toàn thời gian (0-100) - null nếu chưa từng chạy test nào. */
+  /** Số kết quả test PASS trong totalTestResults - tử số của overallPassRate. */
+  passedTestResults: number
+  /** Tỷ lệ pass = passedTestResults/totalTestResults * 100 - null nếu chưa từng chạy test nào. */
   overallPassRate: number | null
   /** Bug Report đang mở (khác Đã đóng) trên toàn bộ project. */
   totalOpenBugs: number

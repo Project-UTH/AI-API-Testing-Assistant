@@ -86,11 +86,7 @@ export async function apiFetch<T>(
   return (body as { data: T }).data
 }
 
-/**
- * Tải file nhị phân (VD .xlsx export) - KHÔNG dùng apiFetch vì response không phải JSON
- * {data, meta}, xem ngoại lệ ở mục 4c của skill api-contract. Lỗi (project/bug report không tồn
- * tại...) vẫn trả JSON chuẩn nên vẫn parse qua response.json() như rawFetch.
- */
+/** Tải file nhị phân (.xlsx export) - không dùng apiFetch vì response không phải JSON {data, meta}. */
 export async function apiFetchBlob(path: string): Promise<{ blob: Blob; filename: string | null }> {
   const token = getToken()
   const response = await fetch(`${API_BASE_URL}${path}`, {

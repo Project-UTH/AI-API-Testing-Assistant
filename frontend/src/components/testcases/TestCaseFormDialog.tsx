@@ -220,9 +220,7 @@ export function TestCaseFormDialog({
 
   function applySuggestion(paramName: string, sourceTestCaseId: string, sourceLabel: string, jsonPath: string) {
     setDependencies((prev) => {
-      // Chặn double-click/áp dụng lại 1 gợi ý đã có - server chỉ cho phép đúng 1 dependency mỗi
-      // placeholder (uk_test_case_dependencies_test_case_placeholder), thêm trùng sẽ vỡ ràng buộc
-      // lúc lưu và hiện lỗi hệ thống chung chung thay vì lỗi rõ ràng.
+      // Chặn double-click/áp dụng lại 1 gợi ý đã có - server chỉ cho phép đúng 1 dependency mỗi placeholder.
       if (prev.some((d) => d.placeholderName === paramName)) {
         return prev
       }

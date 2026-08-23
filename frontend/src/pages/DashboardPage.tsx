@@ -1,7 +1,7 @@
 import { useState, type ComponentType, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Bug, CircleCheck, Coins, FolderKanban, ListChecks, PieChart, Plug, Plus, Sparkles, Trash2, TriangleAlert, X } from "lucide-react"
+import { Bug, CircleCheck, Coins, FolderKanban, ListChecks, Plug, Plus, Sparkles, Trash2, TriangleAlert, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,6 +10,7 @@ import { getCurrentUserEmail } from "@/lib/api"
 import { getDashboardSummary, getMyAiUsage } from "@/lib/dashboard"
 import { getHistoryFeed, type HistoryFeedItem } from "@/lib/history"
 import { AiUsageChart } from "@/components/shared/AiUsageChart"
+import { PassRateCard } from "@/components/shared/PassRateCard"
 
 export function DashboardPage() {
   const { data, isLoading, isError } = useQuery({
@@ -51,25 +52,14 @@ export function DashboardPage() {
             <KpiCard icon={FolderKanban} label="Project" value={data.totalProjects} index={0} />
             <KpiCard icon={Plug} label="Endpoint" value={data.totalEndpoints} index={1} />
             <KpiCard icon={ListChecks} label="Test case" value={data.totalTestCases} index={2} />
-            <KpiCard
-              icon={PieChart}
+            <PassRateCard
               label="Tỷ lệ pass"
-              value={data.overallPassRate === null ? "—" : `${data.overallPassRate}%`}
-              valueClassName="text-emerald-500"
-              index={3}
-            >
-              {data.overallPassRate !== null && (
-                <>
-                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-rose-400/25">
-                    <div
-                      className="h-full rounded-full bg-emerald-500 transition-[width] duration-700 ease-out"
-                      style={{ width: `${data.overallPassRate}%` }}
-                    />
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{data.totalTestResults} kết quả test</p>
-                </>
-              )}
-            </KpiCard>
+              percent={data.overallPassRate}
+              passed={data.passedTestResults}
+              total={data.totalTestResults}
+              className="animate-rise"
+              style={{ animationDelay: "340ms" }}
+            />
             <KpiCard
               icon={Bug}
               label="Bug Report đang mở"

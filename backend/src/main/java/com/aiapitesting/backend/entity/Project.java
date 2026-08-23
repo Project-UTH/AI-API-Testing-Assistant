@@ -42,9 +42,8 @@ public class Project {
     private String targetAuthValueEncrypted;
 
     /**
-     * Base URL của API thật sẽ gọi lúc thực thi test (Module 6) - khác hoàn toàn với URL người
-     * dùng nhập lúc import (đó là vị trí tài liệu OpenAPI, có thể khác domain). Suy ra từ
-     * openApi.getServers() lúc import nếu có, hoặc người dùng tự nhập tay.
+     * Base URL của API thật sẽ gọi lúc thực thi - khác URL nhập lúc import (vị trí tài liệu
+     * OpenAPI). Suy ra từ openApi.getServers() nếu có, hoặc người dùng tự nhập.
      */
     @Column(name = "target_base_url")
     private String targetBaseUrl;
@@ -53,10 +52,8 @@ public class Project {
     private Instant createdAt;
 
     /**
-     * Số thứ tự Project dùng để sinh bugId dạng "B{n}_{seq}" (Module 10) - đánh theo project nào
-     * CÓ BUG ĐẦU TIÊN trong phạm vi owner hiện tại (không phải toàn hệ thống, tránh rò rỉ hoạt động
-     * giữa các user không liên quan). Null = project này chưa có bug report nào; cột mới nullable
-     * trên bảng đã có dữ liệu cũ nên an toàn tuyệt đối với ddl-auto=update.
+     * Số thứ tự Project dùng để sinh bugId dạng "B{n}_{seq}" - đánh trong phạm vi owner hiện tại
+     * (không phải toàn hệ thống). Null = project chưa có bug report nào.
      */
     @Column(name = "bug_report_project_seq")
     private Integer bugReportProjectSeq;

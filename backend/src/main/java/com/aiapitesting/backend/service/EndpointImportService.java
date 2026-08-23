@@ -105,11 +105,9 @@ public class EndpointImportService {
 
         ParseOptions options = new ParseOptions();
         options.setResolve(true);
-        // setResolve(true) chỉ resolve $ref TRỎ RA NGOÀI file (multi-file spec) - $ref nội bộ dạng
-        // "#/components/schemas/..." vẫn giữ nguyên dạng {"$ref": "..."} khi serialize Operation,
-        // khiến AI sinh test case KHÔNG THẤY được field/required nào của requestBody (chỉ thấy 1
-        // chuỗi $ref vô nghĩa với nó) - đây là nguyên nhân AI hay thiếu field bắt buộc. setResolveFully
-        // mới thật sự inline properties/required/type vào ngay trong cây Operation trước khi serialize.
+        // setResolve(true) chỉ resolve $ref trỏ ra ngoài file - $ref nội bộ vẫn giữ dạng
+        // {"$ref": "..."} khi serialize, khiến AI không thấy field/required của requestBody.
+        // setResolveFully(true) inline hẳn properties/required/type vào Operation trước khi serialize.
         options.setResolveFully(true);
         SwaggerParseResult result = new OpenAPIV3Parser().readContents(content, null, options);
         OpenAPI openApi = result.getOpenAPI();
@@ -118,9 +116,8 @@ public class EndpointImportService {
             throw new SwaggerParseException("Không parse được nội dung OpenAPI đã cung cấp");
         }
 
-        // targetBaseUrl (nơi gọi API thật lúc thực thi test, Module 6) khác hoàn toàn với `content`
-        // đang parse ở đây (tài liệu OpenAPI, có thể host ở domain khác) - ưu tiên giá trị người
-        // dùng tự nhập, chỉ suy ra từ servers[] của chính spec khi người dùng để trống.
+        // targetBaseUrl (nơi gọi API thật) khác `content` đang parse (tài liệu OpenAPI) - ưu tiên
+        // giá trị người dùng tự nhập, chỉ suy ra từ servers[] khi để trống.
         project.setTargetBaseUrl(resolveTargetBaseUrl(targetBaseUrl, openApi));
 
         List<Endpoint> endpoints = new ArrayList<>();
@@ -132,10 +129,7 @@ public class EndpointImportService {
             throw new SwaggerParseException("Tài liệu OpenAPI không chứa endpoint nào");
         }
 
-        // Dọn BugReport (Module 10)/BugReportEvent/TestExecutionEndpoint/TestResult/TestExecution/
-        // TestCaseDependency/TestCaseAssertion/TestGenerationEvent/test case của các endpoint cũ
-        // trước khi xoá endpoint - đều là khoá ngoại NOT NULL, xoá endpoint trước khi còn bị tham
-        // chiếu sẽ vi phạm khoá ngoại (lỗi MySQL 1451, đã gặp nhiều lần trong dự án này).
+        // Dọn hết bảng phụ thuộc endpoint cũ trước khi xoá - đều là khoá ngoại NOT NULL.
         bugReportRepository.deleteAllByProject(project);
         bugReportEventRepository.deleteAllByEndpointProject(project);
         testExecutionEndpointRepository.deleteAllByExecutionProject(project);
@@ -154,9 +148,8 @@ public class EndpointImportService {
         if (targetBaseUrl != null && !targetBaseUrl.isBlank()) {
             return targetBaseUrl;
         }
-        // Theo chuẩn OpenAPI 3.0, spec không khai báo `servers` thì swagger-parser tự điền 1 server
-        // mặc định url "/" (relative) - không dùng được làm base URL gọi API thật, chỉ nhận URL
-        // tuyệt đối (http/https) làm gợi ý.
+        // Spec không khai báo `servers` thì swagger-parser tự điền server mặc định url "/"
+        // (relative) - không dùng được, chỉ nhận URL tuyệt đối làm gợi ý.
         List<Server> servers = openApi.getServers();
         if (servers != null && !servers.isEmpty()) {
             String url = servers.get(0).getUrl();
@@ -177,11 +170,7 @@ public class EndpointImportService {
         project.setTargetAuthValueEncrypted(aesEncryptionService.encrypt(authValue));
     }
 
-    /**
-     * Nếu URL nguồn OpenAPI bị chặn sau login, dùng chính auth đã nhập (vốn được lưu lại
-     * cho Module 6) để gắn header khi tải — không phải mọi API bị chặn login đều có cách
-     * xác thực nào khác ngoài giá trị người dùng đã cung cấp.
-     */
+    /** Nếu URL nguồn OpenAPI bị chặn sau login, dùng chính auth đã nhập để gắn header khi tải. */
     private String fetchUrlContent(String url, TargetAuthType authType, String authValue) {
         TargetAuthHeaderResolver.AuthHeader header = targetAuthHeaderResolver.resolve(authType, authValue);
         if (header == null) {
@@ -201,14 +190,10 @@ public class EndpointImportService {
     }
 
     /**
-     * Chỉ giữ phần schema AI thực sự cần để sinh test case (parameters, requestBody, danh sách mã
-     * trạng thái đã document) - bỏ hẳn full schema body của từng response code. swagger-parser với
-     * setResolveFully(true) inline nguyên schema (thường trùng lặp gần như y hệt request schema)
-     * vào MỖI response code documented, khiến field "responses" chiếm phần lớn dung lượng schema
-     * (đã đo thực tế: 18191/26519 ký tự - 68% - cho 1 endpoint chỉ có 2 response code) mà không
-     * mang thêm giá trị cho AI ngoài việc biết mã đó có tồn tại - đây là nguyên nhân chính khiến
-     * endpoint có nhiều response code document (PUT/PATCH/GET theo id) hay bị Groq từ chối 413 dù
-     * endpoint đơn giản hơn (POST) vẫn sinh được bình thường.
+     * Chỉ giữ phần schema AI cần để sinh test case (parameters, requestBody, mã trạng thái) - bỏ
+     * full schema body từng response code. setResolveFully(true) inline schema trùng lặp vào MỖI
+     * response code, chiếm phần lớn dung lượng (đã đo ~68% cho 1 endpoint 2 response code) và từng
+     * khiến AI provider từ chối request quá lớn.
      */
     private String buildSchemaJson(Operation operation) {
         Map<String, Object> trimmed = new LinkedHashMap<>();

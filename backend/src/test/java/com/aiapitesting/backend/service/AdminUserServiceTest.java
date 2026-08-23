@@ -39,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -103,7 +104,7 @@ class AdminUserServiceTest {
         when(bugCount.getCount()).thenReturn(2L);
         when(bugReportRepository.countGroupedByOwnerIds(anyList())).thenReturn(List.of(bugCount));
 
-        PageResponse<AdminUserResponse> result = adminUserService.listUsers(pageable);
+        PageResponse<AdminUserResponse> result = adminUserService.listUsers(pageable, null);
 
         assertThat(result.data()).hasSize(2);
         AdminUserResponse response1 = result.data().stream()
@@ -122,6 +123,29 @@ class AdminUserServiceTest {
     }
 
     @Test
+    void listUsers_searchGiven_usesEmailSearchQueryInsteadOfFindAll() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(userRepository.findByEmailContainingIgnoreCase("user1", pageable))
+                .thenReturn(new PageImpl<>(List.of(user1), pageable, 1));
+
+        PageResponse<AdminUserResponse> result = adminUserService.listUsers(pageable, "user1");
+
+        assertThat(result.data()).hasSize(1);
+        assertThat(result.data().get(0).id()).isEqualTo(user1.getId());
+        verify(userRepository, never()).findAll(pageable);
+    }
+
+    @Test
+    void listUsers_blankSearch_fallsBackToFindAll() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(userRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(user1), pageable, 1));
+
+        PageResponse<AdminUserResponse> result = adminUserService.listUsers(pageable, "   ");
+
+        assertThat(result.data()).hasSize(1);
+    }
+
+    @Test
     void listUsers_mapsAiTokenUsageFromGroupedQuery_userWithNoUsageDefaultsToZero() {
         Pageable pageable = PageRequest.of(0, 20);
         when(userRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(user1, user2), pageable, 2));
@@ -133,7 +157,7 @@ class AdminUserServiceTest {
         when(testGenerationEventRepository.sumUsageGroupedByOwnerIds(anyList(), any(), any()))
                 .thenReturn(List.of(usage));
 
-        PageResponse<AdminUserResponse> result = adminUserService.listUsers(pageable);
+        PageResponse<AdminUserResponse> result = adminUserService.listUsers(pageable, null);
 
         AdminUserResponse response1 = result.data().stream()
                 .filter(r -> r.id().equals(user1.getId())).findFirst().orElseThrow();

@@ -67,12 +67,7 @@ public class BugReportController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(response));
     }
 
-    /**
-     * Sinh Bug Report hàng loạt thẳng từ trang Kết quả thực thi - tiện hơn phải mở từng cái ở trang
-     * Bug Report. testResultIds null/rỗng = "Sinh tất cả" (toàn bộ Fail của execution chưa có bug),
-     * có truyền = "Sinh theo lựa chọn". Dòng nào không hợp lệ (không phải Fail/đã có bug) chỉ bị bỏ
-     * qua (skippedCount), không làm fail cả request.
-     */
+    /** testResultIds null/rỗng = "Sinh tất cả", có truyền = "Sinh theo lựa chọn". */
     @PostMapping("/generate")
     public ResponseEntity<ApiResponse<BugReportBatchGenerateResponse>> generate(
             @PathVariable UUID projectId,
@@ -83,12 +78,7 @@ public class BugReportController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(response));
     }
 
-    /**
-     * Sinh Bug Report hàng loạt thẳng từ trang Bug Report - quét TOÀN BỘ project (không giới hạn 1
-     * execution), 1 test case Fail nhiều lần ở nhiều execution khác nhau thì mỗi lần chưa có bug đều
-     * sinh được riêng (không chỉ lấy lần gần nhất). testResultIds null/rỗng = "Sinh tất cả", có
-     * truyền = "Sinh theo lựa chọn" (tick từng lần chạy Fail cụ thể ở Tầng 3).
-     */
+    /** Quét toàn bộ project, không giới hạn 1 execution. testResultIds null/rỗng = "Sinh tất cả". */
     @PostMapping("/generate-batch")
     public ResponseEntity<ApiResponse<BugReportBatchGenerateResponse>> generateBatch(
             @PathVariable UUID projectId,
@@ -133,10 +123,7 @@ public class BugReportController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Binary .xlsx, KHÔNG bọc envelope {data,meta} chuẩn của api-contract - ngoại lệ hợp lý cho tải
-     * file, đã ghi chú lại trong skill api-contract.
-     */
+    /** Binary .xlsx, không bọc envelope {data,meta} chuẩn - xem skill api-contract. */
     @GetMapping("/{bugReportId}/export")
     public ResponseEntity<byte[]> export(
             @PathVariable UUID projectId,
@@ -145,11 +132,7 @@ public class BugReportController {
         return excelFileResponse(bugReportService.exportToExcel(projectId, bugReportId));
     }
 
-    /**
-     * Xuất bug report của project vào 1 file .xlsx (nhiều dòng). Không truyền bugReportId = xuất
-     * TOÀN BỘ (nút "Xuất tất cả"); có truyền (>=1, query lặp) = chỉ xuất đúng các bug đã tick (nút
-     * "Xuất theo lựa chọn").
-     */
+    /** Không truyền bugReportId = xuất toàn bộ; có truyền = chỉ xuất các bug đã tick. */
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportAll(
             @PathVariable UUID projectId,

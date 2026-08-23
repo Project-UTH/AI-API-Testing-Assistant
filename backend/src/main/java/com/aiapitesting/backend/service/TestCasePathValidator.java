@@ -11,11 +11,7 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Validate cú pháp resolvedPath/pathParamFallbacks của TestCase - dùng chung cho cả đường AI sinh
- * (TestCaseGenerationService) lẫn CRUD thủ công (TestCaseService), thuần cú pháp, không cần biết
- * test case thuộc nhóm Positive/Negative/Boundary (hệ thống không lưu nhãn nhóm này ở đâu cả).
- */
+/** Validate cú pháp resolvedPath/pathParamFallbacks của TestCase - dùng chung cho AI sinh lẫn CRUD thủ công. */
 @Component
 public class TestCasePathValidator {
 
@@ -51,7 +47,7 @@ public class TestCasePathValidator {
         }
     }
 
-    /** Trích danh sách tên tham số từ các token {{tenThamSo}} trong 1 chuỗi - dùng lại ở engine thực thi (Module 6/7) và gợi ý liên kết (Module 7). */
+    /** Trích danh sách tên tham số từ các token {{tenThamSo}} trong 1 chuỗi. */
     public Set<String> extractPlaceholders(String text) {
         Set<String> result = new LinkedHashSet<>();
         if (text == null) {

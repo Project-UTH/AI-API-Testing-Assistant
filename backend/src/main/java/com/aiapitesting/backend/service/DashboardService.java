@@ -39,6 +39,7 @@ public class DashboardService {
         long totalProjects = projectRepository.countByOwner(owner);
         long totalEndpoints = endpointRepository.countByProjectOwner(owner);
         long totalTestCases = testCaseRepository.countByEndpointProjectOwner(owner);
+        long executedTestCaseCount = testResultRepository.countDistinctTestCaseByOwner(owner);
         long totalTestResults = testResultRepository.countByTestCaseEndpointProjectOwner(owner);
         long passedTestResults = testResultRepository.countByTestCaseEndpointProjectOwnerAndStatus(
                 owner, TestResultStatus.PASSED);
@@ -56,7 +57,7 @@ public class DashboardService {
                 : (int) Math.round(passedTestResults * 100.0 / totalTestResults);
 
         return new DashboardSummaryResponse(
-                totalProjects, totalEndpoints, totalTestCases, totalTestResults, overallPassRate, totalOpenBugs,
-                aiTokensToday, aiDailyTokenLimit);
+                totalProjects, totalEndpoints, totalTestCases, executedTestCaseCount, totalTestResults,
+                passedTestResults, overallPassRate, totalOpenBugs, aiTokensToday, aiDailyTokenLimit);
     }
 }

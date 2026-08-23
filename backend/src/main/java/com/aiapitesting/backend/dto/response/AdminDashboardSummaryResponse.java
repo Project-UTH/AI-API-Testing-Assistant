@@ -6,8 +6,13 @@ public record AdminDashboardSummaryResponse(
         long totalProjects,
         long totalEndpoints,
         long totalTestCases,
+        /** Số test case phân biệt (mọi user) đã chạy ít nhất 1 lần. */
+        long executedTestCaseCount,
+        /** Tổng số lượt chạy (mọi user), kể cả chạy lại - mẫu số của overallPassRate. */
         long totalTestResults,
-        /** Tỷ lệ pass toàn hệ thống (0-100) - null nếu chưa có kết quả test nào. */
+        /** Số kết quả test PASS trong totalTestResults - tử số của overallPassRate. */
+        long passedTestResults,
+        /** Tỷ lệ pass = passedTestResults/totalTestResults * 100 - null nếu chưa có kết quả test nào. */
         Integer overallPassRate,
         long totalOpenBugs,
         /** Tổng số lần gọi AI sinh test case (mọi user) - ước lượng mức dùng AI của hệ thống. */

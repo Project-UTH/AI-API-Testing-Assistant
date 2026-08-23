@@ -47,8 +47,10 @@ public class AdminUserService {
     private final AdminAuditEventRepository adminAuditEventRepository;
     private final CurrentUserService currentUserService;
 
-    public PageResponse<AdminUserResponse> listUsers(Pageable pageable) {
-        Page<User> page = userRepository.findAll(pageable);
+    public PageResponse<AdminUserResponse> listUsers(Pageable pageable, String search) {
+        Page<User> page = (search == null || search.isBlank())
+                ? userRepository.findAll(pageable)
+                : userRepository.findByEmailContainingIgnoreCase(search.trim(), pageable);
         List<UUID> userIds = page.getContent().stream().map(User::getId).toList();
 
         Map<UUID, Long> projectCounts = toMap(projectRepository.countGroupedByOwnerIds(userIds), OwnerCount::getOwnerId, OwnerCount::getCount);

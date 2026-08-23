@@ -205,10 +205,7 @@ export interface GenerateBugReportsResult {
   skippedCount: number
 }
 
-/**
- * Sinh Bug Report hàng loạt thẳng từ trang Kết quả thực thi - testResultIds null = "Sinh tất cả"
- * (toàn bộ Fail của execution chưa có bug), mảng cụ thể = "Sinh theo lựa chọn".
- */
+/** testResultIds null = "Sinh tất cả", mảng cụ thể = "Sinh theo lựa chọn". */
 export function generateBugReports(
   projectId: string,
   executionId: string,
@@ -220,11 +217,7 @@ export function generateBugReports(
   })
 }
 
-/**
- * Sinh Bug Report hàng loạt thẳng từ trang Bug Report - quét TOÀN BỘ project (không giới hạn 1
- * execution), testResultIds null = "Sinh tất cả" (mọi kết quả Fail của project chưa có bug), mảng
- * cụ thể = "Sinh theo lựa chọn" (tick từng lần chạy Fail ở Tầng 3).
- */
+/** Quét toàn bộ project (không giới hạn 1 execution). testResultIds null = "Sinh tất cả". */
 export function generateBugReportsForProject(
   projectId: string,
   testResultIds: string[] | null
