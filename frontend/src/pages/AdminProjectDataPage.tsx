@@ -6,6 +6,8 @@ import { ArrowLeft, ChevronDown, ChevronRight, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn, METHOD_STYLES } from "@/lib/utils"
 import { getAdminUserProject, listAdminUserEndpoints, listAdminUserTestCases } from "@/lib/admin"
+import { TestCaseDetailDialog } from "@/components/testcases/TestCaseDetailDialog"
+import type { TestCase } from "@/lib/testcases"
 
 const SOURCE_STYLES: Record<string, string> = {
   AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
@@ -24,6 +26,7 @@ export function AdminProjectDataPage() {
   const { userId, projectId } = useParams<{ userId: string; projectId: string }>()
   const navigate = useNavigate()
   const [expandedEndpointIds, setExpandedEndpointIds] = useState<Set<string>>(new Set())
+  const [selectedTestCase, setSelectedTestCase] = useState<TestCase | null>(null)
 
   const { data: project } = useQuery({
     queryKey: ["admin-user-project", userId, projectId],
@@ -135,9 +138,11 @@ export function AdminProjectDataPage() {
                     <p className="p-4 text-sm text-muted-foreground">Chưa có test case nào.</p>
                   ) : (
                     cases.map((tc) => (
-                      <div
+                      <button
                         key={tc.id}
-                        className="flex items-center gap-3 border-b border-border p-3 text-sm last:border-b-0"
+                        type="button"
+                        onClick={() => setSelectedTestCase(tc)}
+                        className="flex w-full items-center gap-3 border-b border-border p-3 text-left text-sm last:border-b-0 hover:bg-accent"
                       >
                         {tc.locked && <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                         <span className="min-w-0 flex-1 truncate">{tc.name}</span>
@@ -152,7 +157,7 @@ export function AdminProjectDataPage() {
                         <span className="shrink-0 font-mono text-xs text-muted-foreground">
                           {tc.expectedStatus}
                         </span>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -162,6 +167,12 @@ export function AdminProjectDataPage() {
         })}
       </div>
       )}
+
+      <TestCaseDetailDialog
+        open={selectedTestCase !== null}
+        onOpenChange={(open) => !open && setSelectedTestCase(null)}
+        testCase={selectedTestCase}
+      />
     </div>
   )
 }

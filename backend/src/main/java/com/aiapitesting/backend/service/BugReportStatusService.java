@@ -13,10 +13,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Tự động hoá HẸP về trạng thái bug report theo lần chạy mới (Module 10) - tách riêng khỏi
- * BugReportService/TestExecutionRunner để dễ unit test độc lập (chỉ cần mock BugReportRepository).
- * Gọi từ TestExecutionRunner.finish() - điểm DUY NHẤT mọi TestResult được lưu, đảm bảo không bỏ
- * sót lần chạy nào (kể cả test case được kéo theo qua Test Data Chaining).
+ * Tự động hoá hẹp về trạng thái bug report theo lần chạy mới - tách riêng khỏi BugReportService/
+ * TestExecutionRunner để dễ unit test độc lập. Gọi từ TestExecutionRunner.finish() - điểm duy nhất
+ * mọi TestResult được lưu.
  */
 @Service
 @RequiredArgsConstructor

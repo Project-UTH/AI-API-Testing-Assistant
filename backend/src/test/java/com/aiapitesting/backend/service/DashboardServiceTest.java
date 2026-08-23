@@ -66,6 +66,7 @@ class DashboardServiceTest {
         when(projectRepository.countByOwner(owner)).thenReturn(3L);
         when(endpointRepository.countByProjectOwner(owner)).thenReturn(12L);
         when(testCaseRepository.countByEndpointProjectOwner(owner)).thenReturn(40L);
+        when(testResultRepository.countDistinctTestCaseByOwner(owner)).thenReturn(18L);
         when(testResultRepository.countByTestCaseEndpointProjectOwner(owner)).thenReturn(20L);
         when(testResultRepository.countByTestCaseEndpointProjectOwnerAndStatus(owner, TestResultStatus.PASSED))
                 .thenReturn(15L);
@@ -75,8 +76,10 @@ class DashboardServiceTest {
         assertThat(summary.totalProjects()).isEqualTo(3);
         assertThat(summary.totalEndpoints()).isEqualTo(12);
         assertThat(summary.totalTestCases()).isEqualTo(40);
+        assertThat(summary.executedTestCaseCount()).isEqualTo(18);
         assertThat(summary.totalTestResults()).isEqualTo(20);
-        assertThat(summary.overallPassRate()).isEqualTo(75); // 15/20 = 75%
+        assertThat(summary.passedTestResults()).isEqualTo(15);
+        assertThat(summary.overallPassRate()).isEqualTo(75); // 15/20 lượt chạy = 75%
     }
 
     @Test

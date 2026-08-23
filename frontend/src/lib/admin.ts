@@ -27,7 +27,12 @@ export interface AdminDashboardSummary {
   totalProjects: number
   totalEndpoints: number
   totalTestCases: number
+  /** Số test case phân biệt (mọi user) đã chạy ít nhất 1 lần. */
+  executedTestCaseCount: number
+  /** Tổng số lượt chạy (mọi user), kể cả chạy lại - mẫu số của overallPassRate. */
   totalTestResults: number
+  /** Số kết quả test PASS trong totalTestResults - tử số của overallPassRate. */
+  passedTestResults: number
   overallPassRate: number | null
   totalOpenBugs: number
   totalGenerationEvents: number
@@ -54,8 +59,9 @@ export function getAdminDashboardSummary(): Promise<AdminDashboardSummary> {
   return apiFetch<AdminDashboardSummary>("/admin/dashboard/summary")
 }
 
-export function listAdminUsers(page: number): Promise<PagedResult<AdminUser>> {
-  return apiFetchPaged<AdminUser>(`/admin/users?page=${page}&size=20`)
+export function listAdminUsers(page: number, search?: string): Promise<PagedResult<AdminUser>> {
+  const searchParam = search ? `&search=${encodeURIComponent(search)}` : ""
+  return apiFetchPaged<AdminUser>(`/admin/users?page=${page}&size=20${searchParam}`)
 }
 
 export function getAdminUser(userId: string): Promise<AdminUser> {

@@ -1,9 +1,10 @@
-import { type ComponentType } from "react"
+import { type ComponentType, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Bug, Coins, FolderKanban, ListChecks, PieChart, Plug, Sparkles, Users } from "lucide-react"
+import { Bug, Coins, ListChecks, Plug, Sparkles, Users } from "lucide-react"
 
 import { getAdminAiUsage, getAdminDashboardSummary } from "@/lib/admin"
 import { AiUsageChart } from "@/components/shared/AiUsageChart"
+import { PassRateCard } from "@/components/shared/PassRateCard"
 
 export function AdminDashboardPage() {
   const { data, isLoading, isError } = useQuery({
@@ -25,7 +26,7 @@ export function AdminDashboardPage() {
 
       {isLoading && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: 7 }).map((_, i) => (
             <div key={i} className="h-24 animate-pulse rounded-2xl border border-border bg-card" />
           ))}
         </div>
@@ -40,16 +41,14 @@ export function AdminDashboardPage() {
       {data && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard icon={Users} label="Người dùng" value={data.totalUsers} />
-          <KpiCard icon={FolderKanban} label="Project" value={data.totalProjects} />
           <KpiCard icon={Plug} label="Endpoint" value={data.totalEndpoints} />
           <KpiCard icon={ListChecks} label="Test case" value={data.totalTestCases} />
-          <KpiCard
-            icon={PieChart}
+          <PassRateCard
             label="Tỷ lệ pass toàn hệ thống"
-            value={data.overallPassRate === null ? "—" : `${data.overallPassRate}%`}
-            valueClassName="text-emerald-500"
+            percent={data.overallPassRate}
+            passed={data.passedTestResults}
+            total={data.totalTestResults}
           />
-          <KpiCard label="Kết quả test đã ghi nhận" value={data.totalTestResults} icon={ListChecks} />
           <KpiCard
             icon={Bug}
             label="Bug Report đang mở"
@@ -59,12 +58,6 @@ export function AdminDashboardPage() {
           <KpiCard icon={Sparkles} label="Lượt AI sinh test case" value={data.totalGenerationEvents} />
           <KpiCard icon={Coins} label="Token AI đã dùng hôm nay (mọi user)" value={data.totalAiTokensToday.toLocaleString("vi-VN")} />
         </div>
-      )}
-
-      {data && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Quota mỗi user: {data.aiDailyTokenLimit.toLocaleString("vi-VN")} token/ngày (xem chi tiết theo từng user ở mục "Người dùng").
-        </p>
       )}
 
       <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-sm">
@@ -80,11 +73,13 @@ function KpiCard({
   label,
   value,
   valueClassName,
+  children,
 }: {
   icon: ComponentType<{ className?: string }>
   label: string
   value: number | string
   valueClassName?: string
+  children?: ReactNode
 }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
@@ -93,6 +88,7 @@ function KpiCard({
         {label}
       </div>
       <div className={`mt-3 text-3xl font-bold tabular-nums ${valueClassName ?? "text-foreground"}`}>{value}</div>
+      {children}
     </div>
   )
 }

@@ -66,6 +66,7 @@ class AdminDashboardServiceTest {
         when(projectRepository.count()).thenReturn(8L);
         when(endpointRepository.count()).thenReturn(30L);
         when(testCaseRepository.count()).thenReturn(120L);
+        when(testResultRepository.countDistinctTestCase()).thenReturn(50L);
         when(testResultRepository.count()).thenReturn(60L);
         when(testResultRepository.countByStatus(TestResultStatus.PASSED)).thenReturn(45L);
         when(bugReportRepository.countByStatusNot(BugStatus.CLOSED)).thenReturn(7L);
@@ -78,8 +79,10 @@ class AdminDashboardServiceTest {
         assertThat(summary.totalProjects()).isEqualTo(8);
         assertThat(summary.totalEndpoints()).isEqualTo(30);
         assertThat(summary.totalTestCases()).isEqualTo(120);
+        assertThat(summary.executedTestCaseCount()).isEqualTo(50);
         assertThat(summary.totalTestResults()).isEqualTo(60);
-        assertThat(summary.overallPassRate()).isEqualTo(75); // 45/60 = 75%
+        assertThat(summary.passedTestResults()).isEqualTo(45);
+        assertThat(summary.overallPassRate()).isEqualTo(75); // 45/60 lượt chạy = 75%
         assertThat(summary.totalOpenBugs()).isEqualTo(7);
         assertThat(summary.totalGenerationEvents()).isEqualTo(20);
         assertThat(summary.totalAiTokensToday()).isEqualTo(4200);

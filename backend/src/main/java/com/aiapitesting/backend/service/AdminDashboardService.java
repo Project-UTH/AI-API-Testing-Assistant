@@ -42,13 +42,12 @@ public class AdminDashboardService {
     private long dailyTokenLimit;
 
     public AdminDashboardSummaryResponse getSystemSummary() {
-        // Chỉ đếm role USER - tài khoản ADMIN là người quản trị hệ thống, không phải người dùng
-        // ứng dụng, không nên cộng dồn vào số liệu "Người dùng" (gây hiểu lầm đã có N người dùng
-        // thật trong khi 1 trong số đó là chính admin đang xem trang này).
+        // Chỉ đếm role USER - tài khoản ADMIN không tính vào số liệu "Người dùng".
         long totalUsers = userRepository.countByRole(UserRole.USER);
         long totalProjects = projectRepository.count();
         long totalEndpoints = endpointRepository.count();
         long totalTestCases = testCaseRepository.count();
+        long executedTestCaseCount = testResultRepository.countDistinctTestCase();
         long totalTestResults = testResultRepository.count();
         long passedTestResults = testResultRepository.countByStatus(TestResultStatus.PASSED);
         long totalOpenBugs = bugReportRepository.countByStatusNot(BugStatus.CLOSED);
@@ -64,8 +63,9 @@ public class AdminDashboardService {
                 : (int) Math.round(passedTestResults * 100.0 / totalTestResults);
 
         return new AdminDashboardSummaryResponse(
-                totalUsers, totalProjects, totalEndpoints, totalTestCases, totalTestResults,
-                overallPassRate, totalOpenBugs, totalGenerationEvents, totalAiTokensToday, dailyTokenLimit);
+                totalUsers, totalProjects, totalEndpoints, totalTestCases, executedTestCaseCount, totalTestResults,
+                passedTestResults, overallPassRate, totalOpenBugs, totalGenerationEvents, totalAiTokensToday,
+                dailyTokenLimit);
     }
 
     public AiUsageResponse getSystemAiUsage() {

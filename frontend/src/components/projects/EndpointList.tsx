@@ -27,9 +27,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
     queryFn: () => listEndpoints(projectId),
   })
 
-  // Cùng queryKey với Dashboard - dùng chung cache, không gọi thêm request nếu đã ghé trang Tổng
-  // quan trước đó. Hiện ngay tại đây (trước khi bấm Sinh Test Case) để người dùng biết còn bao
-  // nhiêu token trước khi tốn tiền thật, thay vì chỉ biết sau khi bị 429 AI_QUOTA_EXCEEDED.
+  // Cùng queryKey với Dashboard - dùng chung cache, không gọi thêm request.
   const { data: summary } = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: () => getDashboardSummary(),
