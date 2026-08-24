@@ -56,11 +56,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * CRUD + đọc-tổng hợp Bug Report (Module 10) - đặt ở service/ gốc giống TestHistoryService (không
- * phải logic AI, không phải engine thực thi). Quy tắc tự động chuyển trạng thái theo lần chạy mới
- * nằm ở BugReportStatusService riêng, KHÔNG ở đây.
- */
+/** CRUD + đọc-tổng hợp Bug Report - tự động chuyển trạng thái nằm ở BugReportStatusService riêng. */
 @Service
 @RequiredArgsConstructor
 public class BugReportService {
@@ -83,11 +79,12 @@ public class BugReportService {
 
     public BugReportPageResponse getBugReports(UUID projectId) {
         Project project = projectService.getOwnedProject(projectId);
-        // Nguồn Tầng 1+2 là TOÀN BỘ test case của project (giống TestCaseService.listByProject) -
-        // không lọc riêng test case đang có bug, để trang này duyệt được hết mọi test case/endpoint
-        // giống cách trang Lịch sử liệt kê hết, chỉ khác ở chỗ có thêm Tầng 3 (lịch sử chạy riêng
-        // từng test case) và badge bug (nếu có) trên mỗi dòng. Dashboard tổng hợp vẫn chỉ tính trên
-        // bug thật (không tính test case chưa có bug).
+        return getBugReportsForProject(project);
+    }
+
+    /** Tách khỏi getBugReports(UUID) để AdminUserDataService tái dùng với Project đã resolve theo owner chỉ định. */
+    BugReportPageResponse getBugReportsForProject(Project project) {
+        // Liệt kê toàn bộ test case của project, không lọc riêng test case có bug.
         List<TestCase> allTestCases = testCaseRepository.findAllByEndpointProject(project);
         List<BugReport> bugs = bugReportRepository.findAllByProject(project);
         Map<UUID, List<BugReport>> bugsByTestCaseId = bugs.stream()
@@ -95,16 +92,14 @@ public class BugReportService {
         Set<UUID> testCaseIdsWithRuns = new HashSet<>(
                 testResultRepository.findDistinctTestCaseIdsWithResultsByProject(project));
 
-        // Cho checkbox "Sinh Bug Report tuỳ chọn" ở Tầng 1/2 (không cần mở Tầng 3 mới thấy) - id các
-        // lần chạy Fail CHƯA có bug, nhóm theo test case. 1 query duy nhất cho cả project.
+        // Id các lần chạy Fail chưa có bug, nhóm theo test case - cho checkbox "Sinh Bug Report tuỳ chọn".
         Set<UUID> resultIdsWithBug = bugs.stream().map(b -> b.getSourceTestResult().getId()).collect(Collectors.toSet());
         Map<UUID, List<UUID>> generatableResultIdsByTestCaseId = testResultRepository.findAllFailedByProject(project).stream()
                 .filter(r -> !resultIdsWithBug.contains(r.getId()))
                 .collect(Collectors.groupingBy(r -> r.getTestCase().getId(),
                         Collectors.mapping(TestResult::getId, Collectors.toList())));
 
-        // Gộp theo endpoint -> test case trong bộ nhớ từ 1 query đã tải sẵn (đúng pattern
-        // TestHistoryService/HistoryFeedService) - không N+1 theo từng endpoint/test case.
+        // Gộp theo endpoint trong bộ nhớ - tránh N+1 theo từng endpoint/test case.
         Map<UUID, Endpoint> endpointById = new LinkedHashMap<>();
         Map<UUID, List<TestCase>> testCasesByEndpointId = new LinkedHashMap<>();
         for (TestCase testCase : allTestCases) {
@@ -116,8 +111,7 @@ public class BugReportService {
         List<EndpointBugSummaryResponse> endpoints = new ArrayList<>();
         for (Map.Entry<UUID, List<TestCase>> endpointEntry : testCasesByEndpointId.entrySet()) {
             Endpoint endpoint = endpointById.get(endpointEntry.getKey());
-            // Chỉ hiện test case ĐÃ TỪNG CHẠY ít nhất 1 lần (theo yêu cầu người dùng) - test case
-            // chưa chạy lần nào không có gì để xem ở Tầng 3 nên ẩn hẳn thay vì hiện rồi disable.
+            // Chỉ hiện test case đã chạy ít nhất 1 lần.
             List<TestCaseBugSummaryResponse> testCases = endpointEntry.getValue().stream()
                     .filter(testCase -> testCaseIdsWithRuns.contains(testCase.getId()))
                     .map(testCase -> new TestCaseBugSummaryResponse(
@@ -127,7 +121,7 @@ public class BugReportService {
                             generatableResultIdsByTestCaseId.getOrDefault(testCase.getId(), List.of())))
                     .toList();
             if (testCases.isEmpty()) {
-                continue; // Endpoint không có test case nào đã chạy - không hiện trong Tầng 1.
+                continue;
             }
             endpoints.add(new EndpointBugSummaryResponse(
                     endpoint.getId(), endpoint.getMethod(), endpoint.getPath(), endpoint.getSummary(), testCases));
@@ -158,6 +152,11 @@ public class BugReportService {
 
     public List<TestResultHistoryItemResponse> getRunHistory(UUID projectId, UUID testCaseId) {
         Project project = projectService.getOwnedProject(projectId);
+        return getRunHistoryForProject(project, testCaseId);
+    }
+
+    /** Tách khỏi getRunHistory(UUID, UUID) - cùng lý do getBugReportsForProject(). */
+    List<TestResultHistoryItemResponse> getRunHistoryForProject(Project project, UUID testCaseId) {
         TestCase testCase = testCaseRepository.findByIdAndEndpointProject(testCaseId, project)
                 .orElseThrow(() -> new TestCaseNotFoundException("Không tìm thấy test case với id đã cho"));
         return testResultRepository.findAllByTestCaseOrderByExecutionStartedAtAsc(testCase).stream()
@@ -181,14 +180,9 @@ public class BugReportService {
     }
 
     /**
-     * Gộp Test Environment/Steps to Reproduce/Actual Result/Expected Result thành 1 "Mô tả" duy
-     * nhất (theo yêu cầu người dùng, khớp mẫu QA thực tế) - nhúng thẳng response body thật đã ghi
-     * nhận lúc chạy để đủ chi tiết, không chỉ tóm tắt status code. Nếu test case có assertion
-     * (Module 9b), liệt kê từng assertion kèm giá trị kỳ vọng/thực tế - đây là dữ liệu chi tiết
-     * nhất hệ thống có ngoài status code, không có "expected body" nào khác để thêm vào nếu test
-     * case không có assertion. Trả về qua field BugReportDraftResponse.stepsToReproduce (không đổi
-     * tên field DTO/entity để tránh phải sửa schema, chỉ đổi CÁCH DÙNG - frontend hiện field này
-     * dưới nhãn "Mô tả").
+     * Gộp Test Environment/Steps/Actual/Expected Result thành 1 "Mô tả" duy nhất, nhúng response
+     * thật đã ghi nhận + từng assertion (nếu có). Trả qua field stepsToReproduce - frontend hiện
+     * field này dưới nhãn "Mô tả".
      */
     private String buildDescription(Project project, Endpoint endpoint, TestCase testCase, TestResult result) {
         Map<String, String> fallbacks = parseJsonMapSafe(testCase.getPathParamFallbacks());
@@ -293,13 +287,9 @@ public class BugReportService {
     }
 
     /**
-     * Sinh Bug Report hàng loạt thẳng từ trang Kết quả thực thi (tiện hơn phải mở từng cái ở trang
-     * Bug Report) - testResultIds null/rỗng = xét TOÀN BỘ kết quả của execution ("Sinh tất cả"), có
-     * truyền = chỉ xét đúng các dòng đã tick ("Sinh theo lựa chọn"). KHÔNG throw khi 1 dòng không
-     * hợp lệ (không phải Fail, hoặc đã có Bug Report rồi) - chỉ đếm vào skippedCount, vì đây là thao
-     * tác hàng loạt best-effort, không phải tạo đơn lẻ như create(). Severity/Frequency/Priority lấy
-     * mặc định của entity (Nhẹ/Hiếm khi/Không đáng kể) - người dùng sửa lại sau qua dialog sửa có sẵn
-     * nếu cần, giống hệt cách 1 bug tạo thủ công có thể sửa lại.
+     * Sinh Bug Report hàng loạt từ trang Kết quả thực thi - testResultIds rỗng = toàn bộ execution,
+     * có truyền = chỉ các dòng đã tick. Dòng không hợp lệ (không Fail, hoặc đã có bug) bị bỏ qua
+     * (skippedCount), không throw - đây là thao tác best-effort.
      */
     @Transactional
     public BugReportBatchGenerateResponse generateForExecution(UUID projectId, UUID executionId, List<UUID> testResultIds) {
@@ -316,12 +306,8 @@ public class BugReportService {
     }
 
     /**
-     * Sinh Bug Report hàng loạt thẳng từ trang Bug Report (nút "Sinh Bug Report tuỳ chọn"/"Sinh tất
-     * cả" cạnh "Xuất tất cả") - khác {@link #generateForExecution} ở chỗ quét TOÀN BỘ project, không
-     * giới hạn 1 execution: 1 test case có thể Fail nhiều lần ở nhiều execution khác nhau, MỖI lần
-     * Fail chưa có bug đều sinh được 1 bug riêng (không chỉ lấy lần gần nhất - theo đúng yêu cầu
-     * người dùng, tick từng lần chạy cụ thể như đang tự bấm "Báo lỗi" từng cái ở Tầng 3). Cùng logic
-     * bỏ qua best-effort với generateForExecution nên dùng chung generateFromCandidates().
+     * Sinh Bug Report hàng loạt từ trang Bug Report - khác {@link #generateForExecution} ở chỗ quét
+     * toàn bộ project, không giới hạn 1 execution: mỗi lần Fail chưa có bug sinh 1 bug riêng.
      */
     @Transactional
     public BugReportBatchGenerateResponse generateForProject(UUID projectId, List<UUID> testResultIds) {
@@ -391,8 +377,7 @@ public class BugReportService {
         try {
             bugReportRepository.save(bug);
         } catch (DataIntegrityViolationException e) {
-            // Race hiếm: 2 request tạo bug đồng thời cho cùng project tính trùng seqInProject -
-            // chặn ở tầng DB (uk_bug_reports_project_seq), báo lỗi rõ ràng thay vì 500 chung chung.
+            // Race hiếm: 2 request tạo bug cùng lúc trùng seqInProject, chặn ở DB.
             throw new InvalidRequestException("Bug report vừa được tạo bởi 1 thao tác khác, vui lòng thử lại");
         }
         recordEvent(testCase.getEndpoint(), currentUser, bug.getId(), bug.getBugId(), bug.getSummary(), BugReportEventType.CREATED);
@@ -439,8 +424,7 @@ public class BugReportService {
     @Transactional
     public void delete(UUID projectId, UUID bugReportId) {
         BugReport bug = getOwnedBugReport(projectId, bugReportId);
-        // Chụp lại trước khi xoá - đọc field trên object Java vẫn an toàn ngay sau delete() (entity
-        // chuyển trạng thái "removed" nhưng field trong bộ nhớ không bị xoá), nhưng chụp trước cho rõ ý.
+        // Chụp lại trước khi xoá.
         Endpoint endpoint = bug.getEndpoint();
         String bugId = bug.getBugId();
         String summary = bug.getSummary();
@@ -449,10 +433,8 @@ public class BugReportService {
     }
 
     /**
-     * Ghi sự kiện cho trang Lịch sử tổng (Module 8) - bugId/summary lưu dạng snapshot chuỗi, KHÔNG
-     * phải FK tới BugReport, vì sự kiện DELETED được ghi SAU KHI dòng BugReport đã không còn tồn tại.
-     * bugReportId chỉ truyền cho CREATED (dùng để "Xem chi tiết" ở Lịch sử tổng mở thẳng dialog sửa
-     * đúng bug đó) - DELETED để null vì bug đã không còn tồn tại, không có gì để mở.
+     * bugId/summary lưu snapshot chuỗi (không FK tới BugReport) vì DELETED được ghi sau khi dòng đã
+     * xoá. bugReportId chỉ có ở CREATED - dùng mở dialog sửa từ trang Lịch sử.
      */
     private void recordEvent(Endpoint endpoint, User actor, UUID bugReportId, String bugId, String summary, BugReportEventType eventType) {
         bugReportEventRepository.save(BugReportEvent.builder()

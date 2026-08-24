@@ -3,11 +3,7 @@ import { AlertTriangle, Ban, CheckCircle2, SkipForward, XCircle, type LucideIcon
 import { cn } from "@/lib/utils"
 import type { TestResultStatus } from "@/lib/executions"
 
-/**
- * Nguồn sự thật duy nhất cho màu/nhãn/icon của TestResultStatus - tách ra từ TestExecutionPage.tsx
- * (trước đây định nghĩa cứng, lặp lại ở nhiều nơi) để dùng chung cho Test Case/Lịch sử/Kết quả
- * thực thi/Bug Report, tránh raw enum "PASSED"/"FAILED" hiện thẳng ra UI.
- */
+/** Nguồn sự thật duy nhất cho màu/nhãn/icon của TestResultStatus - dùng chung nhiều trang. */
 export const RESULT_STATUS_STYLES: Record<TestResultStatus, string> = {
   PASSED: "bg-green-500/10 text-green-600 dark:text-green-400",
   FAILED: "bg-destructive/10 text-destructive",
@@ -57,9 +53,7 @@ export function StatusBadge({ status, className, compact, onClick }: StatusBadge
 
   if (onClick) {
     return (
-      // stopPropagation - nơi dùng badge này thường đặt trong 1 hàng có thể bấm để mở rộng (vd
-      // TestExecutionPage), tự chặn nổi bọt để không kích hoạt luôn hành động của hàng cha khi
-      // người dùng chỉ định bấm riêng badge "Fail".
+      // stopPropagation - badge này thường nằm trong 1 hàng có thể bấm để mở rộng.
       <button
         type="button"
         onClick={(e) => {

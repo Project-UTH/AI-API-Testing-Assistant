@@ -88,9 +88,7 @@ export function BugReportPage() {
     },
   })
 
-  // "Sinh tất cả" xét TOÀN BỘ kết quả Fail của CẢ PROJECT (không chỉ 1 execution) - 1 test case Fail
-  // nhiều lần ở nhiều lần chạy khác nhau thì mỗi lần chưa có bug đều sinh riêng, không chỉ lấy lần
-  // gần nhất (theo đúng yêu cầu người dùng - tick từng lần chạy cụ thể như tự bấm "Báo lỗi" từng cái).
+  // "Sinh tất cả" xét toàn bộ kết quả Fail của cả project - mỗi lần Fail chưa có bug sinh riêng.
   const generateAllMutation = useMutation({
     mutationFn: () => generateBugReportsForProject(projectId, null),
     onSuccess: (data) => {
@@ -161,12 +159,9 @@ export function BugReportPage() {
     setSelectedGenerateResultIds(new Set())
   }
 
-  // Đến từ "Xem chi tiết" ở Lịch sử tổng, hoặc từ chip Bug vừa sinh ở trang Kết quả thực thi
-  // (?bugReportId=...) - tự mở thẳng dialog sửa đúng bug đó thay vì chỉ đưa về trang danh sách rồi
-  // bắt người dùng tự tìm. Phải đợi `!isFetching` mới kết luận "không tìm thấy": nếu trang này đã có
-  // cache cũ từ lần ghé trước (React Query trả `data` cache ngay trong lúc âm thầm fetch lại phía
-  // sau), bug MỚI vừa tạo/sinh sẽ chưa có trong `data` cache đó dù đã tồn tại thật trên server - xử
-  // lý sớm sẽ báo nhầm "đã bị xoá". Đợi fetch mới nhất xong rồi mới so khớp, tránh race condition này.
+  // Đến từ "Xem chi tiết" ở Lịch sử tổng (?bugReportId=...) - tự mở thẳng dialog sửa đúng bug đó.
+  // Đợi !isFetching trước khi kết luận "không tìm thấy" - tránh báo nhầm khi trang có cache cũ và
+  // bug vừa tạo chưa kịp fetch lại.
   useEffect(() => {
     const bugReportId = searchParams.get("bugReportId")
     if (!bugReportId || !data || isFetching) return
@@ -497,8 +492,7 @@ function EndpointRow({
   return (
     <div className="rounded-lg border border-border p-4">
       <div className="flex w-full items-center gap-3">
-        {/* Ẩn hẳn (không chỉ disable) khi rỗng - checkbox disabled trông giống hệt checkbox tickable
-            được, người dùng phải mở ra thử mới biết. Ẩn hẳn để nhìn là biết ngay có tick được không. */}
+        {/* Ẩn hẳn (không chỉ disable) khi rỗng - dễ nhận biết hơn checkbox disabled. */}
         {selectionMode && bugIds.length > 0 && (
           <Checkbox
             checked={allSelected}
@@ -626,12 +620,7 @@ function TestCaseRow({
       {testCase.bugs.length > 0 && (
         <div className="mt-2 flex flex-col gap-2">
           {testCase.bugs.map((bug) => (
-            // Nền vàng nhạt (không tô đậm như bản trước - tránh rối mắt khi nhiều bug xếp chồng)
-            // + vạch màu bên trái để phân biệt đây là 1 bug report thật, không lẫn với phần còn lại
-            // của dòng test case. Chỉ hiện badge trạng thái (nổi bật nhất, hay đổi nhất) -
-            // severity/priority/frequency vẫn sửa được qua nút bút, không hiện ở đây cho gọn.
-            // sourceOccurredAt là thời điểm LẦN CHẠY sinh ra bug này (không phải bug.createdAt) -
-            // giúp đối chiếu đúng thanh nào ở "Các test đã chạy" bên dưới.
+            // sourceOccurredAt là thời điểm lần chạy sinh ra bug này (không phải bug.createdAt).
             <div
               key={bug.id}
               className="flex flex-wrap items-center gap-1.5 rounded-md border border-amber-200 border-l-4 border-l-amber-500 bg-amber-50 p-2 dark:border-amber-900/40 dark:border-l-amber-500 dark:bg-amber-500/10"
@@ -771,8 +760,6 @@ function RunHistoryList({
                 sourceOfBug ? "bg-amber-500" : "bg-muted-foreground/40"
               )}
             />
-            {/* Nền trắng/border thường - KHÔNG tô cả hàng, chỉ badge Fail/Pass và nhãn "Nguồn của"
-                mang màu để mắt bắt đúng chỗ cần chú ý, tránh mọi hàng đều vàng gây rối mắt. */}
             <div className="flex items-center gap-2">
               {generateSelectionMode && run.status === "FAILED" && !sourceOfBug && (
                 <Checkbox

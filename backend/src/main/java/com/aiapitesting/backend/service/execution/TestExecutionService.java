@@ -42,9 +42,9 @@ import java.util.stream.Collectors;
 
 /**
  * Orchestration đồng bộ: validate, tính tập test case cần chạy (kể cả tự động kéo theo nguồn phụ
- * thuộc - Test Data Chaining, Module 7), sắp thứ tự chạy, tạo TestExecution (PENDING), rồi giao
- * cho TestExecutionRunner (bean riêng, có @Async) chạy nền - tách riêng 2 class vì self-invocation
- * trong cùng 1 bean khiến @Async không có tác dụng (bỏ qua proxy AOP của Spring khi gọi qua "this").
+ * thuộc), sắp thứ tự chạy, tạo TestExecution (PENDING), rồi giao cho TestExecutionRunner (bean
+ * riêng, có @Async) chạy nền - tách riêng 2 class vì self-invocation trong cùng 1 bean khiến
+ * @Async không có tác dụng.
  */
 @Service
 @RequiredArgsConstructor
@@ -106,8 +106,7 @@ public class TestExecutionService {
                                 d.getJsonPath(), d.getPlaceholderName()))
                         .toList()));
 
-        // Nạp assertion (Module 9b) cho toàn bộ tập test case sẽ chạy (kể cả auto-included) ở phần
-        // đồng bộ này rồi tách ra AssertionSpec nhẹ - cùng lý do với DependencyEdge phía trên, tránh
+        // Nạp assertion cho toàn bộ tập test case sẽ chạy rồi tách ra AssertionSpec nhẹ - tránh
         // LazyInitializationException khi entity băng qua ranh giới @Async sau khi session đã đóng.
         List<TestCaseAssertion> allAssertions =
                 testCaseAssertionRepository.findAllByTestCaseIn(List.copyOf(testCaseById.values()));
@@ -119,9 +118,8 @@ public class TestExecutionService {
         TestExecution execution = testExecutionRepository.save(
                 TestExecution.builder().project(project).status(ExecutionStatus.PENDING).build());
 
-        // Lịch sử kiểm thử (Module 8) - ghi 1 dòng cho MỌI endpoint có mặt trong tập test case đã
-        // chạy (tự chọn lẫn auto-included do chaining), để xem lịch sử của bất kỳ endpoint nào trong
-        // số đó cũng thấy đúng sự kiện chạy này, không chỉ endpoint được chọn tường minh.
+        // Ghi 1 dòng lịch sử cho mọi endpoint có mặt trong tập test case đã chạy (tự chọn lẫn
+        // auto-included), không chỉ endpoint được chọn tường minh.
         Map<UUID, Endpoint> endpointsInvolved = new LinkedHashMap<>();
         for (UUID testCaseId : fullSetIds) {
             Endpoint endpoint = testCaseById.get(testCaseId).getEndpoint();

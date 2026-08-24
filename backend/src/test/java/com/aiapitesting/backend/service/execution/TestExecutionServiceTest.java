@@ -11,6 +11,7 @@ import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestExecutionEndpoint;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestExecutionNotFoundException;
+import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
@@ -68,6 +69,9 @@ class TestExecutionServiceTest {
 
     @Mock
     private TestExecutionRunner testExecutionRunner;
+
+    @Mock
+    private BugReportRepository bugReportRepository;
 
     @InjectMocks
     private TestExecutionService testExecutionService;

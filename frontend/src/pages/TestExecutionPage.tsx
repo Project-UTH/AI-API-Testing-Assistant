@@ -59,10 +59,8 @@ export function TestExecutionPage() {
     },
   })
 
-  // Cùng queryKey với BugReportPage.tsx - nếu người dùng đã ghé trang Bug Report trước đó thì dùng
-  // luôn cache, không fetch thừa. Lọc ra đúng các bug sinh từ CHÍNH lần chạy này (theo
-  // sourceTestResultId) để hiện trong ô "Bug Report đã sinh" - không phụ thuộc bộ lọc ?endpointId=
-  // đang xem trên màn hình, vì đây là toàn cảnh của cả execution.
+  // Cùng queryKey với BugReportPage.tsx - dùng chung cache nếu đã ghé qua. Lọc ra đúng bug sinh từ
+  // lần chạy này (theo sourceTestResultId) cho ô "Bug Report đã sinh".
   const { data: bugReportsPage } = useQuery({
     queryKey: bugReportsQueryKey,
     queryFn: () => getBugReports(projectId),
@@ -78,10 +76,7 @@ export function TestExecutionPage() {
 
   const [lastGenerateResult, setLastGenerateResult] = useState<GenerateBugReportsResult | null>(null)
 
-  // "Sinh tất cả" luôn xét TOÀN BỘ kết quả Fail của lần chạy (không phụ thuộc bộ lọc ?endpointId=
-  // đang xem) - backend tự bỏ qua kết quả không phải Fail hoặc đã có Bug Report rồi (idempotent,
-  // bấm lại nhiều lần không tạo trùng). Invalidate lại query execution sau khi sinh xong để mỗi dòng
-  // cập nhật ngay `existingBugReportId` - không cần người dùng tự F5 mới thấy dòng đã có bug.
+  // "Sinh tất cả" xét toàn bộ kết quả Fail của lần chạy - backend tự bỏ qua dòng không hợp lệ.
   const generateAllMutation = useMutation({
     mutationFn: () => generateBugReports(projectId, executionId!, null),
     onSuccess: (data) => {
@@ -238,9 +233,6 @@ export function TestExecutionPage() {
               ` (bỏ qua ${lastGenerateResult.skippedCount} dòng đã có Bug Report hoặc không phải Fail)`}
             {lastGenerateResult.created.length > 0 && ":"}
           </span>
-          {/* Mỗi bug vừa sinh là 1 ô bấm được, nhảy thẳng tới đúng bug đó ở trang Bug Report - tái
-              dùng cơ chế deep-link ?bugReportId= đã có sẵn (BugReportPage.tsx tự mở đúng dialog sửa
-              khi thấy param này), không cần logic mới ở trang đích. */}
           {lastGenerateResult.created.map((bug) => (
             <Link
               key={bug.id}
@@ -305,8 +297,7 @@ export function TestExecutionPage() {
                     className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-180")}
                   />
                 </button>
-                {/* Sibling của <button>, KHÔNG lồng bên trong (tránh <a> trong <button>, cùng lý do
-                    đã né với Checkbox) - báo rõ dòng này đã có Bug Report, bấm vào nhảy thẳng tới đó. */}
+                {/* Sibling của <button>, không lồng bên trong (tránh <a> trong <button>). */}
                 {result.existingBugId && (
                   <Link
                     to={`/projects/${projectId}/bug-reports?bugReportId=${result.existingBugReportId}`}
@@ -411,9 +402,8 @@ function ExecutionSummaryDashboard({ results }: { results: TestResult[] }) {
   const passCount = countByStatus.PASSED ?? 0
   const passRate = total > 0 ? Math.round((passCount / total) * 100) : 0
 
-  // Vẽ ring "nở ra" 1 lần khi mount (fromZero -> giá trị thật) - tôn trọng prefers-reduced-motion
-  // bằng motion-reduce:transition-none ở className của từng <circle> nên chỉ tắt animation, kết
-  // quả cuối vẫn đúng ngay lập tức, không cần nhánh code riêng.
+  // Vẽ ring "nở ra" 1 lần khi mount - motion-reduce:transition-none ở từng <circle> tắt animation
+  // cho prefers-reduced-motion mà không cần nhánh code riêng.
   const [grown, setGrown] = useState(false)
   useEffect(() => {
     const frame = requestAnimationFrame(() => setGrown(true))
