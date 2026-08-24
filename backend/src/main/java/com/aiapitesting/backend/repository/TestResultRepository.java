@@ -32,10 +32,21 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
     @Query("DELETE FROM TestResult tr WHERE tr.testCase IN :testCases")
     void deleteAllByTestCaseIn(@Param("testCases") List<TestCase> testCases);
 
-    // Trang Tổng quan (Module 8) - tỷ lệ pass toàn thời gian trên toàn bộ project user sở hữu.
+    // Tổng lượt chạy của owner - mẫu số tỷ lệ pass (mỗi lần chạy tính riêng, kể cả chạy lại).
     long countByTestCaseEndpointProjectOwner(User owner);
 
     long countByTestCaseEndpointProjectOwnerAndStatus(User owner, TestResultStatus status);
+
+    // Tổng lượt chạy toàn hệ thống (mọi owner) - dùng cho Dashboard Admin.
+    long countByStatus(TestResultStatus status);
+
+    // Số test case phân biệt đã chạy ít nhất 1 lần - khác count phía trên vì không đếm trùng khi
+    // 1 test case chạy nhiều lần.
+    @Query("SELECT COUNT(DISTINCT tr.testCase) FROM TestResult tr WHERE tr.testCase.endpoint.project.owner = :owner")
+    long countDistinctTestCaseByOwner(@Param("owner") User owner);
+
+    @Query("SELECT COUNT(DISTINCT tr.testCase) FROM TestResult tr")
+    long countDistinctTestCase();
 
     // JOIN FETCH testCase + testCase.endpoint để TestResultResponse.from() đọc được
     // testCase.getName()/getExpectedStatus()/getEndpoint().getId() sau khi session đã đóng

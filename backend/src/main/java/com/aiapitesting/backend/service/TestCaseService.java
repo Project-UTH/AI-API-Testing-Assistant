@@ -116,10 +116,9 @@ public class TestCaseService {
         testCase.setPathParamFallbacks(request.pathParamFallbacks());
         testCase.setAuthOverride(request.authOverride() == null ? TestCaseAuthOverride.DEFAULT : request.authOverride());
 
-        // save() trên 1 entity đã có id dùng merge() nội bộ, trả về 1 bản managed KHÁC với
-        // association endpoint chưa init (không cascade MERGE) - dùng lại chính đối tượng
-        // testCase đang có (endpoint đã init sẵn từ findByIdAndEndpoint) để tránh
-        // LazyInitializationException khi TestCaseResponse.from() đọc endpoint.getPath()/getMethod().
+        // save() trên entity đã có id dùng merge() nội bộ, trả về bản managed khác với association
+        // endpoint chưa init - dùng lại testCase đang có (endpoint đã init sẵn) để tránh
+        // LazyInitializationException.
         testCaseRepository.save(testCase);
 
         List<TestCaseDependency> dependencies = saveDependencies(endpoint.getProject(), testCase, request.dependencies());
@@ -130,11 +129,7 @@ public class TestCaseService {
                 assertions.stream().map(TestCaseAssertionResponse::from).toList());
     }
 
-    /**
-     * Bật/tắt khoá 1 test case (Module 9) - test case đang khoá không bị xoá khi "Sinh Test Case"
-     * xoá-và-thay (TestCaseGenerationService.generateGroup()), bất kể source nào. Không cần validate
-     * gì thêm - khoá/mở khoá luôn hợp lệ, kể cả test case đang có dependent khác trỏ vào.
-     */
+    /** Bật/tắt khoá 1 test case - test case đang khoá không bị xoá khi "Sinh Test Case" xoá-và-thay. */
     @Transactional
     public TestCaseResponse setLocked(UUID projectId, UUID endpointId, UUID testCaseId, boolean locked) {
         Endpoint endpoint = getOwnedEndpoint(projectId, endpointId);
@@ -156,10 +151,7 @@ public class TestCaseService {
         testCaseRepository.delete(testCase);
     }
 
-    /**
-     * Chặn xoá/regenerate nếu còn TestCaseDependency khác trỏ vào (các) test case sắp xoá - dùng
-     * lại ở cả đây (xoá tay) và TestCaseGenerationService.generate() (regenerate).
-     */
+    /** Chặn xoá/regenerate nếu còn TestCaseDependency khác trỏ vào test case sắp xoá. */
     public void ensureNoDependents(List<TestCase> testCasesAboutToDelete) {
         List<UUID> ids = testCasesAboutToDelete.stream().map(TestCase::getId).toList();
         if (ids.isEmpty()) {
@@ -177,10 +169,8 @@ public class TestCaseService {
     }
 
     /**
-     * Xoá hết dependency cũ rồi tạo lại toàn bộ theo request (đúng pattern "xoá rồi tạo lại" đang
-     * dùng ở EndpointImportService/regenerate). Validate: nguồn phải thuộc cùng project (tránh tham
-     * chiếu chéo project khác), placeholderName phải khớp đúng 1 token {{}} có mặt trong
-     * resolvedPath/requestBody/requestHeaders của chính test case đang lưu.
+     * Xoá hết dependency cũ rồi tạo lại toàn bộ theo request. Validate: nguồn phải thuộc cùng
+     * project, placeholderName phải khớp 1 token {{}} có mặt trong resolvedPath/body/headers.
      */
     private List<TestCaseDependency> saveDependencies(Project project, TestCase testCase, List<TestCaseDependencyInput> inputs) {
         testCaseDependencyRepository.deleteAllByTestCase(testCase);
@@ -200,9 +190,7 @@ public class TestCaseService {
                 throw new InvalidRequestException(
                         "Tên placeholder '" + input.placeholderName() + "' không khớp token {{}} nào trong test case này");
             }
-            // Ràng buộc DB (uk_test_case_dependencies_test_case_placeholder) chỉ cho phép đúng 1
-            // dependency mỗi placeholder - chặn sớm ở đây để trả lỗi rõ ràng thay vì lỗi 500 chung
-            // chung từ SQLIntegrityConstraintViolationException khi client (vô tình) gửi trùng.
+            // Ràng buộc DB chỉ cho phép đúng 1 dependency mỗi placeholder - chặn sớm để trả lỗi rõ ràng.
             if (!seenPlaceholders.add(input.placeholderName())) {
                 throw new InvalidRequestException(
                         "Placeholder '" + input.placeholderName() + "' bị gán trùng nhiều hơn 1 dependency");
@@ -223,9 +211,8 @@ public class TestCaseService {
     }
 
     /**
-     * Xoá hết assertion cũ rồi tạo lại toàn bộ theo request (đúng pattern "xoá rồi tạo lại" như
-     * saveDependencies() - Module 9b). Validate: jsonPath không rỗng, expectedValue bắt buộc trừ
-     * khi operator=EXISTS (assertion đó chỉ cần kiểm tra field có mặt, không cần giá trị cụ thể).
+     * Xoá hết assertion cũ rồi tạo lại toàn bộ theo request. expectedValue bắt buộc trừ khi
+     * operator=EXISTS (chỉ cần kiểm tra field có mặt).
      */
     private List<TestCaseAssertion> saveAssertions(TestCase testCase, List<TestCaseAssertionInput> inputs) {
         testCaseAssertionRepository.deleteAllByTestCase(testCase);

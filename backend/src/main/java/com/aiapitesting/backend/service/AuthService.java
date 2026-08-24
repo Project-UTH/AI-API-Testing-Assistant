@@ -4,6 +4,7 @@ import com.aiapitesting.backend.dto.request.LoginRequest;
 import com.aiapitesting.backend.dto.request.RegisterRequest;
 import com.aiapitesting.backend.dto.response.AuthResponse;
 import com.aiapitesting.backend.entity.User;
+import com.aiapitesting.backend.exception.AccountDisabledException;
 import com.aiapitesting.backend.exception.EmailAlreadyExistsException;
 import com.aiapitesting.backend.exception.InvalidCredentialsException;
 import com.aiapitesting.backend.repository.UserRepository;
@@ -32,7 +33,7 @@ public class AuthService {
         userRepository.save(user);
 
         String token = jwtService.generateToken(user.getEmail());
-        return new AuthResponse(token, user.getEmail());
+        return new AuthResponse(token, user.getEmail(), user.getRole());
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -42,8 +43,13 @@ public class AuthService {
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             throw new InvalidCredentialsException("Sai email hoặc mật khẩu");
         }
+        // Chặn ngay lúc đăng nhập (khác JwtAuthFilter chặn request của token ĐÃ phát hành trước đó) -
+        // tài khoản bị khoá không nên nhận được token mới.
+        if (!user.isEnabled()) {
+            throw new AccountDisabledException("Tài khoản của bạn đã bị khoá, liên hệ quản trị viên");
+        }
 
         String token = jwtService.generateToken(user.getEmail());
-        return new AuthResponse(token, user.getEmail());
+        return new AuthResponse(token, user.getEmail(), user.getRole());
     }
 }

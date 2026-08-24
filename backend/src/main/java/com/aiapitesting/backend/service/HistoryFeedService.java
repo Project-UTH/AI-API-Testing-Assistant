@@ -38,10 +38,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Đọc-tổng hợp Lịch sử tổng (Module 8) - giống {@link TestHistoryService} nhưng gộp MỌI project
- * thuộc user hiện tại (không phải 1 project) thành 1 feed phẳng, có filter + phân trang. Cách gộp
- * dữ liệu giữ nguyên kiểu "load rồi gộp/sắp xếp trong Java" như TestHistoryService - dữ liệu vẫn
- * giới hạn theo owner nên không cần native SQL UNION + phân trang thật ở DB.
+ * Đọc-tổng hợp Lịch sử tổng - giống {@link TestHistoryService} nhưng gộp mọi project thuộc user
+ * hiện tại thành 1 feed phẳng, có filter + phân trang.
  */
 @Service
 @RequiredArgsConstructor

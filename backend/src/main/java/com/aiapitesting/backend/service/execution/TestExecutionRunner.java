@@ -135,9 +135,8 @@ public class TestExecutionRunner {
             RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
             boolean statusMatches = Objects.equals(result.statusCode(), testCase.getExpectedStatus());
 
-            // Chấm assertion (Module 9b) - status PASSED chỉ khi status code khớp VÀ mọi assertion
-            // đều đúng. Không chấm nếu status code đã sai (không có ý nghĩa kiểm tra field response
-            // của 1 request được coi là thất bại ngay từ status code).
+            // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
+            // status code đã sai.
             List<AssertionResultResponse> assertionResults = statusMatches
                     ? evaluateAssertions(result.responseBody(), assertionSpecs)
                     : List.of();
@@ -173,8 +172,8 @@ public class TestExecutionRunner {
                 .assertionResultsJson(assertionResultsJson)
                 .build();
         testResultRepository.save(result);
-        // Module 10 - quy tắc hẹp tự động Reopen/gợi ý Đóng bug report theo kết quả vừa lưu. Đặt
-        // ngay sau save() vì đây là điểm DUY NHẤT mọi TestResult được lưu, không bỏ sót lần chạy nào.
+        // Tự động Reopen/gợi ý Đóng bug report - đặt ngay sau save() vì đây là điểm duy nhất mọi
+        // TestResult được lưu.
         bugReportStatusService.onNewTestResult(result);
 
         statusByTestCaseId.put(testCase.getId(), status);
@@ -184,11 +183,8 @@ public class TestExecutionRunner {
     }
 
     /**
-     * Chấm từng assertion (Module 9b) theo operator - EXISTS chỉ cần khác null, EQUALS/CONTAINS so
-     * chuỗi (đủ dùng cho phần lớn trường hợp thực tế: expectedValue luôn là chuỗi người dùng/AI tự
-     * nhập), TYPE so kiểu Java runtime của giá trị trích được (không stringify trước khi so, khác
-     * hẳn 3 operator kia - stringify sẽ làm mất thông tin kiểu gốc, vd 19.99 vẫn là "19.99" dù kiểu
-     * gốc là số hay chuỗi).
+     * Chấm từng assertion theo operator - EXISTS chỉ cần khác null, EQUALS/CONTAINS so chuỗi, TYPE
+     * so kiểu Java runtime của giá trị trích được (không stringify trước, khác 3 operator kia).
      */
     private List<AssertionResultResponse> evaluateAssertions(String responseBody, List<AssertionSpec> specs) {
         List<AssertionResultResponse> results = new ArrayList<>();

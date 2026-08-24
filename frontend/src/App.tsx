@@ -2,7 +2,15 @@ import { Navigate, Route, Routes } from "react-router-dom"
 
 import { AppLayout } from "@/components/layout/AppLayout"
 import { RequireAuth } from "@/components/RequireAuth"
+import { RequireAdmin } from "@/components/RequireAdmin"
+import { RequireNotAdmin } from "@/components/RequireNotAdmin"
 import { DashboardPage } from "@/pages/DashboardPage"
+import { AdminDashboardPage } from "@/pages/AdminDashboardPage"
+import { AdminUsersPage } from "@/pages/AdminUsersPage"
+import { AdminUserDetailPage } from "@/pages/AdminUserDetailPage"
+import { AdminProjectDataPage } from "@/pages/AdminProjectDataPage"
+import { AdminProjectBugReportsPage } from "@/pages/AdminProjectBugReportsPage"
+import { AdminAuditLogPage } from "@/pages/AdminAuditLogPage"
 import { ProjectsPage } from "@/pages/ProjectsPage"
 import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
 import { TestCasesPage } from "@/pages/TestCasesPage"
@@ -21,14 +29,25 @@ function App() {
 
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/history" element={<GlobalHistoryPage />} />
-          <Route path="/projects/:id" element={<ProjectDetailPage />} />
-          <Route path="/projects/:id/test-cases" element={<TestCasesPage />} />
-          <Route path="/projects/:id/history" element={<TestHistoryPage />} />
-          <Route path="/projects/:id/bug-reports" element={<BugReportPage />} />
-          <Route path="/projects/:id/executions/:executionId" element={<TestExecutionPage />} />
+          <Route element={<RequireNotAdmin />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/history" element={<GlobalHistoryPage />} />
+            <Route path="/projects/:id" element={<ProjectDetailPage />} />
+            <Route path="/projects/:id/test-cases" element={<TestCasesPage />} />
+            <Route path="/projects/:id/history" element={<TestHistoryPage />} />
+            <Route path="/projects/:id/bug-reports" element={<BugReportPage />} />
+            <Route path="/projects/:id/executions/:executionId" element={<TestExecutionPage />} />
+          </Route>
+
+          <Route element={<RequireAdmin />}>
+            <Route path="/admin" element={<AdminDashboardPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
+            <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
+            <Route path="/admin/users/:userId/projects/:projectId" element={<AdminProjectDataPage />} />
+            <Route path="/admin/users/:userId/projects/:projectId/bug-reports" element={<AdminProjectBugReportsPage />} />
+            <Route path="/admin/audit-log" element={<AdminAuditLogPage />} />
+          </Route>
         </Route>
       </Route>
 
