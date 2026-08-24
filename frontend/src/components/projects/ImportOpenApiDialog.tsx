@@ -60,6 +60,11 @@ export function ImportOpenApiDialog({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
+      // Import cũng cập nhật targetBaseUrl/targetAuthType của chính Project (suy ra từ servers[]
+      // trong OpenAPI, hoặc auth vừa nhập) - thiếu dòng này khiến khối "Target Base URL"/"Xác thực"
+      // ở đầu trang hiện giá trị CŨ (rỗng lúc mới tạo project) cho tới khi người dùng tự tải lại
+      // trang, dù backend đã lưu đúng giá trị mới.
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId] })
       resetForm()
       onOpenChange(false)
     },

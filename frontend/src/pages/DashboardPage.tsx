@@ -1,13 +1,16 @@
 import { useState, type ComponentType, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Bug, CircleCheck, FolderKanban, ListChecks, PieChart, Plug, Plus, Sparkles, Trash2, TriangleAlert, X } from "lucide-react"
+import { Bug, CircleCheck, Coins, FolderKanban, ListChecks, Plug, Plus, Sparkles, Trash2, TriangleAlert, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
 import { getCurrentUserEmail } from "@/lib/api"
-import { getDashboardSummary } from "@/lib/dashboard"
+import { getDashboardSummary, getMyAiUsage } from "@/lib/dashboard"
 import { getHistoryFeed, type HistoryFeedItem } from "@/lib/history"
+import { AiUsageChart } from "@/components/shared/AiUsageChart"
+import { PassRateCard } from "@/components/shared/PassRateCard"
 
 export function DashboardPage() {
   const { data, isLoading, isError } = useQuery({
@@ -49,25 +52,14 @@ export function DashboardPage() {
             <KpiCard icon={FolderKanban} label="Project" value={data.totalProjects} index={0} />
             <KpiCard icon={Plug} label="Endpoint" value={data.totalEndpoints} index={1} />
             <KpiCard icon={ListChecks} label="Test case" value={data.totalTestCases} index={2} />
-            <KpiCard
-              icon={PieChart}
+            <PassRateCard
               label="Tỷ lệ pass"
-              value={data.overallPassRate === null ? "—" : `${data.overallPassRate}%`}
-              valueClassName="text-emerald-500"
-              index={3}
-            >
-              {data.overallPassRate !== null && (
-                <>
-                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-rose-400/25">
-                    <div
-                      className="h-full rounded-full bg-emerald-500 transition-[width] duration-700 ease-out"
-                      style={{ width: `${data.overallPassRate}%` }}
-                    />
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{data.totalTestResults} kết quả test</p>
-                </>
-              )}
-            </KpiCard>
+              percent={data.overallPassRate}
+              passed={data.passedTestResults}
+              total={data.totalTestResults}
+              className="animate-rise"
+              style={{ animationDelay: "340ms" }}
+            />
             <KpiCard
               icon={Bug}
               label="Bug Report đang mở"
@@ -81,6 +73,8 @@ export function DashboardPage() {
             <TrendChartPanel enabled={hasData} />
             <ActivityFeedPanel items={activityData?.data} isLoading={isActivityLoading} />
           </div>
+
+          <AiUsagePanel enabled={hasData} todayTokens={data.aiTokensToday} dailyLimit={data.aiDailyTokenLimit} />
         </div>
       )}
 
@@ -255,6 +249,46 @@ function TrendChart({ points }: { points: number[] }) {
         <circle key={i} cx={xFor(i)} cy={yFor(v)} r="4" fill="#10b981" stroke="var(--color-card)" strokeWidth="2" />
       ))}
     </svg>
+  )
+}
+
+function AiUsagePanel({
+  enabled,
+  todayTokens,
+  dailyLimit,
+}: {
+  enabled: boolean
+  todayTokens: number
+  dailyLimit: number
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["dashboard-ai-usage"],
+    queryFn: () => getMyAiUsage(),
+    enabled,
+  })
+  const nearOrOverQuota = dailyLimit > 0 && todayTokens >= dailyLimit
+
+  return (
+    <div className="animate-rise rounded-2xl border border-border bg-card p-6 shadow-sm" style={{ animationDelay: "540ms" }}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-foreground">Token AI đã dùng</h2>
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-full border px-3 py-1 text-sm",
+            nearOrOverQuota ? "border-destructive/40 bg-destructive/5" : "border-violet-500/30 bg-violet-500/5"
+          )}
+        >
+          <Coins className={cn("h-4 w-4 shrink-0", nearOrOverQuota ? "text-destructive" : "text-violet-500")} />
+          <span
+            className={cn("text-base font-bold tabular-nums", nearOrOverQuota ? "text-destructive" : "text-foreground")}
+          >
+            {todayTokens.toLocaleString("vi-VN")} / {dailyLimit.toLocaleString("vi-VN")}
+          </span>
+          <span className="text-muted-foreground">hôm nay</span>
+        </div>
+      </div>
+      <AiUsageChart daily={data?.daily} isLoading={isLoading} />
+    </div>
   )
 }
 

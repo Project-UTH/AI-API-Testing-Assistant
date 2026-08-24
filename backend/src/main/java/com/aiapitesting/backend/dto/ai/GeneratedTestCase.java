@@ -6,15 +6,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Structured-output type từ AI khi sinh test case (TestCaseGenerationService.generate()). Cũng
- * dùng làm shape lưu snapshot lịch sử (TestGenerationEvent.snapshotJson, Module 8) - serialize
- * thẳng List<GeneratedTestCase> ra JSON tại thời điểm sinh, đọc lại ở TestHistoryService.
+ * Structured-output type từ AI khi sinh test case. Cũng dùng làm shape lưu snapshot lịch sử
+ * (TestGenerationEvent.snapshotJson) - serialize thẳng ra JSON tại thời điểm sinh.
  *
- * authOverride chỉ có ý nghĩa cho case nhóm Security (Module 9a) - null/không có nghĩa là DEFAULT,
- * lần sinh nhóm Cơ bản không nhắc AI về field này nên thường sẽ null.
- *
- * assertions chỉ có ý nghĩa khi includeAssertions=true (Module 9b) - null/rỗng nghĩa là không có
- * assertion nào cho test case này, không bắt buộc AI phải trả về khi không bật tuỳ chọn này.
+ * authOverride chỉ có ý nghĩa cho case nhóm Security - null nghĩa là DEFAULT. assertions chỉ có ý
+ * nghĩa khi includeAssertions=true - null/rỗng nghĩa là không có assertion nào.
  */
 public record GeneratedTestCase(
         String name,

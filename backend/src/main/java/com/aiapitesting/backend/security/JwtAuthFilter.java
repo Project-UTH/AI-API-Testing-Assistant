@@ -42,7 +42,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             String email = jwtService.extractEmail(token);
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-                if (jwtService.isTokenValid(token, userDetails)) {
+                // userDetails.isEnabled() bắt buộc phải tự kiểm ở đây - token cũ đã phát hành trước
+                // khi tài khoản bị khoá vẫn hợp lệ về mặt chữ ký/thời hạn, và luồng này tự dựng
+                // UsernamePasswordAuthenticationToken thủ công (không qua DaoAuthenticationProvider,
+                // nơi bình thường Spring Security tự chặn tài khoản disabled). Không check ở đây thì
+                // khoá tài khoản qua admin sẽ không có tác dụng cho tới khi JWT hết hạn.
+                if (jwtService.isTokenValid(token, userDetails) && userDetails.isEnabled()) {
                     UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

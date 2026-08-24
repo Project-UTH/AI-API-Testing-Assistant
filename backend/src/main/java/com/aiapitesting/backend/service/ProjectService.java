@@ -77,11 +77,9 @@ public class ProjectService {
     }
 
     /**
-     * Cấu hình xác thực gọi API thật (Module 6) độc lập với lúc import - cần thiết vì import
-     * bằng file không gọi ra ngoài nên không có chỗ nào set auth cho project, và người dùng có
-     * thể cần đổi/xoá auth sau này mà không muốn import lại toàn bộ endpoint. Khác với lúc import
-     * (authType NONE = giữ nguyên auth cũ, vì import không phải lúc nào cũng nhằm sửa auth): ở đây
-     * NONE là hành động rõ ràng của người dùng muốn xoá auth, nên phải xoá thật.
+     * Cấu hình xác thực gọi API thật, độc lập với lúc import (import bằng file không gọi ra ngoài
+     * nên không có chỗ set auth). Khác lúc import (NONE = giữ nguyên auth cũ): ở đây NONE là hành
+     * động rõ ràng muốn xoá auth, nên xoá thật.
      */
     @Transactional
     public ProjectResponse updateTargetAuth(UUID id, TargetAuthType authType, String authValue) {
@@ -107,10 +105,7 @@ public class ProjectService {
     @Transactional
     public void delete(UUID id) {
         Project project = getOwnedProject(id);
-        // Thứ tự bắt buộc để tránh vi phạm khoá ngoại (MySQL 1451): BugReport tham chiếu TestResult/
-        // TestCase/Endpoint/Project (Module 10) nên xoá TRƯỚC hết; TestExecutionEndpoint/TestResult/
-        // TestExecution/TestCaseDependency/TestCaseAssertion tham chiếu TestCase, TestCase tham
-        // chiếu Endpoint, TestGenerationEvent/BugReportEvent tham chiếu Endpoint/Project.
+        // Thứ tự bắt buộc để tránh vi phạm khoá ngoại: bảng tham chiếu sâu nhất xoá trước.
         bugReportRepository.deleteAllByProject(project);
         bugReportEventRepository.deleteAllByEndpointProject(project);
         testExecutionEndpointRepository.deleteAllByExecutionProject(project);

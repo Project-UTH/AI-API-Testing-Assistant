@@ -11,11 +11,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Bug report theo quy trình QA chuẩn (Module 10) - tạo từ 1 TestResult có status FAILED
- * (sourceTestResult), không phải từ cả TestExecution (1 execution có thể gồm nhiều test case,
- * nhưng bug report cần đúng cấp độ chi tiết "kỳ vọng ↔ thực tế của 1 lần chạy cụ thể").
- * project/endpoint denormalized từ testCase để ownership check và group-theo-endpoint không phải
- * luôn nhảy qua testCase.getEndpoint().getProject().
+ * Bug report tạo từ 1 TestResult FAILED (sourceTestResult), không phải cả TestExecution - cần
+ * đúng cấp độ chi tiết "kỳ vọng ↔ thực tế của 1 lần chạy cụ thể". project/endpoint denormalized
+ * từ testCase để ownership check không phải luôn nhảy qua testCase.getEndpoint().getProject().
  */
 @Entity
 @Table(name = "bug_reports", uniqueConstraints = @UniqueConstraint(
@@ -48,13 +46,9 @@ public class BugReport {
     private TestResult sourceTestResult;
 
     /**
-     * Mã hiển thị dạng B{projectSeq}_{seqInProject} (VD "B1_001") - xem BugReportService.create().
-     * CHỈ để hiển thị (tên file export, nhãn UI) - KHÔNG dùng làm khoá tra cứu ở đâu (mọi query thật
-     * đều qua id UUID hoặc sourceTestResultId). KHÔNG unique toàn cục trong DB - projectSeq chỉ đảm
-     * bảo duy nhất TRONG PHẠM VI 1 owner (findMaxBugReportProjectSeqByOwner), nên 2 user khác nhau
-     * hoàn toàn có thể cùng ra "B1_001" cho bug đầu tiên của họ. Uniqueness THẬT SỰ cần (không trùng
-     * số trong cùng 1 project) đã có sẵn qua unique constraint (project_id, seq_in_project) ở dưới -
-     * đủ để tránh double-submit, không cần global unique ở cột này.
+     * Mã hiển thị dạng B{projectSeq}_{seqInProject} (VD "B1_001") - chỉ để hiển thị, KHÔNG dùng
+     * làm khoá tra cứu (query thật qua id UUID). Không unique toàn cục - 2 user khác nhau có thể
+     * cùng ra "B1_001". Uniqueness thật sự cần nằm ở constraint (project_id, seq_in_project) dưới.
      */
     @Column(name = "bug_id", nullable = false)
     private String bugId;
@@ -65,10 +59,8 @@ public class BugReport {
     @Column(name = "seq_in_project", nullable = false)
     private int seqInProject;
 
-    // columnDefinition = VARCHAR (không để Hibernate tự suy MySQL ENUM) - theo đúng convention đã
-    // hình thành trong dự án (xem TestCase.source/authOverride) để tránh lớp lỗi "Data truncated"
-    // nếu sau này có thêm giá trị enum mới trên DB đã có dữ liệu thật. Bảng này mới hoàn toàn nên
-    // rủi ro hiện tại = 0, áp dụng để nhất quán code-style và phòng trước cho tương lai.
+    // columnDefinition = VARCHAR (không để Hibernate tự suy MySQL ENUM) - tránh lỗi "Data truncated"
+    // nếu sau này thêm giá trị enum mới trên DB đã có dữ liệu thật (xem TestCase.source/authOverride).
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "VARCHAR(20)")
     @Builder.Default

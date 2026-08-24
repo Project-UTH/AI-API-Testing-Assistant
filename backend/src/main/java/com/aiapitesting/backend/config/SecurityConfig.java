@@ -44,13 +44,15 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jwtAuthEntryPoint)
                         .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
-                        // Controller trả CompletableFuture (vd. sinh test case AI @Async) khiến Spring MVC
-                        // dispatch lại request 1 lần nữa (DispatcherType.ASYNC) để hoàn tất response sau khi
-                        // tác vụ nền xong. JwtAuthFilter (OncePerRequestFilter) không chạy lại ở lần dispatch
-                        // này nên không có gì xác thực - phải permit riêng dispatch loại ASYNC, request gốc
-                        // (DispatcherType.REQUEST) vẫn đã được xác thực đầy đủ như bình thường.
+                        // Controller trả CompletableFuture khiến Spring MVC dispatch lại request
+                        // (DispatcherType.ASYNC) sau khi tác vụ nền xong - JwtAuthFilter không chạy
+                        // lại ở lần dispatch này nên phải permit riêng.
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
-                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        // Chỉ 2 endpoint này thật sự công khai - liệt kê rõ path thay vì wildcard
+                        // "/api/v1/auth/**", để không vô tình public luôn /auth/me.
+                        .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        // role ADMIN chỉ có được qua cột User.role, không có API nào cấp/đổi quyền này.
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -64,10 +66,8 @@ public class SecurityConfig {
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
-        // Content-Disposition KHÔNG phải "simple header" - fetch() ở frontend không đọc được
-        // response.headers.get("Content-Disposition") (bị ẩn mặc định dù cùng response 200 OK) trừ
-        // khi expose rõ ràng ở đây. Cần cho tính năng xuất file (.xlsx Bug Report) lấy đúng tên file
-        // server đặt thay vì rơi về tên mặc định ở frontend.
+        // Content-Disposition không phải "simple header" - fetch() ở frontend không đọc được trừ
+        // khi expose rõ ràng, cần cho tính năng xuất file lấy đúng tên server đặt.
         configuration.setExposedHeaders(List.of("Content-Disposition"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
