@@ -48,9 +48,16 @@ public class SecurityConfig {
                         // (DispatcherType.ASYNC) sau khi tác vụ nền xong - JwtAuthFilter không chạy
                         // lại ở lần dispatch này nên phải permit riêng.
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
-                        // Chỉ 2 endpoint này thật sự công khai - liệt kê rõ path thay vì wildcard
-                        // "/api/v1/auth/**", để không vô tình public luôn /auth/me.
-                        .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        // Chỉ các endpoint này thật sự công khai - liệt kê rõ path thay vì wildcard
+                        // "/api/v1/auth/**", để không vô tình public luôn /auth/me hay /change-password.
+                        // forgot-password/reset-password buộc phải public vì đây LÀ luồng dành cho
+                        // người dùng CHƯA đăng nhập được (quên mật khẩu).
+                        .requestMatchers(
+                                "/api/v1/auth/register",
+                                "/api/v1/auth/login",
+                                "/api/v1/auth/forgot-password",
+                                "/api/v1/auth/reset-password"
+                        ).permitAll()
                         // role ADMIN chỉ có được qua cột User.role, không có API nào cấp/đổi quyền này.
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())

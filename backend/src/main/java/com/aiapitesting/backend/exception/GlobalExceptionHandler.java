@@ -25,6 +25,18 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("INVALID_CREDENTIALS", ex.getMessage()));
     }
 
+    @ExceptionHandler(InvalidCurrentPasswordException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidCurrentPassword(InvalidCurrentPasswordException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiErrorResponse.of("INVALID_CURRENT_PASSWORD", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidResetCodeException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidResetCode(InvalidResetCodeException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of("INVALID_RESET_CODE", ex.getMessage()));
+    }
+
     @ExceptionHandler(AccountDisabledException.class)
     public ResponseEntity<ApiErrorResponse> handleAccountDisabled(AccountDisabledException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)

@@ -34,3 +34,24 @@ export function loginUser(email: string, password: string) {
 export function getCurrentUserInfo(): Promise<UserInfo> {
   return apiFetch<UserInfo>("/auth/me")
 }
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return apiFetch<void>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })
+}
+
+export function requestPasswordReset(email: string) {
+  return apiFetch<void>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function resetPassword(email: string, otp: string, newPassword: string) {
+  return apiFetch<void>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ email, otp, newPassword }),
+  })
+}

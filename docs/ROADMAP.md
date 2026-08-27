@@ -1,6 +1,10 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-22 (Module 11d - AI usage/quota theo user/ngày (token thật từ Anthropic, không phải đếm lượt) + Audit log khoá/mở tài khoản, theo yêu cầu người dùng vì đồ án cần kiểm soát chi phí AI thật. Đã dùng ĐÚNG 1 lần gọi AI thật để verify token capture + quota chặn sớm (0 chi phí cho lần bị chặn) — ngoài lần đó, **vẫn giữ nguyên nguyên tắc không dùng tính năng AI sinh test case nữa**, mọi verify khác dùng lại dữ liệu có sẵn trong tài khoản `freshtest@aiapi.local`/`freshtest123`. Module 11a-d đã xong (Lõi, xem dữ liệu Project/Endpoint/TestCase/BugReport của user khác, AI usage+quota+audit log); còn "giám sát execution treo" hạ ưu tiên. 138/138 test pass.)
+> Cập nhật lần cuối: 2026-08-28 (Module 12 - bổ sung "Quên mật khẩu" bằng OTP gửi qua email thật (SMTP), theo yêu cầu người dùng thêm vào màn hình đăng nhập. Phát hiện + fix 1 bug bảo mật nghiêm trọng: giới hạn 5 lần thử sai OTP bị vô hiệu hoàn toàn do `@Transactional` rollback mất luôn attempt count - chỉ lộ ra khi verify bằng SMTP giả lập cục bộ (MailDev) + kiểm tra trực tiếp DB, không unit test nào bắt được. 161/161 test pass.)
+>
+> Cập nhật trước đó: 2026-08-27 (Module 12 - Đổi mật khẩu, phát sinh khi bàn thiết kế đăng nhập bằng Google: tài khoản Google-only sẽ không có mật khẩu thật, cần tính năng đổi/đặt mật khẩu làm nền trước. Đăng nhập Google tạm gác lại, chưa vào roadmap. 154/154 test pass.)
+>
+> Cập nhật trước đó: 2026-08-22 (Module 11d - AI usage/quota theo user/ngày (token thật từ Anthropic, không phải đếm lượt) + Audit log khoá/mở tài khoản, theo yêu cầu người dùng vì đồ án cần kiểm soát chi phí AI thật. Đã dùng ĐÚNG 1 lần gọi AI thật để verify token capture + quota chặn sớm (0 chi phí cho lần bị chặn) — ngoài lần đó, **vẫn giữ nguyên nguyên tắc không dùng tính năng AI sinh test case nữa**, mọi verify khác dùng lại dữ liệu có sẵn trong tài khoản `freshtest@aiapi.local`/`freshtest123`. Module 11a-d đã xong (Lõi, xem dữ liệu Project/Endpoint/TestCase/BugReport của user khác, AI usage+quota+audit log); còn "giám sát execution treo" hạ ưu tiên. 138/138 test pass.)
 
 Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuống vì module sau phụ thuộc module trước. Trong mỗi module, backend/frontend có thể làm song song.
 
@@ -19,7 +23,8 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 9. Nâng cao Test Case AI sinh (Security, Assertion, Test Data) | ✅ Xong |
 | 10. Bug Report (quy trình QA) | ✅ Xong |
 | 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a-e xong, còn giám sát execution treo - hạ ưu tiên) |
-| 12. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
+| 12. Đổi mật khẩu & Quên mật khẩu | ✅ Xong |
+| 13. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
 
@@ -649,8 +654,56 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 
 ---
 
-## 12. Hoàn thiện & Demo
-*Phụ thuộc: tất cả module MVP (1-11) đã xong*
+## 12. Đổi mật khẩu & Quên mật khẩu ✅
+*Phụ thuộc: Module 1*
+
+**Bối cảnh:** phát sinh khi bàn thiết kế "Đăng ký/Đăng nhập bằng Google" - phát hiện tài khoản tạo qua Google sẽ không có mật khẩu thật (hệ thống phải tự sinh chuỗi ngẫu nhiên để thoả cột `password NOT NULL`), nên cần tính năng đổi/đặt mật khẩu làm nền trước. Đăng nhập Google tạm gác lại (chưa vào roadmap), làm tính năng này trước vì vừa có giá trị độc lập vừa là nền cho sau này.
+
+**Backend**
+- [x] DTO `ChangePasswordRequest` (`currentPassword`, `newPassword` tối thiểu 8 ký tự) - `dto/request/`
+- [x] `InvalidCurrentPasswordException` → `401 INVALID_CURRENT_PASSWORD` (`GlobalExceptionHandler`)
+- [x] `AuthService.changePassword(User, ChangePasswordRequest)` - so khớp mật khẩu cũ bằng BCrypt trước khi encode + lưu mật khẩu mới. Không tạo `UserService` riêng, giữ nguyên convention mọi logic tài khoản nằm trong `AuthService`
+- [x] `POST /api/v1/auth/change-password` (`AuthController`) - tái dùng `currentUserService.getCurrentUser()` có sẵn; không cần sửa `SecurityConfig` vì route không nằm trong `permitAll()` nên tự động yêu cầu JWT hợp lệ, giống hệt cách `/me` đang hoạt động
+- [x] Bổ sung mã lỗi `INVALID_CURRENT_PASSWORD` (401) vào skill `api-contract`
+
+**Frontend**
+- [x] `lib/auth.ts` thêm `changePassword(currentPassword, newPassword)`
+- [x] `components/account/ChangePasswordDialog.tsx` mới - dialog 3 ô (mật khẩu hiện tại/mật khẩu mới/xác nhận), validate xác nhận khớp phía client trước khi gọi API, lỗi từ backend hiện qua `ApiError.message`
+- [x] `Header.tsx` thêm dropdown tài khoản (icon `User`, cạnh `ModeToggle`) hiện email hiện tại (`getCurrentUserEmail()`), mục "Đổi mật khẩu" (mở dialog) + "Đăng xuất" (chuyển logic đăng xuất cũ - trước đó là nút riêng - vào chung dropdown này)
+
+**Bug thật phát hiện khi verify bằng Playwright (không lộ ra khi chỉ đọc code):** mở dropdown tài khoản làm crash trắng toàn bộ trang - lỗi console `Base UI: MenuGroupContext is missing. Menu group parts must be used within <Menu.Group> or <Menu.RadioGroup>`. Nguyên nhân: đặt `DropdownMenuLabel` trực tiếp trong `DropdownMenuContent`, trong khi component Base UI đang dùng (`@base-ui/react/menu`) bắt buộc `GroupLabel` phải nằm trong `Menu.Group`. Fix: bọc `DropdownMenuLabel` trong `DropdownMenuGroup`.
+
+**Mốc xác nhận:** `./mvnw test` xanh (154/154, thêm 2 test mới trong `AuthServiceTest`: đổi mật khẩu đúng → encode + save đúng giá trị mới; sai mật khẩu hiện tại → ném `InvalidCurrentPasswordException`, không gọi `save`), `npx tsc --noEmit` sạch. Verify qua `curl` thật đủ 6 case (sai mật khẩu hiện tại, mật khẩu mới < 8 ký tự, đổi thành công, gọi không kèm token → 401, đăng nhập lại bằng mật khẩu CŨ bị từ chối, bằng mật khẩu MỚI thành công). **Verify UI thật bằng Playwright:** đăng ký tài khoản mới → mở dropdown tài khoản (hiện đúng email) → "Đổi mật khẩu" → nhập sai mật khẩu hiện tại → hiện đúng lỗi backend → xác nhận mật khẩu mới không khớp → hiện đúng lỗi client-side → nhập đúng → thành công, dialog tự đóng → đăng xuất → đăng nhập lại bằng mật khẩu cũ bị từ chối, bằng mật khẩu mới thành công.
+
+**Bổ sung (cùng ngày): Quên mật khẩu (OTP qua email)**
+
+**Bối cảnh:** người dùng yêu cầu thêm luồng "Quên mật khẩu" ở màn hình đăng nhập - nhập email, được đổi mật khẩu, KHÔNG cần nhập lại mật khẩu cũ (đúng bản chất "quên"). Đã cảnh báo rủi ro bảo mật trước khi làm: nếu không xác minh chủ sở hữu email thì ai cũng chiếm được tài khoản người khác chỉ bằng cách biết email của họ - người dùng chọn xác minh bằng mã OTP gửi qua email thật (không chọn phương án đơn giản không xác minh).
+
+**Backend**
+- [x] Thêm dependency `spring-boot-starter-mail`
+- [x] Entity `PasswordResetOtp` (`user`, `otpHash` - BCrypt qua `PasswordEncoder` có sẵn, không lưu mã gốc -, `expiresAt`, `attemptCount`, `used`) + `PasswordResetOtpRepository` (`findTopByUserAndUsedFalseOrderByCreatedAtDesc`, `deleteAllUnusedByUser` dạng `@Modifying` bulk delete)
+- [x] `EmailService` (`service/`) - wrap `JavaMailSender`, gửi email OTP dạng text đơn giản
+- [x] `AuthService.forgotPassword()`: luôn no-op nếu email không tồn tại (không throw, không phân biệt), xoá OTP cũ chưa dùng, sinh OTP 6 số bằng `SecureRandom`, hash, lưu, gửi email. `AuthService.resetPassword()`: kiểm tra hết hạn (10 phút) + số lần thử sai (tối đa 5) trước khi so khớp OTP; sai/hết hạn/vượt số lần/email không tồn tại đều ném CHUNG 1 `InvalidResetCodeException` với CHUNG 1 thông báo - không cho kẻ tấn công phân biệt được lý do thất bại (tránh dò email đã đăng ký)
+- [x] `POST /api/v1/auth/forgot-password`, `POST /api/v1/auth/reset-password` (`AuthController`) - cả 2 thêm vào `permitAll()` (`SecurityConfig`), bắt buộc công khai vì đây là luồng cho người CHƯA đăng nhập được
+- [x] Mã lỗi mới `INVALID_RESET_CODE` (400) vào skill `api-contract`
+- [x] `.env`/`application.properties` thêm `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD` (có default rỗng/587, app vẫn khởi động bình thường khi chưa cấu hình, chỉ lỗi lúc thật sự gửi email) - **người dùng cần tự điền SMTP thật (Gmail App Password hoặc Mailtrap) để email gửi được, Claude không tự tạo tài khoản email hộ được**
+
+**Bug thật phát hiện khi verify (nghiêm trọng, ảnh hưởng bảo mật):** giới hạn "tối đa 5 lần thử sai OTP" hoàn toàn không có tác dụng - `resetPassword()` đánh dấu `@Transactional`, và khi ném `InvalidResetCodeException` (RuntimeException) ngay sau khi `save()` tăng `attemptCount`, Spring **rollback toàn bộ giao dịch kể cả lần save đó** (hành vi mặc định của `@Transactional` khi có RuntimeException thoát ra ngoài). Hậu quả: `attemptCount` trong DB luôn dừng ở `0` dù đã thử sai bao nhiêu lần - brute-force cả triệu mã OTP không bị chặn. Phát hiện được nhờ dựng SMTP giả lập cục bộ (MailDev, `npx maildev`, không gửi email thật ra ngoài) để lấy được mã OTP thật và test đủ kịch bản qua `curl`, kiểm tra trực tiếp trong DB sau mỗi lần - không unit test Mockito nào bắt được vì mock không mô phỏng hành vi rollback giao dịch thật của Spring. Fix: `@Transactional(noRollbackFor = InvalidResetCodeException.class)`.
+
+**Frontend**
+- [x] `lib/auth.ts` thêm `requestPasswordReset(email)`, `resetPassword(email, otp, newPassword)`
+- [x] Trang `ForgotPasswordPage.tsx` (route `/forgot-password`, không cần đăng nhập) - chỉ nhập email, submit xong điều hướng sang trang khác
+- [x] Trang `ResetPasswordPage.tsx` (route riêng `/reset-password?email=...`) - nhập mã OTP + mật khẩu mới + xác nhận, đọc `email` từ query param (không dùng router state vì mất khi refresh trang); truy cập thẳng URL này mà thiếu `email` thì hiện màn hình fallback mời quay lại `/forgot-password`. Ô "Mã xác nhận" tách hẳn khỏi 2 ô mật khẩu bằng khung viền riêng + gạch ngang phân cách + tiêu đề "Đặt mật khẩu mới"
+- [x] `LoginPage.tsx` thêm link "Quên mật khẩu?" cạnh label mật khẩu, trỏ tới `/forgot-password`
+
+*(Phát sinh sau khi người dùng dùng thử — UX)* Thiết kế ban đầu gộp cả 2 bước (nhập email / nhập OTP+mật khẩu mới) vào chung 1 trang `ForgotPasswordPage.tsx`, chuyển qua lại bằng state nội bộ. Người dùng phản hồi muốn tách hẳn 2 route riêng biệt (giống cách `LoginPage`/`RegisterPage` là 2 trang khác nhau). Tách lại thành `ForgotPasswordPage` (chỉ bước 1) + `ResetPasswordPage` (chỉ bước 2, mới), điều hướng bằng `navigate()` kèm `email` qua query string.
+
+**Mốc xác nhận:** `./mvnw test` xanh (161/161, thêm 6 test mới trong `AuthServiceTest` cho `forgotPassword`/`resetPassword`: email tồn tại sinh+gửi OTP đúng, email không tồn tại no-op, OTP đúng đổi mật khẩu thành công, OTP sai tăng attempt không đổi mật khẩu, OTP hết hạn bị chặn, email không tồn tại lúc reset trả đúng lỗi chung), `npx tsc --noEmit` sạch. **Verify bằng SMTP giả lập cục bộ (MailDev) + curl + Playwright UI thật đầy đủ** (cả bản gộp 1 trang lẫn bản tách 2 trang sau khi sửa theo yêu cầu): sai OTP → lỗi đúng, mật khẩu mới < 8 ký tự bị chặn, đúng OTP → đổi thành công, dùng lại OTP đã dùng → bị từ chối, đăng nhập lại bằng mật khẩu cũ bị từ chối/mật khẩu mới thành công, email không tồn tại luôn trả cùng 1 lỗi (không lộ thông tin), truy cập thẳng `/reset-password` không có email → hiện đúng fallback - và đặc biệt đã verify lại đúng giới hạn "5 lần sai thì khoá mã" bằng cách kiểm tra trực tiếp trong DB sau khi fix. **Đã verify gửi email OTP thật qua Brevo SMTP (300 email/ngày free) tới đúng hộp thư Gmail thật của người dùng** - nhận được, đổi mật khẩu thành công bằng mã thật. Toàn bộ tài khoản test đã xoá sạch sau khi verify.
+
+---
+
+## 13. Hoàn thiện & Demo
+*Phụ thuộc: tất cả module MVP (1-12) đã xong*
 
 - [ ] Polish UI, fix bug toàn luồng
 - [ ] Viết tài liệu kỹ thuật

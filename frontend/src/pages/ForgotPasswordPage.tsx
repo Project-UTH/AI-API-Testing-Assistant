@@ -13,25 +13,23 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { AuthLayout } from "@/components/layout/AuthLayout"
-import { ApiError, setToken } from "@/lib/api"
-import { loginUser } from "@/lib/auth"
+import { ApiError } from "@/lib/api"
+import { requestPasswordReset } from "@/lib/auth"
 
-export function LoginPage() {
+export function ForgotPasswordPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
 
-  const mutation = useMutation({
-    mutationFn: () => loginUser(email, password),
-    onSuccess: (data) => {
-      setToken(data.token)
-      navigate("/", { replace: true })
+  const requestOtpMutation = useMutation({
+    mutationFn: () => requestPasswordReset(email),
+    onSuccess: () => {
+      navigate(`/reset-password?email=${encodeURIComponent(email)}`)
     },
   })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    mutation.mutate()
+    requestOtpMutation.mutate()
   }
 
   return (
@@ -39,10 +37,10 @@ export function LoginPage() {
       <Card className="w-full max-w-sm border border-border bg-card/80 shadow-xl shadow-black/5 ring-0 backdrop-blur-md">
         <CardHeader>
           <CardTitle className="text-2xl font-heading font-semibold">
-            Đăng nhập
+            Quên mật khẩu
           </CardTitle>
           <CardDescription>
-            Đăng nhập vào AI API Testing Assistant
+            Nhập email đã đăng ký để nhận mã xác nhận
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -57,38 +55,21 @@ export function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Mật khẩu</Label>
-                <Link
-                  to="/forgot-password"
-                  className="text-sm text-primary underline"
-                >
-                  Quên mật khẩu?
-                </Link>
-              </div>
-              <Input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            {mutation.isError && (
+
+            {requestOtpMutation.isError && (
               <p className="text-sm text-destructive">
-                {mutation.error instanceof ApiError
-                  ? mutation.error.message
+                {requestOtpMutation.error instanceof ApiError
+                  ? requestOtpMutation.error.message
                   : "Đã xảy ra lỗi, vui lòng thử lại"}
               </p>
             )}
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? "Đang đăng nhập..." : "Đăng nhập"}
+
+            <Button type="submit" disabled={requestOtpMutation.isPending}>
+              {requestOtpMutation.isPending ? "Đang gửi..." : "Gửi mã xác nhận"}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
-              Chưa có tài khoản?{" "}
-              <Link to="/register" className="text-primary underline">
-                Đăng ký
+              <Link to="/login" className="text-primary underline">
+                Quay lại đăng nhập
               </Link>
             </p>
           </form>
