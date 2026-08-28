@@ -65,6 +65,9 @@ Ví dụ — tạo project thành công:
 | `INTERNAL_ERROR` | 500 | Lỗi hệ thống chung, không xác định được nguyên nhân cụ thể |
 | `EMAIL_ALREADY_EXISTS` | 409 | Email đã được đăng ký |
 | `INVALID_CREDENTIALS` | 401 | Sai email hoặc mật khẩu |
+| `INVALID_CURRENT_PASSWORD` | 401 | Sai mật khẩu hiện tại khi đổi mật khẩu (`POST /auth/change-password`) |
+| `INVALID_RESET_CODE` | 400 | Mã OTP quên mật khẩu sai/hết hạn/vượt số lần thử (`POST /auth/reset-password`) - CHUNG 1 thông báo cho mọi trường hợp (kể cả email không tồn tại), không phân biệt để tránh lộ email đã đăng ký |
+| `GOOGLE_AUTH_FAILED` | 401 | ID token Google sai chữ ký/hết hạn/sai audience/email chưa xác thực (`POST /auth/google`) |
 | `ACCOUNT_DISABLED` | 403 | Tài khoản đã bị khoá bởi admin (không cho đăng nhập/gọi API) |
 | `USER_NOT_FOUND` | 404 | Không tìm thấy user (trang Admin) |
 

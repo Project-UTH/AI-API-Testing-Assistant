@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { AuthLayout } from "@/components/layout/AuthLayout"
+import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton"
 import { ApiError, setToken } from "@/lib/api"
 import { loginUser } from "@/lib/auth"
 
@@ -58,7 +59,15 @@ export function LoginPage() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">Mật khẩu</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Mật khẩu</Label>
+                <Link
+                  to="/forgot-password"
+                  className="text-sm text-primary underline"
+                >
+                  Quên mật khẩu?
+                </Link>
+              </div>
               <Input
                 id="password"
                 type="password"
@@ -77,6 +86,15 @@ export function LoginPage() {
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending ? "Đang đăng nhập..." : "Đăng nhập"}
             </Button>
+
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">hoặc</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            <GoogleAuthButton />
+
             <p className="text-center text-sm text-muted-foreground">
               Chưa có tài khoản?{" "}
               <Link to="/register" className="text-primary underline">

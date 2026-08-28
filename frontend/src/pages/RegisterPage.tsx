@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { AuthLayout } from "@/components/layout/AuthLayout"
+import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton"
 import { ApiError, setToken } from "@/lib/api"
 import { registerUser } from "@/lib/auth"
 
@@ -105,6 +106,15 @@ export function RegisterPage() {
             >
               {mutation.isPending ? "Đang đăng ký..." : "Đăng ký"}
             </Button>
+
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">hoặc</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            <GoogleAuthButton />
+
             <p className="text-center text-sm text-muted-foreground">
               Đã có tài khoản?{" "}
               <Link to="/login" className="text-primary underline">

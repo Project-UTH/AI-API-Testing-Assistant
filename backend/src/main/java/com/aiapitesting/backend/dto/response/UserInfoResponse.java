@@ -8,8 +8,8 @@ import com.aiapitesting.backend.entity.UserRole;
  * Sidebar) mà không cần giải mã JWT (JWT không mang role - xem CustomUserDetailsService, role
  * luôn đọc lại từ DB để cấp/thu quyền ADMIN qua SQL có hiệu lực ngay, không cần đăng nhập lại).
  */
-public record UserInfoResponse(String email, UserRole role) {
+public record UserInfoResponse(String email, UserRole role, boolean passwordSet) {
     public static UserInfoResponse from(User user) {
-        return new UserInfoResponse(user.getEmail(), user.getRole());
+        return new UserInfoResponse(user.getEmail(), user.getRole(), user.isPasswordSet());
     }
 }
