@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ApiError } from "@/lib/api"
-import { changePassword } from "@/lib/auth"
+import { changePassword, getCurrentUserInfo } from "@/lib/auth"
 
 interface ChangePasswordDialogProps {
   open: boolean
@@ -28,6 +28,15 @@ export function ChangePasswordDialog({
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [confirmError, setConfirmError] = useState<string | null>(null)
+
+  // Tài khoản đăng ký qua Google chưa từng có mật khẩu thật (passwordSet=false) - mặc định true
+  // trong lúc chờ tải để không "chớp" ẩn ô mật khẩu hiện tại trước khi biết chắc.
+  const { data: userInfo } = useQuery({
+    queryKey: ["me"],
+    queryFn: getCurrentUserInfo,
+    enabled: open,
+  })
+  const needsCurrentPassword = userInfo?.passwordSet ?? true
 
   useEffect(() => {
     if (open) {
@@ -62,23 +71,29 @@ export function ChangePasswordDialog({
       <DialogContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>Đổi mật khẩu</DialogTitle>
+            <DialogTitle>
+              {needsCurrentPassword ? "Đổi mật khẩu" : "Đặt mật khẩu"}
+            </DialogTitle>
             <DialogDescription>
-              Nhập mật khẩu hiện tại và mật khẩu mới
+              {needsCurrentPassword
+                ? "Nhập mật khẩu hiện tại và mật khẩu mới"
+                : "Tài khoản của bạn đăng ký qua Google, chưa có mật khẩu - đặt mật khẩu để có thể đăng nhập bằng email/mật khẩu sau này"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="current-password">Mật khẩu hiện tại</Label>
-            <Input
-              id="current-password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-            />
-          </div>
+          {needsCurrentPassword && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="current-password">Mật khẩu hiện tại</Label>
+              <Input
+                id="current-password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+              />
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="new-password">Mật khẩu mới</Label>
@@ -120,7 +135,11 @@ export function ChangePasswordDialog({
 
           <DialogFooter>
             <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? "Đang lưu..." : "Đổi mật khẩu"}
+              {mutation.isPending
+                ? "Đang lưu..."
+                : needsCurrentPassword
+                  ? "Đổi mật khẩu"
+                  : "Đặt mật khẩu"}
             </Button>
           </DialogFooter>
         </form>

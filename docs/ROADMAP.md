@@ -1,6 +1,8 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-28 (Module 12 - bổ sung "Quên mật khẩu" bằng OTP gửi qua email thật (SMTP), theo yêu cầu người dùng thêm vào màn hình đăng nhập. Phát hiện + fix 1 bug bảo mật nghiêm trọng: giới hạn 5 lần thử sai OTP bị vô hiệu hoàn toàn do `@Transactional` rollback mất luôn attempt count - chỉ lộ ra khi verify bằng SMTP giả lập cục bộ (MailDev) + kiểm tra trực tiếp DB, không unit test nào bắt được. 161/161 test pass.)
+> Cập nhật lần cuối: 2026-08-28 (Module 13 - Đăng nhập/Đăng ký bằng Google, quay lại làm sau khi tính năng Đổi mật khẩu (Module 12) đã xong - điều kiện tiên quyết để tài khoản Google-only tự đặt mật khẩu sau này. Phát hiện thêm 1 lỗ hổng thiết kế lúc bàn kỹ trước khi code: tính năng Đổi mật khẩu cũ luôn bắt nhập mật khẩu hiện tại, tài khoản Google-only không biết mật khẩu ngẫu nhiên nên không bao giờ đổi được - đã sửa bằng field `User.passwordSet`.)
+>
+> Cập nhật trước đó: 2026-08-28 (Module 12 - bổ sung "Quên mật khẩu" bằng OTP gửi qua email thật (SMTP), theo yêu cầu người dùng thêm vào màn hình đăng nhập. Phát hiện + fix 1 bug bảo mật nghiêm trọng: giới hạn 5 lần thử sai OTP bị vô hiệu hoàn toàn do `@Transactional` rollback mất luôn attempt count - chỉ lộ ra khi verify bằng SMTP giả lập cục bộ (MailDev) + kiểm tra trực tiếp DB, không unit test nào bắt được. 161/161 test pass.)
 >
 > Cập nhật trước đó: 2026-08-27 (Module 12 - Đổi mật khẩu, phát sinh khi bàn thiết kế đăng nhập bằng Google: tài khoản Google-only sẽ không có mật khẩu thật, cần tính năng đổi/đặt mật khẩu làm nền trước. Đăng nhập Google tạm gác lại, chưa vào roadmap. 154/154 test pass.)
 >
@@ -24,7 +26,8 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 10. Bug Report (quy trình QA) | ✅ Xong |
 | 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a-e xong, còn giám sát execution treo - hạ ưu tiên) |
 | 12. Đổi mật khẩu & Quên mật khẩu | ✅ Xong |
-| 13. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
+| 13. Đăng nhập/Đăng ký với Google | ✅ Xong |
+| 14. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
 
 ---
 
@@ -702,8 +705,37 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 
 ---
 
-## 13. Hoàn thiện & Demo
-*Phụ thuộc: tất cả module MVP (1-12) đã xong*
+## 13. Đăng nhập/Đăng ký với Google ✅
+*Phụ thuộc: Module 12 (Đổi mật khẩu)*
+
+**Bối cảnh:** quay lại làm sau khi tạm gác lúc bàn Module 12 - điều kiện tiên quyết lúc đó (tài khoản Google-only cần cách tự đặt mật khẩu) nay đã có sẵn qua tính năng Đổi mật khẩu.
+
+**Phương án:** Google Identity Services (ID-token), KHÔNG dùng OAuth Authorization Code đầy đủ - không cần `client_secret`, chỉ verify chữ ký ID token offline (`GoogleIdTokenVerifier`, tự cache public key của Google).
+
+**Backend**
+- [x] Thêm dependency `com.google.api-client:google-api-client`
+- [x] `User` thêm `authProvider` (enum mới `AuthProvider`: `LOCAL`/`GOOGLE`, mặc định `LOCAL`) + `googleId` (nullable, unique) + `passwordSet` (boolean, mặc định `true`)
+- [x] `GoogleTokenVerifierService` (`security/`) - verify ID token qua `GoogleIdTokenVerifier`, ném `GoogleAuthFailedException` khi sai chữ ký/hết hạn/sai audience/`email_verified=false`
+- [x] `AuthService.loginWithGoogle(idToken)` - tìm theo `googleId` trước, không có thì theo `email`: không tồn tại → tạo user mới (`authProvider=GOOGLE`, `passwordSet=false`, password = BCrypt hash của UUID ngẫu nhiên); tồn tại (LOCAL) → **tự động liên kết** (gắn `googleId`, không xác thực gì thêm vì Google đã tự xác thực `email_verified`, giữ nguyên `authProvider=LOCAL`/`passwordSet=true` vì họ có mật khẩu thật)
+- [x] `POST /api/v1/auth/google` (`AuthController`), thêm vào `permitAll()` (`SecurityConfig`), mã lỗi mới `GOOGLE_AUTH_FAILED` (401, `GlobalExceptionHandler` + skill `api-contract`)
+- [x] `google.oauth.client-id=${GOOGLE_CLIENT_ID:}` (mặc định rỗng - app vẫn khởi động được khi chưa cấu hình, chỉ `/auth/google` từ chối mọi token cho tới khi điền `GOOGLE_CLIENT_ID` thật)
+
+**Bug thiết kế phát hiện lúc bàn kỹ trước khi code (chưa kịp code sai, không phải bug thật trong code đã chạy):** giả định ban đầu "tài khoản Google-only dùng chung được tính năng Đổi mật khẩu đã có, không cần sửa gì" là SAI - `AuthService.changePassword()` lúc đó luôn bắt so khớp `currentPassword`, mà tài khoản Google-only không ai biết mật khẩu ngẫu nhiên đang lưu nên không bao giờ đổi được. Fix trước khi code: thêm `User.passwordSet` (mặc định `true` cho LOCAL, `false` khi tạo mới qua Google) - `changePassword()` chỉ bắt buộc so khớp `currentPassword` khi `passwordSet=true`; nếu `false` thì bỏ qua, cho đặt mật khẩu mới thẳng rồi set `passwordSet=true` (từ lần sau coi như tài khoản thường). `ChangePasswordRequest.currentPassword` bỏ `@NotBlank` để cho phép rỗng ở case này.
+
+**Frontend**
+- [x] `npm install @react-oauth/google`, `GoogleOAuthProvider` bọc ở `main.tsx` (đọc `VITE_GOOGLE_CLIENT_ID`)
+- [x] `lib/auth.ts` thêm `loginWithGoogle(idToken)`; `UserInfo` (từ `/auth/me`) thêm field `passwordSet`
+- [x] `components/auth/GoogleAuthButton.tsx` mới - bọc `<GoogleLogin>`, thành công thì `setToken()` + điều hướng `/`, dùng chung cho cả `LoginPage.tsx` và `RegisterPage.tsx` (1 nút phục vụ cả đăng ký lẫn đăng nhập, có dòng kẻ "hoặc" phân tách với form thường)
+- [x] `components/account/ChangePasswordDialog.tsx` - fetch `getCurrentUserInfo()` khi mở dialog (`useQuery`, `enabled: open`), nếu `passwordSet=false` thì ẩn hẳn ô "Mật khẩu hiện tại", đổi tiêu đề + nút từ "Đổi mật khẩu" sang "Đặt mật khẩu"
+
+**Bước thủ công người dùng tự làm (không tự động hoá được):** tạo Google Cloud project + OAuth consent screen + OAuth 2.0 Client ID loại "Web application", thêm `http://localhost:5173` vào "Authorized JavaScript origins", điền `GOOGLE_CLIENT_ID` vào `backend/.env` + `VITE_GOOGLE_CLIENT_ID` vào `frontend/.env` (cùng 1 giá trị).
+
+**Mốc xác nhận:** `./mvnw test` xanh (167/167, thêm 7 test mới trong `AuthServiceTest`: user mới tạo đúng qua Google (`authProvider=GOOGLE`, `passwordSet=false`), user cũ match theo `googleId` không lưu lại thừa, tự động liên kết email LOCAL đã tồn tại đúng field, tài khoản bị khoá vẫn bị chặn dù đăng nhập qua Google, token Google sai/hết hạn không đụng gì tới DB, tài khoản `passwordSet=false` đặt mật khẩu mới không cần `currentPassword`), `npx tsc --noEmit` sạch.
+
+---
+
+## 14. Hoàn thiện & Demo
+*Phụ thuộc: tất cả module MVP (1-13) đã xong*
 
 - [ ] Polish UI, fix bug toàn luồng
 - [ ] Viết tài liệu kỹ thuật

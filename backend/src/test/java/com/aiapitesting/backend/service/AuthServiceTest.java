@@ -5,18 +5,23 @@ import com.aiapitesting.backend.dto.request.ForgotPasswordRequest;
 import com.aiapitesting.backend.dto.request.LoginRequest;
 import com.aiapitesting.backend.dto.request.ResetPasswordRequest;
 import com.aiapitesting.backend.dto.response.AuthResponse;
+import com.aiapitesting.backend.entity.AuthProvider;
 import com.aiapitesting.backend.entity.PasswordResetOtp;
 import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.entity.UserRole;
 import com.aiapitesting.backend.exception.AccountDisabledException;
+import com.aiapitesting.backend.exception.GoogleAuthFailedException;
 import com.aiapitesting.backend.exception.InvalidCredentialsException;
 import com.aiapitesting.backend.exception.InvalidCurrentPasswordException;
 import com.aiapitesting.backend.exception.InvalidResetCodeException;
 import com.aiapitesting.backend.repository.PasswordResetOtpRepository;
 import com.aiapitesting.backend.repository.UserRepository;
+import com.aiapitesting.backend.security.GoogleTokenVerifierService;
 import com.aiapitesting.backend.security.JwtService;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -51,6 +56,9 @@ class AuthServiceTest {
 
     @Mock
     private EmailService emailService;
+
+    @Mock
+    private GoogleTokenVerifierService googleTokenVerifierService;
 
     @InjectMocks
     private AuthService authService;
@@ -113,6 +121,114 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.changePassword(user, new ChangePasswordRequest("wrongPass", "newPass123")))
                 .isInstanceOf(InvalidCurrentPasswordException.class);
 
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void changePassword_accountWithoutRealPassword_skipsCurrentPasswordCheck_marksPasswordSet() {
+        User user = User.builder().id(UUID.randomUUID()).email("googleuser@test.com")
+                .password("random-uuid-hashed").role(UserRole.USER).enabled(true)
+                .authProvider(AuthProvider.GOOGLE).passwordSet(false).build();
+        when(passwordEncoder.encode("newPass123")).thenReturn("new-hashed");
+
+        authService.changePassword(user, new ChangePasswordRequest(null, "newPass123"));
+
+        assertThat(user.getPassword()).isEqualTo("new-hashed");
+        assertThat(user.isPasswordSet()).isTrue();
+        verify(userRepository).save(user);
+        verify(passwordEncoder, never()).matches(any(), any());
+    }
+
+    @Test
+    void loginWithGoogle_newEmail_createsGoogleOnlyUserWithoutRealPassword() {
+        GoogleIdToken.Payload payload = new GoogleIdToken.Payload();
+        payload.setSubject("google-sub-1");
+        payload.setEmail("newgoogle@test.com");
+        when(googleTokenVerifierService.verify("valid-token")).thenReturn(payload);
+        when(userRepository.findByGoogleId("google-sub-1")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("newgoogle@test.com")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(any())).thenReturn("random-hashed");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(jwtService.generateToken("newgoogle@test.com")).thenReturn("jwt-token");
+
+        AuthResponse response = authService.loginWithGoogle("valid-token");
+
+        assertThat(response.token()).isEqualTo("jwt-token");
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        User saved = captor.getValue();
+        assertThat(saved.getEmail()).isEqualTo("newgoogle@test.com");
+        assertThat(saved.getGoogleId()).isEqualTo("google-sub-1");
+        assertThat(saved.getAuthProvider()).isEqualTo(AuthProvider.GOOGLE);
+        assertThat(saved.isPasswordSet()).isFalse();
+    }
+
+    @Test
+    void loginWithGoogle_existingGoogleId_reusesAccountWithoutReSaving() {
+        User user = User.builder().id(UUID.randomUUID()).email("googleuser@test.com")
+                .password("hashed").role(UserRole.USER).enabled(true)
+                .authProvider(AuthProvider.GOOGLE).googleId("google-sub-1").passwordSet(false).build();
+        GoogleIdToken.Payload payload = new GoogleIdToken.Payload();
+        payload.setSubject("google-sub-1");
+        payload.setEmail("googleuser@test.com");
+        when(googleTokenVerifierService.verify("valid-token")).thenReturn(payload);
+        when(userRepository.findByGoogleId("google-sub-1")).thenReturn(Optional.of(user));
+        when(jwtService.generateToken("googleuser@test.com")).thenReturn("jwt-token");
+
+        AuthResponse response = authService.loginWithGoogle("valid-token");
+
+        assertThat(response.token()).isEqualTo("jwt-token");
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void loginWithGoogle_matchingLocalEmail_autoLinksGoogleIdWithoutExtraVerification() {
+        User localUser = User.builder().id(UUID.randomUUID()).email("local@test.com")
+                .password("local-hashed").role(UserRole.USER).enabled(true)
+                .authProvider(AuthProvider.LOCAL).passwordSet(true).build();
+        GoogleIdToken.Payload payload = new GoogleIdToken.Payload();
+        payload.setSubject("google-sub-2");
+        payload.setEmail("local@test.com");
+        when(googleTokenVerifierService.verify("valid-token")).thenReturn(payload);
+        when(userRepository.findByGoogleId("google-sub-2")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("local@test.com")).thenReturn(Optional.of(localUser));
+        when(jwtService.generateToken("local@test.com")).thenReturn("jwt-token");
+
+        authService.loginWithGoogle("valid-token");
+
+        assertThat(localUser.getGoogleId()).isEqualTo("google-sub-2");
+        assertThat(localUser.getAuthProvider()).isEqualTo(AuthProvider.LOCAL);
+        assertThat(localUser.isPasswordSet()).isTrue();
+        verify(userRepository).save(localUser);
+    }
+
+    @Test
+    void loginWithGoogle_disabledAccount_throwsAccountDisabledBeforeIssuingToken() {
+        User user = User.builder().id(UUID.randomUUID()).email("locked@test.com")
+                .password("hashed").role(UserRole.USER).enabled(false)
+                .authProvider(AuthProvider.GOOGLE).googleId("google-sub-3").passwordSet(false).build();
+        GoogleIdToken.Payload payload = new GoogleIdToken.Payload();
+        payload.setSubject("google-sub-3");
+        payload.setEmail("locked@test.com");
+        when(googleTokenVerifierService.verify("valid-token")).thenReturn(payload);
+        when(userRepository.findByGoogleId("google-sub-3")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.loginWithGoogle("valid-token"))
+                .isInstanceOf(AccountDisabledException.class);
+
+        verify(jwtService, never()).generateToken(any());
+    }
+
+    @Test
+    void loginWithGoogle_invalidToken_propagatesWithoutTouchingRepository() {
+        when(googleTokenVerifierService.verify("bad-token"))
+                .thenThrow(new GoogleAuthFailedException("Token Google không hợp lệ hoặc đã hết hạn"));
+
+        assertThatThrownBy(() -> authService.loginWithGoogle("bad-token"))
+                .isInstanceOf(GoogleAuthFailedException.class);
+
+        verify(userRepository, never()).findByGoogleId(any());
+        verify(userRepository, never()).findByEmail(any());
         verify(userRepository, never()).save(any());
     }
 

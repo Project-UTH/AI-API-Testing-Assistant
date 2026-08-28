@@ -31,6 +31,12 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("INVALID_CURRENT_PASSWORD", ex.getMessage()));
     }
 
+    @ExceptionHandler(GoogleAuthFailedException.class)
+    public ResponseEntity<ApiErrorResponse> handleGoogleAuthFailed(GoogleAuthFailedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiErrorResponse.of("GOOGLE_AUTH_FAILED", ex.getMessage()));
+    }
+
     @ExceptionHandler(InvalidResetCodeException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidResetCode(InvalidResetCodeException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

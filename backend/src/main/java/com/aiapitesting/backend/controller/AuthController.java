@@ -2,6 +2,7 @@ package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.request.ChangePasswordRequest;
 import com.aiapitesting.backend.dto.request.ForgotPasswordRequest;
+import com.aiapitesting.backend.dto.request.GoogleAuthRequest;
 import com.aiapitesting.backend.dto.request.LoginRequest;
 import com.aiapitesting.backend.dto.request.RegisterRequest;
 import com.aiapitesting.backend.dto.request.ResetPasswordRequest;
@@ -37,6 +38,12 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         AuthResponse response = authService.login(request);
+        return ResponseEntity.ok(ApiResponse.of(response));
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<ApiResponse<AuthResponse>> google(@Valid @RequestBody GoogleAuthRequest request) {
+        AuthResponse response = authService.loginWithGoogle(request.idToken());
         return ResponseEntity.ok(ApiResponse.of(response));
     }
 

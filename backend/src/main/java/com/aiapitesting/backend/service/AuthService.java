@@ -6,6 +6,7 @@ import com.aiapitesting.backend.dto.request.LoginRequest;
 import com.aiapitesting.backend.dto.request.RegisterRequest;
 import com.aiapitesting.backend.dto.request.ResetPasswordRequest;
 import com.aiapitesting.backend.dto.response.AuthResponse;
+import com.aiapitesting.backend.entity.AuthProvider;
 import com.aiapitesting.backend.entity.PasswordResetOtp;
 import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.AccountDisabledException;
@@ -15,7 +16,9 @@ import com.aiapitesting.backend.exception.InvalidCurrentPasswordException;
 import com.aiapitesting.backend.exception.InvalidResetCodeException;
 import com.aiapitesting.backend.repository.PasswordResetOtpRepository;
 import com.aiapitesting.backend.repository.UserRepository;
+import com.aiapitesting.backend.security.GoogleTokenVerifierService;
 import com.aiapitesting.backend.security.JwtService;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +44,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final EmailService emailService;
+    private final GoogleTokenVerifierService googleTokenVerifierService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthResponse register(RegisterRequest request) {
@@ -75,12 +80,51 @@ public class AuthService {
     }
 
     public void changePassword(User currentUser, ChangePasswordRequest request) {
-        if (!passwordEncoder.matches(request.currentPassword(), currentUser.getPassword())) {
-            throw new InvalidCurrentPasswordException("Mật khẩu hiện tại không đúng");
+        // passwordSet=false chỉ xảy ra với tài khoản tạo mới qua Google (chưa từng có mật khẩu thật,
+        // không ai biết được password ngẫu nhiên đang lưu) - bỏ qua bước so khớp, cho đặt luôn.
+        if (currentUser.isPasswordSet()) {
+            String currentPassword = request.currentPassword();
+            if (currentPassword == null || currentPassword.isBlank()
+                    || !passwordEncoder.matches(currentPassword, currentUser.getPassword())) {
+                throw new InvalidCurrentPasswordException("Mật khẩu hiện tại không đúng");
+            }
         }
 
         currentUser.setPassword(passwordEncoder.encode(request.newPassword()));
+        currentUser.setPasswordSet(true);
         userRepository.save(currentUser);
+    }
+
+    public AuthResponse loginWithGoogle(String idToken) {
+        GoogleIdToken.Payload payload = googleTokenVerifierService.verify(idToken);
+        String googleId = payload.getSubject();
+        String email = payload.getEmail();
+
+        User user = userRepository.findByGoogleId(googleId)
+                .or(() -> userRepository.findByEmail(email))
+                .map(existing -> {
+                    // Tự động liên kết: tài khoản LOCAL cùng email chưa gắn Google trước đó -
+                    // Google đã tự xác thực email_verified nên không cần xác thực gì thêm.
+                    if (existing.getGoogleId() == null) {
+                        existing.setGoogleId(googleId);
+                        userRepository.save(existing);
+                    }
+                    return existing;
+                })
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .email(email)
+                        .googleId(googleId)
+                        .authProvider(AuthProvider.GOOGLE)
+                        .passwordSet(false)
+                        .password(passwordEncoder.encode(UUID.randomUUID().toString()))
+                        .build()));
+
+        if (!user.isEnabled()) {
+            throw new AccountDisabledException("Tài khoản của bạn đã bị khoá, liên hệ quản trị viên");
+        }
+
+        String token = jwtService.generateToken(user.getEmail());
+        return new AuthResponse(token, user.getEmail(), user.getRole());
     }
 
     // Luôn "thành công" ở tầng Controller bất kể email có tồn tại hay không (xem AuthController) -

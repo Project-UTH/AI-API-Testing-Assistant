@@ -50,6 +50,26 @@ public class User {
     // cần columnDefinition DEFAULT như 2 cột trên.
     private Integer aiDailyTokenLimitOverride;
 
+    // Nguồn tạo tài khoản (Module 13, Google login) - chỉ dùng để biết tài khoản Google-only chưa
+    // từng có mật khẩu thật (xem passwordSet); KHÔNG dùng field này để rẽ nhánh logic đăng nhập,
+    // login() vẫn chạy chung 1 đường cho mọi provider.
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'LOCAL'")
+    @Builder.Default
+    private AuthProvider authProvider = AuthProvider.LOCAL;
+
+    // sub claim cua Google ID token - dung de tra cuu nhanh, khong doi theo thoi gian (khac email
+    // co the doi). Nullable + unique: MySQL cho phep nhieu dong NULL nen khong anh huong user cu.
+    @Column(unique = true)
+    private String googleId;
+
+    // false CHỈ với tài khoản tạo mới qua Google (password lúc đó là UUID ngẫu nhiên không ai biết)
+    // - AuthService.changePassword() dựa vào field này để bỏ qua bước bắt nhập mật khẩu cũ. Mọi tài
+    // khoản LOCAL (kể cả sau khi tự động liên kết Google) giữ nguyên true vì đã có mật khẩu thật.
+    @Column(nullable = false, columnDefinition = "TINYINT(1) DEFAULT 1")
+    @Builder.Default
+    private boolean passwordSet = true;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = Instant.now();

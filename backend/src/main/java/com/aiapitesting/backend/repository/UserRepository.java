@@ -13,6 +13,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
     boolean existsByEmail(String email);
     long countByRole(UserRole role);
+    Optional<User> findByGoogleId(String googleId);
 
     // Trang Admin - tìm user theo email (chứa, không phân biệt hoa/thường).
     Page<User> findByEmailContainingIgnoreCase(String email, Pageable pageable);

@@ -11,6 +11,7 @@ export interface AuthResponse {
 export interface UserInfo {
   email: string
   role: UserRole
+  passwordSet: boolean
 }
 
 export function registerUser(email: string, password: string) {
@@ -24,6 +25,13 @@ export function loginUser(email: string, password: string) {
   return apiFetch<AuthResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
+  })
+}
+
+export function loginWithGoogle(idToken: string) {
+  return apiFetch<AuthResponse>("/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ idToken }),
   })
 }
 
