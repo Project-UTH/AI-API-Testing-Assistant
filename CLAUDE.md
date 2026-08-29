@@ -80,7 +80,6 @@ File `docs/ROADMAP.md` theo dõi tiến độ dự án theo module (không theo 
 ## Không làm (ngoài phạm vi MVP hiện tại)
 
 - OAuth / đăng nhập qua GitHub
-- Docker hoá (chưa cần ở giai đoạn này)
 - Refresh token — access token sống 24h là đủ
 
-**Đã đổi phạm vi:** Multi-role phân quyền (admin/user) từng nằm trong danh sách "Không làm" — nay đã CHỐT làm, xem Module 11 (Trang Admin quản lý hệ thống) trong `docs/ROADMAP.md`. Đăng nhập/đăng ký bằng Google (Google Identity Services, không phải OAuth code flow đầy đủ) cũng đã CHỐT làm — xem Module 13 trong `docs/ROADMAP.md`.
+**Đã đổi phạm vi:** Multi-role phân quyền (admin/user) từng nằm trong danh sách "Không làm" — nay đã CHỐT làm, xem Module 11 (Trang Admin quản lý hệ thống) trong `docs/ROADMAP.md`. Đăng nhập/đăng ký bằng Google (Google Identity Services, không phải OAuth code flow đầy đủ) cũng đã CHỐT làm — xem Module 13 trong `docs/ROADMAP.md`. Docker hoá cũng đã CHỐT làm — xem Module 14 trong `docs/ROADMAP.md`.

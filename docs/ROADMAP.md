@@ -27,7 +27,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a-e xong, còn giám sát execution treo - hạ ưu tiên) |
 | 12. Đổi mật khẩu & Quên mật khẩu | ✅ Xong |
 | 13. Đăng nhập/Đăng ký với Google | ✅ Xong |
-| 14. Hoàn thiện & Demo | ⬜ Chưa bắt đầu |
+| 14. Hoàn thiện & Demo | 🟡 Đang làm (Docker hoá xong, còn polish/tài liệu/demo) |
 
 ---
 
@@ -740,7 +740,15 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 - [ ] Polish UI, fix bug toàn luồng
 - [ ] Viết tài liệu kỹ thuật
 - [ ] Chuẩn bị kịch bản demo
-- [ ] Docker hoá (nếu kịp)
+- [x] Docker hoá
+
+**Docker hoá:** `backend/Dockerfile` (multi-stage, `eclipse-temurin:21-jdk-alpine` build → `21-jre-alpine` runtime, dùng `mvnw` sẵn có), `frontend/Dockerfile` (multi-stage, `node:22-alpine` build → `nginx:1.27-alpine` serve `dist/`, kèm `frontend/nginx.conf` chỉ để SPA fallback, không cần proxy `/api`), `docker-compose.yml` ở gốc gồm `mysql`/`backend`/`frontend`. Cổng: backend `8080`, frontend (qua nginx) `3000`, MySQL `3306`. `VITE_API_BASE_URL`/`VITE_GOOGLE_CLIENT_ID` là biến build-time của Vite (bake cứng vào bundle) nên truyền qua Docker build ARG, không phải env runtime — giữ nguyên `http://localhost:8080/api/v1` vì đây là URL gọi từ trình duyệt (backend map cổng ra host), không phải container-to-container, nên không cần nginx reverse proxy. Đã bổ sung `.env` vào `frontend/.gitignore` (trước đó `frontend/.env` vô tình bị track dù không phải secret thật) và root `.gitignore`. Chi tiết đầy đủ + code trích dẫn ở [`backend/walkthrough/flows/12-docker-flow.md`](../backend/walkthrough/flows/12-docker-flow.md).
+
+- *(Bug phát hiện khi verify thật, không phải lỗi cấu hình vặt)* `frontend/Dockerfile` dùng `npm ci` (build trên Alpine/musl) báo lockfile thiếu `@emnapi/runtime` — `package-lock.json` tạo trên Windows không đủ optional dependency biến thể musl/wasm của `lightningcss`/`@tailwindcss/oxide` (Tailwind v4). Fix: đổi sang `npm install` trong Dockerfile.
+- *(Bug nghiêm trọng hơn, phát hiện khi verify thật)* Ban đầu dùng `env_file: ./backend/.env` cho service `backend` — Docker Compose áp dụng interpolation `${VAR}`/`$VAR` lên MỌI file `env_file:` y hệt file `.env` gốc; `JWT_SECRET` thật tình cờ chứa ký tự `$` theo sau bởi chuỗi giống tên biến, bị Compose âm thầm cắt mất 1 phần (chỉ có warning "variable not set", không có lỗi cứng) trước khi đưa vào container. Không thể escape `$` → `$$` ngay trong `backend/.env` vì file đó còn dùng để chạy local (Spring đọc trực tiếp, không hiểu quy tắc escape của Compose). Fix: bỏ `env_file:`, copy từng secret cần thiết sang `.env` ở gốc (không track git) kèm tự động escape `$` → `$$` chỉ trong bản copy này, tham chiếu tường minh qua `environment:` trong `docker-compose.yml`.
+- *(Bug phát sinh ngay sau đó)* Image `mysql:8.4` từ chối khởi động ("Database is uninitialized and password option is not specified") vì `DB_PASSWORD` thật sự để rỗng (root MySQL local của người dùng không có mật khẩu). Fix: thêm `MYSQL_ALLOW_EMPTY_PASSWORD: "yes"` (bị bỏ qua nếu sau này đặt mật khẩu thật, an toàn để luôn bật) và sửa healthcheck từ `-p${DB_PASSWORD}` (render ra `-p` trơ khi rỗng → treo vì chờ nhập tương tác) sang `--password=${DB_PASSWORD}` (hiểu đúng là mật khẩu rỗng, không treo).
+
+**Mốc xác nhận:** `docker compose build` + `docker compose up -d` — cả 3 container `Up`, MySQL `(healthy)`. Backend log thật: Hibernate kết nối + tạo bảng thành công qua hostname `mysql` trong network Docker, `Started BackendApplication in 12.358 seconds`. `curl http://localhost:3000` trả đúng `<title>AI API Testing Assistant</title>` (không phải trang lỗi nginx mặc định). `POST /api/v1/auth/register` (tài khoản `docker-verify@aiapi.local`) → `201` kèm JWT thật; `POST /api/v1/auth/login` cùng tài khoản → `200` — xác nhận dữ liệu ghi/đọc thật từ MySQL chạy trong container, không phải giả lập.
 
 ---
 
