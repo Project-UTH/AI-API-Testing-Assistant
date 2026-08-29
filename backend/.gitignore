@@ -32,3 +32,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Tài liệu walkthrough cá nhân, không push lên git
+walkthrough/
