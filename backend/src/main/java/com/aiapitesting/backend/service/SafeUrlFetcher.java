@@ -5,7 +5,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.InetAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
@@ -25,8 +24,7 @@ public class SafeUrlFetcher {
 
         try {
             HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
-            // Không theo redirect: chặn kiểu SSRF dùng redirect để né kiểm tra IP ở bước validate
-            // (đồng thời tránh header xác thực bị gửi sang host khác ngoài ý muốn).
+            // Không theo redirect: tránh header xác thực bị gửi sang host khác ngoài ý muốn.
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(READ_TIMEOUT_MS);
@@ -68,31 +66,10 @@ public class SafeUrlFetcher {
         }
 
         String host = uri.getHost();
-        if (host == null || host.isBlank() || host.equalsIgnoreCase("localhost")) {
-            throw new SwaggerParseException("URL trỏ tới địa chỉ nội bộ không được phép");
-        }
-
-        InetAddress[] addresses;
-        try {
-            addresses = InetAddress.getAllByName(host);
-        } catch (Exception e) {
-            throw new SwaggerParseException("Không thể phân giải tên miền của URL");
-        }
-
-        for (InetAddress address : addresses) {
-            if (isDisallowed(address)) {
-                throw new SwaggerParseException("URL trỏ tới địa chỉ nội bộ không được phép");
-            }
+        if (host == null || host.isBlank()) {
+            throw new SwaggerParseException("URL không hợp lệ");
         }
 
         return uri;
-    }
-
-    private boolean isDisallowed(InetAddress address) {
-        return address.isAnyLocalAddress()
-                || address.isLoopbackAddress()
-                || address.isLinkLocalAddress()
-                || address.isSiteLocalAddress()
-                || address.isMulticastAddress();
     }
 }

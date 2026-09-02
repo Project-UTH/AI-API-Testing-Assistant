@@ -209,18 +209,6 @@ class EndpointImportServiceTest {
     }
 
     @Test
-    void importFromUrl_ssrfRejectionPropagatesFromSafeFetcher() {
-        when(safeUrlFetcher.fetch("http://169.254.169.254/latest/meta-data"))
-                .thenThrow(new SwaggerParseException("URL trỏ tới địa chỉ nội bộ không được phép"));
-
-        assertThatThrownBy(() -> endpointImportService.importFromUrl(
-                projectId, "http://169.254.169.254/latest/meta-data", null, null, null))
-                .isInstanceOf(SwaggerParseException.class);
-
-        verifyNoInteractions(endpointRepository);
-    }
-
-    @Test
     void importFromFile_invalidJsonThrowsSwaggerParseException() {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
 
