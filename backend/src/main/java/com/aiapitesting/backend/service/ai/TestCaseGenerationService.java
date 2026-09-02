@@ -103,17 +103,23 @@ public class TestCaseGenerationService {
                     "Phải chọn ít nhất 1 loại test case để sinh (Positive/Negative/Boundary/Security)");
         }
 
-        // Cơ bản chỉ gọi AI nếu có ít nhất 1 trong Positive/Negative/Boundary được chọn. Security
-        // (nếu bật) là 1 lệnh gọi AI riêng, lưu theo source=SECURITY riêng. includeAssertions áp
-        // dụng cho cả 2 lệnh.
+        // Mỗi lần bấm "Sinh Test Case" khai báo lại toàn bộ tập test case AI-quản-lý cho endpoint
+        // này = đúng những gì đang được tick. Nhóm có tick -> gọi AI sinh lại (xoá-và-thay). Nhóm
+        // KHÔNG tick -> không gọi AI, chỉ xoá sạch case cũ (chưa khoá) còn sót từ lần sinh trước, để
+        // tránh tình trạng case Security cũ (hoặc Positive/Negative/Boundary cũ) còn lưu lại dù lần
+        // này người dùng chủ động bỏ tick. Case đã khoá 🔒 luôn được giữ nguyên ở cả 2 nhánh.
         List<TestCase> saved = new ArrayList<>();
         if (includePositive || includeNegative || includeBoundary) {
             saved.addAll(generateGroup(endpoint, TestCaseSource.AI_GENERATED, false, includeAssertions,
                     includePositive, includeNegative, includeBoundary));
+        } else {
+            deleteExistingGroup(endpoint, TestCaseSource.AI_GENERATED);
         }
         if (includeSecurity) {
             saved.addAll(generateGroup(endpoint, TestCaseSource.SECURITY, true, includeAssertions,
                     includePositive, includeNegative, includeBoundary));
+        } else {
+            deleteExistingGroup(endpoint, TestCaseSource.SECURITY);
         }
 
         return CompletableFuture.completedFuture(saved.stream().map(TestCaseResponse::from).toList());
@@ -135,6 +141,36 @@ public class TestCaseGenerationService {
         if (usedToday >= effectiveLimit) {
             throw new AiQuotaExceededException(
                     "Đã đạt giới hạn " + effectiveLimit + " token AI hôm nay, vui lòng thử lại vào ngày mai");
+        }
+    }
+
+    /**
+     * Xoá sạch test case chưa khoá thuộc đúng 1 source (Cơ bản hoặc Security) của endpoint, không
+     * gọi AI và không ghi TestGenerationEvent - dùng khi nhóm đó KHÔNG được tick trong lần sinh này
+     * (dọn case cũ còn sót từ 1 lần sinh trước đó có tick), hoặc làm bước dọn dẹp trước khi
+     * generateGroup() lưu batch mới. Test case đã khoá 🔒 luôn được giữ nguyên (đã lọc LockedFalse).
+     */
+    private void deleteExistingGroup(Endpoint endpoint, TestCaseSource source) {
+        List<TestCase> existing = testCaseRepository.findAllByEndpointAndSourceAndLockedFalse(endpoint, source);
+        // Chặn xoá nếu còn test case khác đang phụ thuộc dữ liệu từ 1 trong các test case sắp bị xoá.
+        testCaseService.ensureNoDependents(existing);
+
+        // Dọn BugReport + TestResult + TestCaseDependency + TestCaseAssertion trước khi xoá, tránh
+        // lỗi khoá ngoại.
+        try {
+            bugReportRepository.deleteAllByTestCaseIn(existing);
+            testResultRepository.deleteAllByTestCaseIn(existing);
+            testCaseDependencyRepository.deleteAllByTestCaseIn(existing);
+            testCaseAssertionRepository.deleteAllByTestCaseIn(existing);
+            testCaseRepository.deleteAllByEndpointAndSourceAndLockedFalse(endpoint, source);
+        } catch (DataIntegrityViolationException e) {
+            // 2 lượt "Sinh Test Case" cho cùng endpoint chạy đồng thời (vd 2 tab) có thể lọt qua
+            // chặn ở frontend - lượt sau xoá theo (endpoint, source) đụng vào test case mới lượt
+            // trước vừa tạo, vỡ khoá ngoại. Không phải lỗi hệ thống, báo người dùng thử lại.
+            log.warn("Xung dot dong thoi khi xoa test case cu cho endpoint {} (source {}): {}",
+                    endpoint.getId(), source, e.toString());
+            throw new AiGenerationFailedException(
+                    "Endpoint này đang được sinh test case ở nơi khác cùng lúc (có thể do mở nhiều tab) - vui lòng tải lại trang và thử lại");
         }
     }
 
@@ -167,27 +203,8 @@ public class TestCaseGenerationService {
         }
         validate(generated);
 
-        // Chặn regenerate nếu còn test case khác đang phụ thuộc dữ liệu từ 1 trong các test case
-        // cùng source sắp bị xoá. Đã lọc locked=false - test case đang khoá được giữ nguyên.
-        List<TestCase> existing = testCaseRepository.findAllByEndpointAndSourceAndLockedFalse(endpoint, source);
-        testCaseService.ensureNoDependents(existing);
+        deleteExistingGroup(endpoint, source);
 
-        // Dọn BugReport + TestResult + TestCaseDependency + TestCaseAssertion trước khi xoá, tránh
-        // lỗi khoá ngoại.
-        try {
-            bugReportRepository.deleteAllByTestCaseIn(existing);
-            testResultRepository.deleteAllByTestCaseIn(existing);
-            testCaseDependencyRepository.deleteAllByTestCaseIn(existing);
-            testCaseAssertionRepository.deleteAllByTestCaseIn(existing);
-            testCaseRepository.deleteAllByEndpointAndSourceAndLockedFalse(endpoint, source);
-        } catch (DataIntegrityViolationException e) {
-            // 2 lượt "Sinh Test Case" cho cùng endpoint chạy đồng thời (vd 2 tab) có thể lọt qua
-            // chặn ở frontend - lượt sau xoá theo (endpoint, source) đụng vào test case mới lượt
-            // trước vừa tạo, vỡ khoá ngoại. Không phải lỗi hệ thống, báo người dùng thử lại.
-            log.warn("Xung dot dong thoi khi sinh test case cho endpoint {}: {}", endpoint.getId(), e.toString());
-            throw new AiGenerationFailedException(
-                    "Endpoint này đang được sinh test case ở nơi khác cùng lúc (có thể do mở nhiều tab) - vui lòng tải lại trang và thử lại");
-        }
         List<TestCase> saved = testCaseRepository.saveAll(generated.stream()
                 .map(g -> toEntity(endpoint, g, source)).toList());
 

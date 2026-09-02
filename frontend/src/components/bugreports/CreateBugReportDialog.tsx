@@ -152,7 +152,7 @@ export function CreateBugReportDialog({ open, onOpenChange, projectId, sourceTes
                   <Label htmlFor="bug-severity">Mức độ nghiêm trọng</Label>
                   <select
                     id="bug-severity"
-                    className={selectClassName}
+                    className={cn(selectClassName, "sm:w-full")}
                     value={severity}
                     onChange={(e) => setSeverity(e.target.value as BugSeverity)}
                   >
@@ -165,7 +165,7 @@ export function CreateBugReportDialog({ open, onOpenChange, projectId, sourceTes
                   <Label htmlFor="bug-frequency">Tần suất</Label>
                   <select
                     id="bug-frequency"
-                    className={selectClassName}
+                    className={cn(selectClassName, "sm:w-full")}
                     value={frequency}
                     onChange={(e) => setFrequency(e.target.value as BugFrequency)}
                   >
@@ -178,7 +178,7 @@ export function CreateBugReportDialog({ open, onOpenChange, projectId, sourceTes
                   <Label htmlFor="bug-priority">Độ ưu tiên</Label>
                   <select
                     id="bug-priority"
-                    className={selectClassName}
+                    className={cn(selectClassName, "sm:w-full")}
                     value={priority}
                     onChange={(e) => setPriority(e.target.value as BugPriority)}
                   >
