@@ -161,7 +161,7 @@ export function BugReportFormDialog({ open, onOpenChange, projectId, bugReport }
               <Label htmlFor="bug-edit-severity">Mức độ nghiêm trọng</Label>
               <select
                 id="bug-edit-severity"
-                className={selectClassName}
+                className={cn(selectClassName, "sm:w-full")}
                 value={severity}
                 onChange={(e) => setSeverity(e.target.value as BugSeverity)}
               >
@@ -174,7 +174,7 @@ export function BugReportFormDialog({ open, onOpenChange, projectId, bugReport }
               <Label htmlFor="bug-edit-frequency">Tần suất</Label>
               <select
                 id="bug-edit-frequency"
-                className={selectClassName}
+                className={cn(selectClassName, "sm:w-full")}
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value as BugFrequency)}
               >
@@ -187,7 +187,7 @@ export function BugReportFormDialog({ open, onOpenChange, projectId, bugReport }
               <Label htmlFor="bug-edit-priority">Độ ưu tiên</Label>
               <select
                 id="bug-edit-priority"
-                className={selectClassName}
+                className={cn(selectClassName, "sm:w-full")}
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as BugPriority)}
               >
