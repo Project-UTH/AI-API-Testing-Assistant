@@ -141,11 +141,14 @@ class TestCaseGenerationServiceTest {
         List<TestCaseResponse> result = future.get();
 
         assertThat(result).hasSize(2);
-        // Chỉ xoá-và-thay test case do AI sinh trước đó, không đụng tới test case tự thêm tay
+        // Xoá-và-thay test case AI_GENERATED cũ (không đụng tới test case tự thêm tay), ĐỒNG THỜI
+        // dọn sạch nhóm SECURITY cũ còn sót (request=null -> includeSecurity=false lần này).
         verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
-        // Dọn TestResult + TestCaseDependency (phía consumer) trước khi xoá - tránh lỗi khoá ngoại 1451
-        verify(testResultRepository).deleteAllByTestCaseIn(anyList());
-        verify(testCaseDependencyRepository).deleteAllByTestCaseIn(anyList());
+        verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.SECURITY);
+        // Dọn TestResult + TestCaseDependency (phía consumer) trước khi xoá - tránh lỗi khoá ngoại
+        // 1451 - gọi 2 lần vì cả 2 nhóm (AI_GENERATED và SECURITY) đều được dọn trong lần sinh này.
+        verify(testResultRepository, org.mockito.Mockito.times(2)).deleteAllByTestCaseIn(anyList());
+        verify(testCaseDependencyRepository, org.mockito.Mockito.times(2)).deleteAllByTestCaseIn(anyList());
 
         ArgumentCaptor<List<TestCase>> savedCaptor = ArgumentCaptor.forClass(List.class);
         verify(testCaseRepository).saveAll(savedCaptor.capture());
@@ -291,6 +294,31 @@ class TestCaseGenerationServiceTest {
     }
 
     @Test
+    void generate_onlySecuritySelected_existingAiCaseHasDependents_blocksBeforeDeletingOrCallingAi() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+
+        // Nhóm AI_GENERATED KHÔNG được tick lần này (chỉ tick Security), nhưng vẫn còn 1 case cũ
+        // đang bị test case khác phụ thuộc -> phải chặn xoá TRƯỚC khi đụng gì tới nhóm Security.
+        TestCase existingAiCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint)
+                .source(TestCaseSource.AI_GENERATED).build();
+        when(testCaseRepository.findAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED))
+                .thenReturn(List.of(existingAiCase));
+        org.mockito.Mockito.doThrow(new com.aiapitesting.backend.exception.TestCaseHasDependentsException("co nguoi phu thuoc"))
+                .when(testCaseService).ensureNoDependents(List.of(existingAiCase));
+
+        assertThatThrownBy(() -> testCaseGenerationService.generate(
+                projectId, endpointId,
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, false, false, false)))
+                .isInstanceOf(com.aiapitesting.backend.exception.TestCaseHasDependentsException.class);
+
+        verify(testCaseRepository, never()).deleteAllByEndpointAndSourceAndLockedFalse(any(), any());
+        verify(testCaseRepository, never()).saveAll(anyList());
+        // Bị chặn trước khi kịp đụng tới nhóm Security -> không lãng phí lệnh gọi AI nào.
+        verifyNoInteractions(chatClient);
+    }
+
+    @Test
     void generate_includeSecurityTrue_alsoGeneratesAndSavesSecurityGroupSeparately() throws Exception {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
@@ -328,7 +356,7 @@ class TestCaseGenerationServiceTest {
     }
 
     @Test
-    void generate_onlySecuritySelected_skipsBasicGroupEntirely() throws Exception {
+    void generate_onlySecuritySelected_deletesStaleBasicGroupWithoutCallingAi() throws Exception {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
@@ -341,10 +369,30 @@ class TestCaseGenerationServiceTest {
                 new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, false, false, false));
         future.get();
 
-        // Không tích Positive/Negative/Boundary nào -> không được đụng tới nhóm AI_GENERATED, kể cả
-        // đọc/xoá - chỉ 1 lần gọi AI duy nhất (Security), không lãng phí lời gọi cho nhóm không cần.
-        verify(testCaseRepository, never()).findAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
-        verify(testCaseRepository, never()).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
+        // Không tích Positive/Negative/Boundary nào -> vẫn phải xoá sạch case AI_GENERATED cũ (chưa
+        // khoá) còn sót từ 1 lần sinh trước, NHƯNG không được gọi AI cho nhóm này - chỉ 1 lần gọi AI
+        // duy nhất (Security), không lãng phí lời gọi cho nhóm không cần.
+        verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
+        verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.SECURITY);
+        verify(testCaseRepository, org.mockito.Mockito.times(1)).saveAll(anyList());
+    }
+
+    @Test
+    void generate_onlyPositiveSelected_deletesStaleSecurityGroupWithoutCallingAi() throws Exception {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        stubAiResponse(List.of(new GeneratedTestCase(
+                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null)));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
+                projectId, endpointId,
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, false, true, false, false));
+        future.get();
+
+        // Không tích Security -> vẫn phải xoá sạch case SECURITY cũ (chưa khoá) còn sót từ 1 lần
+        // sinh trước, NHƯNG không được gọi AI cho nhóm này - chỉ 1 lần gọi AI duy nhất (Cơ bản).
+        verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
         verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.SECURITY);
         verify(testCaseRepository, org.mockito.Mockito.times(1)).saveAll(anyList());
     }
