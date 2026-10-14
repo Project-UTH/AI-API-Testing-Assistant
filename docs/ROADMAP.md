@@ -1,6 +1,10 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-08-28 (Module 13 - Đăng nhập/Đăng ký bằng Google, quay lại làm sau khi tính năng Đổi mật khẩu (Module 12) đã xong - điều kiện tiên quyết để tài khoản Google-only tự đặt mật khẩu sau này. Phát hiện thêm 1 lỗ hổng thiết kế lúc bàn kỹ trước khi code: tính năng Đổi mật khẩu cũ luôn bắt nhập mật khẩu hiện tại, tài khoản Google-only không biết mật khẩu ngẫu nhiên nên không bao giờ đổi được - đã sửa bằng field `User.passwordSet`.)
+> Cập nhật lần cuối: 2026-10-14 (Rà soát lại lần 2 kế hoạch Module 15 - Explainable & Reliable AI Testing, sau khi tổng kết toàn bộ kế hoạch cho người dùng và nhận góp ý: KHÔNG đổi tên/định vị đồ án (giữ "AI API Testing Assistant"), và triết lý chi phí AI phải **tối ưu theo mức cần thiết để tăng độ chính xác, không phải né tránh chi phí một cách máy móc**. Đã sửa: phần đo được bằng dữ liệu khách quan (Coverage Matrix + Risk Engine ở 15c) giữ tất định tuyệt đối - không phải để tiết kiệm mà vì AI không làm tăng độ chính xác ở đó, còn thêm rủi ro hallucination. Phần CẦN AI để tăng độ chính xác (phân biệt case AI sinh lỗi thật hay rule tất định báo nhầm) không còn là tính năng demo tắt mặc định như bản kế hoạch lần 1 nữa - nâng thành **15d (Tier 2): AI-assisted reliability confirmation, mặc định BẬT nhưng có điều kiện** (chỉ gọi AI khi có case bị Tier 1 gắn cờ, gộp toàn bộ case cần xác minh trong 1 batch vào đúng 1 lệnh gọi bổ sung - chi phí tỉ lệ với mức cần thiết thật, không cố định 0 và không cố định N lần gọi riêng từng case). Tier 3 cũ (self-consistency gọi lại AI theo yêu cầu riêng người dùng cho 1 case) đổi thành **15e**, vẫn giữ thủ công vì đây là chi phí người dùng tự quyết định chi, khác bản chất với Tier 2.)
+>
+> Cập nhật trước đó: 2026-10-14 (Lên kế hoạch Module 15 - Explainable & Reliable AI Testing, theo yêu cầu giảng viên hướng dẫn học hỏi các sản phẩm thị trường (Keploy, Testsigma, Postman AI/Agent Mode) và tạo điểm khác biệt, giải quyết vấn đề độ bao phủ (coverage) + độ tin cậy (reliability) của test case AI sinh. Đã khảo sát thị trường + nghiên cứu học thuật gần nhất (10 bài lưu tại `A:/TaiLieu`, gồm ICSE 2026 "Human-Centered Explanations for... Test Generation", VALTEST, CoverUp, LlamaRestTest, SWE-Mutation...). Chốt hướng: Coverage Matrix tất định theo OpenAPI spec (KHÔNG parse rationale do AI tự khai để suy coverage - rationale AI tự khai có thể không trung thực với lý do thật bên trong model) + Rationale giải thích từng case (cùng 1 lệnh gọi AI đã có, không tốn thêm token) + Reliability validator tất định (rule-based, free) làm mặc định; self-consistency (tốn token thêm) chỉ là tính năng demo tuỳ chọn, tắt mặc định. Chiều Auth trong Coverage Matrix chỉ làm 401 (dùng nhóm Security đã có từ Module 9); 403 minh bạch báo "Không áp dụng" vì hệ thống chưa có mô hình vai trò/scope - tự thừa nhận giới hạn này cũng là 1 điểm Explainable AI. Sau đó đối chiếu thêm 1 nguồn người dùng tự tìm (cuộc trò chuyện ChatGPT đề xuất pivot thành "Risk-Based API Testing Agent") - đã nhận phần Risk Engine (tất định, tái dùng dependency graph BFS/DFS + lịch sử fail đã có) và Risk-weighted Coverage vào 15c, nhận bản rút gọn "auto-suggest checkbox theo risk" (không gọi AI riêng), KHÔNG nhận AI Test Planner đầy đủ/bảng DB riêng/Evidence-based RCA/đổi định vị đồ án (ngoài phạm vi module, quá lớn so với quy mô đồ án). **CHƯA CODE - chỉ mới ghi kế hoạch vào roadmap, xem chi tiết Module 15.**)
+>
+> Cập nhật trước đó: 2026-08-28 (Module 13 - Đăng nhập/Đăng ký bằng Google, quay lại làm sau khi tính năng Đổi mật khẩu (Module 12) đã xong - điều kiện tiên quyết để tài khoản Google-only tự đặt mật khẩu sau này. Phát hiện thêm 1 lỗ hổng thiết kế lúc bàn kỹ trước khi code: tính năng Đổi mật khẩu cũ luôn bắt nhập mật khẩu hiện tại, tài khoản Google-only không biết mật khẩu ngẫu nhiên nên không bao giờ đổi được - đã sửa bằng field `User.passwordSet`.)
 >
 > Cập nhật trước đó: 2026-08-28 (Module 12 - bổ sung "Quên mật khẩu" bằng OTP gửi qua email thật (SMTP), theo yêu cầu người dùng thêm vào màn hình đăng nhập. Phát hiện + fix 1 bug bảo mật nghiêm trọng: giới hạn 5 lần thử sai OTP bị vô hiệu hoàn toàn do `@Transactional` rollback mất luôn attempt count - chỉ lộ ra khi verify bằng SMTP giả lập cục bộ (MailDev) + kiểm tra trực tiếp DB, không unit test nào bắt được. 161/161 test pass.)
 >
@@ -28,6 +32,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 12. Đổi mật khẩu & Quên mật khẩu | ✅ Xong |
 | 13. Đăng nhập/Đăng ký với Google | ✅ Xong |
 | 14. Hoàn thiện & Demo | 🟡 Đang làm (Docker hoá xong, còn polish/tài liệu/demo) |
+| 15. Explainable & Reliable AI Testing | ⬜ Chưa bắt đầu (đã lên kế hoạch chi tiết, xem mục 15) |
 
 ---
 
@@ -749,6 +754,114 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 - *(Bug phát sinh ngay sau đó)* Image `mysql:8.4` từ chối khởi động ("Database is uninitialized and password option is not specified") vì `DB_PASSWORD` thật sự để rỗng (root MySQL local của người dùng không có mật khẩu). Fix: thêm `MYSQL_ALLOW_EMPTY_PASSWORD: "yes"` (bị bỏ qua nếu sau này đặt mật khẩu thật, an toàn để luôn bật) và sửa healthcheck từ `-p${DB_PASSWORD}` (render ra `-p` trơ khi rỗng → treo vì chờ nhập tương tác) sang `--password=${DB_PASSWORD}` (hiểu đúng là mật khẩu rỗng, không treo).
 
 **Mốc xác nhận:** `docker compose build` + `docker compose up -d` — cả 3 container `Up`, MySQL `(healthy)`. Backend log thật: Hibernate kết nối + tạo bảng thành công qua hostname `mysql` trong network Docker, `Started BackendApplication in 12.358 seconds`. `curl http://localhost:3000` trả đúng `<title>AI API Testing Assistant</title>` (không phải trang lỗi nginx mặc định). `POST /api/v1/auth/register` (tài khoản `docker-verify@aiapi.local`) → `201` kèm JWT thật; `POST /api/v1/auth/login` cùng tài khoản → `200` — xác nhận dữ liệu ghi/đọc thật từ MySQL chạy trong container, không phải giả lập.
+
+---
+
+## 15. Explainable & Reliable AI Testing
+*Phụ thuộc: Module 4 (AI sinh Test Case), Module 9 (nhóm Security). Chưa bắt đầu code - mục này ghi kế hoạch đã chốt trước khi làm.*
+
+**Bối cảnh:** giảng viên hướng dẫn yêu cầu nhóm học hỏi các sản phẩm thị trường (Keploy, Testsigma, Postman AI/Agent Mode) và tạo ra điểm khác biệt, áp dụng Explainable AI (XAI), giải quyết 2 vấn đề cốt lõi khi dùng AI sinh test case: **độ bao phủ (coverage)** và **độ tin cậy (reliability)**. Khảo sát cho thấy khoảng trống chung của cả 3 đối thủ: Keploy đo coverage theo code (cần source, không áp dụng được cho API chỉ có OpenAPI spec dạng black-box như dự án này) và không giải thích vì sao 1 case được sinh; Testsigma chỉ giải thích *sau khi chạy* (phân biệt bug thật/noise môi trường), không giải thích *lúc sinh* case theo rule nào của spec; Postman Agent Mode là agent black-box, không có cấu trúc truy vết case↔spec, không có điểm tin cậy riêng cho case AI sinh. Nghiên cứu học thuật gần nhất liên quan (10 bài, lưu tại `A:/TaiLieu` - không thuộc repo): ICSE 2026 "Enabling Global, Human-Centered Explanations for LLMs: From Tokens to Interpretable Code and Test Generation" (rationale AI tự khai có thể không trung thực với lý do thật bên trong model - cảnh báo quan trọng cho 15a), VALTEST (dùng token-probability/đối chiếu AI để kiểm định test case AI sinh - nền cho Tier 2 ở 15d), CoverUp (coverage-guided LLM test generation), LlamaRestTest/TSL-LLM/Test-Amplification-REST-APIs (coverage theo OpenAPI spec cho REST API, đúng mô hình black-box của dự án), SWE-Mutation (mutation testing để đo độ tin cậy test suite AI sinh).
+
+**Nguyên tắc thiết kế quan trọng:** Coverage Matrix (15c) được tính HOÀN TOÀN tất định từ `Endpoint.schema` + danh sách `TestCase` hiện có — KHÔNG parse `rationale` do AI tự khai (15a) để suy ra coverage. Rationale chỉ phục vụ con người đọc hiểu (XAI); Coverage Matrix là nguồn sự thật độc lập, tất định, kiểm chứng được, tách bạch khỏi lời AI tự giải thích.
+
+**Quyết định đã chốt (rà soát lại lần 2, chỉnh triết lý chi phí AI):**
+- **Nguyên tắc chi phí (đã sửa):** không phải "càng ít gọi AI càng tốt" một cách máy móc, mà **chi phí AI phải tỉ lệ với việc AI có thực sự làm tăng độ chính xác ở đúng chỗ đó hay không**:
+  - Phần đo được bằng dữ liệu khách quan (coverage theo spec, risk score theo method/auth/dependency/lịch sử fail) → giữ **tất định tuyệt đối, không gọi AI** (15c) - không phải để tiết kiệm tiền, mà vì AI không làm tăng độ chính xác cho thứ đã đo được chính xác 100% bằng code, ngược lại còn thêm rủi ro hallucination vào nơi cần làm "nguồn sự thật".
+  - Phần **cần đánh giá/bán-xác nhận mà rule tất định không chắc chắn được** (case bị 15b gắn cờ NEEDS_REVIEW - có thể là lỗi AI thật, có thể là false positive của rule engine, ví dụ 1 case Security cố ý gửi payload "sai định dạng" để test injection) → đây là chỗ **AI thực sự cần thiết để tăng độ chính xác, không nên né tránh vì sợ tốn chi phí**. Giải pháp tối ưu chi phí: **chỉ gọi AI khi có case bị gắn cờ** (không gọi nếu batch sinh ra toàn case RELIABLE) và **gộp toàn bộ case bị gắn cờ trong 1 batch vào đúng 1 lệnh gọi AI bổ sung** (không gọi riêng từng case) → chi phí tỉ lệ với mức độ thực sự cần, không cố định bằng 0 và không cố định bằng N lần gọi. Đây là Tier 2, mặc định BẬT (15d), khác với bản kế hoạch lần 1 (từng để tuỳ chọn/tắt mặc định).
+  - Phần xác nhận sâu hơn nữa theo yêu cầu riêng của người dùng cho 1 case cụ thể (self-consistency nhiều lần gọi) → vẫn giữ là tính năng thủ công, người dùng tự bấm (Tier 3, 15e) vì đây là chi phí người dùng tự quyết định chi, không phải chi phí hệ thống tự động phát sinh.
+  - Mọi lệnh gọi AI thêm ở Tier 2/Tier 3 đều tính vào `ensureWithinDailyQuota()`/`TestGenerationEvent` hiện có - không có "chi phí ẩn" nằm ngoài cơ chế quota đang dùng.
+- Chiều Auth trong Coverage Matrix chỉ làm **401** (dùng lại nhóm Security đã có từ Module 9a). **403 minh bạch hiển thị "Không áp dụng - hệ thống chưa có mô hình vai trò/scope"** thay vì giả vờ hỗ trợ hoặc im lặng bỏ qua - làm 403 thật đúng nghĩa cần xây hẳn 1 khái niệm vai trò/permission cho target API (tốn công hơn hẳn phần còn lại của module), không phù hợp quy mô đồ án. Tự thừa nhận giới hạn này cũng chính là 1 điểm Explainable AI (tool tự giải thích cả giới hạn của chính nó, không chỉ giải thích test case).
+- Thứ tự code vẫn theo chi phí tăng dần: 15c (free, tất định) → 15a (gần free, cùng 1 lệnh gọi AI đã có) → 15b (free, tất định) → 15d (Tier 2, AI có điều kiện, mặc định bật) → 15e (Tier 3, thủ công, người dùng tự bấm).
+
+### 15a. Rationale — giải thích vì sao AI sinh từng test case
+
+**Backend**
+- [ ] `dto/ai/GeneratedTestCase.java` thêm field `rationale` (String)
+- [ ] `prompts/generate-test-case.st` thêm hướng dẫn bắt buộc mỗi case phải có `rationale` tiếng Việt ngắn, chỉ rõ field/rule spec nào kích hoạt case này (cả nhánh Positive/Negative/Boundary và nhánh Security), kèm ví dụ cụ thể theo đúng kiểu ví dụ assertion đang có
+- [ ] `TestCase` entity thêm cột `rationale` (TEXT, nullable)
+- [ ] `TestCaseGenerationService.toEntity()` map `rationale` vào entity
+- [ ] `TestCaseResponse` thêm field `rationale` + cập nhật factory `from(...)`
+
+**Frontend**
+- [ ] `lib/testcases.ts` thêm `rationale: string | null`
+- [ ] `TestCasesPage.tsx`: icon `Info` nhỏ + tooltip (`title=`, đúng pattern `<title>` đã dùng ở `AiUsageChart`) cạnh badge nguồn trong mỗi `<li>` test case, hiện `rationale` khi case AI_GENERATED/SECURITY có rationale
+- [ ] `TestCaseDetailDialog.tsx`: thêm `Field label="Vì sao AI sinh case này"` hiển thị `rationale`
+
+### 15b. Reliability validator — Tier 1, tất định (rule-based, free)
+
+*Tier 1 trong mô hình 3 tầng của module này: tất định tuyệt đối, chạy cho MỌI case AI sinh, không gọi AI, không điều kiện.*
+
+**Backend**
+- [ ] `TestCase` entity thêm `reliabilityStatus` (enum mới `TestCaseReliability{RELIABLE, NEEDS_REVIEW}`, `VARCHAR(20)` nullable - null = không áp dụng/case MANUAL) và `reliabilityNotes` (TEXT nullable, JSON array các câu cảnh báo cụ thể)
+- [ ] Component mới `service/TestCaseReliabilityValidator.java` (cùng tầng `TestCasePathValidator`, nhận thêm `Endpoint` để đọc `schema`) — parse `Endpoint.schema` (Jackson `readTree`) lấy required/enum/min-max của parameter + requestBody, đối chiếu với `requestBody`/`requestHeaders`/giá trị `resolvedPath` đã substitute (tái dùng `TestCasePathValidator.substitute()`): field required có mặt khi case kỳ vọng thành công (`expectedStatus < 400`), giá trị enum khớp khai báo, số nằm trong min/max khi case không chủ đích test biên vượt ngoài - mỗi vi phạm ghi 1 câu note cụ thể (tên field + rule bị vi phạm)
+- [ ] Gọi validator này trong `TestCaseGenerationService.generateGroup()` ngay sau `validate()` (structural) hiện có, set `reliabilityStatus`/`reliabilityNotes` lên từng `TestCase` trước `saveAll()` - KHÔNG thêm lệnh gọi AI nào ở Tier 1
+- [ ] `TestCaseResponse` thêm `reliabilityStatus`, `reliabilityNotes` (`List<String>`)
+
+**Frontend**
+- [ ] `lib/testcases.ts` thêm `reliabilityStatus`/`reliabilityNotes`
+- [ ] `TestCasesPage.tsx`: badge nhỏ cạnh badge nguồn - xanh "Đáng tin" khi `RELIABLE`, vàng "Cần xem lại" khi `NEEDS_REVIEW` (ẩn khi null/MANUAL)
+- [ ] `TestCaseDetailDialog.tsx`: hiện danh sách `reliabilityNotes` dưới badge khi `NEEDS_REVIEW`
+
+### 15c. Coverage Matrix + Risk Engine theo OpenAPI spec (tất định, free)
+
+**Bổ sung sau khi đối chiếu 1 nguồn tham khảo người dùng tự tìm** (cuộc trò chuyện ChatGPT, nội dung chính đề xuất pivot toàn bộ đồ án thành "AI-Powered Risk-Based API Testing Agent" với Risk Engine + AI Test Planner + Risk-weighted Coverage + Evidence-based RCA). Đã đối chiếu và CHỈ nhận 2 phần phù hợp quy mô + đúng nguyên tắc "tất định, không để AI tự quyết" đã chốt ở 15c gốc:
+- **Nhận:** Risk Engine (risk score tất định, không gọi AI) + Risk-weighted Coverage — gộp thẳng vào `EndpointCoverageService` dưới đây, không tạo service/bảng riêng.
+- **Nhận bản rút gọn:** ý tưởng "AI Test Planner đề xuất kế hoạch trước khi sinh" → chỉ lấy phần auto-suggest checkbox dựa trên risk score (tất định), KHÔNG làm AI Planner gọi AI riêng, KHÔNG tạo bảng `test_plan`/`test_plan_scenario`.
+- **Không nhận:** Evidence-based Failure Analysis/phân biệt bug-vs-flaky (thuộc phạm vi Module 10, không phải bài toán coverage/reliability của module này), đổi tên/định vị lại đồ án (quyết định chiến lược ngoài phạm vi module kỹ thuật này).
+
+**Backend**
+- [ ] `EndpointImportService`: tính `requiresAuth` (boolean) từ `operation.getSecurity()` (không rỗng) hoặc security toàn cục `openApi.getSecurity()` khi operation không override, lúc import - cột mới `Endpoint.requiresAuth` (`TINYINT(1) DEFAULT 0`, theo đúng lưu ý "cần khai rõ DEFAULT" đã rút ra ở Module 11a)
+- [ ] Service mới `service/EndpointCoverageService.java` - parse lại `Endpoint.schema` lấy danh sách required field/field có enum/field có min-max (boundary)/status code đã khai báo/`requiresAuth`; đối chiếu với toàn bộ `TestCase` hiện có của endpoint theo từng dimension (required field COVERED nếu có case Negative thiếu đúng field đó; boundary/enum COVERED nếu có case Boundary đụng tới field; status code COVERED nếu có case với đúng `expectedStatus`; Auth 401 COVERED nếu có case `source=SECURITY` với `authOverride` NONE/INVALID khi `requiresAuth=true`, còn lại NOT_APPLICABLE kèm lý do cố định đã chốt ở trên cho 403)
+- [ ] **Risk Engine** (cùng service, không tách riêng) - tính `riskScore` (0-100) + `riskLevel` (LOW/MEDIUM/HIGH/CRITICAL) tất định cho mỗi endpoint, công thức cộng điểm theo trọng số, mỗi thành phần đọc từ dữ liệu đã có sẵn, KHÔNG gọi AI:
+  - *Method risk*: GET thấp nhất, POST/PUT/PATCH/DELETE cao hơn (DELETE cao nhất - destructive)
+  - *Auth risk*: `requiresAuth=true` → cộng điểm
+  - *Dependency risk*: số endpoint khác phụ thuộc vào endpoint này, lấy từ graph BFS/DFS đã có ở Test Data Chaining (Module 7) - endpoint là "prerequisite" của nhiều endpoint khác thì risk cao hơn
+  - *Security exposure*: field nhạy cảm theo tên (email/password/token/card...) xuất hiện trong schema requestBody
+  - *Historical failure*: tỷ lệ fail từ `TestResultRepository` của riêng endpoint đó (dữ liệu lịch sử thật đã có, không cần bảng mới)
+- [ ] **Risk-weighted Coverage**: ngoài `coveragePercent` phẳng đã có, tính thêm `riskWeightedCoveragePercent` = (Σ risk score của dimension đã COVERED) / (Σ risk score của toàn bộ dimension) - metric chính để phân biệt "coverage cao nhưng toàn API ít rủi ro" với "coverage cao gồm cả API rủi ro cao"
+- [ ] DTO mới `CoverageDimensionResponse{category, label, status: COVERED|MISSING|NOT_APPLICABLE, detail}`, `EndpointCoverageResponse{..., riskScore, riskLevel, coveragePercent, riskWeightedCoveragePercent}`, `ProjectCoverageResponse{..., overallRiskWeightedCoveragePercent}`
+- [ ] Controller mới `CoverageController` (pattern mỏng giống `ProjectTestCaseController`): `GET /api/v1/projects/{projectId}/coverage` (toàn project), `GET /api/v1/projects/{projectId}/endpoints/{endpointId}/coverage` (1 endpoint)
+- [ ] Cập nhật skill `api-contract` với shape response mới (không có mã lỗi mới, dùng lại 403/404 ownership hiện có)
+
+**Frontend**
+- [ ] `lib/coverage.ts` mới - `getProjectCoverage`/`getEndpointCoverage`
+- [ ] `components/shared/CoverageMatrixChart.tsx` mới - tự vẽ SVG theo đúng pattern không dùng thư viện của `PassRateCard`/`AiUsageChart` (donut tổng % + lưới chip theo dimension, màu xanh/vàng/xám-not-applicable, `<title>` tooltip hiện `detail`); thêm 1 donut/thanh thứ 2 so sánh `coveragePercent` phẳng vs `riskWeightedCoveragePercent` cạnh nhau để nhấn mạnh khoảng cách giữa 2 số
+- [ ] Trang mới `pages/CoveragePage.tsx` (route `/projects/:id/coverage`) - danh sách endpoint kèm % coverage + badge risk level, mở rộng xem từng dimension
+- [ ] `App.tsx` đăng ký route mới
+- [ ] `ProjectDetailPage.tsx` thêm nút "Xem Coverage" (outline, icon `PieChart`) cạnh nút "Xem tất cả Test Case" hiện có
+- [ ] `EndpointList.tsx`: thêm badge risk level (màu theo LOW/MEDIUM/HIGH/CRITICAL) cạnh badge số test case hiện có; khi risk HIGH/CRITICAL, **tự động tick sẵn** checkbox `includeBoundary`/`includeSecurity` (mặc định đang là `false`/`false` với Security, xem Module 9) kèm dòng giải thích ngắn ("Risk cao vì: yêu cầu auth, 3 endpoint khác phụ thuộc vào đây") - người dùng vẫn tự bỏ tick được, đây chỉ là gợi ý mặc định, KHÔNG phải ép buộc, KHÔNG gọi thêm AI nào để tạo gợi ý này (thuần tất định từ Risk Engine)
+
+### 15d. AI-assisted reliability confirmation — Tier 2, AI có điều kiện (mặc định BẬT)
+
+*Đây là phần sửa lại quan trọng nhất so với kế hoạch lần 1: Tier 1 (15b) là rule tất định, có thể báo "NEEDS_REVIEW" nhưng KHÔNG tự phân biệt được đó là lỗi AI thật hay false positive của chính rule engine (ví dụ 1 case Security cố ý gửi `email="'; DROP TABLE..."` để test injection — rule Tier 1 thấy "giá trị không đúng format email" nên gắn cờ, nhưng đó là đúng ý đồ, không phải lỗi AI). Phân biệt được 2 trường hợp này CẦN NHẬN ĐỊNH NGỮ NGHĨA — đúng việc AI làm tốt hơn rule tất định — nên KHÔNG né chi phí ở đây. Tối ưu chi phí bằng 2 điều kiện: (1) chỉ gọi khi có ít nhất 1 case bị Tier 1 gắn cờ trong batch, im lặng bỏ qua (0 chi phí) nếu không có case nào NEEDS_REVIEW; (2) gộp TẤT CẢ case bị gắn cờ trong batch vào ĐÚNG 1 lệnh gọi AI bổ sung (không gọi riêng từng case) — chi phí tỉ lệ với số lượng vấn đề thật cần xác minh, không phải hằng số.*
+
+**Backend**
+- [ ] `TestCase` entity thêm `reliabilityAiConfirmed` (`Boolean`, nullable - `null` = Tier 2 chưa chạy/không cần chạy; `true` = AI xác nhận đây là vấn đề thật; `false` = AI cho rằng đây là false positive, có lý do chính đáng) và `reliabilityAiNote` (TEXT nullable - giải thích ngắn của AI)
+- [ ] Prompt mới `prompts/confirm-test-case-reliability.st` - input là danh sách case bị Tier 1 gắn cờ kèm đúng danh sách vi phạm cụ thể (`reliabilityNotes` đã có) + schema endpoint, yêu cầu AI trả structured output xác nhận/bác bỏ từng case kèm lý do ngắn - PHẢI dùng structured output (giống `GeneratedTestCase`), không để AI trả text tự do
+- [ ] Component mới `service/ai/TestCaseReliabilityConfirmationService.java` (cùng tầng `TestCaseGenerationService`) - gọi SAU khi Tier 1 validator chạy xong trong `generateGroup()`: nếu danh sách case `NEEDS_REVIEW` của batch rỗng → bỏ qua, không gọi AI; nếu có ≥1 case → build 1 prompt duy nhất gộp hết case đó, gọi `chatClient...responseEntity()` 1 lần, map kết quả vào `reliabilityAiConfirmed`/`reliabilityAiNote` cho đúng từng case
+- [ ] Bắt buộc gọi `ensureWithinDailyQuota()` hiện có TRƯỚC khi gọi (coi như 1 lệnh gọi AI phát sinh thêm, tính đúng vào quota/`TestGenerationEvent` hiện tại - không có chi phí ẩn nằm ngoài cơ chế đang dùng) - nếu vượt quota thì bỏ qua Tier 2 (giữ nguyên kết quả Tier 1, không chặn việc lưu test case)
+- [ ] `TestCaseResponse` thêm `reliabilityAiConfirmed`, `reliabilityAiNote`
+
+**Frontend**
+- [ ] `lib/testcases.ts` thêm 2 field trên
+- [ ] `TestCasesPage.tsx`/`TestCaseDetailDialog.tsx`: khi case `NEEDS_REVIEW` VÀ `reliabilityAiConfirmed != null` - đổi hiển thị: `true` → giữ badge vàng "Cần xem lại" + thêm dòng "AI xác nhận: {note}"; `false` → đổi badge sang xanh nhạt "Đáng tin (AI xác minh)" kèm "{note}" giải thích vì sao rule ban đầu báo nhầm; khi `reliabilityAiConfirmed == null` (Tier 2 không chạy vì không có gì cần xác minh, hoặc hết quota) - giữ nguyên hiển thị Tier 1 như cũ, không thêm dòng gì
+
+### 15e. Deep self-consistency check — Tier 3, thủ công, người dùng tự bấm (không mặc định chạy)
+
+*Tier 3 dành cho khi người dùng tự nghi ngờ 1 case cụ thể nhiều hơn cả những gì Tier 1+2 đã kết luận - chi phí này do người dùng tự quyết định chi, không phải hệ thống tự động phát sinh, nên hợp lý để giữ thủ công/tuỳ chọn (khác Tier 2 - nơi AI THỰC SỰ CẦN để phân biệt đúng/sai nên mặc định bật).*
+
+**Backend**
+- [ ] Endpoint mới `POST /api/v1/projects/{projectId}/endpoints/{endpointId}/test-cases/{testCaseId}/confidence-check` - gọi lại `chatClient` 1 lần bổ sung (không phải N lần, để giới hạn chi phí) cho đúng case đó, so sánh `expectedStatus`/shape `requestBody` với bản đã lưu, trả điểm đồng thuận tạm thời (KHÔNG ghi đè `reliabilityStatus`/`reliabilityAiConfirmed` đã có từ Tier 1/2, hiển thị riêng kèm nhãn rõ "tốn thêm token")
+- [ ] Bắt buộc gọi `ensureWithinDailyQuota()` hiện có trước khi gọi - tôn trọng đúng cơ chế quota/`TestGenerationEvent` đang dùng
+
+**Frontend**
+- [ ] Nút "Đối chiếu độ tin cậy sâu hơn bằng AI" trên `TestCaseDetailDialog`, có dialog xác nhận cảnh báo tốn token trước khi gọi - không tự động, không phải mặc định
+
+**Lưu ý khi verify (xung đột với nguyên tắc "không dùng AI sinh test case nữa"):** thêm field `rationale`/`reliabilityStatus`/`reliabilityAiConfirmed` là đổi shape structured output AI trả về - để verify thật cần tối thiểu 1-2 lần gọi AI thật (1 lần sinh test case để có case AI_GENERATED thật, cộng thêm 1 lần nếu batch đó có case bị Tier 1 gắn cờ để Tier 2 thật sự chạy), giống tiền lệ đã có ở Module 11d ("ĐÚNG 1 lần gọi AI thật để verify token capture"). Đề xuất xin phép dùng project tạm, xoá sau khi verify - ngoài lần đó, verify Coverage Matrix/Risk Engine (15c) dùng lại dữ liệu test case có sẵn (`freshtest@aiapi.local`/`shop-api-target`), tính tất định từ schema, không cần gọi AI.
+
+**Tài liệu tham khảo cho module này:** 10 bài báo/paper lưu tại `A:/TaiLieu` (không thuộc repo, không commit) - XAI cho code/test generation (ICSE 2026), VALTEST (nền cho ý tưởng Tier 2 - dùng tín hiệu AI để xác nhận/loại test case thay vì chỉ tin rule tất định), CoverUp, LlamaRestTest, SWE-Mutation, và các bài về REST API test generation bằng LLM (TSL-LLM, Test-Amplification-REST-APIs, REST-API-Verified-LLM-Dependencies, Sequential-API-Call-Test-Gen-Eval, LLM-Test-Case-Algorithm-Problems).
+
+**Mốc xác nhận:** *(sẽ cập nhật khi hoàn thành từng phần 15a-e, theo đúng quy tắc tick `[x]` của file này - hiện tại module này CHƯA CODE, chỉ mới lên kế hoạch.)*
 
 ---
 
