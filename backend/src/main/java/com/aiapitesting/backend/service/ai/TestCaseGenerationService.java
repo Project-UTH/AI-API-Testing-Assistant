@@ -9,6 +9,7 @@ import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAssertion;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
+import com.aiapitesting.backend.entity.TestCaseReliability;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
@@ -77,6 +78,7 @@ public class TestCaseGenerationService {
     private final BugReportRepository bugReportRepository;
     private final TestCasePathValidator testCasePathValidator;
     private final TestCaseReliabilityValidator testCaseReliabilityValidator;
+    private final TestCaseReliabilityConfirmationService testCaseReliabilityConfirmationService;
     private final TestCaseService testCaseService;
     private final TestGenerationEventRepository testGenerationEventRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -147,6 +149,30 @@ public class TestCaseGenerationService {
     }
 
     /**
+     * Bản không throw của ensureWithinDailyQuota() - dùng cho Tier 2 (Module 15d), nơi hết quota chỉ
+     * cần BỎ QUA bước xác nhận thêm (giữ nguyên kết quả Tier 1), không được chặn việc lưu test case
+     * chính đã sinh thành công.
+     */
+    private boolean isWithinDailyQuota(Project project) {
+        try {
+            ensureWithinDailyQuota(project);
+            return true;
+        } catch (AiQuotaExceededException e) {
+            return false;
+        }
+    }
+
+    private Integer sumNullable(Integer a, Integer b) {
+        if (a == null) {
+            return b;
+        }
+        if (b == null) {
+            return a;
+        }
+        return a + b;
+    }
+
+    /**
      * Xoá sạch test case chưa khoá thuộc đúng 1 source (Cơ bản hoặc Security) của endpoint, không
      * gọi AI và không ghi TestGenerationEvent - dùng khi nhóm đó KHÔNG được tick trong lần sinh này
      * (dọn case cũ còn sót từ 1 lần sinh trước đó có tick), hoặc làm bước dọn dẹp trước khi
@@ -207,8 +233,21 @@ public class TestCaseGenerationService {
 
         deleteExistingGroup(endpoint, source);
 
-        List<TestCase> saved = testCaseRepository.saveAll(generated.stream()
-                .map(g -> toEntity(endpoint, g, source)).toList());
+        List<TestCase> entities = generated.stream().map(g -> toEntity(endpoint, g, source)).toList();
+
+        // Module 15d (Tier 2) - CHỈ gọi thêm AI khi có case bị Tier 1 gắn cờ, gộp hết vào ĐÚNG 1 lệnh
+        // gọi bổ sung (không gọi riêng từng case). Kiểm tra quota TRƯỚC (không throw - khác
+        // ensureWithinDailyQuota() ở đầu generate(), ở đây hết quota chỉ bỏ qua Tier 2, KHÔNG chặn
+        // việc lưu test case Tier 1 đã có sẵn).
+        List<TestCase> flagged = entities.stream()
+                .filter(tc -> tc.getReliabilityStatus() == TestCaseReliability.NEEDS_REVIEW)
+                .toList();
+        Usage tier2Usage = null;
+        if (!flagged.isEmpty() && isWithinDailyQuota(endpoint.getProject())) {
+            tier2Usage = testCaseReliabilityConfirmationService.confirm(endpoint, flagged);
+        }
+
+        List<TestCase> saved = testCaseRepository.saveAll(entities);
 
         // saveAll() giữ nguyên thứ tự input - ghép theo index với `generated` để biết assertion
         // thuộc về test case nào vừa lưu.
@@ -236,13 +275,21 @@ public class TestCaseGenerationService {
         }
 
         // Snapshot lịch sử tách biệt bảng test_cases sống - lần regenerate sau sẽ xoá hẳn bộ này.
+        // Gộp token Tier 2 (nếu có chạy) vào CÙNG 1 dòng sự kiện này thay vì tạo dòng riêng - lý do:
+        // HistoryFeedService.parseSnapshot() luôn deserialize snapshotJson thẳng thành
+        // List<GeneratedTestCase>, 1 dòng sự kiện riêng cho Tier 2 (shape JSON khác hẳn) sẽ làm vỡ
+        // trang Lịch sử. Gộp tổng token vào đây vẫn đủ để ensureWithinDailyQuota() (sum theo ngày)
+        // tính đúng, không có "chi phí ẩn" nào nằm ngoài cơ chế quota đang dùng.
         testGenerationEventRepository.save(TestGenerationEvent.builder()
                 .endpoint(endpoint)
                 .testCaseCount(saved.size())
                 .snapshotJson(writeSnapshotAsJson(generated))
-                .promptTokens(usage == null ? null : usage.getPromptTokens())
-                .completionTokens(usage == null ? null : usage.getCompletionTokens())
-                .totalTokens(usage == null ? null : usage.getTotalTokens())
+                .promptTokens(sumNullable(usage == null ? null : usage.getPromptTokens(),
+                        tier2Usage == null ? null : tier2Usage.getPromptTokens()))
+                .completionTokens(sumNullable(usage == null ? null : usage.getCompletionTokens(),
+                        tier2Usage == null ? null : tier2Usage.getCompletionTokens()))
+                .totalTokens(sumNullable(usage == null ? null : usage.getTotalTokens(),
+                        tier2Usage == null ? null : tier2Usage.getTotalTokens()))
                 .build());
 
         return saved;

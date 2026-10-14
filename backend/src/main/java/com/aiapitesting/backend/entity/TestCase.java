@@ -64,6 +64,18 @@ public class TestCase {
     @Column(columnDefinition = "TEXT")
     private String reliabilityNotes;
 
+    /**
+     * Module 15d (Tier 2) - AI xác nhận lại case bị Tier 1 gắn cờ NEEDS_REVIEW có phải lỗi thật hay
+     * false positive (vd case Security cố ý gửi giá trị sai để test injection). null = Tier 2 chưa
+     * chạy (case không bị gắn cờ, hoặc hết quota lúc đó) - KHÁC {@code reliabilityStatus=null} (không
+     * áp dụng hẳn). true = AI xác nhận lỗi thật; false = AI cho là false positive, chủ đích.
+     */
+    private Boolean reliabilityAiConfirmed;
+
+    /** Giải thích ngắn của AI cho reliabilityAiConfirmed - null khi reliabilityAiConfirmed null. */
+    @Column(columnDefinition = "TEXT")
+    private String reliabilityAiNote;
+
     @Column(nullable = false)
     private Integer expectedStatus;
 

@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import type { AssertionOperator, TestCase, TestCaseAuthOverride } from "@/lib/testcases"
+import { getReliabilityDisplay, type AssertionOperator, type TestCase, type TestCaseAuthOverride } from "@/lib/testcases"
 
 const AUTH_OVERRIDE_LABEL: Record<TestCaseAuthOverride, string> = {
   DEFAULT: "Mặc định (dùng auth thật của Project)",
@@ -36,6 +36,7 @@ interface TestCaseDetailDialogProps {
 /** Chỉ đọc - xem chi tiết 1 test case (dùng ở trang Admin xem dữ liệu user khác). Không có nút sửa/xoá. */
 export function TestCaseDetailDialog({ open, onOpenChange, testCase }: TestCaseDetailDialogProps) {
   if (!testCase) return null
+  const reliability = getReliabilityDisplay(testCase)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -60,16 +61,17 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase }: TestCaseD
                 Đang khoá
               </span>
             )}
-            {testCase.reliabilityStatus && (
+            {reliability && (
               <span
+                title={reliability.title}
                 className={cn(
                   "rounded-full px-2 py-0.5 font-medium",
-                  testCase.reliabilityStatus === "RELIABLE"
+                  reliability.tone === "reliable"
                     ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                     : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
                 )}
               >
-                {testCase.reliabilityStatus === "RELIABLE" ? "Đáng tin" : "Cần xem lại"}
+                {reliability.label}
               </span>
             )}
           </div>
@@ -87,12 +89,33 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase }: TestCaseD
           )}
 
           {testCase.reliabilityStatus === "NEEDS_REVIEW" && testCase.reliabilityNotes.length > 0 && (
-            <Field label="Cần xem lại vì">
+            <Field label="Cần xem lại vì (đối chiếu tất định với spec)">
               <ul className="flex flex-col gap-1 text-sm text-amber-600 dark:text-amber-400">
                 {testCase.reliabilityNotes.map((note, index) => (
                   <li key={index}>• {note}</li>
                 ))}
               </ul>
+            </Field>
+          )}
+
+          {testCase.reliabilityAiConfirmed !== null && (
+            <Field
+              label={
+                testCase.reliabilityAiConfirmed
+                  ? "AI xác nhận - đây là lỗi thật (tốn thêm token)"
+                  : "AI xác nhận - đây là false positive, chủ đích (tốn thêm token)"
+              }
+            >
+              <p
+                className={cn(
+                  "text-sm",
+                  testCase.reliabilityAiConfirmed
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-emerald-600 dark:text-emerald-400"
+                )}
+              >
+                {testCase.reliabilityAiNote}
+              </p>
             </Field>
           )}
 

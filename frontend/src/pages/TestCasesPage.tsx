@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { cn, METHOD_STYLES, selectClassName } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
-import { listTestCases, setTestCaseLocked, type TestCase } from "@/lib/testcases"
+import { getReliabilityDisplay, listTestCases, setTestCaseLocked, type TestCase } from "@/lib/testcases"
 import { triggerExecution } from "@/lib/executions"
 import { TestCaseFormDialog } from "@/components/testcases/TestCaseFormDialog"
 import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialog"
@@ -222,7 +222,9 @@ export function TestCasesPage() {
                 <p className="mt-3 text-sm text-muted-foreground">Chưa có test case nào.</p>
               ) : (
                 <ul className="mt-3 flex flex-col gap-2">
-                  {cases.map((testCase) => (
+                  {cases.map((testCase) => {
+                    const reliability = getReliabilityDisplay(testCase)
+                    return (
                     <li
                       key={testCase.id}
                       className="flex items-center gap-3 rounded-md border border-border p-2"
@@ -239,21 +241,17 @@ export function TestCasesPage() {
                       >
                         {SOURCE_LABEL[testCase.source]}
                       </span>
-                      {testCase.reliabilityStatus && (
+                      {reliability && (
                         <span
-                          title={
-                            testCase.reliabilityStatus === "NEEDS_REVIEW"
-                              ? testCase.reliabilityNotes.join("; ")
-                              : "Giá trị AI sinh khớp đúng ràng buộc (required/enum/min-max) trong spec"
-                          }
+                          title={reliability.title}
                           className={cn(
                             "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-                            testCase.reliabilityStatus === "RELIABLE"
+                            reliability.tone === "reliable"
                               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                               : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
                           )}
                         >
-                          {testCase.reliabilityStatus === "RELIABLE" ? "Đáng tin" : "Cần xem lại"}
+                          {reliability.label}
                         </span>
                       )}
                       {testCase.source !== "MANUAL" && testCase.rationale && (
@@ -289,7 +287,8 @@ export function TestCasesPage() {
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </li>
-                  ))}
+                    )
+                  })}
                 </ul>
               )}
             </div>

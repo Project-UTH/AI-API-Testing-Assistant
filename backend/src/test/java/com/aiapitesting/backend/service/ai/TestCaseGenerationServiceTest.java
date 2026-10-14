@@ -47,6 +47,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -84,6 +86,9 @@ class TestCaseGenerationServiceTest {
 
     @Mock
     private com.aiapitesting.backend.service.TestCaseReliabilityValidator testCaseReliabilityValidator;
+
+    @Mock
+    private TestCaseReliabilityConfirmationService testCaseReliabilityConfirmationService;
 
     @Mock
     private TestCaseService testCaseService;
@@ -203,6 +208,97 @@ class TestCaseGenerationServiceTest {
         ArgumentCaptor<List<TestCase>> savedCaptor = ArgumentCaptor.forClass(List.class);
         verify(testCaseRepository).saveAll(savedCaptor.capture());
         assertThat(savedCaptor.getValue()).extracting(TestCase::getRationale).containsExactly(expectedRationale);
+    }
+
+    @Test
+    void generate_caseFlaggedByTier1_callsTier2ConfirmationWithFlaggedCaseOnly() throws Exception {
+        // Module 15d (Tier 2) - CHỈ gọi thêm AI khi có case bị Tier 1 gắn cờ NEEDS_REVIEW, và chỉ
+        // gửi ĐÚNG những case bị gắn cờ (không gửi case RELIABLE kèm theo).
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        stubAiResponse(List.of(
+                new GeneratedTestCase("Positive - OK", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do"),
+                new GeneratedTestCase("Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        // Case đầu RELIABLE (giữ nguyên stub mặc định ở setUp), case thứ 2 NEEDS_REVIEW.
+        when(testCaseReliabilityValidator.validate(eq(endpoint), argThat(g -> "Positive - Can xem lai".equals(g.name()))))
+                .thenReturn(new com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result(
+                        com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW, List.of("vi pham gia tri")));
+        when(testCaseReliabilityConfirmationService.confirm(eq(endpoint), anyList())).thenReturn(null);
+
+        testCaseGenerationService.generate(projectId, endpointId, null).get();
+
+        ArgumentCaptor<List<TestCase>> flaggedCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseReliabilityConfirmationService).confirm(eq(endpoint), flaggedCaptor.capture());
+        assertThat(flaggedCaptor.getValue()).hasSize(1);
+        assertThat(flaggedCaptor.getValue().get(0).getName()).isEqualTo("Positive - Can xem lai");
+    }
+
+    @Test
+    void generate_noCaseFlagged_neverCallsTier2Confirmation() throws Exception {
+        // 0 chi phí khi không có gì cần xác minh - đúng nguyên tắc "tối ưu chi phí" đã chốt.
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        stubAiResponse(List.of(new GeneratedTestCase(
+                "Positive", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        testCaseGenerationService.generate(projectId, endpointId, null).get();
+
+        verifyNoInteractions(testCaseReliabilityConfirmationService);
+    }
+
+    @Test
+    void generate_tier2TokenUsage_mergedIntoSameTestGenerationEvent() throws Exception {
+        // Gộp token Tier 2 vào CÙNG 1 dòng TestGenerationEvent với Tier 1 (không tạo dòng riêng -
+        // tránh vỡ HistoryFeedService.parseSnapshot() vốn luôn đọc snapshotJson như List<GeneratedTestCase>).
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        stubAiResponse(List.of(new GeneratedTestCase(
+                "Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(testCaseReliabilityValidator.validate(any(), any()))
+                .thenReturn(new com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result(
+                        com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW, List.of("vi pham")));
+        when(testCaseReliabilityConfirmationService.confirm(any(), anyList()))
+                .thenReturn(new DefaultUsage(20, 10, 30));
+
+        testCaseGenerationService.generate(projectId, endpointId, null).get();
+
+        ArgumentCaptor<TestGenerationEvent> eventCaptor = ArgumentCaptor.forClass(TestGenerationEvent.class);
+        verify(testGenerationEventRepository).save(eventCaptor.capture());
+        TestGenerationEvent event = eventCaptor.getValue();
+        // stubAiResponse() set Tier 1 = 100/50/150 (xem helper cuối file); Tier 2 ở test này = 20/10/30.
+        assertThat(event.getPromptTokens()).isEqualTo(120);
+        assertThat(event.getCompletionTokens()).isEqualTo(60);
+        assertThat(event.getTotalTokens()).isEqualTo(180);
+    }
+
+    @Test
+    void generate_quotaExceededBeforeTier2_skipsConfirmationButStillSavesTestCases() throws Exception {
+        // Quota đủ lúc ĐẦU generate() (check 1 lần) nhưng đã CHẠM giới hạn ngay trước lúc gọi Tier 2
+        // (do chính lượt sinh Tier 1 vừa rồi cộng dồn) - Tier 2 phải bị bỏ qua, KHÔNG được chặn lưu
+        // test case Tier 1 đã sinh thành công.
+        org.springframework.test.util.ReflectionTestUtils.setField(testCaseGenerationService, "dailyTokenLimit", 100L);
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        // Lần gọi 1 (ensureWithinDailyQuota ở đầu generate()): dưới giới hạn -> cho qua.
+        // Lần gọi 2 (isWithinDailyQuota trước Tier 2): đã đạt giới hạn -> bỏ qua Tier 2.
+        when(testGenerationEventRepository.sumTotalTokensByOwnerAndCreatedAtBetween(any(), any(), any()))
+                .thenReturn(0L)
+                .thenReturn(100L);
+        stubAiResponse(List.of(new GeneratedTestCase(
+                "Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(testCaseReliabilityValidator.validate(any(), any()))
+                .thenReturn(new com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result(
+                        com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW, List.of("vi pham")));
+
+        List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get();
+
+        assertThat(result).hasSize(1);
+        verifyNoInteractions(testCaseReliabilityConfirmationService);
+        verify(testCaseRepository).saveAll(anyList());
     }
 
     @Test
