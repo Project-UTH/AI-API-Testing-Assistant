@@ -776,16 +776,18 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 ### 15a. Rationale — giải thích vì sao AI sinh từng test case
 
 **Backend**
-- [ ] `dto/ai/GeneratedTestCase.java` thêm field `rationale` (String)
-- [ ] `prompts/generate-test-case.st` thêm hướng dẫn bắt buộc mỗi case phải có `rationale` tiếng Việt ngắn, chỉ rõ field/rule spec nào kích hoạt case này (cả nhánh Positive/Negative/Boundary và nhánh Security), kèm ví dụ cụ thể theo đúng kiểu ví dụ assertion đang có
-- [ ] `TestCase` entity thêm cột `rationale` (TEXT, nullable)
-- [ ] `TestCaseGenerationService.toEntity()` map `rationale` vào entity
-- [ ] `TestCaseResponse` thêm field `rationale` + cập nhật factory `from(...)`
+- [x] `dto/ai/GeneratedTestCase.java` thêm field `rationale` (String)
+- [x] `prompts/generate-test-case.st` thêm hướng dẫn bắt buộc mỗi case phải có `rationale` tiếng Việt ngắn, chỉ rõ field/rule spec nào kích hoạt case này (cả nhánh Positive/Negative/Boundary và nhánh Security), kèm ví dụ cụ thể theo đúng kiểu ví dụ assertion đang có
+- [x] `TestCase` entity thêm cột `rationale` (TEXT, nullable)
+- [x] `TestCaseGenerationService.toEntity()` map `rationale` vào entity
+- [x] `TestCaseResponse` thêm field `rationale` + cập nhật factory `from(...)`
 
 **Frontend**
-- [ ] `lib/testcases.ts` thêm `rationale: string | null`
-- [ ] `TestCasesPage.tsx`: icon `Info` nhỏ + tooltip (`title=`, đúng pattern `<title>` đã dùng ở `AiUsageChart`) cạnh badge nguồn trong mỗi `<li>` test case, hiện `rationale` khi case AI_GENERATED/SECURITY có rationale
-- [ ] `TestCaseDetailDialog.tsx`: thêm `Field label="Vì sao AI sinh case này"` hiển thị `rationale`
+- [x] `lib/testcases.ts` thêm `rationale: string | null`
+- [x] `TestCasesPage.tsx`: icon `Info` nhỏ + tooltip (`title=`, đúng pattern `<title>` đã dùng ở `AiUsageChart`) cạnh badge nguồn trong mỗi `<li>` test case, hiện `rationale` khi case AI_GENERATED/SECURITY có rationale
+- [x] `TestCaseDetailDialog.tsx`: thêm `Field label="Vì sao AI sinh case này"` hiển thị `rationale`
+
+**Mốc xác nhận (15a):** `./mvnw -o test` xanh 176/176 (1 test mới `generate_success_mapsRationaleToSavedEntityAndResponse` xác nhận rationale từ `GeneratedTestCase` map đúng vào entity lẫn response). `npx tsc -b --force` sạch, `npm run build` thành công. **Đã verify bằng ĐÚNG 1 lần gọi AI thật** (project tạm `TEMP-verify-rationale-15a` trong `freshtest@aiapi.local`, import 1 spec tối giản tự tạo - endpoint `POST /users` field `email` required, chỉ sinh nhóm Positive để tốn ít token nhất, xoá sạch project tạm ngay sau khi xong - không đụng 2 project thật có sẵn): *(phát sinh sự cố ngoài dự kiến - API key Anthropic lúc đầu bị Anthropic từ chối `401 invalid x-api-key` dù người dùng vừa cập nhật - hoá ra do `.env` ở gốc (Docker đọc file này, là bản copy riêng theo đúng gotcha đã ghi ở Module 14) không tự đồng bộ với `backend/.env` (file người dùng thực sự sửa khi dùng local dev) - đã viết script đồng bộ lại `ANTHROPIC_API_KEY` từ `backend/.env` sang `.env` gốc kèm escape `$`→`$$` đúng quy tắc Module 14, sau đó `docker compose up -d --force-recreate backend` để nạp key mới)*. Sau khi sửa: AI trả đúng `"rationale":"Điền đủ field bắt buộc 'email' theo mảng required trong schema để xác nhận luồng thành công cơ bản."` - bám sát rule spec thật (không chung chung), lưu đúng vào DB (xác nhận bằng GET lại), token thật ghi nhận 6014 (`prompt_tokens=5684, completion_tokens=330`). **Verify UI thật bằng Playwright** trên dữ liệu cũ có sẵn (64 test case thật, tạo trước khi có field `rationale` nên đều `null`): trang Test Case render đúng đủ 64 dòng, không crash, không hiện icon Info ở case nào (đúng thiết kế graceful khi `rationale=null`), không có console error liên quan tới thay đổi này (2 lỗi console thấy được đều không liên quan - lỗi GSI/Google Sign-In origin có từ trước). Project tạm + mọi file tạm cục bộ đã xoá sạch.
 
 ### 15b. Reliability validator — Tier 1, tất định (rule-based, free)
 

@@ -47,6 +47,8 @@ export interface TestCase {
   description: string | null
   requestHeaders: string | null
   requestBody: string | null
+  /** Module 15a - câu giải thích AI tự khai lúc sinh case này, null cho case MANUAL/dữ liệu cũ. */
+  rationale: string | null
   expectedStatus: number
   resolvedPath: string | null
   pathParamFallbacks: string | null

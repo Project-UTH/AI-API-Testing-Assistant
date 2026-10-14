@@ -77,6 +77,17 @@ Yêu cầu:
   dựa vào giá trị authOverride, tự thêm vào requestHeaders sẽ tạo header trùng tên gây sai kết quả.
 - Không tự bịa thêm field ngoài định nghĩa OpenAPI đã cho.
 <endif>
+- BẮT BUỘC: mỗi test case phải có field "rationale" - đúng 1 câu tiếng Việt ngắn gọn (dưới 30 từ)
+  giải thích CHÍNH XÁC rule/field nào trong định nghĩa OpenAPI phía trên khiến case này được sinh
+  ra, không được nói chung chung kiểu "để kiểm thử endpoint". Ví dụ cụ thể theo từng loại:
+  - Negative thiếu field bắt buộc: "Trường 'email' có trong mảng required của requestBody nhưng bị
+    bỏ qua để kiểm tra validation."
+  - Boundary vượt giới hạn: "Trường 'name' có maxLength=50 trong schema, dùng chuỗi 55 ký tự để
+    kiểm tra biên trên."
+  - Positive hợp lệ: "Điền đủ 3 field bắt buộc (name, price, stock) đúng kiểu dữ liệu theo schema
+    để xác nhận luồng thành công cơ bản."
+  - Security thiếu auth: "Endpoint có khai báo security scheme trong spec, kiểm tra hành vi khi gọi
+    không kèm token."
 - QUAN TRỌNG: giá trị test data (chuỗi Unicode/emoji/dài/injection ở trên) chỉ được đặt trong
   requestBody, KHÔNG BAO GIỜ được chèn vào bên trong cú pháp {{tenThamSo}} của resolvedPath (xem
   quy tắc bên dưới) - nếu 1 giá trị tình cờ chứa ký tự "{{" hoặc "}}", phải đảm bảo nó chỉ nằm

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, History, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
+import { ArrowLeft, History, Info, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -239,6 +239,11 @@ export function TestCasesPage() {
                       >
                         {SOURCE_LABEL[testCase.source]}
                       </span>
+                      {testCase.source !== "MANUAL" && testCase.rationale && (
+                        <span title={`Vì sao AI sinh case này: ${testCase.rationale}`} className="shrink-0">
+                          <Info className="h-3.5 w-3.5 text-muted-foreground/60" />
+                        </span>
+                      )}
                       <span className="min-w-0 flex-1 truncate text-sm">{testCase.name}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">
                         → {testCase.expectedStatus}

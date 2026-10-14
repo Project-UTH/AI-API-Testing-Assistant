@@ -21,6 +21,8 @@ public record GeneratedTestCase(
         String resolvedPath,
         Map<String, String> pathParamFallbacks,
         TestCaseAuthOverride authOverride,
-        List<GeneratedAssertion> assertions
+        List<GeneratedAssertion> assertions,
+        /** Module 15a (Explainable AI) - câu giải thích ngắn chỉ rõ rule/field nào của spec kích hoạt case này. Chỉ phục vụ con người đọc hiểu - KHÔNG dùng để tính Coverage Matrix (xem EndpointCoverageService). */
+        String rationale
 ) {
 }

@@ -78,7 +78,7 @@ class HistoryFeedServiceTest {
 
     private TestGenerationEvent generationEvent(Endpoint endpoint, Instant createdAt, int count) throws Exception {
         String snapshotJson = objectMapper.writeValueAsString(List.of(
-                new GeneratedTestCase("Positive", "mo ta", Map.of(), "{}", 201, endpoint.getPath(), Map.of(), null, null)));
+                new GeneratedTestCase("Positive", "mo ta", Map.of(), "{}", 201, endpoint.getPath(), Map.of(), null, null, null)));
         return TestGenerationEvent.builder()
                 .id(UUID.randomUUID()).endpoint(endpoint).testCaseCount(count)
                 .snapshotJson(snapshotJson).createdAt(createdAt).build();

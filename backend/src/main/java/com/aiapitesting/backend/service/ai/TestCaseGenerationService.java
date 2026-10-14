@@ -301,6 +301,7 @@ public class TestCaseGenerationService {
                 .description(generated.description())
                 .requestHeaders(writeHeadersAsJson(generated.requestHeaders()))
                 .requestBody(generated.requestBody())
+                .rationale(generated.rationale())
                 .expectedStatus(generated.expectedStatus())
                 .resolvedPath(generated.resolvedPath())
                 .pathParamFallbacks(writeFallbacksAsJson(generated.pathParamFallbacks()))

@@ -39,6 +39,16 @@ public class TestCase {
     @Column(columnDefinition = "TEXT")
     private String requestBody;
 
+    /**
+     * Module 15a (Explainable AI) - câu giải thích ngắn do AI tự khai lúc sinh, chỉ rõ rule/field
+     * nào của spec kích hoạt case này. Nullable: null cho case MANUAL (người tự thêm, không có gì để
+     * giải thích) và dữ liệu lịch sử tạo trước khi có field này. CHỈ phục vụ con người đọc hiểu -
+     * KHÔNG được dùng để tính Coverage Matrix (EndpointCoverageService, Module 15c) vì rationale AI
+     * tự khai có thể không trung thực với lý do thật bên trong model (xem Module 15 trong roadmap).
+     */
+    @Column(columnDefinition = "TEXT")
+    private String rationale;
+
     @Column(nullable = false)
     private Integer expectedStatus;
 

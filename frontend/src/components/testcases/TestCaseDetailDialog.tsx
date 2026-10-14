@@ -68,6 +68,12 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase }: TestCaseD
             </Field>
           )}
 
+          {testCase.source !== "MANUAL" && testCase.rationale && (
+            <Field label="Vì sao AI sinh case này">
+              <p className="text-sm text-muted-foreground">{testCase.rationale}</p>
+            </Field>
+          )}
+
           <Field label="Xác thực khi gọi target API">
             <p className="text-sm">{AUTH_OVERRIDE_LABEL[testCase.authOverride]}</p>
           </Field>

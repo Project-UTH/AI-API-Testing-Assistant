@@ -129,11 +129,11 @@ class TestCaseGenerationServiceTest {
                 new GeneratedTestCase(
                         "Positive - Tao user hop le", "mo ta",
                         Map.of("Content-Type", "application/json"), "{\"email\":\"a@b.com\"}", 201,
-                        "/users", Map.of(), null, null),
+                        "/users", Map.of(), null, null, null),
                 new GeneratedTestCase(
                         "Negative - Thieu email", "mo ta",
                         Map.of("Content-Type", "application/json"), "{}", 400,
-                        "/users", Map.of(), null, null)
+                        "/users", Map.of(), null, null, null)
         ));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -171,6 +171,28 @@ class TestCaseGenerationServiceTest {
         assertThat(event.getPromptTokens()).isEqualTo(100);
         assertThat(event.getCompletionTokens()).isEqualTo(50);
         assertThat(event.getTotalTokens()).isEqualTo(150);
+    }
+
+    @Test
+    void generate_success_mapsRationaleToSavedEntityAndResponse() throws Exception {
+        // Module 15a - rationale do AI tự khai trong CÙNG 1 lệnh gọi phải được lưu nguyên vẹn vào
+        // entity và trả đúng trong response, không bị rớt/đổi.
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        String expectedRationale = "Truong 'email' co trong required cua requestBody nhung bi bo qua de kiem tra validation.";
+        stubAiResponse(List.of(new GeneratedTestCase(
+                "Negative - Thieu email", "mo ta", Map.of(), "{}", 400, "/users", Map.of(), null, null,
+                expectedRationale)));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).rationale()).isEqualTo(expectedRationale);
+
+        ArgumentCaptor<List<TestCase>> savedCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseRepository).saveAll(savedCaptor.capture());
+        assertThat(savedCaptor.getValue()).extracting(TestCase::getRationale).containsExactly(expectedRationale);
     }
 
     @Test
@@ -217,7 +239,7 @@ class TestCaseGenerationServiceTest {
         when(testGenerationEventRepository.sumTotalTokensByOwnerAndCreatedAtBetween(any(), any(), any()))
                 .thenReturn(500L); // vuot 100 (mac dinh he thong) nhung con xa 1_000_000 (override)
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null)));
+                "Positive", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, null)));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get();
@@ -242,7 +264,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 999, "/users", Map.of(), null, null)));
+                "Positive", "mo ta", Map.of(), "{}", 999, "/users", Map.of(), null, null, null)));
 
         assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
                 .isInstanceOf(AiGenerationFailedException.class);
@@ -277,7 +299,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null)));
+                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null, null)));
 
         TestCase existingAiCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint)
                 .source(TestCaseSource.AI_GENERATED).build();
@@ -325,7 +347,7 @@ class TestCaseGenerationServiceTest {
         // Cùng 1 stub AI trả về cho cả 2 lần gọi (Cơ bản + Security) - đủ để kiểm tra tách source đúng.
         stubAiResponse(List.of(new GeneratedTestCase(
                 "Security - Thieu token", "mo ta", Map.of(), null, 401, "/users",
-                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null)));
+                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null, null)));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
@@ -361,7 +383,7 @@ class TestCaseGenerationServiceTest {
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
                 "Security - Thieu token", "mo ta", Map.of(), null, 401, "/users",
-                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null)));
+                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null, null)));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
@@ -382,7 +404,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null)));
+                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null, null)));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
