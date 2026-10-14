@@ -107,7 +107,7 @@ public class TestCaseGenerationService {
         // này = đúng những gì đang được tick. Nhóm có tick -> gọi AI sinh lại (xoá-và-thay). Nhóm
         // KHÔNG tick -> không gọi AI, chỉ xoá sạch case cũ (chưa khoá) còn sót từ lần sinh trước, để
         // tránh tình trạng case Security cũ (hoặc Positive/Negative/Boundary cũ) còn lưu lại dù lần
-        // này người dùng chủ động bỏ tick. Case đã khoá 🔒 luôn được giữ nguyên ở cả 2 nhánh.
+        // này người dùng chủ động bỏ tick. Case đã khoá luôn được giữ nguyên ở cả 2 nhánh.
         List<TestCase> saved = new ArrayList<>();
         if (includePositive || includeNegative || includeBoundary) {
             saved.addAll(generateGroup(endpoint, TestCaseSource.AI_GENERATED, false, includeAssertions,
@@ -148,7 +148,7 @@ public class TestCaseGenerationService {
      * Xoá sạch test case chưa khoá thuộc đúng 1 source (Cơ bản hoặc Security) của endpoint, không
      * gọi AI và không ghi TestGenerationEvent - dùng khi nhóm đó KHÔNG được tick trong lần sinh này
      * (dọn case cũ còn sót từ 1 lần sinh trước đó có tick), hoặc làm bước dọn dẹp trước khi
-     * generateGroup() lưu batch mới. Test case đã khoá 🔒 luôn được giữ nguyên (đã lọc LockedFalse).
+     * generateGroup() lưu batch mới. Test case đã khoá luôn được giữ nguyên (đã lọc LockedFalse).
      */
     private void deleteExistingGroup(Endpoint endpoint, TestCaseSource source) {
         List<TestCase> existing = testCaseRepository.findAllByEndpointAndSourceAndLockedFalse(endpoint, source);
