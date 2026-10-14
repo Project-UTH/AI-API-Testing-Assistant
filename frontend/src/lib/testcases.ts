@@ -4,6 +4,9 @@ export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY"
 
 export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
 
+/** Module 15b (Tier 1) - đối chiếu tất định với spec, chỉ áp dụng cho case kỳ vọng thành công. */
+export type TestCaseReliability = "RELIABLE" | "NEEDS_REVIEW"
+
 export type AssertionOperator = "EQUALS" | "CONTAINS" | "EXISTS" | "TYPE"
 
 export interface TestCaseAssertion {
@@ -49,6 +52,9 @@ export interface TestCase {
   requestBody: string | null
   /** Module 15a - câu giải thích AI tự khai lúc sinh case này, null cho case MANUAL/dữ liệu cũ. */
   rationale: string | null
+  /** Module 15b - null = không áp dụng (case MANUAL, dữ liệu cũ, hoặc case kỳ vọng lỗi). */
+  reliabilityStatus: TestCaseReliability | null
+  reliabilityNotes: string[]
   expectedStatus: number
   resolvedPath: string | null
   pathParamFallbacks: string | null

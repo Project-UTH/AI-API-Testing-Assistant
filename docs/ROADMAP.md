@@ -794,15 +794,17 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 *Tier 1 trong mô hình 3 tầng của module này: tất định tuyệt đối, chạy cho MỌI case AI sinh, không gọi AI, không điều kiện.*
 
 **Backend**
-- [ ] `TestCase` entity thêm `reliabilityStatus` (enum mới `TestCaseReliability{RELIABLE, NEEDS_REVIEW}`, `VARCHAR(20)` nullable - null = không áp dụng/case MANUAL) và `reliabilityNotes` (TEXT nullable, JSON array các câu cảnh báo cụ thể)
-- [ ] Component mới `service/TestCaseReliabilityValidator.java` (cùng tầng `TestCasePathValidator`, nhận thêm `Endpoint` để đọc `schema`) — parse `Endpoint.schema` (Jackson `readTree`) lấy required/enum/min-max của parameter + requestBody, đối chiếu với `requestBody`/`requestHeaders`/giá trị `resolvedPath` đã substitute (tái dùng `TestCasePathValidator.substitute()`): field required có mặt khi case kỳ vọng thành công (`expectedStatus < 400`), giá trị enum khớp khai báo, số nằm trong min/max khi case không chủ đích test biên vượt ngoài - mỗi vi phạm ghi 1 câu note cụ thể (tên field + rule bị vi phạm)
-- [ ] Gọi validator này trong `TestCaseGenerationService.generateGroup()` ngay sau `validate()` (structural) hiện có, set `reliabilityStatus`/`reliabilityNotes` lên từng `TestCase` trước `saveAll()` - KHÔNG thêm lệnh gọi AI nào ở Tier 1
-- [ ] `TestCaseResponse` thêm `reliabilityStatus`, `reliabilityNotes` (`List<String>`)
+- [x] `TestCase` entity thêm `reliabilityStatus` (enum mới `TestCaseReliability{RELIABLE, NEEDS_REVIEW}`, `VARCHAR(20)` nullable - null = không áp dụng/case MANUAL) và `reliabilityNotes` (TEXT nullable, JSON array các câu cảnh báo cụ thể)
+- [x] Component mới `service/TestCaseReliabilityValidator.java` (cùng tầng `TestCasePathValidator`) — **đổi khác 1 chi tiết nhỏ so với kế hoạch gốc khi code**: nhận thẳng `GeneratedTestCase` (DTO có sẵn `Map<String,String>` cho headers/fallbacks) thay vì entity đã serialize ra JSON string, tránh vòng serialize-rồi-deserialize không cần thiết ngay trong `toEntity()`; parse `Endpoint.schema` bằng chính lớp model `Parameter`/`RequestBody`/`Schema` của swagger-parser (học từ bug thật ở 15c, không tự dò `JsonNode`). Đối chiếu required/enum/min-max/maxLength của cả requestBody LẪN parameter (path/query/header, lấy giá trị từ `pathParamFallbacks`/`requestHeaders` trực tiếp - không cần substitute lại `resolvedPath`), CHỈ áp dụng cho case `expectedStatus < 400` (case kỳ vọng lỗi luôn RELIABLE, vi phạm có thể là chủ đích) - không tự suy "thiếu" cho path/query/header vắng mặt (tránh false positive với query param tuỳ chọn không liên quan)
+- [x] Gọi validator này ngay trong `TestCaseGenerationService.toEntity()` (tương đương vị trí đã định trong `generateGroup()`), set `reliabilityStatus`/`reliabilityNotes` trước khi build entity - KHÔNG thêm lệnh gọi AI nào ở Tier 1
+- [x] `TestCaseResponse` thêm `reliabilityStatus`, `reliabilityNotes` (`List<String>`, parse ngược từ JSON)
 
 **Frontend**
-- [ ] `lib/testcases.ts` thêm `reliabilityStatus`/`reliabilityNotes`
-- [ ] `TestCasesPage.tsx`: badge nhỏ cạnh badge nguồn - xanh "Đáng tin" khi `RELIABLE`, vàng "Cần xem lại" khi `NEEDS_REVIEW` (ẩn khi null/MANUAL)
-- [ ] `TestCaseDetailDialog.tsx`: hiện danh sách `reliabilityNotes` dưới badge khi `NEEDS_REVIEW`
+- [x] `lib/testcases.ts` thêm `reliabilityStatus`/`reliabilityNotes`
+- [x] `TestCasesPage.tsx`: badge nhỏ cạnh badge nguồn - xanh "Đáng tin" khi `RELIABLE`, vàng "Cần xem lại" khi `NEEDS_REVIEW` (ẩn khi null/MANUAL)
+- [x] `TestCaseDetailDialog.tsx`: hiện danh sách `reliabilityNotes` dưới badge khi `NEEDS_REVIEW`
+
+**Mốc xác nhận (15b):** `./mvnw -o test` xanh 184/184 (8 test mới `TestCaseReliabilityValidatorTest` - required field thiếu ở case thành công NEEDS_REVIEW, có đủ field RELIABLE, enum sai NEEDS_REVIEW, số ngoài min/max NEEDS_REVIEW, số trong biên RELIABLE, case kỳ vọng lỗi LUÔN RELIABLE dù vi phạm, path/query param sai enum NEEDS_REVIEW, không có schema thì RELIABLE). `npx tsc -b --force` sạch, `npm run build` thành công. **Đã verify bằng Docker thật + 1 lần gọi AI thật bổ sung** (project tạm `TEMP-verify-reliability-15b`, spec tối giản có field `quantity` (integer, minimum=1, maximum=100), chỉ sinh Positive - xoá sạch ngay sau khi xong, không đụng dữ liệu thật có sẵn): AI tự chọn `quantity=10` (đúng trong biên) → `reliabilityStatus="RELIABLE"`, `reliabilityNotes=[]` - xác nhận đúng cả 2 chiều (không crash pipeline, không false positive khi AI làm đúng); nhánh `NEEDS_REVIEW` đã được chứng minh chắc chắn qua 8 unit test tất định (không cần ép AI thật sinh lỗi, tốn thêm token vô ích). **Verify UI thật bằng Playwright**: 64 test case cũ (tạo trước Module 15b, `reliabilityStatus=null`) render đúng, không crash, không hiện badge ở case nào - đúng graceful design giống `rationale` (15a). Project tạm đã xoá sạch.
 
 ### 15c. Coverage Matrix + Risk Engine theo OpenAPI spec (tất định, free)
 

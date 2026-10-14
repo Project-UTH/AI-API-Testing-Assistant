@@ -24,6 +24,7 @@ import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.ProjectService;
 import com.aiapitesting.backend.service.TestCasePathValidator;
+import com.aiapitesting.backend.service.TestCaseReliabilityValidator;
 import com.aiapitesting.backend.service.TestCaseService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -75,6 +76,7 @@ public class TestCaseGenerationService {
     private final TestResultRepository testResultRepository;
     private final BugReportRepository bugReportRepository;
     private final TestCasePathValidator testCasePathValidator;
+    private final TestCaseReliabilityValidator testCaseReliabilityValidator;
     private final TestCaseService testCaseService;
     private final TestGenerationEventRepository testGenerationEventRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -295,6 +297,10 @@ public class TestCaseGenerationService {
     }
 
     private TestCase toEntity(Endpoint endpoint, GeneratedTestCase generated, TestCaseSource source) {
+        // Module 15b (Tier 1) - đối chiếu tất định với spec NGAY LÚC map sang entity, không gọi AI
+        // thêm. Dùng thẳng generated (Map có sẵn) thay vì re-parse lại entity vừa build, tránh vòng
+        // JSON-serialize-rồi-deserialize không cần thiết.
+        TestCaseReliabilityValidator.Result reliability = testCaseReliabilityValidator.validate(endpoint, generated);
         return TestCase.builder()
                 .endpoint(endpoint)
                 .name(generated.name())
@@ -302,12 +308,25 @@ public class TestCaseGenerationService {
                 .requestHeaders(writeHeadersAsJson(generated.requestHeaders()))
                 .requestBody(generated.requestBody())
                 .rationale(generated.rationale())
+                .reliabilityStatus(reliability.status())
+                .reliabilityNotes(writeReliabilityNotesAsJson(reliability.notes()))
                 .expectedStatus(generated.expectedStatus())
                 .resolvedPath(generated.resolvedPath())
                 .pathParamFallbacks(writeFallbacksAsJson(generated.pathParamFallbacks()))
                 .source(source)
                 .authOverride(generated.authOverride() == null ? TestCaseAuthOverride.DEFAULT : generated.authOverride())
                 .build();
+    }
+
+    private String writeReliabilityNotesAsJson(List<String> notes) {
+        if (notes == null || notes.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(notes);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String writeHeadersAsJson(Map<String, String> headers) {

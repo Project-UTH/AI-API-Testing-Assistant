@@ -239,6 +239,23 @@ export function TestCasesPage() {
                       >
                         {SOURCE_LABEL[testCase.source]}
                       </span>
+                      {testCase.reliabilityStatus && (
+                        <span
+                          title={
+                            testCase.reliabilityStatus === "NEEDS_REVIEW"
+                              ? testCase.reliabilityNotes.join("; ")
+                              : "Giá trị AI sinh khớp đúng ràng buộc (required/enum/min-max) trong spec"
+                          }
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
+                            testCase.reliabilityStatus === "RELIABLE"
+                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          )}
+                        >
+                          {testCase.reliabilityStatus === "RELIABLE" ? "Đáng tin" : "Cần xem lại"}
+                        </span>
+                      )}
                       {testCase.source !== "MANUAL" && testCase.rationale && (
                         <span title={`Vì sao AI sinh case này: ${testCase.rationale}`} className="shrink-0">
                           <Info className="h-3.5 w-3.5 text-muted-foreground/60" />

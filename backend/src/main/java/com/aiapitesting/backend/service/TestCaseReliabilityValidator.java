@@ -1,0 +1,203 @@
+package com.aiapitesting.backend.service;
+
+import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
+import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.TestCaseReliability;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.models.media.MediaType;
+import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.oas.models.parameters.RequestBody;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Module 15b (Tier 1) - đối chiếu TẤT ĐỊNH giữa giá trị test case AI vừa sinh với ràng buộc
+ * required/enum/min-max khai báo trong {@code Endpoint.schema} - KHÔNG gọi AI. Chỉ đối chiếu case
+ * kỳ vọng thành công (expectedStatus &lt; 400): case kỳ vọng lỗi (Negative/Boundary-vượt-biên/
+ * Security) KHÔNG bị đối chiếu vì vi phạm ràng buộc có thể chính là chủ đích của case đó - phân
+ * biệt "lỗi AI thật" khỏi "false positive" ở mức sâu hơn (ngữ nghĩa) là việc của Tier 2 (Module 15d).
+ *
+ * Dùng chung field constraint cho cả requestBody VÀ parameter (path/query/header) - khác
+ * {@code EndpointCoverageService} (chỉ cần biết field nào CÓ ràng buộc để tính coverage), ở đây cần
+ * biết CHÍNH XÁC giá trị ràng buộc (enum/min/max) để đối chiếu với giá trị AI đã điền.
+ */
+@Component
+@Slf4j
+public class TestCaseReliabilityValidator {
+
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    public record Result(TestCaseReliability status, List<String> notes) {
+        public static Result reliable() {
+            return new Result(TestCaseReliability.RELIABLE, List.of());
+        }
+    }
+
+    private enum Location { BODY, PATH_OR_QUERY, HEADER }
+
+    private record FieldRule(
+            String name, Location location, boolean required,
+            List<String> enumValues, BigDecimal minimum, BigDecimal maximum,
+            Integer minLength, Integer maxLength
+    ) {
+    }
+
+    private static class StoredSchema {
+        public List<Parameter> parameters;
+        public RequestBody requestBody;
+    }
+
+    /** Case kỳ vọng lỗi (expectedStatus &gt;= 400, hoặc null) không bị đối chiếu - trả RELIABLE thẳng. */
+    public Result validate(Endpoint endpoint, GeneratedTestCase candidate) {
+        if (candidate.expectedStatus() == null || candidate.expectedStatus() >= 400) {
+            return Result.reliable();
+        }
+        List<FieldRule> rules = extractFieldRules(endpoint);
+        if (rules.isEmpty()) {
+            return Result.reliable();
+        }
+
+        Map<String, Object> bodyValues = parseJsonObject(candidate.requestBody());
+        Map<String, String> fallbackValues = candidate.pathParamFallbacks() == null ? Map.of() : candidate.pathParamFallbacks();
+        Map<String, String> headerValues = candidate.requestHeaders() == null ? Map.of() : candidate.requestHeaders();
+
+        List<String> notes = new ArrayList<>();
+        for (FieldRule rule : rules) {
+            if (rule.location() == Location.BODY) {
+                checkBodyField(rule, bodyValues, notes);
+            } else {
+                Map<String, String> source = rule.location() == Location.HEADER ? headerValues : fallbackValues;
+                String rawValue = source.get(rule.name());
+                if (rawValue != null) {
+                    checkRawValue(rule, rawValue, notes);
+                }
+                // Không tự suy "thiếu" cho path/query/header param vắng mặt - param path gần như
+                // luôn bắt buộc theo đúng bản chất URL, còn query/header tuỳ chọn không gửi là hợp
+                // lệ; tránh báo sai khi AI cố ý không gửi 1 query param tuỳ chọn không liên quan.
+            }
+        }
+
+        return notes.isEmpty() ? Result.reliable() : new Result(TestCaseReliability.NEEDS_REVIEW, notes);
+    }
+
+    private void checkBodyField(FieldRule rule, Map<String, Object> bodyValues, List<String> notes) {
+        if (!bodyValues.containsKey(rule.name())) {
+            if (rule.required()) {
+                notes.add("Thiếu field bắt buộc '" + rule.name() + "' trong requestBody dù case kỳ vọng thành công");
+            }
+            return;
+        }
+        Object value = bodyValues.get(rule.name());
+        checkRawValue(rule, value == null ? null : String.valueOf(value), notes);
+    }
+
+    private void checkRawValue(FieldRule rule, String value, List<String> notes) {
+        if (value == null) {
+            return;
+        }
+        if (rule.enumValues() != null && !rule.enumValues().isEmpty() && !rule.enumValues().contains(value)) {
+            notes.add("Field '" + rule.name() + "' = \"" + value + "\" không khớp enum khai báo trong spec ("
+                    + String.join(", ", rule.enumValues()) + ") dù case kỳ vọng thành công");
+            return;
+        }
+        if (rule.minLength() != null && value.length() < rule.minLength()) {
+            notes.add("Field '" + rule.name() + "' có độ dài " + value.length() + " < minLength=" + rule.minLength()
+                    + " trong spec dù case kỳ vọng thành công");
+        }
+        if (rule.maxLength() != null && value.length() > rule.maxLength()) {
+            notes.add("Field '" + rule.name() + "' có độ dài " + value.length() + " > maxLength=" + rule.maxLength()
+                    + " trong spec dù case kỳ vọng thành công");
+        }
+        if (rule.minimum() != null || rule.maximum() != null) {
+            BigDecimal numeric = parseNumeric(value);
+            if (numeric != null) {
+                if (rule.minimum() != null && numeric.compareTo(rule.minimum()) < 0) {
+                    notes.add("Field '" + rule.name() + "' = " + numeric + " < minimum=" + rule.minimum()
+                            + " trong spec dù case kỳ vọng thành công");
+                }
+                if (rule.maximum() != null && numeric.compareTo(rule.maximum()) > 0) {
+                    notes.add("Field '" + rule.name() + "' = " + numeric + " > maximum=" + rule.maximum()
+                            + " trong spec dù case kỳ vọng thành công");
+                }
+            }
+            // Không parse được số (vd giá trị cố tình sai kiểu) - bỏ qua kiểm tra min/max, không
+            // suy diễn thêm; case cố tình gửi sai kiểu dữ liệu cho field số thường đã expectedStatus
+            // >= 400 nên không lọt tới đây, nhưng vẫn phòng hờ không báo sai khi gặp dữ liệu lạ.
+        }
+    }
+
+    private BigDecimal parseNumeric(String value) {
+        try {
+            return new BigDecimal(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseJsonObject(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Object parsed = objectMapper.readValue(json, Object.class);
+            return parsed instanceof Map ? (Map<String, Object>) parsed : Map.of();
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    private List<FieldRule> extractFieldRules(Endpoint endpoint) {
+        if (endpoint.getSchema() == null || endpoint.getSchema().isBlank()) {
+            return List.of();
+        }
+        StoredSchema stored;
+        try {
+            stored = objectMapper.readValue(endpoint.getSchema(), StoredSchema.class);
+        } catch (Exception e) {
+            log.warn("Khong parse duoc schema cua endpoint {} de kiem tra reliability: {}", endpoint.getId(), e.toString());
+            return List.of();
+        }
+
+        List<FieldRule> rules = new ArrayList<>();
+        if (stored.parameters != null) {
+            for (Parameter p : stored.parameters) {
+                if (p.getName() == null) {
+                    continue;
+                }
+                Location location = "header".equalsIgnoreCase(p.getIn()) ? Location.HEADER : Location.PATH_OR_QUERY;
+                rules.add(toFieldRule(p.getName(), location, Boolean.TRUE.equals(p.getRequired()), p.getSchema()));
+            }
+        }
+        if (stored.requestBody != null && stored.requestBody.getContent() != null) {
+            for (MediaType mediaType : stored.requestBody.getContent().values()) {
+                Schema<?> bodySchema = mediaType.getSchema();
+                if (bodySchema == null || bodySchema.getProperties() == null) {
+                    continue;
+                }
+                Set<String> required = bodySchema.getRequired() == null ? Set.of() : Set.copyOf(bodySchema.getRequired());
+                bodySchema.getProperties().forEach((name, propSchema) ->
+                        rules.add(toFieldRule(name, Location.BODY, required.contains(name), propSchema)));
+            }
+        }
+        return rules;
+    }
+
+    private FieldRule toFieldRule(String name, Location location, boolean required, Schema<?> schema) {
+        if (schema == null) {
+            return new FieldRule(name, location, required, null, null, null, null, null);
+        }
+        List<String> enumValues = schema.getEnum() == null ? null
+                : schema.getEnum().stream().map(String::valueOf).toList();
+        return new FieldRule(name, location, required, enumValues,
+                schema.getMinimum(), schema.getMaximum(), schema.getMinLength(), schema.getMaxLength());
+    }
+}

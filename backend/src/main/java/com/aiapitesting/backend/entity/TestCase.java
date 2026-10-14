@@ -49,6 +49,21 @@ public class TestCase {
     @Column(columnDefinition = "TEXT")
     private String rationale;
 
+    /**
+     * Module 15b (Tier 1, rule-based) - đối chiếu tất định giữa giá trị AI sinh với ràng buộc
+     * required/enum/min-max của OpenAPI spec, chỉ áp dụng cho case kỳ vọng thành công
+     * (expectedStatus &lt; 400) - case kỳ vọng lỗi không bị đối chiếu (vi phạm ràng buộc có thể là
+     * chủ đích). Null = không áp dụng (case MANUAL, dữ liệu cũ tạo trước field này, hoặc case kỳ
+     * vọng lỗi). VARCHAR thay vì để Hibernate tự suy ENUM - cùng lý do đã rút ra ở TestCaseSource.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "VARCHAR(20)")
+    private TestCaseReliability reliabilityStatus;
+
+    /** JSON array các câu cảnh báo cụ thể (tên field + rule bị vi phạm) khi reliabilityStatus=NEEDS_REVIEW - null khi RELIABLE hoặc không áp dụng. */
+    @Column(columnDefinition = "TEXT")
+    private String reliabilityNotes;
+
     @Column(nullable = false)
     private Integer expectedStatus;
 

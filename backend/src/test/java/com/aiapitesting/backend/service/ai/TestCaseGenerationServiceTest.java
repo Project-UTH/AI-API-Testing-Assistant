@@ -83,6 +83,9 @@ class TestCaseGenerationServiceTest {
     private TestCasePathValidator testCasePathValidator;
 
     @Mock
+    private com.aiapitesting.backend.service.TestCaseReliabilityValidator testCaseReliabilityValidator;
+
+    @Mock
     private TestCaseService testCaseService;
 
     @Mock
@@ -119,6 +122,13 @@ class TestCaseGenerationServiceTest {
         // có (không liên quan quota) giữ nguyên hành vi cũ.
         org.springframework.test.util.ReflectionTestUtils.setField(
                 testCaseGenerationService, "dailyTokenLimit", 100_000L);
+
+        // Mặc định RELIABLE cho các test không quan tâm tới Module 15b - lenient() vì nhiều test
+        // (quota/notOwner/endpointNotFound/noCategorySelected) không chạy tới bước này, strict stubs
+        // sẽ báo UnnecessaryStubbingException nếu không đánh dấu lenient.
+        org.mockito.Mockito.lenient()
+                .when(testCaseReliabilityValidator.validate(any(), any()))
+                .thenReturn(com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result.reliable());
     }
 
     @Test

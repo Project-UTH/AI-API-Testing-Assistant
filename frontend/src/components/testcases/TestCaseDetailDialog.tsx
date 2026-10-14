@@ -60,6 +60,18 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase }: TestCaseD
                 Đang khoá
               </span>
             )}
+            {testCase.reliabilityStatus && (
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 font-medium",
+                  testCase.reliabilityStatus === "RELIABLE"
+                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                )}
+              >
+                {testCase.reliabilityStatus === "RELIABLE" ? "Đáng tin" : "Cần xem lại"}
+              </span>
+            )}
           </div>
 
           {testCase.description && (
@@ -71,6 +83,16 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase }: TestCaseD
           {testCase.source !== "MANUAL" && testCase.rationale && (
             <Field label="Vì sao AI sinh case này">
               <p className="text-sm text-muted-foreground">{testCase.rationale}</p>
+            </Field>
+          )}
+
+          {testCase.reliabilityStatus === "NEEDS_REVIEW" && testCase.reliabilityNotes.length > 0 && (
+            <Field label="Cần xem lại vì">
+              <ul className="flex flex-col gap-1 text-sm text-amber-600 dark:text-amber-400">
+                {testCase.reliabilityNotes.map((note, index) => (
+                  <li key={index}>• {note}</li>
+                ))}
+              </ul>
             </Field>
           )}
 
