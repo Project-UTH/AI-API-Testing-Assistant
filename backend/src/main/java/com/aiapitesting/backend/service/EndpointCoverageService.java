@@ -23,6 +23,7 @@ import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.parameters.RequestBody;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -44,6 +45,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class EndpointCoverageService {
 
     private static final Set<String> SENSITIVE_FIELD_KEYWORDS = Set.of(
@@ -54,7 +56,14 @@ public class EndpointCoverageService {
     private final TestCaseRepository testCaseRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestResultRepository testResultRepository;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    // FAIL_ON_UNKNOWN_PROPERTIES tắt vì StoredSchema chỉ khai báo đúng field cần dùng (parameters/
+    // requestBody/responseStatusCodes) - buildSchemaJson() (EndpointImportService) còn ghi thêm
+    // "summary" mà parser này không cần đọc lại. Thiếu dòng này gây UnrecognizedPropertyException
+    // thật (đã xác nhận khi verify bằng dữ liệu Docker thật - mọi dimension REQUIRED_FIELD/BOUNDARY/
+    // STATUS_CODE bị rớt sạch vì exception bị extractSchemaFacts() nuốt và trả rỗng, chỉ unit test
+    // với fixture tự dựng không bắt được vì fixture không có field "summary" như data thật).
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     public ProjectCoverageResponse getProjectCoverage(UUID projectId) {
         Project project = projectService.getOwnedProject(projectId);
@@ -280,6 +289,7 @@ public class EndpointCoverageService {
         try {
             stored = objectMapper.readValue(endpoint.getSchema(), StoredSchema.class);
         } catch (Exception e) {
+            log.warn("Khong parse duoc schema cua endpoint {} de tinh coverage: {}", endpoint.getId(), e.toString());
             return SchemaFacts.empty();
         }
 

@@ -121,6 +121,36 @@ class EndpointCoverageServiceTest {
                 .build();
     }
 
+    /**
+     * Dùng CHÍNH schema_definition thật lấy từ DB Docker (dự án shop-api-target, endpoint
+     * POST /api/products, verify thủ công ngày 2026-10-14) - bắt đúng bug thật đã gặp: swagger-parser
+     * ghi thêm field "summary" vào JSON (qua EndpointImportService.buildSchemaJson()) mà fixture tự
+     * dựng ở các test khác (buildSchemaJson() helper trong chính file test này) không có, nên
+     * UnrecognizedPropertyException của Jackson (FAIL_ON_UNKNOWN_PROPERTIES mặc định bật) không lộ ra
+     * ở unit test với fixture tự tạo - chỉ lộ khi chạy với dữ liệu thật qua Docker.
+     */
+    @Test
+    void getEndpointCoverage_realSchemaFromProduction_extractsRequiredFieldsAndStatusCode() throws Exception {
+        String schemaJson = new String(java.nio.file.Files.readAllBytes(
+                java.nio.file.Paths.get("src/test/resources/real-schema-post-products.json")));
+        Endpoint endpoint = endpoint("/api/products", "POST", false, schemaJson);
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of());
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        List<String> requiredFieldLabels = result.dimensions().stream()
+                .filter(d -> d.category().equals("REQUIRED_FIELD")).map(CoverageDimensionResponse::label).toList();
+        assertThat(requiredFieldLabels).hasSize(3);
+        assertThat(requiredFieldLabels.toString()).contains("name").contains("price").contains("stock");
+
+        assertThat(result.dimensions().stream().anyMatch(d -> d.category().equals("STATUS_CODE") && d.label().contains("201"))).isTrue();
+    }
+
     @Test
     void getEndpointCoverage_requiredFieldMissingFromNegativeCase_isCovered() {
         Schema<?> bodySchema = new Schema<>().required(List.of("email")).properties(
