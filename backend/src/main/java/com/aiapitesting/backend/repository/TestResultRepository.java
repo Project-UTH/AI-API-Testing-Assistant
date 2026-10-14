@@ -92,4 +92,17 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
     @Query("SELECT tr FROM TestResult tr JOIN FETCH tr.testCase tc JOIN FETCH tc.endpoint "
             + "WHERE tr.id IN :ids AND tc.endpoint.project = :project")
     List<TestResult> findAllByIdInAndTestCaseEndpointProject(@Param("ids") List<UUID> ids, @Param("project") Project project);
+
+    // Risk Engine (Module 15c) - tỷ lệ fail lịch sử theo từng endpoint, dùng làm 1 thành phần risk
+    // score. 1 query GROUP BY cho cả project (tránh N+1 theo từng endpoint), cùng công thức
+    // countByEndpointIds/countGroupedByOwnerIds đã dùng ở TestCaseRepository.
+    @Query("SELECT tr.testCase.endpoint.id AS endpointId, tr.status AS status, COUNT(tr) AS count FROM TestResult tr "
+            + "WHERE tr.testCase.endpoint.project = :project GROUP BY tr.testCase.endpoint.id, tr.status")
+    List<EndpointStatusCount> countGroupedByEndpointAndStatus(@Param("project") Project project);
+
+    interface EndpointStatusCount {
+        UUID getEndpointId();
+        TestResultStatus getStatus();
+        long getCount();
+    }
 }

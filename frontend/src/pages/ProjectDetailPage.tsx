@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, Bug, History, KeyRound, ListChecks, Upload } from "lucide-react"
+import { ArrowLeft, Bug, History, KeyRound, ListChecks, PieChart, Upload } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { EndpointList } from "@/components/projects/EndpointList"
@@ -102,6 +102,15 @@ export function ProjectDetailPage() {
               >
                 <ListChecks className="h-4 w-4" />
                 Xem tất cả Test Case
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                nativeButton={false}
+                render={<Link to={`/projects/${id}/coverage`} />}
+              >
+                <PieChart className="h-4 w-4" />
+                Xem Coverage
               </Button>
               <Button size="sm" onClick={() => setImportOpen(true)}>
                 <Upload className="h-4 w-4" />

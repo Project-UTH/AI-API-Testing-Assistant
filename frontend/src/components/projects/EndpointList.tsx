@@ -10,6 +10,8 @@ import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
 import { generateTestCases } from "@/lib/testcases"
 import { getDashboardSummary } from "@/lib/dashboard"
+import { getProjectCoverage } from "@/lib/coverage"
+import { RiskBadge } from "@/components/shared/CoverageMatrixChart"
 
 interface EndpointListProps {
   projectId: string
@@ -32,6 +34,15 @@ export function EndpointList({ projectId }: EndpointListProps) {
     queryKey: ["dashboard-summary"],
     queryFn: () => getDashboardSummary(),
   })
+
+  // Module 15c - chỉ hiển thị badge risk để người dùng tự quyết định tích gì, KHÔNG tự tick
+  // checkbox (bộ checkbox Positive/Negative/Boundary/Security hiện dùng CHUNG cho mọi endpoint
+  // đang chọn cùng lúc, nên tự tick theo risk của 1 endpoint sẽ ảnh hưởng nhầm sang endpoint khác).
+  const { data: coverage } = useQuery({
+    queryKey: ["project-coverage", projectId],
+    queryFn: () => getProjectCoverage(projectId),
+  })
+  const riskByEndpointId = new Map((coverage?.endpoints ?? []).map((e) => [e.endpointId, e]))
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [generationState, setGenerationState] = useState<Record<string, GenerationState>>({})
@@ -239,6 +250,12 @@ export function EndpointList({ projectId }: EndpointListProps) {
                 {endpoint.method}
               </span>
               <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.path}</span>
+              {riskByEndpointId.get(endpoint.id) && (
+                <RiskBadge
+                  level={riskByEndpointId.get(endpoint.id)!.riskLevel}
+                  reasons={riskByEndpointId.get(endpoint.id)!.riskReasons}
+                />
+              )}
               {endpoint.summary && (
                 <span className="shrink-0 truncate text-sm text-muted-foreground">
                   {endpoint.summary}

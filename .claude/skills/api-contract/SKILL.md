@@ -140,6 +140,17 @@ Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI u
 
 **Audit log (Module 11d):** `GET /api/v1/admin/audit-log` (paged, mới nhất trước) - ghi lại hành động khoá/mở tài khoản VÀ đổi quota AI riêng của admin (`action`: `USER_LOCKED`/`USER_UNLOCKED`/`AI_QUOTA_CHANGED`, kèm `detail` mô tả thêm cho hành động đổi quota). `AdminAuditEvent` lưu SNAPSHOT email (không FK tới `User`) để không mất dấu vết khi tài khoản liên quan bị xoá sau này.
 
+## 4e. Coverage Matrix + Risk Engine (Module 15c)
+
+`GET /api/v1/projects/{projectId}/coverage` (toàn project) và `GET /api/v1/projects/{projectId}/endpoints/{endpointId}/coverage` (1 endpoint) — **tất định tuyệt đối, KHÔNG gọi AI**, tính từ `Endpoint.schema` (OpenAPI spec đã lưu lúc import) đối chiếu với `TestCase`/`TestCaseDependency`/`TestResult` hiện có. Không bao giờ dùng `TestCase.rationale` (Module 15a, lời AI tự khai) để suy coverage — xem nguyên tắc ở Module 15 trong `docs/ROADMAP.md`.
+
+`EndpointCoverageResponse { endpointId, path, method, coveragePercent, riskScore, riskLevel, riskReasons, dimensions }`:
+- `dimensions: CoverageDimensionResponse[] { category, label, status, detail }` — `category` ∈ `REQUIRED_FIELD`/`BOUNDARY`/`STATUS_CODE`/`AUTH`; `status` ∈ `COVERED`/`MISSING`/`NOT_APPLICABLE`. Chiều `AUTH` "403 Forbidden" **LUÔN** `NOT_APPLICABLE` (hệ thống chưa có mô hình vai trò/scope để giả lập "có đăng nhập nhưng không đủ quyền") — frontend không nên hiển thị như 1 lỗi/thiếu sót, `detail` đã giải thích rõ lý do.
+- `coveragePercent`: % dimension `COVERED` trên tổng dimension `COVERED`+`MISSING` (loại `NOT_APPLICABLE` khỏi mẫu số). Endpoint không có dimension nào relevant (vd GET đơn giản, mọi status đã khớp) → `100.0`.
+- `riskScore` (0-100) + `riskLevel` (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`): Risk Engine tất định, cộng điểm từ HTTP method + yêu cầu auth + số endpoint khác phụ thuộc dữ liệu (Test Data Chaining) + field nhạy cảm trong schema + tỷ lệ fail lịch sử — **không phải LLM đoán**. `riskReasons` là danh sách câu giải thích tương ứng từng thành phần có cộng điểm, để hiển thị trực tiếp (không cần ghép chuỗi ở frontend).
+
+`ProjectCoverageResponse { projectId, overallCoveragePercent, overallRiskWeightedCoveragePercent, endpoints }` — `overallRiskWeightedCoveragePercent` KHÁC `overallCoveragePercent` (phẳng): mỗi endpoint đóng góp theo trọng số `riskScore` của chính nó, nên endpoint rủi ro cao mà thiếu coverage kéo điểm này xuống nhiều hơn endpoint rủi ro thấp. 2 số được CHỦ Ý để khác nhau (giống cách `executedTestCaseCount` khác `passedTestResults`/`totalTestResults` ở Module 11e) — khoảng cách giữa 2 số chính là insight, không phải lỗi hiển thị.
+
 ## 5. Naming convention endpoint
 
 - Danh từ số nhiều, kebab-case nếu nhiều từ: `/api/v1/projects`, `/api/v1/test-cases`

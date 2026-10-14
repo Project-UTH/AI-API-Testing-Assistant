@@ -14,6 +14,7 @@ import { AdminAuditLogPage } from "@/pages/AdminAuditLogPage"
 import { ProjectsPage } from "@/pages/ProjectsPage"
 import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
 import { TestCasesPage } from "@/pages/TestCasesPage"
+import { CoveragePage } from "@/pages/CoveragePage"
 import { TestExecutionPage } from "@/pages/TestExecutionPage"
 import { TestHistoryPage } from "@/pages/TestHistoryPage"
 import { GlobalHistoryPage } from "@/pages/GlobalHistoryPage"
@@ -39,6 +40,7 @@ function App() {
             <Route path="/history" element={<GlobalHistoryPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route path="/projects/:id/test-cases" element={<TestCasesPage />} />
+            <Route path="/projects/:id/coverage" element={<CoveragePage />} />
             <Route path="/projects/:id/history" element={<TestHistoryPage />} />
             <Route path="/projects/:id/bug-reports" element={<BugReportPage />} />
             <Route path="/projects/:id/executions/:executionId" element={<TestExecutionPage />} />

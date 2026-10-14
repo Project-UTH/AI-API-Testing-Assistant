@@ -121,9 +121,10 @@ public class EndpointImportService {
         project.setTargetBaseUrl(resolveTargetBaseUrl(targetBaseUrl, openApi));
 
         List<Endpoint> endpoints = new ArrayList<>();
+        boolean hasGlobalSecurity = openApi.getSecurity() != null && !openApi.getSecurity().isEmpty();
         openApi.getPaths().forEach((path, pathItem) ->
                 pathItem.readOperationsMap().forEach((httpMethod, operation) ->
-                        endpoints.add(buildEndpoint(project, path, httpMethod.name(), operation))));
+                        endpoints.add(buildEndpoint(project, path, httpMethod.name(), operation, hasGlobalSecurity))));
 
         if (endpoints.isEmpty()) {
             throw new SwaggerParseException("Tài liệu OpenAPI không chứa endpoint nào");
@@ -179,14 +180,29 @@ public class EndpointImportService {
         return safeUrlFetcher.fetch(url, header.name(), header.value());
     }
 
-    private Endpoint buildEndpoint(Project project, String path, String method, Operation operation) {
+    private Endpoint buildEndpoint(
+            Project project, String path, String method, Operation operation, boolean hasGlobalSecurity
+    ) {
         return Endpoint.builder()
                 .project(project)
                 .path(path)
                 .method(method)
                 .summary(operation.getSummary())
                 .schema(buildSchemaJson(operation))
+                .requiresAuth(resolveRequiresAuth(operation, hasGlobalSecurity))
                 .build();
+    }
+
+    /**
+     * operation.getSecurity() == null nghĩa là "kế thừa security toàn cục" (OpenAPI spec); danh
+     * sách RỖNG (không null) là operation CHỦ ĐỘNG khai báo "không cần auth", override lại global -
+     * phải phân biệt rõ 2 trường hợp null vs rỗng, không coi cả 2 là "không yêu cầu" như nhau.
+     */
+    private boolean resolveRequiresAuth(Operation operation, boolean hasGlobalSecurity) {
+        if (operation.getSecurity() == null) {
+            return hasGlobalSecurity;
+        }
+        return !operation.getSecurity().isEmpty();
     }
 
     /**

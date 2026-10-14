@@ -1,0 +1,290 @@
+package com.aiapitesting.backend.service;
+
+import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
+import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
+import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
+import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
+import com.aiapitesting.backend.dto.response.RiskLevel;
+import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.Project;
+import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseAuthOverride;
+import com.aiapitesting.backend.entity.TestCaseDependency;
+import com.aiapitesting.backend.entity.TestCaseSource;
+import com.aiapitesting.backend.entity.TestResultStatus;
+import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
+import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestResultRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.models.media.Content;
+import io.swagger.v3.oas.models.media.MediaType;
+import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.parameters.RequestBody;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class EndpointCoverageServiceTest {
+
+    @Mock
+    private ProjectService projectService;
+
+    @Mock
+    private EndpointRepository endpointRepository;
+
+    @Mock
+    private TestCaseRepository testCaseRepository;
+
+    @Mock
+    private TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private TestResultRepository testResultRepository;
+
+    @InjectMocks
+    private EndpointCoverageService endpointCoverageService;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private Project project;
+    private UUID projectId;
+
+    @BeforeEach
+    void setUp() {
+        projectId = UUID.randomUUID();
+        project = Project.builder().id(projectId).build();
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+    }
+
+    /** Dựng Endpoint.schema đúng y hệt format EndpointImportService.buildSchemaJson() tạo ra - dùng
+     * chính các lớp model swagger-parser để tránh đoán sai tên field JSON. */
+    private String buildSchemaJson(RequestBody requestBody, List<String> statusCodes) {
+        Map<String, Object> trimmed = new LinkedHashMap<>();
+        if (requestBody != null) {
+            trimmed.put("requestBody", requestBody);
+        }
+        if (statusCodes != null) {
+            trimmed.put("responseStatusCodes", statusCodes);
+        }
+        try {
+            return objectMapper.writeValueAsString(trimmed);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private RequestBody jsonBody(Schema<?> schema) {
+        MediaType mediaType = new MediaType().schema(schema);
+        Content content = new Content().addMediaType("application/json", mediaType);
+        return new RequestBody().content(content);
+    }
+
+    private Endpoint endpoint(String path, String method, boolean requiresAuth, String schemaJson) {
+        return Endpoint.builder()
+                .id(UUID.randomUUID())
+                .project(project)
+                .path(path)
+                .method(method)
+                .requiresAuth(requiresAuth)
+                .schema(schemaJson)
+                .createdAt(Instant.now())
+                .build();
+    }
+
+    private TestCase testCase(Endpoint endpoint, TestCaseSource source, Integer expectedStatus, String requestBody) {
+        return testCase(endpoint, source, expectedStatus, requestBody, TestCaseAuthOverride.DEFAULT);
+    }
+
+    private TestCase testCase(Endpoint endpoint, TestCaseSource source, Integer expectedStatus, String requestBody, TestCaseAuthOverride authOverride) {
+        return TestCase.builder()
+                .id(UUID.randomUUID())
+                .endpoint(endpoint)
+                .name("tc")
+                .source(source)
+                .expectedStatus(expectedStatus)
+                .requestBody(requestBody)
+                .authOverride(authOverride)
+                .createdAt(Instant.now())
+                .build();
+    }
+
+    @Test
+    void getEndpointCoverage_requiredFieldMissingFromNegativeCase_isCovered() {
+        Schema<?> bodySchema = new Schema<>().required(List.of("email")).properties(
+                Map.of("email", new Schema<>().type("string")));
+        String schemaJson = buildSchemaJson(jsonBody(bodySchema), List.of("200", "400"));
+        Endpoint endpoint = endpoint("/users", "POST", false, schemaJson);
+
+        TestCase negativeMissingEmail = testCase(endpoint, TestCaseSource.AI_GENERATED, 400, "{}");
+        TestCase positive = testCase(endpoint, TestCaseSource.AI_GENERATED, 200, "{\"email\":\"a@b.com\"}");
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(negativeMissingEmail, positive));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse requiredFieldDim = result.dimensions().stream()
+                .filter(d -> d.category().equals("REQUIRED_FIELD")).findFirst().orElseThrow();
+        assertThat(requiredFieldDim.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+
+        CoverageDimensionResponse status200 = result.dimensions().stream()
+                .filter(d -> d.category().equals("STATUS_CODE") && d.label().contains("200")).findFirst().orElseThrow();
+        assertThat(status200.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+        CoverageDimensionResponse status400 = result.dimensions().stream()
+                .filter(d -> d.category().equals("STATUS_CODE") && d.label().contains("400")).findFirst().orElseThrow();
+        assertThat(status400.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+    }
+
+    @Test
+    void getEndpointCoverage_requiredFieldNeverOmitted_isMissing() {
+        Schema<?> bodySchema = new Schema<>().required(List.of("email")).properties(
+                Map.of("email", new Schema<>().type("string")));
+        String schemaJson = buildSchemaJson(jsonBody(bodySchema), List.of("200"));
+        Endpoint endpoint = endpoint("/users", "POST", false, schemaJson);
+
+        TestCase onlyPositive = testCase(endpoint, TestCaseSource.AI_GENERATED, 200, "{\"email\":\"a@b.com\"}");
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(onlyPositive));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse requiredFieldDim = result.dimensions().stream()
+                .filter(d -> d.category().equals("REQUIRED_FIELD")).findFirst().orElseThrow();
+        assertThat(requiredFieldDim.status()).isEqualTo(CoverageDimensionStatus.MISSING);
+        assertThat(requiredFieldDim.detail()).isNotBlank();
+    }
+
+    @Test
+    void getEndpointCoverage_authRequired401Covered_403AlwaysNotApplicable() {
+        String schemaJson = buildSchemaJson(null, List.of("200", "401"));
+        Endpoint endpoint = endpoint("/orders", "GET", true, schemaJson);
+        TestCase securityCase = testCase(endpoint, TestCaseSource.SECURITY, 401, null, TestCaseAuthOverride.NONE);
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(securityCase));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse auth401 = result.dimensions().stream()
+                .filter(d -> d.label().contains("401")).findFirst().orElseThrow();
+        assertThat(auth401.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+
+        CoverageDimensionResponse auth403 = result.dimensions().stream()
+                .filter(d -> d.label().contains("403")).findFirst().orElseThrow();
+        assertThat(auth403.status()).isEqualTo(CoverageDimensionStatus.NOT_APPLICABLE);
+        assertThat(auth403.detail()).contains("vai trò");
+    }
+
+    @Test
+    void getEndpointCoverage_authNotRequired_401And403BothNotApplicable() {
+        String schemaJson = buildSchemaJson(null, List.of("200"));
+        Endpoint endpoint = endpoint("/health", "GET", false, schemaJson);
+
+        TestCase positive = testCase(endpoint, TestCaseSource.AI_GENERATED, 200, null);
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(positive));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        assertThat(result.dimensions().stream().filter(d -> d.category().equals("AUTH")))
+                .allMatch(d -> d.status() == CoverageDimensionStatus.NOT_APPLICABLE);
+        // Dimension duy nhất còn lại là STATUS_CODE "200", đã có case khớp -> 100% (không phải
+        // vacuous - khai báo 1 status code và có đúng 1 case khớp status đó).
+        assertThat(result.coveragePercent()).isEqualTo(100.0);
+    }
+
+    @Test
+    void getEndpointCoverage_deleteMethodWithAuthAndDependentsAndFailHistory_scoresHigherRisk() {
+        String schemaJson = buildSchemaJson(null, List.of("204"));
+        Endpoint deleteEndpoint = endpoint("/users/{id}", "DELETE", true, schemaJson);
+        Endpoint dependentEndpoint = endpoint("/orders", "POST", false, buildSchemaJson(null, List.of("201")));
+
+        TestCase sourceCase = testCase(deleteEndpoint, TestCaseSource.AI_GENERATED, 204, null);
+        TestCase consumerCase = testCase(dependentEndpoint, TestCaseSource.AI_GENERATED, 201, null);
+        TestCaseDependency dependency = TestCaseDependency.builder()
+                .id(UUID.randomUUID()).testCase(consumerCase).dependsOnTestCase(sourceCase)
+                .jsonPath("$.id").placeholderName("userId").createdAt(Instant.now()).build();
+
+        TestResultRepository.EndpointStatusCount failedRow = endpointStatusCount(deleteEndpoint.getId(), TestResultStatus.FAILED, 4);
+        TestResultRepository.EndpointStatusCount passedRow = endpointStatusCount(deleteEndpoint.getId(), TestResultStatus.PASSED, 6);
+
+        when(endpointRepository.findByIdAndProject(deleteEndpoint.getId(), project)).thenReturn(java.util.Optional.of(deleteEndpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(deleteEndpoint, dependentEndpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(sourceCase, consumerCase));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of(dependency));
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of(failedRow, passedRow));
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, deleteEndpoint.getId());
+
+        // DELETE(+20) + auth(+20) + 1 dependent(+10) + fail rate 40%(+8) = 58 -> HIGH
+        assertThat(result.riskScore()).isEqualTo(58);
+        assertThat(result.riskLevel()).isEqualTo(RiskLevel.HIGH);
+        assertThat(result.riskReasons()).isNotEmpty();
+    }
+
+    @Test
+    void getProjectCoverage_riskWeightedPercent_lowerThanFlatWhenHighRiskEndpointUncovered() {
+        // GET /products: risk thấp (method GET = 0 điểm) nhưng ĐÃ có case khớp status 200 -> 100% covered.
+        Endpoint lowRisk = endpoint("/products", "GET", false, buildSchemaJson(null, List.of("200")));
+        // DELETE /payment: risk cao (DELETE + auth), có 1 status code khai báo nhưng KHÔNG có test case nào -> 0% covered.
+        Endpoint highRisk = endpoint("/payment", "DELETE", true, buildSchemaJson(null, List.of("204")));
+        TestCase lowRiskCovered = testCase(lowRisk, TestCaseSource.AI_GENERATED, 200, null);
+
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(lowRisk, highRisk));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(lowRiskCovered));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        ProjectCoverageResponse result = endpointCoverageService.getProjectCoverage(projectId);
+
+        // highRisk hoàn toàn chưa test (204 MISSING, auth 401 MISSING) -> risk-weighted phải thấp hơn
+        // rõ rệt so với overallCoveragePercent phẳng (vốn bị lowRisk kéo lên vì vacuously 100%).
+        assertThat(result.overallRiskWeightedCoveragePercent()).isLessThan(result.overallCoveragePercent());
+    }
+
+    private TestResultRepository.EndpointStatusCount endpointStatusCount(UUID endpointId, TestResultStatus status, long count) {
+        return new TestResultRepository.EndpointStatusCount() {
+            @Override
+            public UUID getEndpointId() {
+                return endpointId;
+            }
+
+            @Override
+            public TestResultStatus getStatus() {
+                return status;
+            }
+
+            @Override
+            public long getCount() {
+                return count;
+            }
+        };
+    }
+}
