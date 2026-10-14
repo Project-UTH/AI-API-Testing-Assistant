@@ -1,4 +1,9 @@
+import { useEffect, useState } from "react"
+import { useMutation } from "@tanstack/react-query"
+import { Loader2, Sparkles } from "lucide-react"
+
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -6,7 +11,37 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { getReliabilityDisplay, type AssertionOperator, type TestCase, type TestCaseAuthOverride } from "@/lib/testcases"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { ApiError } from "@/lib/api"
+import {
+  confidenceCheck,
+  getReliabilityDisplay,
+  type AssertionOperator,
+  type ConfidenceCheckResponse,
+  type TestCase,
+  type TestCaseAuthOverride,
+} from "@/lib/testcases"
+
+const AGREEMENT_LABEL: Record<ConfidenceCheckResponse["agreementLevel"], string> = {
+  HIGH: "Đồng thuận cao",
+  PARTIAL: "Đồng thuận 1 phần",
+  LOW: "Đồng thuận thấp",
+}
+
+const AGREEMENT_STYLES: Record<ConfidenceCheckResponse["agreementLevel"], string> = {
+  HIGH: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  PARTIAL: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  LOW: "bg-destructive/10 text-destructive",
+}
 
 const AUTH_OVERRIDE_LABEL: Record<TestCaseAuthOverride, string> = {
   DEFAULT: "Mặc định (dùng auth thật của Project)",
@@ -31,14 +66,47 @@ interface TestCaseDetailDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   testCase: TestCase | null
+  /**
+   * Chỉ truyền prop này ở luồng CHÍNH CHỦ xem test case của mình (vd TestCasesPage) - khi có,
+   * dialog mới hiện nút "Đối chiếu độ tin cậy sâu hơn bằng AI" (Module 15e, tốn token thật).
+   * KHÔNG truyền ở luồng Admin xem dữ liệu user khác (AdminProjectDataPage) - Admin chỉ đọc,
+   * không được phép tốn token của người dùng khác.
+   */
+  projectId?: string
 }
 
-/** Chỉ đọc - xem chi tiết 1 test case (dùng ở trang Admin xem dữ liệu user khác). Không có nút sửa/xoá. */
-export function TestCaseDetailDialog({ open, onOpenChange, testCase }: TestCaseDetailDialogProps) {
+/**
+ * Xem chi tiết 1 test case. Mặc định CHỈ ĐỌC (dùng ở trang Admin xem dữ liệu user khác, không
+ * truyền projectId). Khi có projectId (luồng chính chủ), thêm nút gọi AI đối chiếu độ tin cậy sâu
+ * hơn (Module 15e, Tier 3) - thủ công, người dùng tự bấm, không tự động.
+ */
+export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }: TestCaseDetailDialogProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [result, setResult] = useState<ConfidenceCheckResponse | null>(null)
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!testCase || !projectId) return Promise.reject(new Error("missing context"))
+      return confidenceCheck(projectId, testCase.endpointId, testCase.id)
+    },
+    onSuccess: (data) => {
+      setResult(data)
+      setConfirmOpen(false)
+    },
+  })
+
+  // Reset kết quả đối chiếu cũ khi đổi sang xem case khác - tránh hiện nhầm kết quả của case trước.
+  useEffect(() => {
+    setResult(null)
+    mutation.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testCase?.id])
+
   if (!testCase) return null
   const reliability = getReliabilityDisplay(testCase)
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
@@ -119,6 +187,55 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase }: TestCaseD
             </Field>
           )}
 
+          {/* Module 15e (Tier 3) - chỉ hiện khi có projectId (luồng chính chủ, không phải Admin xem hộ). */}
+          {projectId && testCase.source !== "MANUAL" && (
+            <Field label="Đối chiếu độ tin cậy sâu hơn">
+              {!result ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={mutation.isPending}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  {mutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  Đối chiếu độ tin cậy sâu hơn bằng AI (tốn thêm token)
+                </Button>
+              ) : (
+                <div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
+                  <span
+                    className={cn(
+                      "w-fit rounded-full px-2 py-0.5 text-xs font-medium",
+                      AGREEMENT_STYLES[result.agreementLevel]
+                    )}
+                  >
+                    {AGREEMENT_LABEL[result.agreementLevel]}
+                  </span>
+                  <p className="text-xs text-muted-foreground">
+                    AI độc lập tự xây dựng lại (không xem bản đã lưu): kỳ vọng{" "}
+                    {result.regeneratedExpectedStatus ?? "(không rõ)"}
+                    {result.expectedStatusMatches ? " (khớp)" : " (khác bản đã lưu)"}; request body{" "}
+                    {result.requestBodyShapeMatches ? "cùng tập field (khớp)" : "khác tập field so với bản đã lưu"}.
+                  </p>
+                  {result.note && <p className="text-xs text-muted-foreground">Ghi chú AI: {result.note}</p>}
+                  {mutation.isError && (
+                    <p className="text-xs text-destructive">
+                      {mutation.error instanceof ApiError ? mutation.error.message : "Đã xảy ra lỗi, vui lòng thử lại"}
+                    </p>
+                  )}
+                </div>
+              )}
+              {mutation.isError && !result && (
+                <p className="mt-1 text-xs text-destructive">
+                  {mutation.error instanceof ApiError ? mutation.error.message : "Đã xảy ra lỗi, vui lòng thử lại"}
+                </p>
+              )}
+            </Field>
+          )}
+
           <Field label="Xác thực khi gọi target API">
             <p className="text-sm">{AUTH_OVERRIDE_LABEL[testCase.authOverride]}</p>
           </Field>
@@ -186,6 +303,27 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase }: TestCaseD
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Module 15e - cảnh báo tốn token thật TRƯỚC khi gọi, không tự động. */}
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Đối chiếu độ tin cậy sâu hơn bằng AI?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Hành động này gọi thêm 1 lần AI thật, tốn thêm token thật ngoài lượt sinh test case ban đầu. AI sẽ độc
+            lập tự xây dựng lại kịch bản này (chỉ dựa vào tên/mô tả, không xem dữ liệu đã lưu) để so sánh mức đồng
+            thuận. Kết quả không ghi đè độ tin cậy đã có ở trên.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={mutation.isPending}>Huỷ</AlertDialogCancel>
+          <AlertDialogAction disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+            {mutation.isPending ? "Đang gọi AI..." : "Tiếp tục (tốn token)"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }
 

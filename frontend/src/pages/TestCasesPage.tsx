@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, History, Info, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
+import { ArrowLeft, Eye, History, Info, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -12,6 +12,7 @@ import { getReliabilityDisplay, listTestCases, setTestCaseLocked, type TestCase 
 import { triggerExecution } from "@/lib/executions"
 import { TestCaseFormDialog } from "@/components/testcases/TestCaseFormDialog"
 import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialog"
+import { TestCaseDetailDialog } from "@/components/testcases/TestCaseDetailDialog"
 
 const SOURCE_STYLES: Record<TestCase["source"], string> = {
   AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
@@ -61,6 +62,8 @@ export function TestCasesPage() {
   })
   const [deleteTarget, setDeleteTarget] = useState<TestCase | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [detailTestCase, setDetailTestCase] = useState<TestCase | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isRunning, setIsRunning] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
@@ -95,6 +98,11 @@ export function TestCasesPage() {
   function openDelete(testCase: TestCase) {
     setDeleteTarget(testCase)
     setDeleteOpen(true)
+  }
+
+  function openDetail(testCase: TestCase) {
+    setDetailTestCase(testCase)
+    setDetailOpen(true)
   }
 
   async function handleToggleLock(testCase: TestCase) {
@@ -280,6 +288,9 @@ export function TestCasesPage() {
                           <Unlock className="h-3.5 w-3.5 text-muted-foreground" />
                         )}
                       </Button>
+                      <Button size="icon-sm" variant="ghost" title="Xem chi tiết" onClick={() => openDetail(testCase)}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
                       <Button size="icon-sm" variant="ghost" onClick={() => openEdit(testCase)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -310,6 +321,13 @@ export function TestCasesPage() {
         onOpenChange={setDeleteOpen}
         projectId={projectId}
         testCase={deleteTarget}
+      />
+
+      <TestCaseDetailDialog
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        testCase={detailTestCase}
+        projectId={projectId}
       />
     </div>
   )

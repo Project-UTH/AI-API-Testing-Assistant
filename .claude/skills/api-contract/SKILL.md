@@ -151,6 +151,12 @@ Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI u
 
 `ProjectCoverageResponse { projectId, overallCoveragePercent, overallRiskWeightedCoveragePercent, endpoints }` — `overallRiskWeightedCoveragePercent` KHÁC `overallCoveragePercent` (phẳng): mỗi endpoint đóng góp theo trọng số `riskScore` của chính nó, nên endpoint rủi ro cao mà thiếu coverage kéo điểm này xuống nhiều hơn endpoint rủi ro thấp. 2 số được CHỦ Ý để khác nhau (giống cách `executedTestCaseCount` khác `passedTestResults`/`totalTestResults` ở Module 11e) — khoảng cách giữa 2 số chính là insight, không phải lỗi hiển thị.
 
+## 4f. Rationale + Reliability (Tier 1/2/3) trên TestCase (Module 15a/15b/15d/15e)
+
+`TestCaseResponse` thêm 5 field so với trước Module 15: `rationale` (String, null cho case MANUAL/dữ liệu cũ), `reliabilityStatus` (`RELIABLE`/`NEEDS_REVIEW`/null - null = không áp dụng), `reliabilityNotes` (`string[]`, luôn `[]` khi không có), `reliabilityAiConfirmed` (`Boolean`, null = Tier 2 chưa chạy), `reliabilityAiNote` (String, null khi `reliabilityAiConfirmed` null). **Frontend không tự suy luận cách phối hợp 4 field reliability — dùng thẳng `getReliabilityDisplay(testCase)` ở `frontend/src/lib/testcases.ts`** (gộp sẵn logic Tier 1 + Tier 2 ở 1 chỗ, tránh lặp/sai lệch giữa các trang).
+
+`POST /api/v1/projects/{projectId}/endpoints/{endpointId}/test-cases/{testCaseId}/confidence-check` (Module 15e, Tier 3) — **thủ công, người dùng tự bấm, TUYỆT ĐỐI không gọi tự động ở đâu khác** (tốn thêm token AI thật mỗi lần gọi). Trả `ConfidenceCheckResponse { agreementLevel: HIGH|PARTIAL|LOW, expectedStatusMatches, requestBodyShapeMatches, regeneratedExpectedStatus, regeneratedRequestBody, note }` — KHÔNG ghi đè `reliabilityStatus`/`reliabilityAiConfirmed` đã có, chỉ là kết quả đối chiếu riêng hiển thị tạm thời. Dùng chung cơ chế quota (`ensureWithinDailyQuota`) với `generate-tests` - trả `429 AI_QUOTA_EXCEEDED` nếu vượt. **Chỉ hiện nút gọi endpoint này ở luồng CHÍNH CHỦ xem test case của mình** (`TestCaseDetailDialog` chỉ hiện nút khi được truyền prop `projectId`) — **KHÔNG được hiện ở luồng Admin xem dữ liệu user khác** (Module 11, Admin chỉ đọc, không được tốn token của người dùng khác).
+
 ## 5. Naming convention endpoint
 
 - Danh từ số nhiều, kebab-case nếu nhiều từ: `/api/v1/projects`, `/api/v1/test-cases`

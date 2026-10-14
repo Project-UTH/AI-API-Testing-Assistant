@@ -4,10 +4,12 @@ import com.aiapitesting.backend.dto.request.GenerateTestCasesRequest;
 import com.aiapitesting.backend.dto.request.SetTestCaseLockedRequest;
 import com.aiapitesting.backend.dto.request.TestCaseRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
+import com.aiapitesting.backend.dto.response.ConfidenceCheckResponse;
 import com.aiapitesting.backend.dto.response.DependencySuggestionResponse;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.service.DependencySuggestionService;
 import com.aiapitesting.backend.service.TestCaseService;
+import com.aiapitesting.backend.service.ai.TestCaseConfidenceCheckService;
 import com.aiapitesting.backend.service.ai.TestCaseGenerationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,7 @@ import java.util.concurrent.CompletableFuture;
 public class TestCaseController {
 
     private final TestCaseGenerationService testCaseGenerationService;
+    private final TestCaseConfidenceCheckService testCaseConfidenceCheckService;
     private final TestCaseService testCaseService;
     private final DependencySuggestionService dependencySuggestionService;
 
@@ -84,6 +87,17 @@ public class TestCaseController {
     ) {
         testCaseService.delete(projectId, endpointId, testCaseId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Module 15e (Tier 3) - đối chiếu độ tin cậy SÂU HƠN bằng AI, người dùng tự bấm, tốn thêm token thật. */
+    @PostMapping("/test-cases/{testCaseId}/confidence-check")
+    public CompletableFuture<ResponseEntity<ApiResponse<ConfidenceCheckResponse>>> confidenceCheck(
+            @PathVariable UUID projectId,
+            @PathVariable UUID endpointId,
+            @PathVariable UUID testCaseId
+    ) {
+        return testCaseConfidenceCheckService.check(projectId, endpointId, testCaseId)
+                .thenApply(result -> ResponseEntity.ok(ApiResponse.of(result)));
     }
 
     @GetMapping("/test-cases/{testCaseId}/dependency-suggestions")

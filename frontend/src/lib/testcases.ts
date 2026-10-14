@@ -7,6 +7,18 @@ export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
 /** Module 15b (Tier 1) - đối chiếu tất định với spec, chỉ áp dụng cho case kỳ vọng thành công. */
 export type TestCaseReliability = "RELIABLE" | "NEEDS_REVIEW"
 
+/** Module 15e (Tier 3) - mức đồng thuận giữa bản đã lưu và bản AI độc lập tự xây dựng lại. */
+export type ConfidenceAgreementLevel = "HIGH" | "PARTIAL" | "LOW"
+
+export interface ConfidenceCheckResponse {
+  agreementLevel: ConfidenceAgreementLevel
+  expectedStatusMatches: boolean
+  requestBodyShapeMatches: boolean
+  regeneratedExpectedStatus: number | null
+  regeneratedRequestBody: string | null
+  note: string | null
+}
+
 export type AssertionOperator = "EQUALS" | "CONTAINS" | "EXISTS" | "TYPE"
 
 export interface TestCaseAssertion {
@@ -204,5 +216,17 @@ export function getDependencySuggestions(
 ): Promise<DependencySuggestion[]> {
   return apiFetch<DependencySuggestion[]>(
     `/projects/${projectId}/endpoints/${endpointId}/test-cases/${testCaseId}/dependency-suggestions`
+  )
+}
+
+/** Module 15e (Tier 3) - người dùng tự bấm, tốn thêm token thật. KHÔNG tự động gọi ở đâu khác. */
+export function confidenceCheck(
+  projectId: string,
+  endpointId: string,
+  testCaseId: string
+): Promise<ConfidenceCheckResponse> {
+  return apiFetch<ConfidenceCheckResponse>(
+    `/projects/${projectId}/endpoints/${endpointId}/test-cases/${testCaseId}/confidence-check`,
+    { method: "POST" }
   )
 }
