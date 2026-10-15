@@ -299,6 +299,163 @@ class EndpointCoverageServiceTest {
         assertThat(result.overallRiskWeightedCoveragePercent()).isLessThan(result.overallCoveragePercent());
     }
 
+    @Test
+    void getEndpointCoverage_unparseableSchema_marksSchemaUnreadableInsteadOfVacuous100Percent() {
+        // Module 15f - trước đây relevant==0 (vì extractSchemaFacts() nuốt lỗi trả rỗng) khiến
+        // coveragePercent() ngầm trả 100.0, lẫn lộn "không có gì cần kiểm" với "không đọc được gì
+        // cả". Giờ phải báo rõ schemaReadable=false để FE không tin số % này.
+        Endpoint endpoint = endpoint("/broken", "POST", false, "{ khong phai json hop le");
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of());
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        assertThat(result.schemaReadable()).isFalse();
+    }
+
+    @Test
+    void getEndpointCoverage_validSchemaWithNoConstraints_schemaReadableTrue() {
+        String schemaJson = buildSchemaJson(null, List.of("200"));
+        Endpoint endpoint = endpoint("/health", "GET", false, schemaJson);
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of());
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        assertThat(result.schemaReadable()).isTrue();
+    }
+
+    @Test
+    void getEndpointCoverage_coveredDimension_reportsExactCoveringTestCaseAsProvenance() {
+        Schema<?> bodySchema = new Schema<>().required(List.of("email")).properties(
+                Map.of("email", new Schema<>().type("string")));
+        String schemaJson = buildSchemaJson(jsonBody(bodySchema), List.of("200", "400"));
+        Endpoint endpoint = endpoint("/users", "POST", false, schemaJson);
+
+        TestCase negativeMissingEmail = TestCase.builder()
+                .id(UUID.randomUUID()).endpoint(endpoint).name("Negative - thieu email")
+                .source(TestCaseSource.AI_GENERATED).expectedStatus(400).requestBody("{}")
+                .authOverride(TestCaseAuthOverride.DEFAULT).createdAt(Instant.now()).build();
+        TestCase unrelatedPositive = testCase(endpoint, TestCaseSource.AI_GENERATED, 200, "{\"email\":\"a@b.com\"}");
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(negativeMissingEmail, unrelatedPositive));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse requiredFieldDim = result.dimensions().stream()
+                .filter(d -> d.category().equals("REQUIRED_FIELD")).findFirst().orElseThrow();
+        assertThat(requiredFieldDim.coveringTestCases()).hasSize(1);
+        assertThat(requiredFieldDim.coveringTestCases().get(0).id()).isEqualTo(negativeMissingEmail.getId());
+        assertThat(requiredFieldDim.coveringTestCases().get(0).name()).isEqualTo("Negative - thieu email");
+    }
+
+    @Test
+    void getEndpointCoverage_boundaryFieldOnlyMiddleValue_isMissingNotCovered() {
+        // Module 15g - sửa lỗ hổng: trước đây chỉ cần field CÓ MẶT là COVERED, không so giá trị với
+        // min/max thật. quantity=50 (giữa khoảng 1-100) KHÔNG phải test biên thật.
+        Schema<?> quantitySchema = new Schema<>().type("integer")
+                .minimum(java.math.BigDecimal.ONE).maximum(java.math.BigDecimal.valueOf(100));
+        Schema<?> bodySchema = new Schema<>().properties(Map.of("quantity", quantitySchema));
+        String schemaJson = buildSchemaJson(jsonBody(bodySchema), List.of("200"));
+        Endpoint endpoint = endpoint("/orders", "POST", false, schemaJson);
+        TestCase middleValue = testCase(endpoint, TestCaseSource.AI_GENERATED, 200, "{\"quantity\":50}");
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(middleValue));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse boundaryDim = result.dimensions().stream()
+                .filter(d -> d.category().equals("BOUNDARY")).findFirst().orElseThrow();
+        assertThat(boundaryDim.status()).isEqualTo(CoverageDimensionStatus.MISSING);
+        assertThat(boundaryDim.detail()).contains("chưa case nào chạm giá trị");
+        assertThat(boundaryDim.coveringTestCases()).isEmpty();
+    }
+
+    @Test
+    void getEndpointCoverage_boundaryFieldAtMinimum_isCovered() {
+        Schema<?> quantitySchema = new Schema<>().type("integer")
+                .minimum(java.math.BigDecimal.ONE).maximum(java.math.BigDecimal.valueOf(100));
+        Schema<?> bodySchema = new Schema<>().properties(Map.of("quantity", quantitySchema));
+        String schemaJson = buildSchemaJson(jsonBody(bodySchema), List.of("200"));
+        Endpoint endpoint = endpoint("/orders", "POST", false, schemaJson);
+        TestCase atMin = testCase(endpoint, TestCaseSource.AI_GENERATED, 200, "{\"quantity\":1}");
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(atMin));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse boundaryDim = result.dimensions().stream()
+                .filter(d -> d.category().equals("BOUNDARY")).findFirst().orElseThrow();
+        assertThat(boundaryDim.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+        assertThat(boundaryDim.coveringTestCases()).containsExactly(
+                new CoverageDimensionResponse.TestCaseRef(atMin.getId(), atMin.getName()));
+    }
+
+    @Test
+    void getEndpointCoverage_boundaryFieldAboveMaximum_isCovered() {
+        Schema<?> quantitySchema = new Schema<>().type("integer")
+                .minimum(java.math.BigDecimal.ONE).maximum(java.math.BigDecimal.valueOf(100));
+        Schema<?> bodySchema = new Schema<>().properties(Map.of("quantity", quantitySchema));
+        String schemaJson = buildSchemaJson(jsonBody(bodySchema), List.of("200"));
+        Endpoint endpoint = endpoint("/orders", "POST", false, schemaJson);
+        TestCase aboveMax = testCase(endpoint, TestCaseSource.AI_GENERATED, 400, "{\"quantity\":999}");
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(aboveMax));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse boundaryDim = result.dimensions().stream()
+                .filter(d -> d.category().equals("BOUNDARY")).findFirst().orElseThrow();
+        assertThat(boundaryDim.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+    }
+
+    @Test
+    void getEndpointCoverage_enumOnlyField_anyValuePresentIsCovered() {
+        // Field chỉ có enum (không min/max/length) giữ hành vi cũ - có mặt là đủ, vì enum không có
+        // khái niệm "biên" số/độ dài rõ ràng.
+        Schema<?> statusSchema = new Schema<>().type("string")._enum(List.of("ACTIVE", "INACTIVE"));
+        Schema<?> bodySchema = new Schema<>().properties(Map.of("status", statusSchema));
+        String schemaJson = buildSchemaJson(jsonBody(bodySchema), List.of("200"));
+        Endpoint endpoint = endpoint("/orders", "POST", false, schemaJson);
+        TestCase anyValue = testCase(endpoint, TestCaseSource.AI_GENERATED, 200, "{\"status\":\"ACTIVE\"}");
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(anyValue));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse boundaryDim = result.dimensions().stream()
+                .filter(d -> d.category().equals("BOUNDARY")).findFirst().orElseThrow();
+        assertThat(boundaryDim.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+    }
+
     private TestResultRepository.EndpointStatusCount endpointStatusCount(UUID endpointId, TestResultStatus status, long count) {
         return new TestResultRepository.EndpointStatusCount() {
             @Override

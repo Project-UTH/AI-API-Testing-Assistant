@@ -102,7 +102,17 @@ const DIMENSION_STYLES: Record<CoverageDimension["status"], string> = {
   NOT_APPLICABLE: "bg-muted text-muted-foreground border-border",
 }
 
-/** Lưới chip cho từng dimension của 1 endpoint - xanh (COVERED)/vàng (MISSING)/xám (NOT_APPLICABLE), tooltip hiện detail. */
+/** Module 15f - tooltip của chip COVERED hiện rõ test case nào khiến dimension đó được tính là đã kiểm (provenance), không chỉ "có hay không". */
+function dimensionTooltip(d: CoverageDimension): string | undefined {
+  if (d.status === "COVERED") {
+    return d.coveringTestCases.length > 0
+      ? `Được kiểm bởi: ${d.coveringTestCases.map((tc) => tc.name).join(", ")}`
+      : undefined
+  }
+  return d.detail ?? undefined
+}
+
+/** Lưới chip cho từng dimension của 1 endpoint - xanh (COVERED)/vàng (MISSING)/xám (NOT_APPLICABLE), tooltip hiện detail hoặc provenance. */
 export function CoverageDimensionGrid({ dimensions }: { dimensions: CoverageDimension[] }) {
   if (dimensions.length === 0) {
     return <p className="text-sm text-muted-foreground">Không có dimension nào để hiển thị.</p>
@@ -112,7 +122,7 @@ export function CoverageDimensionGrid({ dimensions }: { dimensions: CoverageDime
       {dimensions.map((d, idx) => (
         <span
           key={`${d.category}-${d.label}-${idx}`}
-          title={d.detail ?? undefined}
+          title={dimensionTooltip(d)}
           className={cn("rounded-full border px-2 py-0.5 text-xs font-medium", DIMENSION_STYLES[d.status])}
         >
           {d.label}

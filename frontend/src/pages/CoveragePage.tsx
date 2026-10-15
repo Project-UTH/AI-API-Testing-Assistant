@@ -95,6 +95,12 @@ export function CoveragePage() {
 
                   {isExpanded && (
                     <div className="border-t border-border p-4">
+                      {!endpoint.schemaReadable && (
+                        <p className="mb-3 rounded-md bg-destructive/10 p-2 text-xs text-destructive">
+                          Không đọc được định nghĩa OpenAPI (schema) của endpoint này - số liệu coverage/dimension bên dưới
+                          KHÔNG đầy đủ, không nên tin số % hiện tại.
+                        </p>
+                      )}
                       {endpoint.riskReasons.length > 0 && (
                         <div className="mb-3 text-xs text-muted-foreground">
                           <span className="font-medium">Vì sao risk {endpoint.riskScore}/100: </span>

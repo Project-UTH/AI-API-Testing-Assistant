@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.TestCaseReliability;
+import com.aiapitesting.backend.entity.TestCaseSource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.MediaType;
@@ -57,7 +58,7 @@ class TestCaseReliabilityValidatorTest {
         Schema<?> body = new Schema<>().required(List.of("email")).properties(Map.of("email", new Schema<>().type("string")));
         Endpoint endpoint = endpointWithBodySchema(body);
 
-        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(201, "{}"));
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(201, "{}"), TestCaseSource.AI_GENERATED);
 
         assertThat(result.status()).isEqualTo(TestCaseReliability.NEEDS_REVIEW);
         assertThat(result.notes()).hasSize(1);
@@ -69,7 +70,7 @@ class TestCaseReliabilityValidatorTest {
         Schema<?> body = new Schema<>().required(List.of("email")).properties(Map.of("email", new Schema<>().type("string")));
         Endpoint endpoint = endpointWithBodySchema(body);
 
-        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(201, "{\"email\":\"a@b.com\"}"));
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(201, "{\"email\":\"a@b.com\"}"), TestCaseSource.AI_GENERATED);
 
         assertThat(result.status()).isEqualTo(TestCaseReliability.RELIABLE);
         assertThat(result.notes()).isEmpty();
@@ -81,7 +82,7 @@ class TestCaseReliabilityValidatorTest {
         Schema<?> body = new Schema<>().properties(Map.of("status", statusField));
         Endpoint endpoint = endpointWithBodySchema(body);
 
-        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(200, "{\"status\":\"DELETED\"}"));
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(200, "{\"status\":\"DELETED\"}"), TestCaseSource.AI_GENERATED);
 
         assertThat(result.status()).isEqualTo(TestCaseReliability.NEEDS_REVIEW);
         assertThat(result.notes().get(0)).contains("status").contains("enum");
@@ -93,7 +94,7 @@ class TestCaseReliabilityValidatorTest {
         Schema<?> body = new Schema<>().properties(Map.of("quantity", quantity));
         Endpoint endpoint = endpointWithBodySchema(body);
 
-        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(200, "{\"quantity\":0}"));
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(200, "{\"quantity\":0}"), TestCaseSource.AI_GENERATED);
 
         assertThat(result.status()).isEqualTo(TestCaseReliability.NEEDS_REVIEW);
         assertThat(result.notes().get(0)).contains("quantity").contains("minimum");
@@ -105,18 +106,47 @@ class TestCaseReliabilityValidatorTest {
         Schema<?> body = new Schema<>().properties(Map.of("quantity", quantity));
         Endpoint endpoint = endpointWithBodySchema(body);
 
-        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(200, "{\"quantity\":50}"));
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(200, "{\"quantity\":50}"), TestCaseSource.AI_GENERATED);
 
         assertThat(result.status()).isEqualTo(TestCaseReliability.RELIABLE);
     }
 
     @Test
-    void validate_errorExpectingCase_neverFlaggedEvenWithViolations() {
-        // Case Negative/Boundary cố ý vi phạm ràng buộc để test validation - không được đối chiếu.
+    void validate_errorExpectingCaseWithRealViolation_isReliable() {
+        // Case Negative cố ý vi phạm ràng buộc để test validation (thiếu field required) - đúng ý
+        // đồ, không bị gắn cờ.
         Schema<?> body = new Schema<>().required(List.of("email")).properties(Map.of("email", new Schema<>().type("string")));
         Endpoint endpoint = endpointWithBodySchema(body);
 
-        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(400, "{}"));
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(400, "{}"), TestCaseSource.AI_GENERATED);
+
+        assertThat(result.status()).isEqualTo(TestCaseReliability.RELIABLE);
+        assertThat(result.notes()).isEmpty();
+    }
+
+    @Test
+    void validate_errorExpectingCaseWithNoViolationFound_flagsNeedsReview() {
+        // Module 15f: case tự nhận kỳ vọng lỗi (Negative) nhưng dữ liệu thực ra đầy đủ/hợp lệ theo
+        // spec - không tìm được vi phạm nào, đáng ngờ tên/mô tả không khớp dữ liệu đã sinh.
+        Schema<?> body = new Schema<>().required(List.of("email")).properties(Map.of("email", new Schema<>().type("string")));
+        Endpoint endpoint = endpointWithBodySchema(body);
+
+        TestCaseReliabilityValidator.Result result = validator.validate(
+                endpoint, candidate(400, "{\"email\":\"a@b.com\"}"), TestCaseSource.AI_GENERATED);
+
+        assertThat(result.status()).isEqualTo(TestCaseReliability.NEEDS_REVIEW);
+        assertThat(result.notes().get(0)).contains("kỳ vọng lỗi");
+    }
+
+    @Test
+    void validate_securityCaseWithNoViolationFound_staysReliable() {
+        // Security luôn được loại trừ khỏi kiểm tra "case lỗi nhưng không vi phạm gì" - payload
+        // injection có thể hợp lệ theo schema (vd field string bình thường) nhưng vẫn là tấn công.
+        Schema<?> body = new Schema<>().required(List.of("email")).properties(Map.of("email", new Schema<>().type("string")));
+        Endpoint endpoint = endpointWithBodySchema(body);
+
+        TestCaseReliabilityValidator.Result result = validator.validate(
+                endpoint, candidate(401, "{\"email\":\"a@b.com\"}"), TestCaseSource.SECURITY);
 
         assertThat(result.status()).isEqualTo(TestCaseReliability.RELIABLE);
         assertThat(result.notes()).isEmpty();
@@ -132,7 +162,7 @@ class TestCaseReliabilityValidatorTest {
                 "name", "desc", Map.of(), null, 200, "/pet/findByStatus?status={{status}}",
                 Map.of("status", "unknown-value"), null, null, null);
 
-        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, withBadStatus);
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, withBadStatus, TestCaseSource.AI_GENERATED);
 
         assertThat(result.status()).isEqualTo(TestCaseReliability.NEEDS_REVIEW);
         assertThat(result.notes().get(0)).contains("status").contains("enum");
@@ -142,7 +172,7 @@ class TestCaseReliabilityValidatorTest {
     void validate_noSchemaInfo_isReliable() {
         Endpoint endpoint = Endpoint.builder().id(UUID.randomUUID()).path("/x").method("GET").schema(null).createdAt(Instant.now()).build();
 
-        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(200, null));
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, candidate(200, null), TestCaseSource.AI_GENERATED);
 
         assertThat(result.status()).isEqualTo(TestCaseReliability.RELIABLE);
     }

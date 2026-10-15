@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.TestCaseReliability;
+import com.aiapitesting.backend.entity.TestCaseSource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.media.Schema;
@@ -19,10 +20,12 @@ import java.util.Set;
 
 /**
  * Module 15b (Tier 1) - đối chiếu TẤT ĐỊNH giữa giá trị test case AI vừa sinh với ràng buộc
- * required/enum/min-max khai báo trong {@code Endpoint.schema} - KHÔNG gọi AI. Chỉ đối chiếu case
- * kỳ vọng thành công (expectedStatus &lt; 400): case kỳ vọng lỗi (Negative/Boundary-vượt-biên/
- * Security) KHÔNG bị đối chiếu vì vi phạm ràng buộc có thể chính là chủ đích của case đó - phân
- * biệt "lỗi AI thật" khỏi "false positive" ở mức sâu hơn (ngữ nghĩa) là việc của Tier 2 (Module 15d).
+ * required/enum/min-max khai báo trong {@code Endpoint.schema} - KHÔNG gọi AI. Case kỳ vọng thành
+ * công (expectedStatus &lt; 400): có vi phạm → NEEDS_REVIEW. Case kỳ vọng lỗi nhóm Security KHÔNG bị
+ * đối chiếu (payload injection cố ý sai định dạng là chủ đích). Case kỳ vọng lỗi KHÔNG thuộc Security
+ * (Negative/Boundary-vượt-biên, mở rộng ở Module 15f): KHÔNG vi phạm gì cả → NEEDS_REVIEW (dấu hiệu
+ * case có thể không khớp dữ liệu thật đã sinh). Phân biệt "lỗi AI thật" khỏi "false positive" ở mức
+ * sâu hơn (ngữ nghĩa, vd case Security cố ý sai) là việc của Tier 2 (Module 15d).
  *
  * Dùng chung field constraint cho cả requestBody VÀ parameter (path/query/header) - khác
  * {@code EndpointCoverageService} (chỉ cần biết field nào CÓ ràng buộc để tính coverage), ở đây cần
@@ -55,11 +58,19 @@ public class TestCaseReliabilityValidator {
         public RequestBody requestBody;
     }
 
-    /** Case kỳ vọng lỗi (expectedStatus &gt;= 400, hoặc null) không bị đối chiếu - trả RELIABLE thẳng. */
-    public Result validate(Endpoint endpoint, GeneratedTestCase candidate) {
-        if (candidate.expectedStatus() == null || candidate.expectedStatus() >= 400) {
-            return Result.reliable();
-        }
+    /**
+     * Case kỳ vọng thành công (expectedStatus &lt; 400): có vi phạm ràng buộc nào tìm được trong
+     * spec → NEEDS_REVIEW (dấu hiệu mạnh AI sinh dữ liệu sai).
+     * <p>
+     * Module 15f (mở rộng, trước đây case kỳ vọng lỗi KHÔNG bị đối chiếu gì cả - lỗ hổng không bắt
+     * được case tên/mô tả nói "Negative"/"Boundary" nhưng dữ liệu thực ra vẫn hợp lệ): case kỳ vọng
+     * lỗi (expectedStatus &gt;= 400) thuộc nhóm Security vẫn GIỮ NGUYÊN hành vi cũ - luôn RELIABLE,
+     * không đối chiếu, vì payload injection/tấn công cố ý sai định dạng chính là chủ đích, rule tất
+     * định không phân biệt được ý đồ. Case kỳ vọng lỗi KHÔNG thuộc Security (Negative/Boundary-vượt-
+     * biên) thì ngược lại: KHÔNG tìm được vi phạm nào → NEEDS_REVIEW (tín hiệu một chiều, có thể vẫn
+     * là lỗi hợp lệ vì lý do ngoài phạm vi rule này kiểm được - xem note cụ thể trả về).
+     */
+    public Result validate(Endpoint endpoint, GeneratedTestCase candidate, TestCaseSource source) {
         List<FieldRule> rules = extractFieldRules(endpoint);
         if (rules.isEmpty()) {
             return Result.reliable();
@@ -69,6 +80,30 @@ public class TestCaseReliabilityValidator {
         Map<String, String> fallbackValues = candidate.pathParamFallbacks() == null ? Map.of() : candidate.pathParamFallbacks();
         Map<String, String> headerValues = candidate.requestHeaders() == null ? Map.of() : candidate.requestHeaders();
 
+        List<String> violations = findViolations(rules, bodyValues, fallbackValues, headerValues);
+
+        boolean expectsSuccess = candidate.expectedStatus() == null || candidate.expectedStatus() < 400;
+        if (expectsSuccess) {
+            return violations.isEmpty() ? Result.reliable() : new Result(TestCaseReliability.NEEDS_REVIEW, violations);
+        }
+
+        if (source == TestCaseSource.SECURITY) {
+            return Result.reliable();
+        }
+        if (violations.isEmpty()) {
+            return new Result(TestCaseReliability.NEEDS_REVIEW, List.of(
+                    "Case kỳ vọng lỗi (status " + candidate.expectedStatus() + ") nhưng dữ liệu không vi phạm bất kỳ ràng "
+                            + "buộc required/enum/min/max nào tìm được trong spec - request này có thể thực ra hợp lệ, hoặc "
+                            + "lỗi kỳ vọng xảy ra vì lý do ngoài phạm vi rule này kiểm được (vd trùng dữ liệu, quy tắc nghiệp "
+                            + "vụ, trạng thái tài nguyên)."));
+        }
+        return Result.reliable();
+    }
+
+    private List<String> findViolations(
+            List<FieldRule> rules, Map<String, Object> bodyValues,
+            Map<String, String> fallbackValues, Map<String, String> headerValues
+    ) {
         List<String> notes = new ArrayList<>();
         for (FieldRule rule : rules) {
             if (rule.location() == Location.BODY) {
@@ -84,8 +119,7 @@ public class TestCaseReliabilityValidator {
                 // lệ; tránh báo sai khi AI cố ý không gửi 1 query param tuỳ chọn không liên quan.
             }
         }
-
-        return notes.isEmpty() ? Result.reliable() : new Result(TestCaseReliability.NEEDS_REVIEW, notes);
+        return notes;
     }
 
     private void checkBodyField(FieldRule rule, Map<String, Object> bodyValues, List<String> notes) {

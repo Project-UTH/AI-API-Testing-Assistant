@@ -235,6 +235,22 @@ public class TestCaseGenerationService {
 
         List<TestCase> entities = generated.stream().map(g -> toEntity(endpoint, g, source)).toList();
 
+        // Module 15g - lưu event Tier 1 NGAY ở đây (chỉ với token `usage` của lệnh gọi chính), TRƯỚC
+        // khi kiểm quota cho Tier 2. Lý do: isWithinDailyQuota() đọc tổng token từ DB
+        // (sumTotalTokensByOwnerAndCreatedAtBetween) - nếu lưu event SAU khi đã quyết định có gọi
+        // Tier 2 hay không (như bản cũ), quyết định đó dựa trên số liệu CŨ, chưa cộng phần token Tier 1
+        // vừa tiêu - lỗ hổng TOCTOU thật (lệch tối đa 1 lần gọi Tier 2 ngoài ý muốn), phát hiện khi đối
+        // chiếu lại bằng agent phản biện đọc code thật. Lưu trước rồi UPDATE lại (không tạo dòng mới)
+        // nếu Tier 2 có chạy - vẫn giữ đúng nguyên tắc "1 dòng sự kiện duy nhất cho 1 lượt sinh" (15d).
+        TestGenerationEvent event = testGenerationEventRepository.save(TestGenerationEvent.builder()
+                .endpoint(endpoint)
+                .testCaseCount(entities.size())
+                .snapshotJson(writeSnapshotAsJson(generated))
+                .promptTokens(usage == null ? null : usage.getPromptTokens())
+                .completionTokens(usage == null ? null : usage.getCompletionTokens())
+                .totalTokens(usage == null ? null : usage.getTotalTokens())
+                .build());
+
         // Module 15d (Tier 2) - CHỈ gọi thêm AI khi có case bị Tier 1 gắn cờ, gộp hết vào ĐÚNG 1 lệnh
         // gọi bổ sung (không gọi riêng từng case). Kiểm tra quota TRƯỚC (không throw - khác
         // ensureWithinDailyQuota() ở đầu generate(), ở đây hết quota chỉ bỏ qua Tier 2, KHÔNG chặn
@@ -245,6 +261,12 @@ public class TestCaseGenerationService {
         Usage tier2Usage = null;
         if (!flagged.isEmpty() && isWithinDailyQuota(endpoint.getProject())) {
             tier2Usage = testCaseReliabilityConfirmationService.confirm(endpoint, flagged);
+        }
+        if (tier2Usage != null) {
+            event.setPromptTokens(sumNullable(event.getPromptTokens(), tier2Usage.getPromptTokens()));
+            event.setCompletionTokens(sumNullable(event.getCompletionTokens(), tier2Usage.getCompletionTokens()));
+            event.setTotalTokens(sumNullable(event.getTotalTokens(), tier2Usage.getTotalTokens()));
+            testGenerationEventRepository.save(event);
         }
 
         List<TestCase> saved = testCaseRepository.saveAll(entities);
@@ -273,24 +295,6 @@ public class TestCaseGenerationService {
         if (!assertionsToSave.isEmpty()) {
             testCaseAssertionRepository.saveAll(assertionsToSave);
         }
-
-        // Snapshot lịch sử tách biệt bảng test_cases sống - lần regenerate sau sẽ xoá hẳn bộ này.
-        // Gộp token Tier 2 (nếu có chạy) vào CÙNG 1 dòng sự kiện này thay vì tạo dòng riêng - lý do:
-        // HistoryFeedService.parseSnapshot() luôn deserialize snapshotJson thẳng thành
-        // List<GeneratedTestCase>, 1 dòng sự kiện riêng cho Tier 2 (shape JSON khác hẳn) sẽ làm vỡ
-        // trang Lịch sử. Gộp tổng token vào đây vẫn đủ để ensureWithinDailyQuota() (sum theo ngày)
-        // tính đúng, không có "chi phí ẩn" nào nằm ngoài cơ chế quota đang dùng.
-        testGenerationEventRepository.save(TestGenerationEvent.builder()
-                .endpoint(endpoint)
-                .testCaseCount(saved.size())
-                .snapshotJson(writeSnapshotAsJson(generated))
-                .promptTokens(sumNullable(usage == null ? null : usage.getPromptTokens(),
-                        tier2Usage == null ? null : tier2Usage.getPromptTokens()))
-                .completionTokens(sumNullable(usage == null ? null : usage.getCompletionTokens(),
-                        tier2Usage == null ? null : tier2Usage.getCompletionTokens()))
-                .totalTokens(sumNullable(usage == null ? null : usage.getTotalTokens(),
-                        tier2Usage == null ? null : tier2Usage.getTotalTokens()))
-                .build());
 
         return saved;
     }
@@ -347,7 +351,7 @@ public class TestCaseGenerationService {
         // Module 15b (Tier 1) - đối chiếu tất định với spec NGAY LÚC map sang entity, không gọi AI
         // thêm. Dùng thẳng generated (Map có sẵn) thay vì re-parse lại entity vừa build, tránh vòng
         // JSON-serialize-rồi-deserialize không cần thiết.
-        TestCaseReliabilityValidator.Result reliability = testCaseReliabilityValidator.validate(endpoint, generated);
+        TestCaseReliabilityValidator.Result reliability = testCaseReliabilityValidator.validate(endpoint, generated, source);
         return TestCase.builder()
                 .endpoint(endpoint)
                 .name(generated.name())

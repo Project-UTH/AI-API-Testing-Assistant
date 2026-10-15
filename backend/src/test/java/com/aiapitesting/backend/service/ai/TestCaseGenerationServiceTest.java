@@ -50,6 +50,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -132,7 +133,7 @@ class TestCaseGenerationServiceTest {
         // (quota/notOwner/endpointNotFound/noCategorySelected) không chạy tới bước này, strict stubs
         // sẽ báo UnnecessaryStubbingException nếu không đánh dấu lenient.
         org.mockito.Mockito.lenient()
-                .when(testCaseReliabilityValidator.validate(any(), any()))
+                .when(testCaseReliabilityValidator.validate(any(), any(), any()))
                 .thenReturn(com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result.reliable());
     }
 
@@ -221,7 +222,7 @@ class TestCaseGenerationServiceTest {
                 new GeneratedTestCase("Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         // Case đầu RELIABLE (giữ nguyên stub mặc định ở setUp), case thứ 2 NEEDS_REVIEW.
-        when(testCaseReliabilityValidator.validate(eq(endpoint), argThat(g -> "Positive - Can xem lai".equals(g.name()))))
+        when(testCaseReliabilityValidator.validate(eq(endpoint), argThat(g -> "Positive - Can xem lai".equals(g.name())), any()))
                 .thenReturn(new com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result(
                         com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW, List.of("vi pham gia tri")));
         when(testCaseReliabilityConfirmationService.confirm(eq(endpoint), anyList())).thenReturn(null);
@@ -257,16 +258,19 @@ class TestCaseGenerationServiceTest {
         stubAiResponse(List.of(new GeneratedTestCase(
                 "Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(testCaseReliabilityValidator.validate(any(), any()))
+        when(testCaseReliabilityValidator.validate(any(), any(), any()))
                 .thenReturn(new com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result(
                         com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW, List.of("vi pham")));
         when(testCaseReliabilityConfirmationService.confirm(any(), anyList()))
                 .thenReturn(new DefaultUsage(20, 10, 30));
+        when(testGenerationEventRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         testCaseGenerationService.generate(projectId, endpointId, null).get();
 
+        // Module 15g - event được lưu 2 lần (lưu Tier 1 trước để quota Tier 2 tính đúng, UPDATE lại
+        // sau khi có token Tier 2) nhưng vẫn là CÙNG 1 dòng - getValue() trả lần capture CUỐI (đã gộp).
         ArgumentCaptor<TestGenerationEvent> eventCaptor = ArgumentCaptor.forClass(TestGenerationEvent.class);
-        verify(testGenerationEventRepository).save(eventCaptor.capture());
+        verify(testGenerationEventRepository, times(2)).save(eventCaptor.capture());
         TestGenerationEvent event = eventCaptor.getValue();
         // stubAiResponse() set Tier 1 = 100/50/150 (xem helper cuối file); Tier 2 ở test này = 20/10/30.
         assertThat(event.getPromptTokens()).isEqualTo(120);
@@ -290,7 +294,7 @@ class TestCaseGenerationServiceTest {
         stubAiResponse(List.of(new GeneratedTestCase(
                 "Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(testCaseReliabilityValidator.validate(any(), any()))
+        when(testCaseReliabilityValidator.validate(any(), any(), any()))
                 .thenReturn(new com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result(
                         com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW, List.of("vi pham")));
 

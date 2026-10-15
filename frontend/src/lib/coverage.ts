@@ -4,11 +4,17 @@ export type CoverageDimensionStatus = "COVERED" | "MISSING" | "NOT_APPLICABLE"
 
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
 
+export interface CoverageTestCaseRef {
+  id: string
+  name: string
+}
+
 export interface CoverageDimension {
   category: string
   label: string
   status: CoverageDimensionStatus
   detail: string | null
+  coveringTestCases: CoverageTestCaseRef[]
 }
 
 export interface EndpointCoverage {
@@ -16,6 +22,7 @@ export interface EndpointCoverage {
   path: string
   method: string
   coveragePercent: number
+  schemaReadable: boolean
   riskScore: number
   riskLevel: RiskLevel
   riskReasons: string[]

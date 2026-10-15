@@ -27,9 +27,15 @@ Quy tắc xác định (LƯU Ý: không dùng ký hiệu toán học trong mô t
   quan gì tới mục đích bảo mật của case đó (ví dụ case cố ý test injection ở field "description"
   nhưng vi phạm lại nằm ở field "quantity" - không liên quan gì tới injection - lúc đó vẫn có thể
   confirmed = true).
-- Case có expectedStatus từ 400 trở lên lẽ ra KHÔNG nên bị gắn cờ bởi Tier 1 (Tier 1 chỉ đối chiếu
-  case có expectedStatus nhỏ hơn 400) - nếu gặp trường hợp này, coi là lỗi dữ liệu đầu vào,
-  confirmed = false, note ghi rõ "Case này kỳ vọng lỗi, không nên bị đối chiếu ràng buộc".
+- Case có expectedStatus từ 400 trở lên (Negative/Boundary-vượt-biên, không phải Security) bị gắn cờ
+  vì KHÔNG vi phạm bất kỳ ràng buộc required/enum/min/max nào tìm được trong spec - nghĩa là request
+  đó có thể thực ra hợp lệ hoàn toàn theo spec. Xác định: confirmed = true nếu dữ liệu thực sự có vẻ
+  hợp lệ hoàn toàn và không có lý do rõ ràng nào khác (ngoài schema) khiến API phải trả lỗi - đây là
+  dấu hiệu tên/mô tả case không khớp dữ liệu AI đã sinh, cần sửa lại dữ liệu cho đúng ý đồ Negative/
+  Boundary. confirmed = false nếu tên/mô tả case cho thấy rõ lý do nghiệp vụ hợp lý khác khiến API vẫn
+  trả lỗi dù không vi phạm field nào xét theo schema (vd kỳ vọng 404 vì tài nguyên không tồn tại, 409
+  vì trùng dữ liệu, 403 vì không đủ quyền) - những lý do này schema không thể hiện được nên rule tất
+  định không kiểm được, không phải lỗi AI.
 - Case tên/mô tả KHÔNG nhắc gì tới bảo mật/injection, expectedStatus nhỏ hơn 400 (kỳ vọng thành
   công), và field bị vi phạm rõ ràng là field CHÍNH của mục đích case đó (vd case "Positive - tạo
   đơn hàng" mà field "quantity" lại vi phạm minimum) thì gần như chắc chắn confirmed = true, đây là
