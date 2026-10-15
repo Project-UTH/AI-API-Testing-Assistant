@@ -170,10 +170,10 @@ public class EndpointCoverageService {
             String field = entry.getKey();
             BoundaryRule rule = entry.getValue();
             List<TestCase> touching = testCases.stream()
-                    .filter(tc -> parseBody(tc.getRequestBody()).containsKey(field))
+                    .filter(tc -> fieldMap(tc, rule.location()).containsKey(field))
                     .toList();
             List<TestCase> atBoundary = touching.stream()
-                    .filter(tc -> isBoundaryValue(rule, parseBody(tc.getRequestBody()).get(field)))
+                    .filter(tc -> isBoundaryValue(rule, fieldMap(tc, rule.location()).get(field)))
                     .toList();
             String detail;
             if (!atBoundary.isEmpty()) {
@@ -300,14 +300,26 @@ public class EndpointCoverageService {
 
     // ---- Parse Endpoint.schema (JSON lưu lúc import) ----
 
+    /** BODY đọc từ {@code TestCase.requestBody}, PATH_OR_QUERY/HEADER đọc từ {@code pathParamFallbacks}/{@code requestHeaders}. */
+    private enum Location { BODY, PATH_OR_QUERY, HEADER }
+
     /**
      * Module 15g - giữ lại CHI TIẾT ràng buộc biên (không chỉ tên field) để biết "chạm biên" nghĩa là
      * gì: field chỉ có enum thì không có khái niệm biên số/độ dài rõ ràng - giá trị bất kỳ đã kích
      * hoạt kiểm tra enum thật nên vẫn coi field có mặt là đủ; field có minimum/maximum/minLength/
      * maxLength thì PHẢI có giá trị thật `<= minimum`/`>= maximum` (hoặc tương đương với length) mới
      * tính là đã test biên - giá trị "an toàn ở giữa khoảng" không tính.
+     *
+     * @param location Module 15g (fix bug thật) - field có thể khai ràng buộc ở path/query/header
+     *                 param, không chỉ requestBody; PHẢI đọc đúng nguồn dữ liệu đó khi đối chiếu với
+     *                 test case, nếu không dimension BOUNDARY vĩnh viễn không COVERED được cho field
+     *                 loại này dù test case thật test đúng biên (bug đã phát hiện khi test bằng dữ
+     *                 liệu Docker thật, xem docs/KICH_BAN_TEST.md).
      */
-    private record BoundaryRule(List<String> enumValues, BigDecimal minimum, BigDecimal maximum, Integer minLength, Integer maxLength) {
+    private record BoundaryRule(
+            Location location, List<String> enumValues, BigDecimal minimum, BigDecimal maximum,
+            Integer minLength, Integer maxLength
+    ) {
         boolean hasNumericOrLengthBound() {
             return minimum != null || maximum != null || minLength != null || maxLength != null;
         }
@@ -349,7 +361,8 @@ public class EndpointCoverageService {
 
         if (stored.parameters != null) {
             for (Parameter p : stored.parameters) {
-                collectFieldFacts(p.getName(), p.getSchema(), boundaryRules, sensitiveFields);
+                Location location = "header".equalsIgnoreCase(p.getIn()) ? Location.HEADER : Location.PATH_OR_QUERY;
+                collectFieldFacts(p.getName(), location, p.getSchema(), boundaryRules, sensitiveFields);
             }
         }
         if (stored.requestBody != null && stored.requestBody.getContent() != null) {
@@ -363,7 +376,7 @@ public class EndpointCoverageService {
                 }
                 if (bodySchema.getProperties() != null) {
                     bodySchema.getProperties().forEach((name, propSchema) ->
-                            collectFieldFacts(name, propSchema, boundaryRules, sensitiveFields));
+                            collectFieldFacts(name, Location.BODY, propSchema, boundaryRules, sensitiveFields));
                 }
             }
         }
@@ -371,7 +384,10 @@ public class EndpointCoverageService {
         return new SchemaFacts(requiredFields, boundaryRules, sensitiveFields, statusCodes, true);
     }
 
-    private void collectFieldFacts(String name, Schema<?> schema, Map<String, BoundaryRule> boundaryRules, Set<String> sensitiveFields) {
+    private void collectFieldFacts(
+            String name, Location location, Schema<?> schema,
+            Map<String, BoundaryRule> boundaryRules, Set<String> sensitiveFields
+    ) {
         if (name == null) {
             return;
         }
@@ -389,7 +405,7 @@ public class EndpointCoverageService {
                 || schema.getMinLength() != null || schema.getMaxLength() != null;
         if (hasBoundaryRule) {
             boundaryRules.put(name, new BoundaryRule(
-                    enumValues, schema.getMinimum(), schema.getMaximum(), schema.getMinLength(), schema.getMaxLength()));
+                    location, enumValues, schema.getMinimum(), schema.getMaximum(), schema.getMinLength(), schema.getMaxLength()));
         }
     }
 
@@ -442,17 +458,32 @@ public class EndpointCoverageService {
 
     /** Đọc top-level key của requestBody JSON (do AI/người dùng lưu) - trả rỗng nếu null/blank/không parse được. */
     private Set<String> extractBodyFieldNames(String requestBodyJson) {
-        return parseBody(requestBodyJson).keySet();
+        return parseJsonObject(requestBodyJson).keySet();
     }
 
-    /** Module 15g - cần cả GIÁ TRỊ (không chỉ tên field) để kiểm tra "chạm biên" - trả rỗng nếu null/blank/không parse được. */
+    /**
+     * Module 15g (fix bug thật) - chọn đúng NGUỒN dữ liệu của test case theo location của field
+     * (BODY/PATH_OR_QUERY/HEADER) - trước đây dimension BOUNDARY chỉ đọc requestBody dù boundaryRules
+     * có thể chứa field khai ở path/query/header param, khiến field loại đó không bao giờ COVERED
+     * được. {@code pathParamFallbacks}/{@code requestHeaders} là JSON object phẳng {@code Map<String,
+     * String>} - dùng lại {@code parseJsonObject} vì cùng là parse 1 JSON object tuỳ ý thành Map.
+     */
+    private Map<String, Object> fieldMap(TestCase tc, Location location) {
+        return switch (location) {
+            case BODY -> parseJsonObject(tc.getRequestBody());
+            case PATH_OR_QUERY -> parseJsonObject(tc.getPathParamFallbacks());
+            case HEADER -> parseJsonObject(tc.getRequestHeaders());
+        };
+    }
+
+    /** Module 15g - parse 1 JSON object phẳng tuỳ ý (requestBody/pathParamFallbacks/requestHeaders đều cùng shape) - trả rỗng nếu null/blank/không parse được. */
     @SuppressWarnings("unchecked")
-    private Map<String, Object> parseBody(String requestBodyJson) {
-        if (requestBodyJson == null || requestBodyJson.isBlank()) {
+    private Map<String, Object> parseJsonObject(String json) {
+        if (json == null || json.isBlank()) {
             return Map.of();
         }
         try {
-            Object parsed = objectMapper.readValue(requestBodyJson, Object.class);
+            Object parsed = objectMapper.readValue(json, Object.class);
             return parsed instanceof Map ? (Map<String, Object>) parsed : Map.of();
         } catch (Exception e) {
             return Map.of();

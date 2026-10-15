@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.parameters.RequestBody;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -431,6 +432,45 @@ class EndpointCoverageServiceTest {
         CoverageDimensionResponse boundaryDim = result.dimensions().stream()
                 .filter(d -> d.category().equals("BOUNDARY")).findFirst().orElseThrow();
         assertThat(boundaryDim.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+    }
+
+    @Test
+    void getEndpointCoverage_boundaryFieldOnQueryParam_checksPathParamFallbacksNotBody() {
+        // Fix bug thuc te (phat hien khi test bang Docker + du lieu that 2026-10-15): truoc day
+        // dimension BOUNDARY chi doc requestBody du boundaryRules co the chua field khai o
+        // query/path param - field loai nay khong bao gio COVERED duoc. "quantity" la QUERY param
+        // (khong phai body field), gia tri thuc nam trong pathParamFallbacks cua test case.
+        Schema<?> quantitySchema = new Schema<>().type("integer")
+                .minimum(java.math.BigDecimal.ONE).maximum(java.math.BigDecimal.valueOf(100));
+        Parameter quantityParam = new Parameter().name("quantity").in("query").required(true).schema(quantitySchema);
+        Map<String, Object> trimmed = new LinkedHashMap<>();
+        trimmed.put("parameters", List.of(quantityParam));
+        String schemaJson;
+        try {
+            schemaJson = objectMapper.writeValueAsString(trimmed);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        Endpoint endpoint = endpoint("/stock", "PATCH", false, schemaJson);
+
+        TestCase atMinViaQueryParam = TestCase.builder()
+                .id(UUID.randomUUID()).endpoint(endpoint).name("Boundary - quantity bien nho nhat")
+                .source(TestCaseSource.AI_GENERATED).expectedStatus(200)
+                .pathParamFallbacks("{\"quantity\":\"1\"}")
+                .authOverride(TestCaseAuthOverride.DEFAULT).createdAt(Instant.now()).build();
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(atMinViaQueryParam));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse boundaryDim = result.dimensions().stream()
+                .filter(d -> d.category().equals("BOUNDARY")).findFirst().orElseThrow();
+        assertThat(boundaryDim.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+        assertThat(boundaryDim.coveringTestCases()).hasSize(1);
     }
 
     @Test
