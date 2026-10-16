@@ -2,7 +2,11 @@ package com.aiapitesting.backend.dto.response;
 
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
+import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
+import com.aiapitesting.backend.entity.TestCaseReliability;
 import com.aiapitesting.backend.entity.TestCaseSource;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.List;
@@ -17,16 +21,25 @@ public record TestCaseResponse(
         String description,
         String requestHeaders,
         String requestBody,
+        String rationale,
+        TestCaseReliability reliabilityStatus,
+        List<String> reliabilityNotes,
+        Boolean reliabilityAiConfirmed,
+        String reliabilityAiNote,
         Integer expectedStatus,
         String resolvedPath,
         String pathParamFallbacks,
         TestCaseSource source,
         TestCaseAuthOverride authOverride,
+        TestCaseGenerationOrigin generationOrigin,
+        String checklistItem,
         boolean locked,
         Instant createdAt,
         List<TestCaseDependencyResponse> dependencies,
         List<TestCaseAssertionResponse> assertions
 ) {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     public static TestCaseResponse from(TestCase testCase) {
         return from(testCase, List.of(), List.of());
     }
@@ -47,15 +60,34 @@ public record TestCaseResponse(
                 testCase.getDescription(),
                 testCase.getRequestHeaders(),
                 testCase.getRequestBody(),
+                testCase.getRationale(),
+                testCase.getReliabilityStatus(),
+                parseReliabilityNotes(testCase.getReliabilityNotes()),
+                testCase.getReliabilityAiConfirmed(),
+                testCase.getReliabilityAiNote(),
                 testCase.getExpectedStatus(),
                 testCase.getResolvedPath(),
                 testCase.getPathParamFallbacks(),
                 testCase.getSource(),
                 testCase.getAuthOverride(),
+                testCase.getGenerationOrigin(),
+                testCase.getChecklistItem(),
                 testCase.isLocked(),
                 testCase.getCreatedAt(),
                 dependencies,
                 assertions
         );
+    }
+
+    private static List<String> parseReliabilityNotes(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return OBJECT_MAPPER.readValue(json, new TypeReference<List<String>>() {
+            });
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 }

@@ -101,6 +101,35 @@ class TestHistoryServiceTest {
         assertThat(genEvent.snapshotItems().get(0).name()).isEqualTo("Positive - tao san pham");
     }
 
+    /**
+     * Hồi quy Module 9b - snapshot lưu TRƯỚC khi bỏ AI sinh assertion vẫn chứa key "assertions"
+     * (shape GeneratedTestCase cũ). Dùng đúng chuỗi JSON đã lưu thật, không serialize từ record mới
+     * (record mới không còn field này nên fixture tự tạo sẽ che mất bug - bài học Module 15c).
+     */
+    @Test
+    void getHistory_snapshotSavedBeforeModule9b_withAssertionsKey_stillParses() {
+        stubEndpoints(endpointA);
+        stubTestCaseCounts(Map.of(endpointA.getId(), 1L));
+
+        String legacySnapshotJson = "[{\"name\":\"Positive - tao san pham\",\"description\":\"mo ta\","
+                + "\"requestHeaders\":{},\"requestBody\":\"{\\\"price\\\":19.99}\",\"expectedStatus\":201,"
+                + "\"resolvedPath\":\"/api/products\",\"pathParamFallbacks\":{},\"authOverride\":null,"
+                + "\"assertions\":[{\"jsonPath\":\"price\",\"operator\":\"EQUALS\",\"expectedValue\":\"19.99\"}],"
+                + "\"rationale\":null}]";
+        TestGenerationEvent event = TestGenerationEvent.builder()
+                .id(UUID.randomUUID()).endpoint(endpointA).testCaseCount(1)
+                .snapshotJson(legacySnapshotJson).createdAt(Instant.parse("2026-08-20T03:04:00Z")).build();
+        when(testGenerationEventRepository.findAllByEndpointProject(project)).thenReturn(List.of(event));
+        when(testExecutionEndpointRepository.findAllByEndpointProject(project)).thenReturn(List.of());
+
+        List<EndpointHistoryResponse> history = testHistoryService.getHistory(projectId);
+
+        HistoryEventResponse genEvent = history.get(0).events().get(0);
+        assertThat(genEvent.snapshotItems()).hasSize(1);
+        assertThat(genEvent.snapshotItems().get(0).name()).isEqualTo("Positive - tao san pham");
+        assertThat(genEvent.snapshotItems().get(0).expectedStatus()).isEqualTo(201);
+    }
+
     @Test
     void getHistory_endpointWithOnlyExecutionEvent_returnsExecutionEventWithPassFailCounts() {
         stubEndpoints(endpointB);

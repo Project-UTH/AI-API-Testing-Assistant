@@ -140,6 +140,50 @@ Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI u
 
 **Audit log (Module 11d):** `GET /api/v1/admin/audit-log` (paged, mới nhất trước) - ghi lại hành động khoá/mở tài khoản VÀ đổi quota AI riêng của admin (`action`: `USER_LOCKED`/`USER_UNLOCKED`/`AI_QUOTA_CHANGED`, kèm `detail` mô tả thêm cho hành động đổi quota). `AdminAuditEvent` lưu SNAPSHOT email (không FK tới `User`) để không mất dấu vết khi tài khoản liên quan bị xoá sau này.
 
+## 4e. Coverage Matrix + Risk Engine (Module 15c)
+
+`GET /api/v1/projects/{projectId}/coverage` (toàn project) và `GET /api/v1/projects/{projectId}/endpoints/{endpointId}/coverage` (1 endpoint) — **tất định tuyệt đối, KHÔNG gọi AI**, tính từ `Endpoint.schema` (OpenAPI spec đã lưu lúc import) đối chiếu với `TestCase`/`TestCaseDependency`/`TestResult` hiện có. Không bao giờ dùng `TestCase.rationale` (Module 15a, lời AI tự khai) để suy coverage — xem nguyên tắc ở Module 15 trong `docs/ROADMAP.md`.
+
+`EndpointCoverageResponse { endpointId, path, method, coveragePercent, schemaReadable, riskScore, riskLevel, riskReasons, dimensions }`:
+- `dimensions: CoverageDimensionResponse[] { category, label, status, detail, coveringTestCases }` — `category` ∈ `REQUIRED_FIELD`/`BOUNDARY`/`STATUS_CODE`/`AUTH`; `status` ∈ `COVERED`/`MISSING`/`NOT_APPLICABLE`. Chiều `AUTH` "403 Forbidden" **LUÔN** `NOT_APPLICABLE` (hệ thống chưa có mô hình vai trò/scope để giả lập "có đăng nhập nhưng không đủ quyền") — frontend không nên hiển thị như 1 lỗi/thiếu sót, `detail` đã giải thích rõ lý do. `coveringTestCases: {id, name}[]` (Module 15f) — provenance, rỗng khi MISSING/NOT_APPLICABLE, chứa đúng (các) test case thật khiến dimension đó COVERED khi status=COVERED (không chỉ "có hay không").
+- `coveragePercent`: % dimension `COVERED` trên tổng dimension `COVERED`+`MISSING` (loại `NOT_APPLICABLE` khỏi mẫu số). Endpoint không có dimension nào relevant (vd GET đơn giản, mọi status đã khớp) → `100.0`. **`schemaReadable` (Module 15f, boolean)** — `false` khi `Endpoint.schema` không đọc được (JSON hỏng) - lúc đó `coveragePercent`/`dimensions` KHÔNG đáng tin (thiếu hẳn REQUIRED_FIELD/BOUNDARY/STATUS_CODE, không phải "không có gì để kiểm"). Frontend PHẢI kiểm cờ này trước khi tin số `coveragePercent` — không tự suy "100% = đã bao phủ đủ" khi `schemaReadable=false`.
+- `riskScore` (0-100) + `riskLevel` (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`): Risk Engine **heuristic tất định do nhóm tự thiết kế** dựa trên trực giác kỹ thuật (HTTP method + yêu cầu auth + số endpoint khác phụ thuộc dữ liệu (Test Data Chaining) + field nhạy cảm trong schema + tỷ lệ fail lịch sử) — không phải LLM đoán, nhưng cũng KHÔNG phải xác suất đã được calibrate bằng dữ liệu thực nghiệm; trọng số 0-20 điểm mỗi thành phần là lựa chọn thiết kế, chưa qua khảo sát/validate. `riskReasons` là danh sách câu giải thích tương ứng từng thành phần có cộng điểm, để hiển thị trực tiếp (không cần ghép chuỗi ở frontend).
+
+`ProjectCoverageResponse { projectId, overallCoveragePercent, overallRiskWeightedCoveragePercent, endpoints }` — `overallRiskWeightedCoveragePercent` KHÁC `overallCoveragePercent` (phẳng): mỗi endpoint đóng góp theo trọng số `riskScore` của chính nó, nên endpoint rủi ro cao mà thiếu coverage kéo điểm này xuống nhiều hơn endpoint rủi ro thấp. 2 số được CHỦ Ý để khác nhau (giống cách `executedTestCaseCount` khác `passedTestResults`/`totalTestResults` ở Module 11e) — khoảng cách giữa 2 số chính là insight, không phải lỗi hiển thị.
+
+## 4f. Rationale + Reliability (Tier 1/2/3) trên TestCase (Module 15a/15b/15d/15e)
+
+`TestCaseResponse` thêm 5 field so với trước Module 15: `rationale` (String, null cho case MANUAL/dữ liệu cũ — **lời AI TỰ KHAI, không phải evidence đã kiểm chứng độc lập, có thể không khớp lý do thật bên trong model, chỉ phục vụ con người đọc hiểu, KHÔNG dùng để tính Coverage Matrix**), `reliabilityStatus` (`RELIABLE`/`NEEDS_REVIEW`/null - null = không áp dụng, Tier 1 giờ kiểm cả case Negative/Boundary kỳ vọng lỗi trừ nhóm Security - xem Module 15f), `reliabilityNotes` (`string[]`, luôn `[]` khi không có), `reliabilityAiConfirmed` (`Boolean`, null = Tier 2 chưa chạy), `reliabilityAiNote` (String, null khi `reliabilityAiConfirmed` null). **Frontend không tự suy luận cách phối hợp 4 field reliability — dùng thẳng `getReliabilityDisplay(testCase)` ở `frontend/src/lib/testcases.ts`** (gộp sẵn logic Tier 1 + Tier 2 ở 1 chỗ, tránh lặp/sai lệch giữa các trang).
+
+`POST /api/v1/projects/{projectId}/endpoints/{endpointId}/test-cases/{testCaseId}/confidence-check` (Module 15e, Tier 3) — **thủ công, người dùng tự bấm, TUYỆT ĐỐI không gọi tự động ở đâu khác** (tốn thêm token AI thật mỗi lần gọi). Trả `ConfidenceCheckResponse { agreementLevel: HIGH|PARTIAL|LOW, expectedStatusMatches, requestBodyShapeMatches, regeneratedExpectedStatus, regeneratedRequestBody, note }` — đây là **kiểm tra TÍNH NHẤT QUÁN giữa 2 lần AI suy luận độc lập, KHÔNG phải bằng chứng case đó đúng tuyệt đối** (2 lần gọi cùng 1 model có thể cùng mắc đúng 1 lỗi hệ thống/shared bias — đồng thuận cao không loại trừ khả năng này). KHÔNG ghi đè `reliabilityStatus`/`reliabilityAiConfirmed` đã có, chỉ là kết quả đối chiếu riêng hiển thị tạm thời. Dùng chung cơ chế quota (`ensureWithinDailyQuota`) với `generate-tests` - trả `429 AI_QUOTA_EXCEEDED` nếu vượt. **Chỉ hiện nút gọi endpoint này ở luồng CHÍNH CHỦ xem test case của mình** (`TestCaseDetailDialog` chỉ hiện nút khi được truyền prop `projectId`) — **KHÔNG được hiện ở luồng Admin xem dữ liệu user khác** (Module 11, Admin chỉ đọc, không được tốn token của người dùng khác).
+
+## 4g. Sinh test case theo checklist EP/BVA (Module 15h)
+
+`POST /api/v1/projects/{projectId}/endpoints/{endpointId}/generate-tests` — body `{ includeSecurity, includePositive, includeNegative, includeBoundary }` (KHÔNG còn `includeAssertions` từ Module 9b — assertion chỉ thêm tay qua `TestCaseRequest.assertions`). **Breaking change có chủ đích:** response đổi từ `ApiResponse<TestCaseResponse[]>` sang `ApiResponse<GenerateTestCasesResponse>`:
+
+```json
+{
+  "data": {
+    "testCases": [ /* TestCaseResponse[] - gồm cả case Basic lẫn Security vừa sinh */ ],
+    "planSummary": {
+      "checklistTotal": 7, "alreadyCoveredCount": 0, "aiAskedCount": 7, "aiSatisfiedCount": 5,
+      "systemFilledCount": 2, "notFillableCount": 0, "notApplicableCount": 0, "aiExtraCount": 1,
+      "checklistCaseCount": 7, "extraCaseNames": ["Negative - age la chu"],
+      "items": [{ "type": "NEGATIVE_MISSING_FIELD", "field": "email", "description": "Thiếu field bắt buộc 'email' ...",
+                  "status": "SYSTEM_FILLED", "reason": null, "coveredBy": ["Negative - Thiếu field bắt buộc 'email'"] }]
+    }
+  }
+}
+```
+
+- **Module 15i:** `planSummary` **luôn có** - mỗi loại test case có checklist chuẩn riêng, kể cả Security; sinh cả nhóm Cơ bản + Security thì báo cáo GỘP chung (items nối nhau, các count cộng dồn). Kiểu frontend vẫn cho `null` để an toàn với dữ liệu cũ.
+- `items[].type` - tiền tố tên là loại test case, frontend chia báo cáo theo tiền tố này: `POSITIVE_BASELINE` / `POSITIVE_ENUM_VALUE` (mỗi giá trị enum hợp lệ 1 mục); `NEGATIVE_MISSING_FIELD` (body, hoặc tham số query/header bắt buộc) / `NEGATIVE_NULL_FIELD` / `NEGATIVE_WRONG_TYPE` / `NEGATIVE_INVALID_ENUM` (15h gọi là `BOUNDARY_INVALID_ENUM` - backend vẫn đọc được tên cũ trong báo cáo đã lưu); `BOUNDARY_AT_/BELOW_MINIMUM`, `BOUNDARY_AT_/ABOVE_MAXIMUM`, `BOUNDARY_AT_/BELOW_MIN_LENGTH`, `BOUNDARY_AT_/ABOVE_MAX_LENGTH`, `BOUNDARY_AT_/ABOVE_TYPE_MAXIMUM` + `BOUNDARY_AT_/BELOW_TYPE_MINIMUM` (int32/int64, hai đầu; minimum/maximum `exclusive` được tính đúng), biên ngầm `BOUNDARY_ZERO` / `BOUNDARY_NEGATIVE_NUMBER` / `BOUNDARY_EMPTY_STRING` (spec không khai ràng buộc → kỳ vọng 2xx, UI gắn nhãn "⚠ biên ngầm"; riêng tham số **path** các giá trị 0/-1/lớn nhất int64 kỳ vọng **lỗi 4xx**, description ghi "kỳ vọng lỗi 4xx", bù `expectedStatus=404`); `SECURITY_MISSING_TOKEN` / `SECURITY_INVALID_TOKEN` (chấm theo `authOverride` + 401, `NOT_APPLICABLE` khi endpoint không `requiresAuth`).
+- `items[].status`: `ALREADY_COVERED` (case khoá/tự thêm sẵn có đã đạt, không giao AI) / `AI_SATISFIED` / `SYSTEM_FILLED` / `NOT_FILLABLE` (kèm `reason`) / `NOT_APPLICABLE` (kèm `reason`, vd body không phải JSON).
+- Mục "đạt" do backend **chấm theo NỘI DUNG case** (quy tắc mỗi case chỉ 1 lỗi), không dựa vào tên hay lời AI tự khai.
+- `TestCaseResponse` thêm `generationOrigin` (`AI_CHECKLIST` / `AI_EXTRA` / `SYSTEM_FILLED`, null cho MANUAL/dữ liệu trước 15h; từ 15i case Security cũng có giá trị) và `checklistItem` (mô tả mục checklist case đó đạt, null nếu không). Frontend dùng `GENERATION_ORIGIN_DISPLAY` ở `frontend/src/lib/testcases.ts`, không tự đặt nhãn riêng.
+
+`GET /api/v1/projects/{projectId}/endpoints/{endpointId}/generation-plan` — trả `ApiResponse<GenerationPlanSummary | null>`: báo cáo checklist của lần sinh nhóm Basic gần nhất (lưu ở `TestGenerationEvent.planSummaryJson`), để xem lại sau khi tải lại trang. Đọc dòng `TestGenerationEvent` MỚI NHẤT của endpoint; `data = null` khi chưa sinh lần nào hoặc dòng đó tạo trước khi có tính năng. `checklistCaseCount`/`extraCaseNames` là số liệu chụp lúc sinh — frontend hiển thị từ đây, KHÔNG ghép với bộ test case đang sống (có thể đã bị sửa/xoá sau đó).
+
 ## 5. Naming convention endpoint
 
 - Danh từ số nhiều, kebab-case nếu nhiều từ: `/api/v1/projects`, `/api/v1/test-cases`

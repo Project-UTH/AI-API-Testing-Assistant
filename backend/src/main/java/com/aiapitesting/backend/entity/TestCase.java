@@ -39,6 +39,43 @@ public class TestCase {
     @Column(columnDefinition = "TEXT")
     private String requestBody;
 
+    /**
+     * Module 15a (Explainable AI) - câu giải thích ngắn do AI tự khai lúc sinh, chỉ rõ rule/field
+     * nào của spec kích hoạt case này. Nullable: null cho case MANUAL (người tự thêm, không có gì để
+     * giải thích) và dữ liệu lịch sử tạo trước khi có field này. CHỈ phục vụ con người đọc hiểu -
+     * KHÔNG được dùng để tính Coverage Matrix (EndpointCoverageService, Module 15c) vì rationale AI
+     * tự khai có thể không trung thực với lý do thật bên trong model (xem Module 15 trong roadmap).
+     */
+    @Column(columnDefinition = "TEXT")
+    private String rationale;
+
+    /**
+     * Module 15b (Tier 1, rule-based) - đối chiếu tất định giữa giá trị AI sinh với ràng buộc
+     * required/enum/min-max của OpenAPI spec, chỉ áp dụng cho case kỳ vọng thành công
+     * (expectedStatus &lt; 400) - case kỳ vọng lỗi không bị đối chiếu (vi phạm ràng buộc có thể là
+     * chủ đích). Null = không áp dụng (case MANUAL, dữ liệu cũ tạo trước field này, hoặc case kỳ
+     * vọng lỗi). VARCHAR thay vì để Hibernate tự suy ENUM - cùng lý do đã rút ra ở TestCaseSource.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "VARCHAR(20)")
+    private TestCaseReliability reliabilityStatus;
+
+    /** JSON array các câu cảnh báo cụ thể (tên field + rule bị vi phạm) khi reliabilityStatus=NEEDS_REVIEW - null khi RELIABLE hoặc không áp dụng. */
+    @Column(columnDefinition = "TEXT")
+    private String reliabilityNotes;
+
+    /**
+     * Module 15d (Tier 2) - AI xác nhận lại case bị Tier 1 gắn cờ NEEDS_REVIEW có phải lỗi thật hay
+     * false positive (vd case Security cố ý gửi giá trị sai để test injection). null = Tier 2 chưa
+     * chạy (case không bị gắn cờ, hoặc hết quota lúc đó) - KHÁC {@code reliabilityStatus=null} (không
+     * áp dụng hẳn). true = AI xác nhận lỗi thật; false = AI cho là false positive, chủ đích.
+     */
+    private Boolean reliabilityAiConfirmed;
+
+    /** Giải thích ngắn của AI cho reliabilityAiConfirmed - null khi reliabilityAiConfirmed null. */
+    @Column(columnDefinition = "TEXT")
+    private String reliabilityAiNote;
+
     @Column(nullable = false)
     private Integer expectedStatus;
 
@@ -74,6 +111,18 @@ public class TestCase {
     @Column(nullable = false, columnDefinition = "VARCHAR(20)")
     @Builder.Default
     private TestCaseAuthOverride authOverride = TestCaseAuthOverride.DEFAULT;
+
+    /**
+     * Module 15h - case này do AI sinh đạt checklist, AI đề xuất thêm, hay hệ thống tự bù. VARCHAR
+     * thay vì MySQL ENUM - cùng lý do đã rút ra ở TestCaseSource (ENUM không tự mở rộng).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "VARCHAR(20)")
+    private TestCaseGenerationOrigin generationOrigin;
+
+    /** Module 15h - mô tả mục checklist EP/BVA mà case này đạt (vd "Thiếu field bắt buộc 'email'..."), null nếu không ứng với mục nào. */
+    @Column(columnDefinition = "VARCHAR(255)")
+    private String checklistItem;
 
     /** Khoá test case khỏi bị xoá khi "Sinh Test Case" xoá-và-thay - bật/tắt qua nút khoá riêng. */
     @Column(nullable = false)

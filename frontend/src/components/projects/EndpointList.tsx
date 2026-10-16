@@ -8,8 +8,11 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { cn, METHOD_STYLES } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
-import { generateTestCases } from "@/lib/testcases"
+import { generateTestCases, type GenerateTestCasesResponse } from "@/lib/testcases"
+import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
 import { getDashboardSummary } from "@/lib/dashboard"
+import { getProjectCoverage } from "@/lib/coverage"
+import { RiskBadge } from "@/components/shared/CoverageMatrixChart"
 
 interface EndpointListProps {
   projectId: string
@@ -17,7 +20,8 @@ interface EndpointListProps {
 
 type GenerationState =
   | { status: "pending" }
-  | { status: "success"; count: number }
+  // result chỉ có khi vừa sinh trong phiên này (Module 15h) - không có khi lấy testCaseCount từ server.
+  | { status: "success"; count: number; result?: GenerateTestCasesResponse }
   | { status: "error"; message: string }
 
 export function EndpointList({ projectId }: EndpointListProps) {
@@ -33,10 +37,18 @@ export function EndpointList({ projectId }: EndpointListProps) {
     queryFn: () => getDashboardSummary(),
   })
 
+  // Module 15c - chỉ hiển thị badge risk để người dùng tự quyết định tích gì, KHÔNG tự tick
+  // checkbox (bộ checkbox Positive/Negative/Boundary/Security hiện dùng CHUNG cho mọi endpoint
+  // đang chọn cùng lúc, nên tự tick theo risk của 1 endpoint sẽ ảnh hưởng nhầm sang endpoint khác).
+  const { data: coverage } = useQuery({
+    queryKey: ["project-coverage", projectId],
+    queryFn: () => getProjectCoverage(projectId),
+  })
+  const riskByEndpointId = new Map((coverage?.endpoints ?? []).map((e) => [e.endpointId, e]))
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [generationState, setGenerationState] = useState<Record<string, GenerationState>>({})
   const [includeSecurity, setIncludeSecurity] = useState(false)
-  const [includeAssertions, setIncludeAssertions] = useState(false)
   // Mặc định cả 3 đều bật - giữ đúng hành vi cũ (luôn sinh đủ Positive/Negative/Boundary) cho tới
   // khi người dùng chủ động bỏ tích bớt.
   const [includePositive, setIncludePositive] = useState(true)
@@ -75,19 +87,22 @@ export function EndpointList({ projectId }: EndpointListProps) {
       setGenerationState((prev) => ({ ...prev, [endpointId]: { status: "pending" } }))
       generateTestCases(projectId, endpointId, {
         includeSecurity,
-        includeAssertions,
         includePositive,
         includeNegative,
         includeBoundary,
       })
-        .then((created) => {
+        .then((result) => {
           setGenerationState((prev) => ({
             ...prev,
-            [endpointId]: { status: "success", count: created.length },
+            [endpointId]: { status: "success", count: result.testCases.length, result },
           }))
           // Đồng bộ lại testCaseCount thật từ server - để trạng thái "đã sinh" không bị mất
           // khi rời trang rồi quay lại (generationState chỉ sống trong phiên hiện tại)
           queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
+          // Báo cáo checklist đã lưu ở backend vừa đổi - bỏ bản cũ trong cache.
+          queryClient.invalidateQueries({ queryKey: ["generation-plan", projectId, endpointId] })
+          // Bộ test case đổi thì Coverage/risk badge cũng đổi - trước đây không tự cập nhật.
+          queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
         })
         .catch((error) => {
           setGenerationState((prev) => ({
@@ -184,13 +199,6 @@ export function EndpointList({ projectId }: EndpointListProps) {
             />
             + Security
           </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includeAssertions}
-              onCheckedChange={(checked) => setIncludeAssertions(checked === true)}
-            />
-            + Assertion
-          </label>
           <Button
             size="sm"
             disabled={selectedIds.size === 0 || !hasAnyCategorySelected}
@@ -221,52 +229,64 @@ export function EndpointList({ projectId }: EndpointListProps) {
           const selected = selectedIds.has(endpoint.id)
           const willRegenerate = alreadyGenerated && selected
           return (
-            <li
-              key={endpoint.id}
-              className="flex items-center gap-3 rounded-lg border border-border p-3"
-            >
-              <Checkbox
-                checked={selected}
-                disabled={state?.status === "pending"}
-                onCheckedChange={(checked) => toggleSelect(endpoint.id, checked === true)}
-              />
-              <span
-                className={cn(
-                  "w-16 shrink-0 rounded-md px-2 py-0.5 text-center text-xs font-semibold",
-                  METHOD_STYLES[endpoint.method] ?? "bg-muted text-muted-foreground"
-                )}
-              >
-                {endpoint.method}
-              </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.path}</span>
-              {endpoint.summary && (
-                <span className="shrink-0 truncate text-sm text-muted-foreground">
-                  {endpoint.summary}
-                </span>
-              )}
-              {state?.status === "pending" && (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-              )}
-              {state?.status === "success" && willRegenerate && (
-                <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
-                  Sinh lại sẽ thay test case AI đã sinh (trừ case đang khoá 🔒), giữ nguyên test case bạn tự thêm
-                </span>
-              )}
-              {state?.status === "success" && !willRegenerate && (
-                <span className="shrink-0 text-xs text-green-600 dark:text-green-400">
-                  Có {state.count} test case
-                </span>
-              )}
-              {state?.status === "error" && (
-                <span className="shrink-0 text-xs text-destructive">{state.message}</span>
-              )}
-              {endpoint.testCaseCount > 0 && (
-                <Link
-                  to={`/projects/${projectId}/test-cases?endpointId=${endpoint.id}`}
-                  className="shrink-0 text-xs text-primary underline-offset-4 hover:underline"
+            <li key={endpoint.id} className="rounded-lg border border-border p-3">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  checked={selected}
+                  disabled={state?.status === "pending"}
+                  onCheckedChange={(checked) => toggleSelect(endpoint.id, checked === true)}
+                />
+                <span
+                  className={cn(
+                    "w-16 shrink-0 rounded-md px-2 py-0.5 text-center text-xs font-semibold",
+                    METHOD_STYLES[endpoint.method] ?? "bg-muted text-muted-foreground"
+                  )}
                 >
-                  Xem test case
-                </Link>
+                  {endpoint.method}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.path}</span>
+                {riskByEndpointId.get(endpoint.id) && (
+                  <RiskBadge
+                    level={riskByEndpointId.get(endpoint.id)!.riskLevel}
+                    reasons={riskByEndpointId.get(endpoint.id)!.riskReasons}
+                  />
+                )}
+                {endpoint.summary && (
+                  <span className="shrink-0 truncate text-sm text-muted-foreground">
+                    {endpoint.summary}
+                  </span>
+                )}
+                {state?.status === "pending" && (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                )}
+                {state?.status === "success" && willRegenerate && (
+                  <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
+                    Sinh lại sẽ thay test case AI đã sinh (trừ case đang khoá 🔒), giữ nguyên test case bạn tự thêm
+                  </span>
+                )}
+                {state?.status === "success" && !willRegenerate && (
+                  <span className="shrink-0 text-xs text-green-600 dark:text-green-400">
+                    Có {state.count} test case
+                  </span>
+                )}
+                {state?.status === "error" && (
+                  <span className="shrink-0 text-xs text-destructive">{state.message}</span>
+                )}
+                {endpoint.testCaseCount > 0 && (
+                  <Link
+                    to={`/projects/${projectId}/test-cases?endpointId=${endpoint.id}`}
+                    className="shrink-0 text-xs text-primary underline-offset-4 hover:underline"
+                  >
+                    Xem test case
+                  </Link>
+                )}
+              </div>
+              {state?.status === "success" && !willRegenerate && state.count > 0 && (
+                <GenerationPlanReport
+                  projectId={projectId}
+                  endpointId={endpoint.id}
+                  freshPlan={state.result?.planSummary ?? undefined}
+                />
               )}
             </li>
           )

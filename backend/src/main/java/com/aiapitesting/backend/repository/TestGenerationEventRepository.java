@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.repository;
 
+import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.entity.User;
@@ -9,9 +10,13 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface TestGenerationEventRepository extends JpaRepository<TestGenerationEvent, UUID> {
+
+    // Module 15h/15i - dòng lịch sử mới nhất của endpoint, chứa báo cáo checklist của lần sinh gần nhất.
+    Optional<TestGenerationEvent> findFirstByEndpointOrderByCreatedAtDesc(Endpoint endpoint);
 
     // Toàn bộ sự kiện sinh test case của project - JOIN FETCH endpoint để tránh LazyInitializationException.
     @Query("SELECT e FROM TestGenerationEvent e JOIN FETCH e.endpoint WHERE e.endpoint.project = :project")

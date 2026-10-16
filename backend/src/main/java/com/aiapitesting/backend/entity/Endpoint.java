@@ -39,6 +39,17 @@ public class Endpoint {
     @Column(name = "schema_definition", columnDefinition = "TEXT")
     private String schema;
 
+    /**
+     * Suy ra từ operation.getSecurity() (hoặc security toàn cục khi operation không override) lúc
+     * import - dùng cho chiều Auth của Coverage Matrix (Module 15c). columnDefinition cần khai rõ
+     * DEFAULT vì đây là cột NOT NULL thêm vào bảng đã có dữ liệu (cùng gotcha VARCHAR/TINYINT đã rút
+     * ra ở Module 11a) - TINYINT ngầm định 0 nên endpoint cũ tự nhận "không yêu cầu auth" (an toàn,
+     * không crash), chỉ cần re-import để có giá trị đúng.
+     */
+    @Column(nullable = false, columnDefinition = "TINYINT(1) DEFAULT 0")
+    @Builder.Default
+    private boolean requiresAuth = false;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

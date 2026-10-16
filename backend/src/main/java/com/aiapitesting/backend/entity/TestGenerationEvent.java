@@ -40,6 +40,11 @@ public class TestGenerationEvent {
     @Column(name = "snapshot_json", columnDefinition = "TEXT", nullable = false)
     private String snapshotJson;
 
+    // Module 15h - JSON của GenerationPlanSummary (báo cáo checklist) để xem lại sau khi tải lại
+    // trang. Null với event nhóm Security và event tạo trước khi có field này.
+    @Column(name = "plan_summary_json", columnDefinition = "TEXT")
+    private String planSummaryJson;
+
     // Nullable (khác mọi field khác ở đây) - lấy từ ChatResponse.getMetadata().getUsage() của
     // Anthropic (Module 11, theo dõi chi phí AI). Có thể null nếu provider không trả usage, hoặc
     // với các dòng sự kiện tạo TRƯỚC khi field này tồn tại (không backfill được dữ liệu đã mất).

@@ -1,17 +1,24 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, History, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
+import { ArrowLeft, Eye, History, Info, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn, METHOD_STYLES, selectClassName } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
-import { listTestCases, setTestCaseLocked, type TestCase } from "@/lib/testcases"
+import {
+  GENERATION_ORIGIN_DISPLAY,
+  getReliabilityDisplay,
+  listTestCases,
+  setTestCaseLocked,
+  type TestCase,
+} from "@/lib/testcases"
 import { triggerExecution } from "@/lib/executions"
 import { TestCaseFormDialog } from "@/components/testcases/TestCaseFormDialog"
 import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialog"
+import { TestCaseDetailDialog } from "@/components/testcases/TestCaseDetailDialog"
 
 const SOURCE_STYLES: Record<TestCase["source"], string> = {
   AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
@@ -61,6 +68,8 @@ export function TestCasesPage() {
   })
   const [deleteTarget, setDeleteTarget] = useState<TestCase | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [detailTestCase, setDetailTestCase] = useState<TestCase | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isRunning, setIsRunning] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
@@ -95,6 +104,11 @@ export function TestCasesPage() {
   function openDelete(testCase: TestCase) {
     setDeleteTarget(testCase)
     setDeleteOpen(true)
+  }
+
+  function openDetail(testCase: TestCase) {
+    setDetailTestCase(testCase)
+    setDetailOpen(true)
   }
 
   async function handleToggleLock(testCase: TestCase) {
@@ -222,7 +236,9 @@ export function TestCasesPage() {
                 <p className="mt-3 text-sm text-muted-foreground">Chưa có test case nào.</p>
               ) : (
                 <ul className="mt-3 flex flex-col gap-2">
-                  {cases.map((testCase) => (
+                  {cases.map((testCase) => {
+                    const reliability = getReliabilityDisplay(testCase)
+                    return (
                     <li
                       key={testCase.id}
                       className="flex items-center gap-3 rounded-md border border-border p-2"
@@ -234,11 +250,50 @@ export function TestCasesPage() {
                       <span
                         className={cn(
                           "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium",
-                          SOURCE_STYLES[testCase.source]
+                          // Case hệ thống bù (15h) vẫn lưu source=AI_GENERATED để sinh lại/khoá chạy đúng,
+                          // nhưng không do AI viết - hiện "Hệ thống" cho khỏi hiểu nhầm.
+                          testCase.generationOrigin === "SYSTEM_FILLED"
+                            ? "bg-teal-500/10 text-teal-600 dark:text-teal-400"
+                            : SOURCE_STYLES[testCase.source]
                         )}
                       >
-                        {SOURCE_LABEL[testCase.source]}
+                        {testCase.generationOrigin === "SYSTEM_FILLED" ? "Hệ thống" : SOURCE_LABEL[testCase.source]}
                       </span>
+                      {reliability && (
+                        <span
+                          title={reliability.title}
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
+                            reliability.tone === "reliable"
+                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          )}
+                        >
+                          {reliability.label}
+                        </span>
+                      )}
+                      {testCase.generationOrigin && (
+                        <span
+                          title={
+                            GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].title +
+                            (testCase.checklistItem ? `\nMục checklist: ${testCase.checklistItem}` : "")
+                          }
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
+                            GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].className
+                          )}
+                        >
+                          {GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].label}
+                        </span>
+                      )}
+                      {testCase.source !== "MANUAL" && testCase.rationale && (
+                        <span
+                          title={`${testCase.generationOrigin === "SYSTEM_FILLED" ? "Vì sao hệ thống tạo case này" : "Vì sao AI sinh case này"}: ${testCase.rationale}`}
+                          className="shrink-0"
+                        >
+                          <Info className="h-3.5 w-3.5 text-muted-foreground/60" />
+                        </span>
+                      )}
                       <span className="min-w-0 flex-1 truncate text-sm">{testCase.name}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">
                         → {testCase.expectedStatus}
@@ -260,6 +315,9 @@ export function TestCasesPage() {
                           <Unlock className="h-3.5 w-3.5 text-muted-foreground" />
                         )}
                       </Button>
+                      <Button size="icon-sm" variant="ghost" title="Xem chi tiết" onClick={() => openDetail(testCase)}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
                       <Button size="icon-sm" variant="ghost" onClick={() => openEdit(testCase)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -267,7 +325,8 @@ export function TestCasesPage() {
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </li>
-                  ))}
+                    )
+                  })}
                 </ul>
               )}
             </div>
@@ -289,6 +348,13 @@ export function TestCasesPage() {
         onOpenChange={setDeleteOpen}
         projectId={projectId}
         testCase={deleteTarget}
+      />
+
+      <TestCaseDetailDialog
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        testCase={detailTestCase}
+        projectId={projectId}
       />
     </div>
   )
