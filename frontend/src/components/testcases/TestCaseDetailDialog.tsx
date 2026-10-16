@@ -24,6 +24,7 @@ import {
 import { ApiError } from "@/lib/api"
 import {
   confidenceCheck,
+  GENERATION_ORIGIN_DISPLAY,
   getReliabilityDisplay,
   type AssertionOperator,
   type ConfidenceCheckResponse,
@@ -150,8 +151,33 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
             </Field>
           )}
 
+          {testCase.generationOrigin && (
+            <Field label="Nguồn gốc (checklist EP/BVA)">
+              <p className="text-sm">
+                <span
+                  className={cn(
+                    "mr-2 rounded-full px-2 py-0.5 text-xs font-medium",
+                    GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].className
+                  )}
+                >
+                  {GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].label}
+                </span>
+                <span className="text-muted-foreground">{GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].title}</span>
+              </p>
+              {testCase.checklistItem && (
+                <p className="mt-1 text-sm text-muted-foreground">Mục checklist: {testCase.checklistItem}</p>
+              )}
+            </Field>
+          )}
+
           {testCase.source !== "MANUAL" && testCase.rationale && (
-            <Field label="Vì sao AI sinh case này">
+            <Field
+              label={
+                testCase.generationOrigin === "SYSTEM_FILLED"
+                  ? "Vì sao hệ thống tạo case này (viết từ spec, kiểm chứng được)"
+                  : "Vì sao AI sinh case này"
+              }
+            >
               <p className="text-sm text-muted-foreground">{testCase.rationale}</p>
             </Field>
           )}

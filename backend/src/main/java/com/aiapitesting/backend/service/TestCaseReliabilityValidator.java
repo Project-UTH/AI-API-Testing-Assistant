@@ -46,10 +46,11 @@ public class TestCaseReliabilityValidator {
 
     private enum Location { BODY, PATH_OR_QUERY, HEADER }
 
+    /** type/nullAllowed - quy tắc kiểu dữ liệu + null dùng chung với bộ chấm checklist 15h, xem SpecValueRules. */
     private record FieldRule(
-            String name, Location location, boolean required,
+            String name, Location location, boolean required, String type, boolean nullAllowed,
             List<String> enumValues, BigDecimal minimum, BigDecimal maximum,
-            Integer minLength, Integer maxLength
+            Integer minLength, Integer maxLength, boolean minimumExclusive, boolean maximumExclusive
     ) {
     }
 
@@ -77,7 +78,9 @@ public class TestCaseReliabilityValidator {
         }
 
         Map<String, Object> bodyValues = parseJsonObject(candidate.requestBody());
-        Map<String, String> fallbackValues = candidate.pathParamFallbacks() == null ? Map.of() : candidate.pathParamFallbacks();
+        // Module 15h - đọc cả giá trị ghi thẳng trong resolvedPath (ưu tiên), không chỉ pathParamFallbacks.
+        Map<String, String> fallbackValues = TestCaseParamValues.resolve(
+                endpoint.getPath(), candidate.resolvedPath(), candidate.pathParamFallbacks());
         Map<String, String> headerValues = candidate.requestHeaders() == null ? Map.of() : candidate.requestHeaders();
 
         List<String> violations = findViolations(rules, bodyValues, fallbackValues, headerValues);
@@ -112,7 +115,7 @@ public class TestCaseReliabilityValidator {
                 Map<String, String> source = rule.location() == Location.HEADER ? headerValues : fallbackValues;
                 String rawValue = source.get(rule.name());
                 if (rawValue != null) {
-                    checkRawValue(rule, rawValue, notes);
+                    checkRawValue(rule, rawValue, rawValue, false, notes);
                 }
                 // Không tự suy "thiếu" cho path/query/header param vắng mặt - param path gần như
                 // luôn bắt buộc theo đúng bản chất URL, còn query/header tuỳ chọn không gửi là hợp
@@ -130,16 +133,29 @@ public class TestCaseReliabilityValidator {
             return;
         }
         Object value = bodyValues.get(rule.name());
-        checkRawValue(rule, value == null ? null : String.valueOf(value), notes);
+        if (value == null) {
+            // OpenAPI 3.0: field không khai nullable: true thì null là không hợp lệ (required chỉ
+            // nói field phải CÓ MẶT, không nói được phép null hay không).
+            if (!rule.nullAllowed()) {
+                notes.add("Field '" + rule.name() + "' = null nhưng spec không cho phép null (không khai nullable)");
+            }
+            return;
+        }
+        checkRawValue(rule, value, String.valueOf(value), true, notes);
     }
 
-    private void checkRawValue(FieldRule rule, String value, List<String> notes) {
+    private void checkRawValue(FieldRule rule, Object rawValue, String value, boolean fromJsonBody, List<String> notes) {
         if (value == null) {
             return;
         }
         if (rule.enumValues() != null && !rule.enumValues().isEmpty() && !rule.enumValues().contains(value)) {
             notes.add("Field '" + rule.name() + "' = \"" + value + "\" không khớp enum khai báo trong spec ("
                     + String.join(", ", rule.enumValues()) + ") dù case kỳ vọng thành công");
+            return;
+        }
+        if (!SpecValueRules.matchesType(rule.type(), rawValue, fromJsonBody)) {
+            notes.add("Field '" + rule.name() + "' = " + (rawValue instanceof String ? "\"" + value + "\"" : value)
+                    + " sai kiểu dữ liệu so với spec (khai báo " + rule.type() + ")");
             return;
         }
         if (rule.minLength() != null && value.length() < rule.minLength()) {
@@ -153,18 +169,22 @@ public class TestCaseReliabilityValidator {
         if (rule.minimum() != null || rule.maximum() != null) {
             BigDecimal numeric = parseNumeric(value);
             if (numeric != null) {
-                if (rule.minimum() != null && numeric.compareTo(rule.minimum()) < 0) {
-                    notes.add("Field '" + rule.name() + "' = " + numeric + " < minimum=" + rule.minimum()
+                // Exclusive (Module 15i): giá trị đúng bằng biên cũng không hợp lệ.
+                int vsMin = rule.minimum() == null ? 1 : numeric.compareTo(rule.minimum());
+                if (vsMin < 0 || (vsMin == 0 && rule.minimumExclusive())) {
+                    notes.add("Field '" + rule.name() + "' = " + numeric + (rule.minimumExclusive() ? " <= " : " < ")
+                            + "minimum=" + rule.minimum() + (rule.minimumExclusive() ? " (exclusive)" : "")
                             + " trong spec dù case kỳ vọng thành công");
                 }
-                if (rule.maximum() != null && numeric.compareTo(rule.maximum()) > 0) {
-                    notes.add("Field '" + rule.name() + "' = " + numeric + " > maximum=" + rule.maximum()
+                int vsMax = rule.maximum() == null ? -1 : numeric.compareTo(rule.maximum());
+                if (vsMax > 0 || (vsMax == 0 && rule.maximumExclusive())) {
+                    notes.add("Field '" + rule.name() + "' = " + numeric + (rule.maximumExclusive() ? " >= " : " > ")
+                            + "maximum=" + rule.maximum() + (rule.maximumExclusive() ? " (exclusive)" : "")
                             + " trong spec dù case kỳ vọng thành công");
                 }
             }
-            // Không parse được số (vd giá trị cố tình sai kiểu) - bỏ qua kiểm tra min/max, không
-            // suy diễn thêm; case cố tình gửi sai kiểu dữ liệu cho field số thường đã expectedStatus
-            // >= 400 nên không lọt tới đây, nhưng vẫn phòng hờ không báo sai khi gặp dữ liệu lạ.
+            // Không parse được số chỉ còn xảy ra khi spec không khai type (đã kiểm kiểu ở trên) -
+            // bỏ qua min/max, không suy diễn thêm.
         }
     }
 
@@ -227,11 +247,23 @@ public class TestCaseReliabilityValidator {
 
     private FieldRule toFieldRule(String name, Location location, boolean required, Schema<?> schema) {
         if (schema == null) {
-            return new FieldRule(name, location, required, null, null, null, null, null);
+            return new FieldRule(name, location, required, null, true, null, null, null, null, null, false, false);
         }
         List<String> enumValues = schema.getEnum() == null ? null
                 : schema.getEnum().stream().map(String::valueOf).toList();
-        return new FieldRule(name, location, required, enumValues,
-                schema.getMinimum(), schema.getMaximum(), schema.getMinLength(), schema.getMaxLength());
+        // Module 15i - gộp giới hạn ngầm của int32/int64 vào min/max để case "vượt int32" (checklist
+        // Boundary) không bị gắn "kỳ vọng lỗi nhưng không vi phạm gì" oan.
+        return new FieldRule(name, location, required, SpecValueRules.typeOf(schema), SpecValueRules.allowsNull(schema),
+                enumValues, tighter(SpecValueRules.effectiveMinimum(schema), SpecValueRules.formatMinimum(schema), true),
+                tighter(SpecValueRules.effectiveMaximum(schema), SpecValueRules.formatMaximum(schema), false),
+                schema.getMinLength(), schema.getMaxLength(),
+                SpecValueRules.minimumExclusive(schema), SpecValueRules.maximumExclusive(schema));
+    }
+
+    private BigDecimal tighter(BigDecimal declared, BigDecimal fromFormat, boolean isMinimum) {
+        if (declared == null || fromFormat == null) {
+            return declared != null ? declared : fromFormat;
+        }
+        return isMinimum ? declared.max(fromFormat) : declared.min(fromFormat);
     }
 }

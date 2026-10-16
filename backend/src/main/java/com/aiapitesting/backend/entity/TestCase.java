@@ -112,6 +112,18 @@ public class TestCase {
     @Builder.Default
     private TestCaseAuthOverride authOverride = TestCaseAuthOverride.DEFAULT;
 
+    /**
+     * Module 15h - case này do AI sinh đạt checklist, AI đề xuất thêm, hay hệ thống tự bù. VARCHAR
+     * thay vì MySQL ENUM - cùng lý do đã rút ra ở TestCaseSource (ENUM không tự mở rộng).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "VARCHAR(20)")
+    private TestCaseGenerationOrigin generationOrigin;
+
+    /** Module 15h - mô tả mục checklist EP/BVA mà case này đạt (vd "Thiếu field bắt buộc 'email'..."), null nếu không ứng với mục nào. */
+    @Column(columnDefinition = "VARCHAR(255)")
+    private String checklistItem;
+
     /** Khoá test case khỏi bị xoá khi "Sinh Test Case" xoá-và-thay - bật/tắt qua nút khoá riêng. */
     @Column(nullable = false)
     @Builder.Default

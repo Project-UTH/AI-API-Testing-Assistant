@@ -157,6 +157,33 @@ Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI u
 
 `POST /api/v1/projects/{projectId}/endpoints/{endpointId}/test-cases/{testCaseId}/confidence-check` (Module 15e, Tier 3) — **thủ công, người dùng tự bấm, TUYỆT ĐỐI không gọi tự động ở đâu khác** (tốn thêm token AI thật mỗi lần gọi). Trả `ConfidenceCheckResponse { agreementLevel: HIGH|PARTIAL|LOW, expectedStatusMatches, requestBodyShapeMatches, regeneratedExpectedStatus, regeneratedRequestBody, note }` — đây là **kiểm tra TÍNH NHẤT QUÁN giữa 2 lần AI suy luận độc lập, KHÔNG phải bằng chứng case đó đúng tuyệt đối** (2 lần gọi cùng 1 model có thể cùng mắc đúng 1 lỗi hệ thống/shared bias — đồng thuận cao không loại trừ khả năng này). KHÔNG ghi đè `reliabilityStatus`/`reliabilityAiConfirmed` đã có, chỉ là kết quả đối chiếu riêng hiển thị tạm thời. Dùng chung cơ chế quota (`ensureWithinDailyQuota`) với `generate-tests` - trả `429 AI_QUOTA_EXCEEDED` nếu vượt. **Chỉ hiện nút gọi endpoint này ở luồng CHÍNH CHỦ xem test case của mình** (`TestCaseDetailDialog` chỉ hiện nút khi được truyền prop `projectId`) — **KHÔNG được hiện ở luồng Admin xem dữ liệu user khác** (Module 11, Admin chỉ đọc, không được tốn token của người dùng khác).
 
+## 4g. Sinh test case theo checklist EP/BVA (Module 15h)
+
+`POST /api/v1/projects/{projectId}/endpoints/{endpointId}/generate-tests` — body `{ includeSecurity, includePositive, includeNegative, includeBoundary }` (KHÔNG còn `includeAssertions` từ Module 9b — assertion chỉ thêm tay qua `TestCaseRequest.assertions`). **Breaking change có chủ đích:** response đổi từ `ApiResponse<TestCaseResponse[]>` sang `ApiResponse<GenerateTestCasesResponse>`:
+
+```json
+{
+  "data": {
+    "testCases": [ /* TestCaseResponse[] - gồm cả case Basic lẫn Security vừa sinh */ ],
+    "planSummary": {
+      "checklistTotal": 7, "alreadyCoveredCount": 0, "aiAskedCount": 7, "aiSatisfiedCount": 5,
+      "systemFilledCount": 2, "notFillableCount": 0, "notApplicableCount": 0, "aiExtraCount": 1,
+      "checklistCaseCount": 7, "extraCaseNames": ["Negative - age la chu"],
+      "items": [{ "type": "NEGATIVE_MISSING_FIELD", "field": "email", "description": "Thiếu field bắt buộc 'email' ...",
+                  "status": "SYSTEM_FILLED", "reason": null, "coveredBy": ["Negative - Thiếu field bắt buộc 'email'"] }]
+    }
+  }
+}
+```
+
+- **Module 15i:** `planSummary` **luôn có** - mỗi loại test case có checklist chuẩn riêng, kể cả Security; sinh cả nhóm Cơ bản + Security thì báo cáo GỘP chung (items nối nhau, các count cộng dồn). Kiểu frontend vẫn cho `null` để an toàn với dữ liệu cũ.
+- `items[].type` - tiền tố tên là loại test case, frontend chia báo cáo theo tiền tố này: `POSITIVE_BASELINE` / `POSITIVE_ENUM_VALUE` (mỗi giá trị enum hợp lệ 1 mục); `NEGATIVE_MISSING_FIELD` (body, hoặc tham số query/header bắt buộc) / `NEGATIVE_NULL_FIELD` / `NEGATIVE_WRONG_TYPE` / `NEGATIVE_INVALID_ENUM` (15h gọi là `BOUNDARY_INVALID_ENUM` - backend vẫn đọc được tên cũ trong báo cáo đã lưu); `BOUNDARY_AT_/BELOW_MINIMUM`, `BOUNDARY_AT_/ABOVE_MAXIMUM`, `BOUNDARY_AT_/BELOW_MIN_LENGTH`, `BOUNDARY_AT_/ABOVE_MAX_LENGTH`, `BOUNDARY_AT_/ABOVE_TYPE_MAXIMUM` + `BOUNDARY_AT_/BELOW_TYPE_MINIMUM` (int32/int64, hai đầu; minimum/maximum `exclusive` được tính đúng), biên ngầm `BOUNDARY_ZERO` / `BOUNDARY_NEGATIVE_NUMBER` / `BOUNDARY_EMPTY_STRING` (spec không khai ràng buộc → kỳ vọng 2xx, UI gắn nhãn "⚠ biên ngầm"; riêng tham số **path** các giá trị 0/-1/lớn nhất int64 kỳ vọng **lỗi 4xx**, description ghi "kỳ vọng lỗi 4xx", bù `expectedStatus=404`); `SECURITY_MISSING_TOKEN` / `SECURITY_INVALID_TOKEN` (chấm theo `authOverride` + 401, `NOT_APPLICABLE` khi endpoint không `requiresAuth`).
+- `items[].status`: `ALREADY_COVERED` (case khoá/tự thêm sẵn có đã đạt, không giao AI) / `AI_SATISFIED` / `SYSTEM_FILLED` / `NOT_FILLABLE` (kèm `reason`) / `NOT_APPLICABLE` (kèm `reason`, vd body không phải JSON).
+- Mục "đạt" do backend **chấm theo NỘI DUNG case** (quy tắc mỗi case chỉ 1 lỗi), không dựa vào tên hay lời AI tự khai.
+- `TestCaseResponse` thêm `generationOrigin` (`AI_CHECKLIST` / `AI_EXTRA` / `SYSTEM_FILLED`, null cho MANUAL/dữ liệu trước 15h; từ 15i case Security cũng có giá trị) và `checklistItem` (mô tả mục checklist case đó đạt, null nếu không). Frontend dùng `GENERATION_ORIGIN_DISPLAY` ở `frontend/src/lib/testcases.ts`, không tự đặt nhãn riêng.
+
+`GET /api/v1/projects/{projectId}/endpoints/{endpointId}/generation-plan` — trả `ApiResponse<GenerationPlanSummary | null>`: báo cáo checklist của lần sinh nhóm Basic gần nhất (lưu ở `TestGenerationEvent.planSummaryJson`), để xem lại sau khi tải lại trang. Đọc dòng `TestGenerationEvent` MỚI NHẤT của endpoint; `data = null` khi chưa sinh lần nào hoặc dòng đó tạo trước khi có tính năng. `checklistCaseCount`/`extraCaseNames` là số liệu chụp lúc sinh — frontend hiển thị từ đây, KHÔNG ghép với bộ test case đang sống (có thể đã bị sửa/xoá sau đó).
+
 ## 5. Naming convention endpoint
 
 - Danh từ số nhiều, kebab-case nếu nhiều từ: `/api/v1/projects`, `/api/v1/test-cases`

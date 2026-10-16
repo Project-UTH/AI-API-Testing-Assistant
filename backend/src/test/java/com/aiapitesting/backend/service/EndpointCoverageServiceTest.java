@@ -473,6 +473,96 @@ class EndpointCoverageServiceTest {
         assertThat(boundaryDim.coveringTestCases()).hasSize(1);
     }
 
+    /**
+     * Module 15h (sửa lỗi có sẵn) - giá trị biên của query param ghi thẳng trong resolvedPath (đúng
+     * cách prompt dặn AI), pathParamFallbacks trống. Trước đây Coverage chỉ đọc fallbacks nên báo
+     * MISSING dù đã có case test biên.
+     */
+    @Test
+    void getEndpointCoverage_boundaryValueWrittenLiterallyInUrl_isCovered() {
+        Schema<?> quantitySchema = new Schema<>().type("integer")
+                .minimum(java.math.BigDecimal.ONE).maximum(java.math.BigDecimal.valueOf(100));
+        Parameter quantityParam = new Parameter().name("quantity").in("query").required(true).schema(quantitySchema);
+        Map<String, Object> trimmed = new LinkedHashMap<>();
+        trimmed.put("parameters", List.of(quantityParam));
+        String schemaJson;
+        try {
+            schemaJson = objectMapper.writeValueAsString(trimmed);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        Endpoint endpoint = endpoint("/stock", "PATCH", false, schemaJson);
+
+        TestCase belowMinInUrl = TestCase.builder()
+                .id(UUID.randomUUID()).endpoint(endpoint).name("Boundary - quantity = 0")
+                .source(TestCaseSource.AI_GENERATED).expectedStatus(400)
+                .resolvedPath("/stock?quantity=0")
+                .authOverride(TestCaseAuthOverride.DEFAULT).createdAt(Instant.now()).build();
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(belowMinInUrl));
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        CoverageDimensionResponse boundaryDim = result.dimensions().stream()
+                .filter(d -> d.category().equals("BOUNDARY")).findFirst().orElseThrow();
+        assertThat(boundaryDim.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+    }
+
+    /**
+     * Module 15h - tính chất "checklist đạt thì Coverage cũng COVERED": dựng đủ mọi case checklist
+     * (bằng chính planner.fill), đưa vào Coverage Matrix, mọi dimension REQUIRED_FIELD/BOUNDARY phải
+     * COVERED. Nếu 2 bên hiểu "đủ" khác nhau, test này vỡ - tránh cảnh demo "chỗ này đủ, chỗ kia thiếu".
+     */
+    @Test
+    void getEndpointCoverage_casesSatisfyingWholeChecklist_coverEveryRequiredAndBoundaryDimension() {
+        String schemaJson = """
+                {"parameters":[{"name":"minPrice","in":"query","schema":{"type":"integer","minimum":0}}],
+                 "requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["email","age"],
+                   "properties":{"email":{"type":"string"},
+                                 "age":{"type":"integer","minimum":18,"maximum":60},
+                                 "name":{"type":"string","minLength":2,"maxLength":5},
+                                 "role":{"type":"string","enum":["USER","ADMIN"]}}}}}}}""";
+        Endpoint endpoint = endpoint("/users", "POST", false, schemaJson);
+        TestCaseChecklistPlanner planner = new TestCaseChecklistPlanner();
+        TestCaseChecklistPlanner.Spec spec = planner.readSpec(endpoint);
+        com.aiapitesting.backend.dto.ai.GeneratedTestCase baseline = new com.aiapitesting.backend.dto.ai.GeneratedTestCase(
+                "Positive", "d", Map.of(), "{\"email\":\"an@gmail.com\",\"age\":25,\"name\":\"abc\",\"role\":\"USER\"}", 201,
+                "/users?minPrice={{minPrice}}", Map.of("minPrice", "10"), null, null);
+
+        List<TestCase> cases = new java.util.ArrayList<>();
+        for (TestCaseChecklistPlanner.ChecklistItem item : planner.plan(spec, true, true, true)) {
+            com.aiapitesting.backend.dto.ai.GeneratedTestCase g = item.location() == null ? baseline : planner.fill(spec, item, baseline);
+            assertThat(planner.satisfies(spec, item, g)).as(item.description()).isTrue();
+            String fallbacks;
+            try {
+                fallbacks = objectMapper.writeValueAsString(g.pathParamFallbacks());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            cases.add(TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).name(g.name())
+                    .source(TestCaseSource.AI_GENERATED).expectedStatus(g.expectedStatus())
+                    .requestBody(g.requestBody()).resolvedPath(g.resolvedPath()).pathParamFallbacks(fallbacks)
+                    .authOverride(TestCaseAuthOverride.DEFAULT).createdAt(Instant.now()).build());
+        }
+
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(cases);
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of());
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of());
+
+        EndpointCoverageResponse result = endpointCoverageService.getEndpointCoverage(projectId, endpoint.getId());
+
+        assertThat(result.dimensions())
+                .filteredOn(d -> d.category().equals("REQUIRED_FIELD") || d.category().equals("BOUNDARY"))
+                .hasSize(6) // 2 required (email, age) + 4 boundary (age, name, role, minPrice)
+                .allMatch(d -> d.status() == CoverageDimensionStatus.COVERED);
+    }
+
     @Test
     void getEndpointCoverage_enumOnlyField_anyValuePresentIsCovered() {
         // Field chỉ có enum (không min/max/length) giữ hành vi cũ - có mặt là đủ, vì enum không có

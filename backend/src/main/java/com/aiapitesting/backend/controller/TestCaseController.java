@@ -6,6 +6,8 @@ import com.aiapitesting.backend.dto.request.TestCaseRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.ConfidenceCheckResponse;
 import com.aiapitesting.backend.dto.response.DependencySuggestionResponse;
+import com.aiapitesting.backend.dto.response.GenerateTestCasesResponse;
+import com.aiapitesting.backend.dto.response.GenerationPlanSummary;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.service.DependencySuggestionService;
 import com.aiapitesting.backend.service.TestCaseService;
@@ -39,13 +41,22 @@ public class TestCaseController {
     private final DependencySuggestionService dependencySuggestionService;
 
     @PostMapping("/generate-tests")
-    public CompletableFuture<ResponseEntity<ApiResponse<List<TestCaseResponse>>>> generate(
+    public CompletableFuture<ResponseEntity<ApiResponse<GenerateTestCasesResponse>>> generate(
             @PathVariable UUID projectId,
             @PathVariable UUID endpointId,
             @RequestBody(required = false) GenerateTestCasesRequest request
     ) {
         return testCaseGenerationService.generate(projectId, endpointId, request)
-                .thenApply(list -> ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(list)));
+                .thenApply(result -> ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(result)));
+    }
+
+    // Module 15h - báo cáo checklist lần sinh gần nhất; data = null nếu chưa có.
+    @GetMapping("/generation-plan")
+    public ResponseEntity<ApiResponse<GenerationPlanSummary>> getLatestGenerationPlan(
+            @PathVariable UUID projectId,
+            @PathVariable UUID endpointId
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(testCaseGenerationService.getLatestPlanSummary(projectId, endpointId)));
     }
 
     @PostMapping("/test-cases")

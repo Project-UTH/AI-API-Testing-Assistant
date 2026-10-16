@@ -2,6 +2,7 @@ package com.aiapitesting.backend.dto.response;
 
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
+import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
 import com.aiapitesting.backend.entity.TestCaseReliability;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -30,6 +31,8 @@ public record TestCaseResponse(
         String pathParamFallbacks,
         TestCaseSource source,
         TestCaseAuthOverride authOverride,
+        TestCaseGenerationOrigin generationOrigin,
+        String checklistItem,
         boolean locked,
         Instant createdAt,
         List<TestCaseDependencyResponse> dependencies,
@@ -67,6 +70,8 @@ public record TestCaseResponse(
                 testCase.getPathParamFallbacks(),
                 testCase.getSource(),
                 testCase.getAuthOverride(),
+                testCase.getGenerationOrigin(),
+                testCase.getChecklistItem(),
                 testCase.isLocked(),
                 testCase.getCreatedAt(),
                 dependencies,

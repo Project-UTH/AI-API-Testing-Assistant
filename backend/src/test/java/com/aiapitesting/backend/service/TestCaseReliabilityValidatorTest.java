@@ -50,7 +50,7 @@ class TestCaseReliabilityValidatorTest {
     }
 
     private GeneratedTestCase candidate(Integer expectedStatus, String requestBody) {
-        return new GeneratedTestCase("name", "desc", Map.of(), requestBody, expectedStatus, "/x", Map.of(), null, null, null);
+        return new GeneratedTestCase("name", "desc", Map.of(), requestBody, expectedStatus, "/x", Map.of(), null, null);
     }
 
     @Test
@@ -160,12 +160,101 @@ class TestCaseReliabilityValidatorTest {
 
         GeneratedTestCase withBadStatus = new GeneratedTestCase(
                 "name", "desc", Map.of(), null, 200, "/pet/findByStatus?status={{status}}",
-                Map.of("status", "unknown-value"), null, null, null);
+                Map.of("status", "unknown-value"), null, null);
 
         TestCaseReliabilityValidator.Result result = validator.validate(endpoint, withBadStatus, TestCaseSource.AI_GENERATED);
 
         assertThat(result.status()).isEqualTo(TestCaseReliability.NEEDS_REVIEW);
         assertThat(result.notes().get(0)).contains("status").contains("enum");
+    }
+
+    /**
+     * Module 15h (sửa lỗi có sẵn) - prompt dặn AI ghi thẳng giá trị biên/sai của tham số query vào
+     * resolvedPath, pathParamFallbacks để trống. Trước đây Tier 1 chỉ đọc pathParamFallbacks nên thấy
+     * "kỳ vọng lỗi nhưng không vi phạm gì" và gắn NEEDS_REVIEW oan cho case hoàn toàn đúng.
+     */
+    @Test
+    void validate_queryBoundaryWrittenLiterallyInUrl_isReadAndNotFlagged() {
+        Schema<?> minPriceSchema = new Schema<>().type("integer").minimum(java.math.BigDecimal.ZERO);
+        Endpoint endpoint = endpointWithParameters(List.of(new Parameter().name("minPrice").in("query").schema(minPriceSchema)));
+        GeneratedTestCase belowMinimum = new GeneratedTestCase(
+                "Boundary - minPrice am", "desc", Map.of(), null, 400, "/x?minPrice=-1", Map.of(), null, null);
+
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, belowMinimum, TestCaseSource.AI_GENERATED);
+
+        assertThat(result.status()).isEqualTo(TestCaseReliability.RELIABLE);
+    }
+
+    @Test
+    void validate_sameQueryParamInUrlAndFallback_readsValueActuallySent() {
+        Schema<?> minPriceSchema = new Schema<>().type("integer").minimum(java.math.BigDecimal.ZERO);
+        Endpoint endpoint = endpointWithParameters(List.of(new Parameter().name("minPrice").in("query").schema(minPriceSchema)));
+        // URL gửi -1 (fallback 100 không bao giờ được dùng) - case kỳ vọng thành công phải bị gắn cờ.
+        GeneratedTestCase sendsMinusOne = new GeneratedTestCase(
+                "Positive", "desc", Map.of(), null, 200, "/x?minPrice=-1", Map.of("minPrice", "100"), null, null);
+
+        TestCaseReliabilityValidator.Result result = validator.validate(endpoint, sendsMinusOne, TestCaseSource.AI_GENERATED);
+
+        assertThat(result.status()).isEqualTo(TestCaseReliability.NEEDS_REVIEW);
+        assertThat(result.notes().get(0)).contains("minPrice").contains("-1");
+    }
+
+    // ---- Kiểu dữ liệu + null (SpecValueRules) - phát hiện khi verify 15h bằng AI thật ----
+
+    private Endpoint productEndpoint(boolean nameNullable) {
+        Schema<?> name = new Schema<>().type("string");
+        if (nameNullable) {
+            name.nullable(true);
+        }
+        Map<String, Schema> props = new LinkedHashMap<>();
+        props.put("name", name);
+        props.put("price", new Schema<>().type("number"));
+        Schema<?> body = new Schema<>().required(List.of("name", "price")).properties(props);
+        return endpointWithBodySchema(body);
+    }
+
+    @Test
+    void validate_negativeWrongType_isRecognisedAsViolationAndNotFlagged() {
+        // Case thật: AI gửi "price": "rat-re" kỳ vọng 400 - trước đây Tier 1 không kiểm kiểu nên gắn cờ oan.
+        TestCaseReliabilityValidator.Result result = validator.validate(productEndpoint(false),
+                candidate(400, "{\"name\":\"Ban phim\",\"price\":\"rat-re\"}"), TestCaseSource.AI_GENERATED);
+
+        assertThat(result.status()).isEqualTo(TestCaseReliability.RELIABLE);
+    }
+
+    @Test
+    void validate_negativeNullOnNonNullableField_isRecognisedAsViolationAndNotFlagged() {
+        // Case thật: "name": null kỳ vọng 400 - OpenAPI 3.0 type string không nullable thì null không hợp lệ.
+        TestCaseReliabilityValidator.Result result = validator.validate(productEndpoint(false),
+                candidate(400, "{\"name\":null,\"price\":599000}"), TestCaseSource.AI_GENERATED);
+
+        assertThat(result.status()).isEqualTo(TestCaseReliability.RELIABLE);
+    }
+
+    @Test
+    void validate_successCaseWithNullOnNonNullableField_flagsNeedsReview() {
+        TestCaseReliabilityValidator.Result result = validator.validate(productEndpoint(false),
+                candidate(200, "{\"name\":null,\"price\":599000}"), TestCaseSource.AI_GENERATED);
+
+        assertThat(result.status()).isEqualTo(TestCaseReliability.NEEDS_REVIEW);
+        assertThat(result.notes().get(0)).contains("name").contains("null");
+    }
+
+    @Test
+    void validate_successCaseWithNullOnNullableField_isReliable() {
+        TestCaseReliabilityValidator.Result result = validator.validate(productEndpoint(true),
+                candidate(200, "{\"name\":null,\"price\":599000}"), TestCaseSource.AI_GENERATED);
+
+        assertThat(result.status()).isEqualTo(TestCaseReliability.RELIABLE);
+    }
+
+    @Test
+    void validate_successCaseWithNumberSentAsJsonString_flagsNeedsReview() {
+        TestCaseReliabilityValidator.Result result = validator.validate(productEndpoint(false),
+                candidate(200, "{\"name\":\"Ban phim\",\"price\":\"599000\"}"), TestCaseSource.AI_GENERATED);
+
+        assertThat(result.status()).isEqualTo(TestCaseReliability.NEEDS_REVIEW);
+        assertThat(result.notes().get(0)).contains("price").contains("kiểu");
     }
 
     @Test

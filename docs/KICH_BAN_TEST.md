@@ -70,7 +70,8 @@
 
 - [ ] `generate-tests` với `includeSecurity:true` **[TỐN TOKEN]** → case nhóm `SECURITY` có `authOverride` (`NONE`/`INVALID`) khác `DEFAULT`, `expectedStatus>=400`.
 - [ ] Case Security dù dữ liệu "sai định dạng" (payload injection) → `reliabilityStatus` LUÔN `RELIABLE` (Module 15f/15g loại trừ Security khỏi Tier 1) — kiểm bằng cách xem `reliabilityNotes` rỗng dù payload rõ ràng không hợp lệ.
-- [ ] Case có `includeAssertions:true` **[TỐN TOKEN]** → `assertions` không rỗng, chạy execution rồi xem `assertionResults` khớp đúng `jsonPath`/`operator`.
+- [ ] Tự tay thêm assertion (Module 9b - cách DUY NHẤT, AI không còn tự sinh assertion): mở form sửa 1 test case kỳ vọng 2xx → thêm `jsonPath`/`operator`/`expectedValue` → lưu → chạy execution rồi xem `assertionResults` khớp đúng `jsonPath`/`operator`; đổi `expectedValue` sai cố ý → status tổng `FAILED` dù status code khớp.
+- [ ] Trang project KHÔNG còn ô "+ Assertion" cạnh nút "Sinh Test Case"; trang Lịch sử (của project + Lịch sử tổng) vẫn mở bình thường với sự kiện "Sinh test case" cũ tạo trước Module 9b (snapshot cũ còn key `assertions`).
 
 ## 10. Bug Report
 
@@ -112,10 +113,15 @@
 
 - [ ] `GET /api/v1/projects/{id}/coverage` → mỗi `EndpointCoverageResponse` có `schemaReadable=true` cho endpoint spec hợp lệ. Thử 1 endpoint có `Endpoint.schema` bị sửa tay thành JSON hỏng trực tiếp trong DB (chỉ trong môi trường test, không đụng dữ liệu thật) → `schemaReadable=false`, UI hiện banner đỏ cảnh báo.
 - [ ] Dimension `BOUNDARY` của 1 field có `minimum`/`maximum` khai báo trong `requestBody`: test case giá trị GIỮA khoảng → `MISSING` kèm detail "chưa case nào chạm giá trị biên"; test case giá trị ĐÚNG min hoặc VƯỢT max → `COVERED`, `coveringTestCases` chứa đúng id/tên case đó.
-- [ ] **(Giới hạn đã biết, xem mục bug dưới)** nếu ràng buộc `minimum`/`maximum` khai báo ở QUERY/PATH param (không phải `requestBody`) → dimension `BOUNDARY` sẽ KHÔNG BAO GIỜ `COVERED` được dù test đúng biên — đây là gap đã phát hiện, chưa fix, xem mục cuối file.
+- [ ] Ràng buộc `minimum`/`maximum` khai báo ở QUERY/PATH param (không phải `requestBody`): case test biên → dimension `BOUNDARY` `COVERED` - cả khi giá trị nằm ở `pathParamFallbacks` (sửa ở 15g) LẪN khi ghi thẳng trong `resolvedPath`, vd `?quantity=0` (sửa ở 15h). Case biên query/path đúng ý đồ (kỳ vọng 400, giá trị vượt biên ghi trong URL) → Tier 1 `RELIABLE`, không còn bị gắn "Cần xem lại" oan.
 - [ ] Case `expectedStatus>=400` không thuộc Security, dữ liệu KHÔNG vi phạm ràng buộc nào → `reliabilityStatus=NEEDS_REVIEW` (Module 15f/15g). Case tương tự nhưng `source=SECURITY` → luôn `RELIABLE`.
 - [ ] `POST .../test-cases/{id}/confidence-check` **[TỐN TOKEN AI THẬT]** trên 1 case đã có sẵn → `agreementLevel` trả về, KHÔNG ghi đè `reliabilityStatus` đã có, KHÔNG tạo dòng `TestGenerationEvent` mới (`GET history` trước/sau phải giống nhau về số sự kiện).
-- [ ] `TestCaseGenerationServiceTest`/`EndpointCoverageServiceTest`/`TestCaseReliabilityValidatorTest`/`TestCaseReliabilityDetectionEvaluationTest` (`./mvnw test`) luôn xanh — bộ test Precision/Recall Tier 1 tự chạy lại mỗi lần, báo động sớm nếu rule tất định bị sửa hỏng.
+- [ ] **15h - checklist EP/BVA [TỐN TOKEN AI THẬT, 1 lần gọi]:** chọn 1 endpoint có body JSON nhiều ràng buộc (vd `POST /api/products`), tick Positive + Negative + Boundary (KHÔNG tick Security), bấm "Sinh Test Case" → dưới dòng endpoint hiện báo cáo "Đã sinh N test case: AI sinh X (đạt Y/Z mục checklist được giao...), hệ thống bổ sung M mục"; Z = 1 + số field required + 2 × số ràng buộc min/max/minLength/maxLength + số field enum (đếm tay từ spec phải khớp); bấm "Xem chi tiết checklist" thấy đủ từng mục kèm trạng thái.
+- [ ] 15h - trang Test Case: mỗi case nhóm Basic vừa sinh có đúng 1 nhãn "AI · theo checklist" / "AI đề xuất thêm" / "Hệ thống bổ sung"; mở "Xem chi tiết" 1 case "Hệ thống bổ sung" → requestBody chỉ khác case hợp lệ đúng 1 chỗ, mục "Vì sao hệ thống tạo case này" có lý do viết từ spec. Case Security/tự thêm/case cũ trước 15h KHÔNG có nhãn này.
+- [ ] 15h - khoá 1 case đạt mục checklist (vd case biên trên maximum) → sinh lại → báo cáo ghi "1 mục đã có sẵn từ case khoá/tự thêm", không sinh trùng case cho mục đó.
+- [ ] 15h - chỉ tick Negative → mọi case lưu đều là case thiếu field/sai dữ liệu, KHÔNG lưu case Positive hợp lệ (case gốc AI sinh chỉ dùng làm nền bù).
+- [ ] 15h - trang Lịch sử: sự kiện "Sinh test case" vừa tạo hiện đúng N case (gồm cả case hệ thống bổ sung).
+- [ ] `TestCaseGenerationServiceTest`/`EndpointCoverageServiceTest`/`TestCaseReliabilityValidatorTest`/`TestCaseReliabilityDetectionEvaluationTest`/`TestCaseChecklistPlannerTest`/`TestCaseParamValuesTest` (`./mvnw test`) luôn xanh — bộ test Precision/Recall Tier 1 tự chạy lại mỗi lần, báo động sớm nếu rule tất định bị sửa hỏng.
 
 ---
 

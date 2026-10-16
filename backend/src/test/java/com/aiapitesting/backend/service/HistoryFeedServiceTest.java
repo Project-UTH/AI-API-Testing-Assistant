@@ -78,7 +78,7 @@ class HistoryFeedServiceTest {
 
     private TestGenerationEvent generationEvent(Endpoint endpoint, Instant createdAt, int count) throws Exception {
         String snapshotJson = objectMapper.writeValueAsString(List.of(
-                new GeneratedTestCase("Positive", "mo ta", Map.of(), "{}", 201, endpoint.getPath(), Map.of(), null, null, null)));
+                new GeneratedTestCase("Positive", "mo ta", Map.of(), "{}", 201, endpoint.getPath(), Map.of(), null, null)));
         return TestGenerationEvent.builder()
                 .id(UUID.randomUUID()).endpoint(endpoint).testCaseCount(count)
                 .snapshotJson(snapshotJson).createdAt(createdAt).build();
@@ -110,6 +110,31 @@ class HistoryFeedServiceTest {
         assertThat(page.data().get(1).type()).isEqualTo("GENERATION"); // 03:00 - som hon
         assertThat(page.data().get(1).projectName()).isEqualTo("project1");
         assertThat(page.totalElements()).isEqualTo(2);
+    }
+
+    /**
+     * Hồi quy Module 9b - snapshot lưu TRƯỚC khi bỏ AI sinh assertion vẫn chứa key "assertions".
+     * Dùng đúng chuỗi JSON shape cũ, không serialize từ record mới (sẽ che mất bug).
+     */
+    @Test
+    void getFeed_snapshotSavedBeforeModule9b_withAssertionsKey_stillParses() {
+        String legacySnapshotJson = "[{\"name\":\"Positive\",\"description\":\"mo ta\",\"requestHeaders\":{},"
+                + "\"requestBody\":\"{\\\"price\\\":19.99}\",\"expectedStatus\":201,\"resolvedPath\":\"/api/products\","
+                + "\"pathParamFallbacks\":{},\"authOverride\":null,"
+                + "\"assertions\":[{\"jsonPath\":\"price\",\"operator\":\"EQUALS\",\"expectedValue\":\"19.99\"}],"
+                + "\"rationale\":null}]";
+        TestGenerationEvent legacyEvent = TestGenerationEvent.builder()
+                .id(UUID.randomUUID()).endpoint(endpointA).testCaseCount(1)
+                .snapshotJson(legacySnapshotJson).createdAt(Instant.parse("2026-08-20T03:00:00Z")).build();
+        when(testGenerationEventRepository.findAllForHistoryFeed(owner, null, null, null, null))
+                .thenReturn(List.of(legacyEvent));
+
+        PageResponse<HistoryFeedItemResponse> page = historyFeedService.getFeed(
+                null, null, null, null, HistoryStatusFilter.ALL, PageRequest.of(0, 20));
+
+        assertThat(page.data()).hasSize(1);
+        assertThat(page.data().get(0).snapshotItems()).hasSize(1);
+        assertThat(page.data().get(0).snapshotItems().get(0).name()).isEqualTo("Positive");
     }
 
     @Test

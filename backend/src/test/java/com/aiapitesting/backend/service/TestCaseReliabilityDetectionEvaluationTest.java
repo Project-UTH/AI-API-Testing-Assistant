@@ -61,7 +61,7 @@ class TestCaseReliabilityDetectionEvaluationTest {
     }
 
     private GeneratedTestCase gtc(Integer expectedStatus, String requestBody) {
-        return new GeneratedTestCase("n", "d", Map.of(), requestBody, expectedStatus, "/items", Map.of(), null, null, "r");
+        return new GeneratedTestCase("n", "d", Map.of(), requestBody, expectedStatus, "/items", Map.of(), null, "r");
     }
 
     private List<LabeledCase> labeledDataset() {

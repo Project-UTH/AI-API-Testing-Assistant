@@ -1,14 +1,18 @@
 package com.aiapitesting.backend.service.ai;
 
-import com.aiapitesting.backend.dto.ai.GeneratedAssertion;
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.request.GenerateTestCasesRequest;
+import com.aiapitesting.backend.dto.response.ChecklistItemResponse;
+import com.aiapitesting.backend.dto.response.ChecklistItemStatus;
+import com.aiapitesting.backend.dto.response.ChecklistItemType;
+import com.aiapitesting.backend.dto.response.GenerateTestCasesResponse;
+import com.aiapitesting.backend.dto.response.GenerationPlanSummary;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
-import com.aiapitesting.backend.entity.TestCaseAssertion;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
+import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
 import com.aiapitesting.backend.entity.TestCaseReliability;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
@@ -24,9 +28,11 @@ import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.ProjectService;
+import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import com.aiapitesting.backend.service.TestCaseReliabilityValidator;
 import com.aiapitesting.backend.service.TestCaseService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +57,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -67,6 +75,8 @@ public class TestCaseGenerationService {
 
     private static final int MIN_STATUS = 100;
     private static final int MAX_STATUS = 599;
+    /** Độ dài cột TestCase.checklistItem (VARCHAR(255)). */
+    private static final int CHECKLIST_LABEL_MAX = 255;
 
     private final ChatClient chatClient;
     private final ProjectService projectService;
@@ -80,6 +90,7 @@ public class TestCaseGenerationService {
     private final TestCaseReliabilityValidator testCaseReliabilityValidator;
     private final TestCaseReliabilityConfirmationService testCaseReliabilityConfirmationService;
     private final TestCaseService testCaseService;
+    private final TestCaseChecklistPlanner testCaseChecklistPlanner;
     private final TestGenerationEventRepository testGenerationEventRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -91,13 +102,12 @@ public class TestCaseGenerationService {
 
     @Async
     @Transactional
-    public CompletableFuture<List<TestCaseResponse>> generate(UUID projectId, UUID endpointId, GenerateTestCasesRequest request) {
+    public CompletableFuture<GenerateTestCasesResponse> generate(UUID projectId, UUID endpointId, GenerateTestCasesRequest request) {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
         ensureWithinDailyQuota(project);
         boolean includeSecurity = request != null && request.includeSecurity();
-        boolean includeAssertions = request != null && request.includeAssertions();
         // request == null giữ hành vi mặc định cũ: sinh cả 3 nhóm. Khi có body, đọc đúng giá trị đã gửi.
         boolean includePositive = request == null || request.includePositive();
         boolean includeNegative = request == null || request.includeNegative();
@@ -112,21 +122,91 @@ public class TestCaseGenerationService {
         // KHÔNG tick -> không gọi AI, chỉ xoá sạch case cũ (chưa khoá) còn sót từ lần sinh trước, để
         // tránh tình trạng case Security cũ (hoặc Positive/Negative/Boundary cũ) còn lưu lại dù lần
         // này người dùng chủ động bỏ tick. Case đã khoá luôn được giữ nguyên ở cả 2 nhánh.
-        List<TestCase> saved = new ArrayList<>();
+        List<GroupResult> groups = new ArrayList<>();
         if (includePositive || includeNegative || includeBoundary) {
-            saved.addAll(generateGroup(endpoint, TestCaseSource.AI_GENERATED, false, includeAssertions,
+            groups.add(generateGroup(endpoint, TestCaseSource.AI_GENERATED, false,
                     includePositive, includeNegative, includeBoundary));
         } else {
             deleteExistingGroup(endpoint, TestCaseSource.AI_GENERATED);
         }
         if (includeSecurity) {
-            saved.addAll(generateGroup(endpoint, TestCaseSource.SECURITY, true, includeAssertions,
+            groups.add(generateGroup(endpoint, TestCaseSource.SECURITY, true,
                     includePositive, includeNegative, includeBoundary));
         } else {
             deleteExistingGroup(endpoint, TestCaseSource.SECURITY);
         }
 
-        return CompletableFuture.completedFuture(saved.stream().map(TestCaseResponse::from).toList());
+        GenerationPlanSummary planSummary = merge(groups.stream().map(GroupResult::planSummary).toList());
+        if (groups.size() > 1) {
+            // Báo cáo đọc lại sau khi tải trang lấy từ dòng lịch sử MỚI NHẤT - ghi bản gộp cả 2 nhóm vào đó.
+            TestGenerationEvent last = groups.get(groups.size() - 1).event();
+            last.setPlanSummaryJson(writePlanSummaryAsJson(planSummary));
+            testGenerationEventRepository.save(last);
+        }
+        List<TestCaseResponse> saved = groups.stream()
+                .flatMap(g -> g.saved().stream())
+                .map(TestCaseResponse::from)
+                .toList();
+        return CompletableFuture.completedFuture(new GenerateTestCasesResponse(saved, planSummary));
+    }
+
+    /** Gộp báo cáo của nhóm Cơ bản + Security trong cùng 1 lần bấm "Sinh Test Case" (Module 15i). */
+    private GenerationPlanSummary merge(List<GenerationPlanSummary> summaries) {
+        if (summaries.size() == 1) {
+            return summaries.get(0);
+        }
+        List<ChecklistItemResponse> items = new ArrayList<>();
+        List<String> extraCaseNames = new ArrayList<>();
+        int[] totals = new int[9];
+        for (GenerationPlanSummary s : summaries) {
+            items.addAll(s.items());
+            extraCaseNames.addAll(s.extraCaseNames());
+            int[] values = {s.checklistTotal(), s.alreadyCoveredCount(), s.aiAskedCount(), s.aiSatisfiedCount(),
+                    s.systemFilledCount(), s.notFillableCount(), s.notApplicableCount(), s.aiExtraCount(), s.checklistCaseCount()};
+            for (int i = 0; i < totals.length; i++) {
+                totals[i] += values[i];
+            }
+        }
+        return new GenerationPlanSummary(totals[0], totals[1], totals[2], totals[3], totals[4], totals[5], totals[6],
+                totals[7], totals[8], extraCaseNames, items);
+    }
+
+    /**
+     * Báo cáo checklist của lần sinh gần nhất (Module 15h) - để xem lại sau khi tải lại trang. Từ 15i
+     * mọi lần sinh đều có báo cáo (cả nhóm Security, gộp nếu sinh cả 2 nhóm) nên chỉ cần đọc dòng lịch
+     * sử MỚI NHẤT. Null khi chưa sinh lần nào hoặc dòng đó tạo trước khi có tính năng.
+     */
+    @Transactional(readOnly = true)
+    public GenerationPlanSummary getLatestPlanSummary(UUID projectId, UUID endpointId) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        return testGenerationEventRepository.findFirstByEndpointOrderByCreatedAtDesc(endpoint)
+                .filter(event -> event.getPlanSummaryJson() != null)
+                .map(event -> readPlanSummary(event.getPlanSummaryJson()))
+                .orElse(null);
+    }
+
+    private GenerationPlanSummary readPlanSummary(String json) {
+        try {
+            return objectMapper.readValue(json, GenerationPlanSummary.class);
+        } catch (Exception e) {
+            // Không để 1 dòng JSON hỏng làm trang Endpoint trả 500 (bài học 15d) - coi như chưa có báo cáo.
+            log.warn("Khong doc duoc bao cao checklist da luu: {}", e.toString());
+            return null;
+        }
+    }
+
+    /** Module 15i - cả 2 nhóm đều có planSummary; event để generate() ghi báo cáo gộp vào dòng lịch sử cuối cùng. */
+    private record GroupResult(List<TestCase> saved, GenerationPlanSummary planSummary, TestGenerationEvent event) {
+    }
+
+    /** 1 case sẽ lưu cùng nguồn gốc + mục checklist mà nó đạt (Module 15h). */
+    private record PlannedCase(GeneratedTestCase generated, TestCaseGenerationOrigin origin, String checklistItem,
+                               boolean tier1Blind) {
+        PlannedCase(GeneratedTestCase generated, TestCaseGenerationOrigin origin, String checklistItem) {
+            this(generated, origin, checklistItem, false);
+        }
     }
 
     /**
@@ -206,13 +286,45 @@ public class TestCaseGenerationService {
      * Sinh + lưu 1 nhóm test case (Cơ bản hoặc Security) - xoá-và-thay đúng theo source, không đụng
      * nhóm khác. Mỗi nhóm là 1 lệnh gọi AI + 1 dòng TestGenerationEvent riêng.
      * includePositive/includeNegative/includeBoundary chỉ có ý nghĩa khi includeSecurity=false.
+     *
+     * Module 15h: lập checklist EP/BVA → chấm trước case sẽ còn lại (đã khoá/MANUAL) → giao AI các mục
+     * còn lại → CHẤM NỘI DUNG case AI trả về (không tin lời AI tự khai) → tự bù mục AI làm thiếu/sai từ
+     * 1 case gốc. Vẫn đúng 1 lệnh gọi AI chính. Module 15i: áp dụng cho cả nhóm Security.
      */
-    private List<TestCase> generateGroup(
-            Endpoint endpoint, TestCaseSource source, boolean includeSecurity, boolean includeAssertions,
+    private GroupResult generateGroup(
+            Endpoint endpoint, TestCaseSource source, boolean includeSecurity,
             boolean includePositive, boolean includeNegative, boolean includeBoundary
     ) {
-        Prompt prompt = buildPrompt(endpoint, includeSecurity, includeAssertions,
-                includePositive, includeNegative, includeBoundary);
+        Map<TestCaseChecklistPlanner.ChecklistItem, ChecklistItemStatus> statuses = new LinkedHashMap<>();
+        Map<TestCaseChecklistPlanner.ChecklistItem, String> reasons = new HashMap<>();
+        // Tên các test case đạt từng mục - để báo cáo chỉ rõ case nào ứng với mục nào.
+        Map<TestCaseChecklistPlanner.ChecklistItem, List<String>> coveredBy = new HashMap<>();
+        // Module 15i - cả nhóm Security cũng có checklist riêng (thiếu token, token sai). Giao AI TOÀN BỘ
+        // mục (bỏ giới hạn 15 mục/lần của 15h - người dùng chốt nâng max-tokens thay vì cắt bớt).
+        TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
+        List<TestCaseChecklistPlanner.ChecklistItem> items = includeSecurity
+                ? testCaseChecklistPlanner.planSecurity(endpoint.isRequiresAuth())
+                : testCaseChecklistPlanner.plan(spec, includePositive, includeNegative, includeBoundary);
+        List<GeneratedTestCase> survivors = survivingCases(endpoint, source);
+        for (TestCaseChecklistPlanner.ChecklistItem item : items) {
+            if (item.notApplicableReason() != null) {
+                statuses.put(item, ChecklistItemStatus.NOT_APPLICABLE);
+                reasons.put(item, item.notApplicableReason());
+                continue;
+            }
+            for (GeneratedTestCase survivor : survivors) {
+                if (testCaseChecklistPlanner.satisfies(spec, item, survivor)) {
+                    statuses.put(item, ChecklistItemStatus.ALREADY_COVERED);
+                    coveredBy.computeIfAbsent(item, k -> new ArrayList<>()).add(survivor.name());
+                }
+            }
+        }
+        List<TestCaseChecklistPlanner.ChecklistItem> askAi = items.stream()
+                .filter(item -> !statuses.containsKey(item))
+                .toList();
+
+        Prompt prompt = buildPrompt(endpoint, includeSecurity,
+                includePositive, includeNegative, includeBoundary, askAi);
 
         List<GeneratedTestCase> generated;
         Usage usage;
@@ -233,7 +345,13 @@ public class TestCaseGenerationService {
 
         deleteExistingGroup(endpoint, source);
 
-        List<TestCase> entities = generated.stream().map(g -> toEntity(endpoint, g, source)).toList();
+        List<PlannedCase> planned = gradeAndFill(spec, items, statuses, reasons, coveredBy, generated, survivors,
+                includeSecurity || includePositive, includeSecurity);
+        GenerationPlanSummary planSummary = summarize(items, statuses, reasons, coveredBy, askAi.size(), planned);
+
+        List<TestCase> entities = planned.stream()
+                .map(p -> toEntity(endpoint, p.generated(), source, p.origin(), p.checklistItem(), p.tier1Blind()))
+                .toList();
 
         // Module 15g - lưu event Tier 1 NGAY ở đây (chỉ với token `usage` của lệnh gọi chính), TRƯỚC
         // khi kiểm quota cho Tier 2. Lý do: isWithinDailyQuota() đọc tổng token từ DB
@@ -242,14 +360,18 @@ public class TestCaseGenerationService {
         // vừa tiêu - lỗ hổng TOCTOU thật (lệch tối đa 1 lần gọi Tier 2 ngoài ý muốn), phát hiện khi đối
         // chiếu lại bằng agent phản biện đọc code thật. Lưu trước rồi UPDATE lại (không tạo dòng mới)
         // nếu Tier 2 có chạy - vẫn giữ đúng nguyên tắc "1 dòng sự kiện duy nhất cho 1 lượt sinh" (15d).
-        TestGenerationEvent event = testGenerationEventRepository.save(TestGenerationEvent.builder()
+        // Module 15h - snapshot chứa CẢ case hệ thống bù để trang Lịch sử hiện đúng số case thực tế.
+        // Giữ chính đối tượng vừa tạo (JPA persist trả về cùng instance) để Tier 2 / báo cáo gộp 15i cập nhật lại.
+        TestGenerationEvent event = TestGenerationEvent.builder()
                 .endpoint(endpoint)
                 .testCaseCount(entities.size())
-                .snapshotJson(writeSnapshotAsJson(generated))
+                .snapshotJson(writeSnapshotAsJson(planned.stream().map(PlannedCase::generated).toList()))
+                .planSummaryJson(writePlanSummaryAsJson(planSummary))
                 .promptTokens(usage == null ? null : usage.getPromptTokens())
                 .completionTokens(usage == null ? null : usage.getCompletionTokens())
                 .totalTokens(usage == null ? null : usage.getTotalTokens())
-                .build());
+                .build();
+        testGenerationEventRepository.save(event);
 
         // Module 15d (Tier 2) - CHỈ gọi thêm AI khi có case bị Tier 1 gắn cờ, gộp hết vào ĐÚNG 1 lệnh
         // gọi bổ sung (không gọi riêng từng case). Kiểm tra quota TRƯỚC (không throw - khác
@@ -269,40 +391,184 @@ public class TestCaseGenerationService {
             testGenerationEventRepository.save(event);
         }
 
-        List<TestCase> saved = testCaseRepository.saveAll(entities);
+        return new GroupResult(testCaseRepository.saveAll(entities), planSummary, event);
+    }
 
-        // saveAll() giữ nguyên thứ tự input - ghép theo index với `generated` để biết assertion
-        // thuộc về test case nào vừa lưu.
-        List<TestCaseAssertion> assertionsToSave = new ArrayList<>();
-        for (int i = 0; i < saved.size(); i++) {
-            List<GeneratedAssertion> generatedAssertions = generated.get(i).assertions();
-            if (generatedAssertions == null) {
+    /**
+     * Module 15h - chấm từng case AI trả về theo NỘI DUNG, gắn nguồn gốc, rồi tự bù mục còn thiếu.
+     * Khi người dùng KHÔNG tick Positive: AI vẫn sinh 1 case gốc hợp lệ để hệ thống dùng làm nền bù,
+     * nhưng case gốc thuần (không đạt mục checklist nào khác) bị bỏ, không lưu thành test case.
+     */
+    private List<PlannedCase> gradeAndFill(
+            TestCaseChecklistPlanner.Spec spec,
+            List<TestCaseChecklistPlanner.ChecklistItem> items,
+            Map<TestCaseChecklistPlanner.ChecklistItem, ChecklistItemStatus> statuses,
+            Map<TestCaseChecklistPlanner.ChecklistItem, String> reasons,
+            Map<TestCaseChecklistPlanner.ChecklistItem, List<String>> coveredBy,
+            List<GeneratedTestCase> generated,
+            List<GeneratedTestCase> survivors,
+            boolean includePositive,
+            boolean security
+    ) {
+        List<PlannedCase> planned = new ArrayList<>();
+        GeneratedTestCase baseline = null;
+        boolean baselineDropped = false;
+        // Case hợp lệ nhưng đã đạt 1 mục CỤ THỂ hơn (vd age=18 đúng minimum) cũng đạt luôn mục "Dữ liệu
+        // hợp lệ" - báo cáo chỉ liệt kê nó dưới mục cụ thể, trừ khi không có case thuần hợp lệ nào.
+        List<String> positiveAlsoBySpecificCases = new ArrayList<>();
+        for (GeneratedTestCase g : generated) {
+            List<TestCaseChecklistPlanner.ChecklistItem> hits = items.stream()
+                    .filter(item -> !statuses.containsKey(item) || statuses.get(item) == ChecklistItemStatus.AI_SATISFIED)
+                    .filter(item -> testCaseChecklistPlanner.satisfies(spec, item, g))
+                    .toList();
+            boolean validBaseline = testCaseChecklistPlanner.isValidBaseline(spec, g);
+            if (validBaseline && baseline == null) {
+                baseline = g;
+            }
+            if (!includePositive && validBaseline && hits.isEmpty() && !baselineDropped) {
+                baselineDropped = true;
                 continue;
             }
-            TestCase savedCase = saved.get(i);
-            for (GeneratedAssertion ga : generatedAssertions) {
-                if (ga.jsonPath() == null || ga.jsonPath().isBlank() || ga.operator() == null) {
-                    continue;
+            List<TestCaseChecklistPlanner.ChecklistItem> specificHits = hits.stream()
+                    .filter(item -> item.type() != ChecklistItemType.POSITIVE_BASELINE)
+                    .toList();
+            for (TestCaseChecklistPlanner.ChecklistItem item : hits) {
+                statuses.put(item, ChecklistItemStatus.AI_SATISFIED);
+                if (item.type() == ChecklistItemType.POSITIVE_BASELINE && !specificHits.isEmpty()) {
+                    positiveAlsoBySpecificCases.add(g.name());
+                } else {
+                    coveredBy.computeIfAbsent(item, k -> new ArrayList<>()).add(g.name());
                 }
-                assertionsToSave.add(TestCaseAssertion.builder()
-                        .testCase(savedCase)
-                        .jsonPath(ga.jsonPath())
-                        .operator(ga.operator())
-                        .expectedValue(ga.expectedValue())
-                        .build());
+            }
+            TestCaseChecklistPlanner.ChecklistItem main = hits.isEmpty() ? null : specificHits.isEmpty() ? hits.get(0) : specificHits.get(0);
+            planned.add(main == null
+                    ? new PlannedCase(g, TestCaseGenerationOrigin.AI_EXTRA, null)
+                    : new PlannedCase(g, TestCaseGenerationOrigin.AI_CHECKLIST, label(main), main.tier1CannotSee()));
+        }
+        for (TestCaseChecklistPlanner.ChecklistItem item : items) {
+            if (item.type() == ChecklistItemType.POSITIVE_BASELINE
+                    && statuses.get(item) == ChecklistItemStatus.AI_SATISFIED && !coveredBy.containsKey(item)) {
+                coveredBy.put(item, positiveAlsoBySpecificCases);
             }
         }
-        if (!assertionsToSave.isEmpty()) {
-            testCaseAssertionRepository.saveAll(assertionsToSave);
+        if (baseline == null) {
+            baseline = survivors.stream().filter(s -> testCaseChecklistPlanner.isValidBaseline(spec, s)).findFirst().orElse(null);
+        }
+        // Security chỉ đổi cách gọi (authOverride), không cần body hợp lệ tuyệt đối - không có case
+        // hợp lệ nào thì lấy tạm case AI sinh đầu tiên làm gốc (vd case injection).
+        if (baseline == null && security && !generated.isEmpty()) {
+            baseline = generated.get(0);
         }
 
-        return saved;
+        for (TestCaseChecklistPlanner.ChecklistItem item : items) {
+            if (statuses.containsKey(item)) {
+                continue;
+            }
+            GeneratedTestCase filled = baseline == null ? null : testCaseChecklistPlanner.fill(spec, item, baseline);
+            if (filled == null) {
+                statuses.put(item, ChecklistItemStatus.NOT_FILLABLE);
+                reasons.put(item, baseline == null
+                        ? "AI không sinh được case hợp lệ nào (kỳ vọng thành công, không vi phạm ràng buộc) để hệ thống dùng làm gốc tạo case bù"
+                        : "Hệ thống không tạo được case bù đúng 1 lỗi cho mục này từ case gốc (vd không đối chiếu được vị trí tham số path)");
+            } else {
+                statuses.put(item, ChecklistItemStatus.SYSTEM_FILLED);
+                coveredBy.computeIfAbsent(item, k -> new ArrayList<>()).add(filled.name());
+                planned.add(new PlannedCase(filled, TestCaseGenerationOrigin.SYSTEM_FILLED, label(item), item.tier1CannotSee()));
+            }
+        }
+        return planned;
+    }
+
+    /** Case sẽ CÒN LẠI sau lần sinh này (đã khoá trong đúng nhóm đang sinh + mọi case tự thêm) - mục nào chúng đã đạt thì không giao AI nữa. */
+    private List<GeneratedTestCase> survivingCases(Endpoint endpoint, TestCaseSource source) {
+        return testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint).stream()
+                .filter(tc -> tc.getSource() == TestCaseSource.MANUAL
+                        || (tc.getSource() == source && tc.isLocked()))
+                .map(tc -> new GeneratedTestCase(tc.getName(), tc.getDescription(), readStringMap(tc.getRequestHeaders()),
+                        tc.getRequestBody(), tc.getExpectedStatus(), tc.getResolvedPath(), readStringMap(tc.getPathParamFallbacks()),
+                        tc.getAuthOverride(), tc.getRationale()))
+                .toList();
+    }
+
+    private GenerationPlanSummary summarize(
+            List<TestCaseChecklistPlanner.ChecklistItem> items,
+            Map<TestCaseChecklistPlanner.ChecklistItem, ChecklistItemStatus> statuses,
+            Map<TestCaseChecklistPlanner.ChecklistItem, String> reasons,
+            Map<TestCaseChecklistPlanner.ChecklistItem, List<String>> coveredBy,
+            int aiAskedCount, List<PlannedCase> planned
+    ) {
+        List<ChecklistItemResponse> responses = items.stream()
+                .map(item -> new ChecklistItemResponse(item.type(), item.field(), item.description(),
+                        statuses.get(item), reasons.get(item), coveredBy.getOrDefault(item, List.of())))
+                .toList();
+        List<String> extraCaseNames = planned.stream()
+                .filter(p -> p.origin() == TestCaseGenerationOrigin.AI_EXTRA)
+                .map(p -> p.generated().name())
+                .toList();
+        int checklistCaseCount = (int) planned.stream()
+                .filter(p -> p.origin() == TestCaseGenerationOrigin.AI_CHECKLIST
+                        || p.origin() == TestCaseGenerationOrigin.SYSTEM_FILLED)
+                .count();
+        return new GenerationPlanSummary(
+                items.size(),
+                count(statuses, ChecklistItemStatus.ALREADY_COVERED),
+                aiAskedCount,
+                count(statuses, ChecklistItemStatus.AI_SATISFIED),
+                count(statuses, ChecklistItemStatus.SYSTEM_FILLED),
+                count(statuses, ChecklistItemStatus.NOT_FILLABLE),
+                count(statuses, ChecklistItemStatus.NOT_APPLICABLE),
+                extraCaseNames.size(),
+                checklistCaseCount,
+                extraCaseNames,
+                responses);
+    }
+
+    private int count(Map<TestCaseChecklistPlanner.ChecklistItem, ChecklistItemStatus> statuses, ChecklistItemStatus status) {
+        return (int) statuses.values().stream().filter(s -> s == status).count();
+    }
+
+    private String label(TestCaseChecklistPlanner.ChecklistItem item) {
+        String text = item.description();
+        return text.length() <= CHECKLIST_LABEL_MAX ? text : text.substring(0, CHECKLIST_LABEL_MAX - 3) + "...";
+    }
+
+    private Map<String, String> readStringMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<String, String>>() {
+            });
+        } catch (Exception e) {
+            return Map.of();
+        }
     }
 
     private Prompt buildPrompt(
-            Endpoint endpoint, boolean includeSecurity, boolean includeAssertions,
-            boolean includePositive, boolean includeNegative, boolean includeBoundary
+            Endpoint endpoint, boolean includeSecurity,
+            boolean includePositive, boolean includeNegative, boolean includeBoundary,
+            List<TestCaseChecklistPlanner.ChecklistItem> checklist
     ) {
+        // Module 15i - prompt tách theo loại test case: khung chung (generate-test-case.st) + phần luật
+        // của nhóm (generate/basic.st hoặc generate/security.st) + phần luật/checklist riêng của từng
+        // loại đã tick (generate/positive|negative|boundary.st). Java chỉ CHỌN file và GHÉP - toàn bộ
+        // chữ của prompt vẫn nằm trong .st. Vẫn đúng 1 lệnh gọi AI cho mỗi nhóm.
+        String groupRules;
+        if (includeSecurity) {
+            groupRules = render(readTemplate("prompts/generate/security.st"), checklistVariables(checklist, "SECURITY_"));
+        } else {
+            StringBuilder sections = new StringBuilder();
+            List<String> selected = new ArrayList<>();
+            appendCategory(includePositive, "Positive", "prompts/generate/positive.st", "POSITIVE_", checklist, sections, selected);
+            appendCategory(includeNegative, "Negative", "prompts/generate/negative.st", "NEGATIVE_", checklist, sections, selected);
+            appendCategory(includeBoundary, "Boundary Value", "prompts/generate/boundary.st", "BOUNDARY_", checklist, sections, selected);
+            Map<String, Object> basic = new HashMap<>();
+            basic.put("includePositive", includePositive);
+            basic.put("selectedGroups", String.join(", ", selected));
+            basic.put("categorySections", sections.toString().stripTrailing());
+            groupRules = render(readTemplate("prompts/generate/basic.st"), basic);
+        }
+
         // Đọc rõ UTF-8 - trên Windows, charset mặc định của tiến trình JVM có thể không phải UTF-8,
         // khiến nội dung .st (tiếng Việt có dấu) bị đọc sai byte.
         String templateText;
@@ -311,20 +577,67 @@ public class TestCaseGenerationService {
         } catch (IOException e) {
             throw new IllegalStateException("Không đọc được prompt template generate-test-case.st", e);
         }
-        PromptTemplate template = PromptTemplate.builder()
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("method", endpoint.getMethod());
+        variables.put("path", endpoint.getPath());
+        variables.put("summary", endpoint.getSummary() == null ? "(không có mô tả)" : endpoint.getSummary());
+        variables.put("schemaJson", endpoint.getSchema());
+        variables.put("groupRules", groupRules.stripTrailing());
+        return template(templateText).create(variables);
+    }
+
+    private void appendCategory(
+            boolean ticked, String label, String resourcePath, String typePrefix,
+            List<TestCaseChecklistPlanner.ChecklistItem> checklist, StringBuilder sections, List<String> selected
+    ) {
+        if (!ticked) {
+            return;
+        }
+        selected.add(label);
+        sections.append(render(readTemplate(resourcePath), checklistVariables(checklist, typePrefix)).stripTrailing())
+                .append("\n\n");
+    }
+
+    /** Biến checklist cho 1 file loại: chỉ các mục thuộc đúng loại đó (theo tiền tố tên ChecklistItemType). */
+    private Map<String, Object> checklistVariables(List<TestCaseChecklistPlanner.ChecklistItem> checklist, String typePrefix) {
+        List<TestCaseChecklistPlanner.ChecklistItem> own = checklist.stream()
+                .filter(item -> item.type().name().startsWith(typePrefix))
+                .toList();
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("hasChecklist", !own.isEmpty());
+        variables.put("checklistText", checklistText(own));
+        return variables;
+    }
+
+    private String readTemplate(String resourcePath) {
+        try {
+            return new ClassPathResource(resourcePath).getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Không đọc được prompt template " + resourcePath, e);
+        }
+    }
+
+    private String render(String templateText, Map<String, Object> variables) {
+        return template(templateText).render(variables);
+    }
+
+    private PromptTemplate template(String templateText) {
+        return PromptTemplate.builder()
                 .template(templateText)
                 .renderer(StTemplateRenderer.builder().startDelimiterToken('<').endDelimiterToken('>').build())
                 .build();
-        return template.create(Map.of(
-                "method", endpoint.getMethod(),
-                "path", endpoint.getPath(),
-                "summary", endpoint.getSummary() == null ? "(không có mô tả)" : endpoint.getSummary(),
-                "schemaJson", endpoint.getSchema(),
-                "includeSecurity", includeSecurity,
-                "includeAssertions", includeAssertions,
-                "includePositive", includePositive,
-                "includeNegative", includeNegative,
-                "includeBoundary", includeBoundary));
+    }
+
+    /** Checklist dạng danh sách đánh số cho prompt - giá trị biến không bị StringTemplate parse, an toàn với ký tự đặc biệt. */
+    private String checklistText(List<TestCaseChecklistPlanner.ChecklistItem> checklist) {
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < checklist.size(); i++) {
+            text.append("  ").append(i + 1).append(". ").append(checklist.get(i).description());
+            if (i < checklist.size() - 1) {
+                text.append('\n');
+            }
+        }
+        return text.toString();
     }
 
     private void validate(List<GeneratedTestCase> generated) {
@@ -347,11 +660,20 @@ public class TestCaseGenerationService {
         }
     }
 
-    private TestCase toEntity(Endpoint endpoint, GeneratedTestCase generated, TestCaseSource source) {
+    private TestCase toEntity(
+            Endpoint endpoint, GeneratedTestCase generated, TestCaseSource source,
+            TestCaseGenerationOrigin origin, String checklistItem, boolean tier1Blind
+    ) {
         // Module 15b (Tier 1) - đối chiếu tất định với spec NGAY LÚC map sang entity, không gọi AI
         // thêm. Dùng thẳng generated (Map có sẵn) thay vì re-parse lại entity vừa build, tránh vòng
         // JSON-serialize-rồi-deserialize không cần thiết.
         TestCaseReliabilityValidator.Result reliability = testCaseReliabilityValidator.validate(endpoint, generated, source);
+        // Module 15i - mục checklist mà Tier 1 không nhìn thấy lý do lỗi (thiếu tham số query/header bắt buộc, id
+        // không tồn tại): bộ chấm checklist đã đọc nội dung case chặt hơn nên tin kết luận đó, tránh gắn "Cần xem
+        // lại" oan rồi tốn 1 lệnh Tier 2. Chỉ ghi đè khi Tier 1 cảnh báo - không bao giờ hạ 1 case RELIABLE.
+        if (tier1Blind && reliability.status() == TestCaseReliability.NEEDS_REVIEW) {
+            reliability = TestCaseReliabilityValidator.Result.reliable();
+        }
         return TestCase.builder()
                 .endpoint(endpoint)
                 .name(generated.name())
@@ -365,6 +687,8 @@ public class TestCaseGenerationService {
                 .resolvedPath(generated.resolvedPath())
                 .pathParamFallbacks(writeFallbacksAsJson(generated.pathParamFallbacks()))
                 .source(source)
+                .generationOrigin(origin)
+                .checklistItem(checklistItem)
                 .authOverride(generated.authOverride() == null ? TestCaseAuthOverride.DEFAULT : generated.authOverride())
                 .build();
     }
@@ -398,6 +722,16 @@ public class TestCaseGenerationService {
         try {
             return objectMapper.writeValueAsString(pathParamFallbacks);
         } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String writePlanSummaryAsJson(GenerationPlanSummary planSummary) {
+        try {
+            return objectMapper.writeValueAsString(planSummary);
+        } catch (Exception e) {
+            // Báo cáo chỉ để xem lại - không đáng làm hỏng cả lượt sinh vì nó.
+            log.warn("Khong serialize duoc bao cao checklist: {}", e.toString());
             return null;
         }
     }

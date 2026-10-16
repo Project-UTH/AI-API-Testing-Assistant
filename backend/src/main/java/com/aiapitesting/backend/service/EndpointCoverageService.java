@@ -471,9 +471,21 @@ public class EndpointCoverageService {
     private Map<String, Object> fieldMap(TestCase tc, Location location) {
         return switch (location) {
             case BODY -> parseJsonObject(tc.getRequestBody());
-            case PATH_OR_QUERY -> parseJsonObject(tc.getPathParamFallbacks());
+            case PATH_OR_QUERY -> paramValues(tc);
             case HEADER -> parseJsonObject(tc.getRequestHeaders());
         };
+    }
+
+    /** Module 15h - giá trị path/query thật sự được gửi: literal trong resolvedPath ưu tiên, rồi pathParamFallbacks. */
+    private Map<String, Object> paramValues(TestCase tc) {
+        Map<String, String> fallbacks = new LinkedHashMap<>();
+        parseJsonObject(tc.getPathParamFallbacks()).forEach((k, v) -> {
+            if (v != null) {
+                fallbacks.put(k, String.valueOf(v));
+            }
+        });
+        String endpointPath = tc.getEndpoint() == null ? null : tc.getEndpoint().getPath();
+        return new LinkedHashMap<>(TestCaseParamValues.resolve(endpointPath, tc.getResolvedPath(), fallbacks));
     }
 
     /** Module 15g - parse 1 JSON object phẳng tuỳ ý (requestBody/pathParamFallbacks/requestHeaders đều cùng shape) - trả rỗng nếu null/blank/không parse được. */

@@ -1,15 +1,19 @@
 package com.aiapitesting.backend.service.ai;
 
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
+import com.aiapitesting.backend.dto.response.ChecklistItemStatus;
+import com.aiapitesting.backend.dto.response.GenerateTestCasesResponse;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
+import com.aiapitesting.backend.dto.response.GenerationPlanSummary;
 import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
@@ -19,6 +23,7 @@ import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.ProjectService;
+import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import com.aiapitesting.backend.service.TestCaseService;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +33,7 @@ import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.client.ChatClient;
@@ -97,6 +103,10 @@ class TestCaseGenerationServiceTest {
     @Mock
     private TestGenerationEventRepository testGenerationEventRepository;
 
+    // Module 15h - planner tất định, không gọi AI/DB nên dùng instance thật (Spy) thay vì mock.
+    @Spy
+    private TestCaseChecklistPlanner testCaseChecklistPlanner = new TestCaseChecklistPlanner();
+
     @InjectMocks
     private TestCaseGenerationService testCaseGenerationService;
 
@@ -145,16 +155,16 @@ class TestCaseGenerationServiceTest {
                 new GeneratedTestCase(
                         "Positive - Tao user hop le", "mo ta",
                         Map.of("Content-Type", "application/json"), "{\"email\":\"a@b.com\"}", 201,
-                        "/users", Map.of(), null, null, null),
+                        "/users", Map.of(), null, null),
                 new GeneratedTestCase(
                         "Negative - Thieu email", "mo ta",
                         Map.of("Content-Type", "application/json"), "{}", 400,
-                        "/users", Map.of(), null, null, null)
+                        "/users", Map.of(), null, null)
         ));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(projectId, endpointId, null);
-        List<TestCaseResponse> result = future.get();
+        CompletableFuture<GenerateTestCasesResponse> future = testCaseGenerationService.generate(projectId, endpointId, null);
+        List<TestCaseResponse> result = future.get().testCases();
 
         assertThat(result).hasSize(2);
         // Xoá-và-thay test case AI_GENERATED cũ (không đụng tới test case tự thêm tay), ĐỒNG THỜI
@@ -197,11 +207,11 @@ class TestCaseGenerationServiceTest {
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         String expectedRationale = "Truong 'email' co trong required cua requestBody nhung bi bo qua de kiem tra validation.";
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Negative - Thieu email", "mo ta", Map.of(), "{}", 400, "/users", Map.of(), null, null,
+                "Negative - Thieu email", "mo ta", Map.of(), "{}", 400, "/users", Map.of(), null,
                 expectedRationale)));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get();
+        List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get().testCases();
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).rationale()).isEqualTo(expectedRationale);
@@ -218,8 +228,8 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(
-                new GeneratedTestCase("Positive - OK", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do"),
-                new GeneratedTestCase("Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
+                new GeneratedTestCase("Positive - OK", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, "ly do"),
+                new GeneratedTestCase("Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, "ly do")));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         // Case đầu RELIABLE (giữ nguyên stub mặc định ở setUp), case thứ 2 NEEDS_REVIEW.
         when(testCaseReliabilityValidator.validate(eq(endpoint), argThat(g -> "Positive - Can xem lai".equals(g.name())), any()))
@@ -241,7 +251,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
+                "Positive", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, "ly do")));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         testCaseGenerationService.generate(projectId, endpointId, null).get();
@@ -256,7 +266,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
+                "Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, "ly do")));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(testCaseReliabilityValidator.validate(any(), any(), any()))
                 .thenReturn(new com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result(
@@ -292,13 +302,13 @@ class TestCaseGenerationServiceTest {
                 .thenReturn(0L)
                 .thenReturn(100L);
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, "ly do")));
+                "Positive - Can xem lai", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, "ly do")));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(testCaseReliabilityValidator.validate(any(), any(), any()))
                 .thenReturn(new com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result(
                         com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW, List.of("vi pham")));
 
-        List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get();
+        List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get().testCases();
 
         assertThat(result).hasSize(1);
         verifyNoInteractions(testCaseReliabilityConfirmationService);
@@ -349,10 +359,10 @@ class TestCaseGenerationServiceTest {
         when(testGenerationEventRepository.sumTotalTokensByOwnerAndCreatedAtBetween(any(), any(), any()))
                 .thenReturn(500L); // vuot 100 (mac dinh he thong) nhung con xa 1_000_000 (override)
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null, null)));
+                "Positive", "mo ta", Map.of(), "{}", 201, "/users", Map.of(), null, null)));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get();
+        List<TestCaseResponse> result = testCaseGenerationService.generate(projectId, endpointId, null).get().testCases();
 
         assertThat(result).hasSize(1);
     }
@@ -374,7 +384,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 999, "/users", Map.of(), null, null, null)));
+                "Positive", "mo ta", Map.of(), "{}", 999, "/users", Map.of(), null, null)));
 
         assertThatThrownBy(() -> testCaseGenerationService.generate(projectId, endpointId, null))
                 .isInstanceOf(AiGenerationFailedException.class);
@@ -409,7 +419,7 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null, null)));
+                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null)));
 
         TestCase existingAiCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint)
                 .source(TestCaseSource.AI_GENERATED).build();
@@ -441,7 +451,7 @@ class TestCaseGenerationServiceTest {
 
         assertThatThrownBy(() -> testCaseGenerationService.generate(
                 projectId, endpointId,
-                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, false, false, false)))
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, false, false)))
                 .isInstanceOf(com.aiapitesting.backend.exception.TestCaseHasDependentsException.class);
 
         verify(testCaseRepository, never()).deleteAllByEndpointAndSourceAndLockedFalse(any(), any());
@@ -457,20 +467,21 @@ class TestCaseGenerationServiceTest {
         // Cùng 1 stub AI trả về cho cả 2 lần gọi (Cơ bản + Security) - đủ để kiểm tra tách source đúng.
         stubAiResponse(List.of(new GeneratedTestCase(
                 "Security - Thieu token", "mo ta", Map.of(), null, 401, "/users",
-                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null, null)));
+                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null)));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
+        CompletableFuture<GenerateTestCasesResponse> future = testCaseGenerationService.generate(
                 projectId, endpointId,
-                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, true, true, true));
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, true, true, true));
         future.get();
 
         // Cả 2 nhóm đều được xoá-và-thay đúng phạm vi source riêng - không nhóm nào đụng nhóm kia.
         verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
         verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.SECURITY);
         verify(testCaseRepository, org.mockito.Mockito.times(2)).saveAll(anyList());
-        // 2 lần gọi AI thật (Cơ bản + Security) -> 2 dòng lịch sử sinh test case riêng biệt.
-        verify(testGenerationEventRepository, org.mockito.Mockito.times(2)).save(any(TestGenerationEvent.class));
+        // 2 lần gọi AI thật (Cơ bản + Security) -> 2 dòng lịch sử sinh test case riêng biệt, cộng 1 lần
+        // cập nhật dòng cuối với báo cáo checklist gộp cả 2 nhóm (Module 15i) - không tạo dòng thứ 3.
+        verify(testGenerationEventRepository, org.mockito.Mockito.times(3)).save(any(TestGenerationEvent.class));
     }
 
     @Test
@@ -480,7 +491,7 @@ class TestCaseGenerationServiceTest {
 
         assertThatThrownBy(() -> testCaseGenerationService.generate(
                 projectId, endpointId,
-                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, false, false, false, false)))
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, false, false, false)))
                 .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
 
         verifyNoInteractions(chatClient);
@@ -493,12 +504,12 @@ class TestCaseGenerationServiceTest {
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
                 "Security - Thieu token", "mo ta", Map.of(), null, 401, "/users",
-                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null, null)));
+                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null)));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
+        CompletableFuture<GenerateTestCasesResponse> future = testCaseGenerationService.generate(
                 projectId, endpointId,
-                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, false, false, false));
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, false, false));
         future.get();
 
         // Không tích Positive/Negative/Boundary nào -> vẫn phải xoá sạch case AI_GENERATED cũ (chưa
@@ -514,12 +525,12 @@ class TestCaseGenerationServiceTest {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
         stubAiResponse(List.of(new GeneratedTestCase(
-                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null, null)));
+                "Positive", "mo ta", Map.of(), "{}", 200, "/users", Map.of(), null, null)));
         when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        CompletableFuture<List<TestCaseResponse>> future = testCaseGenerationService.generate(
+        CompletableFuture<GenerateTestCasesResponse> future = testCaseGenerationService.generate(
                 projectId, endpointId,
-                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, false, true, false, false));
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, true, false, false));
         future.get();
 
         // Không tích Security -> vẫn phải xoá sạch case SECURITY cũ (chưa khoá) còn sót từ 1 lần
@@ -530,6 +541,293 @@ class TestCaseGenerationServiceTest {
     }
 
     @SuppressWarnings("unchecked")
+    // ---- Module 15h - checklist EP/BVA, chấm theo nội dung, tự bù ----
+
+    /** email bắt buộc + age bắt buộc (18..60): checklist đủ 3 nhóm = 1 + 2 + 4 = 7 mục. */
+    private static final String REGISTER_SCHEMA = """
+            {"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["email","age"],
+              "properties":{"email":{"type":"string"},"age":{"type":"integer","minimum":18,"maximum":60}}}}}}}""";
+
+    private GeneratedTestCase aiCase(String name, String body, int status) {
+        return new GeneratedTestCase(name, "mo ta", Map.of(), body, status, "/users", Map.of(), null, "ly do AI");
+    }
+
+    private void stubRegisterEndpoint() {
+        endpoint.setSchema(REGISTER_SCHEMA);
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    private String sentPrompt() {
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatClient, org.mockito.Mockito.atLeastOnce()).prompt(promptCaptor.capture());
+        return promptCaptor.getValue().getContents();
+    }
+
+    @Test
+    void generate_aiMissesAndBotchesChecklistItems_systemFillsExactlyThoseAndReportsHonestly() throws Exception {
+        stubRegisterEndpoint();
+        stubAiResponse(List.of(
+                aiCase("Positive - hop le", "{\"email\":\"an@gmail.com\",\"age\":25}", 201),
+                // Tên nói thiếu email nhưng body vẫn có email - KHÔNG được tính đạt mục "thiếu email".
+                aiCase("Negative - Thieu email", "{\"email\":\"an@gmail.com\",\"age\":25}", 400),
+                aiCase("Negative - Thieu age", "{\"email\":\"an@gmail.com\"}", 400),
+                aiCase("Boundary - age 18", "{\"email\":\"an@gmail.com\",\"age\":18}", 201),
+                aiCase("Boundary - age 17", "{\"email\":\"an@gmail.com\",\"age\":17}", 400),
+                aiCase("Boundary - age 60", "{\"email\":\"an@gmail.com\",\"age\":60}", 201),
+                // AI quên mục age = 61. Case dưới đây là đề xuất thêm (sai kiểu), không ứng mục nào.
+                aiCase("Negative - age la chu", "{\"email\":\"an@gmail.com\",\"age\":\"hai muoi\"}", 400)));
+
+        GenerateTestCasesResponse response = testCaseGenerationService.generate(projectId, endpointId, null).get();
+
+        // Prompt tách theo loại (15i): mỗi loại đã tick có phần checklist riêng.
+        assertThat(sentPrompt()).contains("Checklist Positive (bắt buộc)").contains("Checklist Negative (bắt buộc)")
+                .contains("Checklist Boundary (bắt buộc)").contains("Thiếu field bắt buộc 'email'")
+                .contains("'age' trong requestBody = 61, lớn hơn maximum = 60");
+        var summary = response.planSummary();
+        // 15i: P1 + Negative 6 (thiếu/null/sai kiểu x email, age) + Boundary 5 (age min/max x2 + email rỗng).
+        assertThat(summary.checklistTotal()).isEqualTo(12);
+        assertThat(summary.aiAskedCount()).isEqualTo(12);
+        // Case "age là chữ" trước 15i là đề xuất thêm, giờ đạt mục checklist "sai kiểu".
+        assertThat(summary.aiSatisfiedCount()).isEqualTo(6);
+        assertThat(summary.systemFilledCount()).isEqualTo(6);
+        assertThat(summary.aiExtraCount()).isEqualTo(1); // chỉ còn case "thiếu email" nói dối
+        assertThat(summary.items()).filteredOn(i -> i.status() == ChecklistItemStatus.SYSTEM_FILLED)
+                .extracting(i -> i.description())
+                .anyMatch(d -> d.startsWith("Thiếu field bắt buộc 'email'"))
+                .anyMatch(d -> d.contains("= 61"));
+        // Báo cáo chỉ rõ case nào ứng với mục nào - mục Positive chỉ liệt kê case THUẦN hợp lệ (case
+        // biên age=18/age=60 cũng hợp lệ nhưng đã nằm dưới mục biên riêng của chúng, không liệt kê trùng),
+        // mục thiếu email do case hệ thống bù đạt (KHÔNG phải case AI "Thieu email" nói dối).
+        assertThat(summary.items()).filteredOn(i -> i.type() == com.aiapitesting.backend.dto.response.ChecklistItemType.POSITIVE_BASELINE)
+                .singleElement().satisfies(i -> assertThat(i.coveredBy()).containsExactly("Positive - hop le"));
+        assertThat(summary.items()).filteredOn(i -> "email".equals(i.field())
+                        && i.type() == com.aiapitesting.backend.dto.response.ChecklistItemType.NEGATIVE_MISSING_FIELD)
+                .singleElement().satisfies(i -> assertThat(i.coveredBy()).containsExactly("Negative - Thiếu field bắt buộc 'email'"));
+
+        assertThat(response.testCases()).hasSize(13);
+        TestCaseResponse filledEmail = response.testCases().stream()
+                .filter(tc -> tc.generationOrigin() == TestCaseGenerationOrigin.SYSTEM_FILLED
+                        && tc.name().equals("Negative - Thiếu field bắt buộc 'email'"))
+                .findFirst().orElseThrow();
+        assertThat(filledEmail.requestBody()).isEqualTo("{\"age\":25}");
+        assertThat(filledEmail.expectedStatus()).isEqualTo(400);
+        assertThat(filledEmail.rationale()).contains("required");
+        assertThat(response.testCases()).filteredOn(tc -> tc.generationOrigin() == TestCaseGenerationOrigin.AI_CHECKLIST).hasSize(6);
+        // Nhãn mục checklist của case biên là mục biên cụ thể, không phải "Dữ liệu hợp lệ".
+        assertThat(response.testCases()).filteredOn(tc -> tc.name().equals("Boundary - age 18"))
+                .singleElement().satisfies(tc -> assertThat(tc.checklistItem()).contains("minimum = 18"));
+
+        // Snapshot lịch sử chứa cả case bù - trang Lịch sử hiện đúng 13 case thực tế.
+        ArgumentCaptor<TestGenerationEvent> eventCaptor = ArgumentCaptor.forClass(TestGenerationEvent.class);
+        verify(testGenerationEventRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getTestCaseCount()).isEqualTo(13);
+        assertThat(eventCaptor.getValue().getSnapshotJson()).contains("Thiếu field bắt buộc 'email'");
+
+        // Báo cáo tự đủ (không cần bộ test case sống) và được lưu vào event để xem lại sau khi tải lại trang.
+        assertThat(summary.checklistCaseCount()).isEqualTo(12);
+        assertThat(summary.extraCaseNames()).containsExactly("Negative - Thieu email");
+        GenerationPlanSummary persisted = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(eventCaptor.getValue().getPlanSummaryJson(), GenerationPlanSummary.class);
+        assertThat(persisted).isEqualTo(summary);
+    }
+
+    // ---- Báo cáo checklist đã lưu (xem lại sau khi tải lại trang) ----
+
+    @Test
+    void getLatestPlanSummary_savedEvent_returnsParsedSummary() throws Exception {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        GenerationPlanSummary saved = new GenerationPlanSummary(1, 0, 1, 1, 0, 0, 0, 1, 1,
+                List.of("Negative - age la chu"), List.of());
+        TestGenerationEvent event = TestGenerationEvent.builder()
+                .planSummaryJson(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(saved)).build();
+        when(testGenerationEventRepository.findFirstByEndpointOrderByCreatedAtDesc(endpoint))
+                .thenReturn(Optional.of(event));
+
+        assertThat(testCaseGenerationService.getLatestPlanSummary(projectId, endpointId)).isEqualTo(saved);
+    }
+
+    @Test
+    void getLatestPlanSummary_noSavedEvent_returnsNull() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testGenerationEventRepository.findFirstByEndpointOrderByCreatedAtDesc(endpoint))
+                .thenReturn(Optional.empty());
+
+        assertThat(testCaseGenerationService.getLatestPlanSummary(projectId, endpointId)).isNull();
+    }
+
+    @Test
+    void getLatestPlanSummary_corruptJson_returnsNullInsteadOfThrowing() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testGenerationEventRepository.findFirstByEndpointOrderByCreatedAtDesc(endpoint))
+                .thenReturn(Optional.of(TestGenerationEvent.builder().planSummaryJson("{khong phai json").build()));
+
+        assertThat(testCaseGenerationService.getLatestPlanSummary(projectId, endpointId)).isNull();
+    }
+
+    @Test
+    void getLatestPlanSummary_latestEventCreatedBeforeFeature_returnsNull() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testGenerationEventRepository.findFirstByEndpointOrderByCreatedAtDesc(endpoint))
+                .thenReturn(Optional.of(TestGenerationEvent.builder().planSummaryJson(null).build()));
+
+        // Dòng lịch sử mới nhất không có báo cáo -> KHÔNG lấy báo cáo của 1 lần sinh cũ hơn (đã lỗi thời).
+        assertThat(testCaseGenerationService.getLatestPlanSummary(projectId, endpointId)).isNull();
+    }
+
+    @Test
+    void getLatestPlanSummary_notOwner_throwsForbidden() {
+        when(projectService.getOwnedProject(projectId))
+                .thenThrow(new ForbiddenException("Ban khong co quyen truy cap project nay"));
+
+        assertThatThrownBy(() -> testCaseGenerationService.getLatestPlanSummary(projectId, endpointId))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void generate_lockedCaseAlreadyCoversItem_itemNotAskedAgainAndNotDuplicated() throws Exception {
+        stubRegisterEndpoint();
+        TestCase lockedAge61 = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).name("Boundary - age 61 (khoa)")
+                .requestBody("{\"email\":\"an@gmail.com\",\"age\":61}").expectedStatus(400).resolvedPath("/users")
+                .source(TestCaseSource.AI_GENERATED).locked(true).build();
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of(lockedAge61));
+        stubAiResponse(List.of(aiCase("Positive - hop le", "{\"email\":\"an@gmail.com\",\"age\":25}", 201)));
+
+        GenerateTestCasesResponse response = testCaseGenerationService.generate(projectId, endpointId, null).get();
+
+        assertThat(sentPrompt()).doesNotContain("= 61, lớn hơn maximum");
+        assertThat(response.planSummary().alreadyCoveredCount()).isEqualTo(1);
+        assertThat(response.planSummary().items()).filteredOn(i -> i.status() == ChecklistItemStatus.ALREADY_COVERED)
+                .singleElement().satisfies(i -> assertThat(i.coveredBy()).containsExactly("Boundary - age 61 (khoa)"));
+        assertThat(response.planSummary().aiAskedCount()).isEqualTo(11);
+        assertThat(response.testCases()).noneMatch(tc -> tc.requestBody() != null && tc.requestBody().contains("61"));
+    }
+
+    @Test
+    void generate_positiveNotTicked_pureBaselineUsedForFillingButNotSaved() throws Exception {
+        stubRegisterEndpoint();
+        stubAiResponse(List.of(aiCase("Positive - goc", "{\"email\":\"an@gmail.com\",\"age\":25}", 201)));
+
+        GenerateTestCasesResponse response = testCaseGenerationService.generate(projectId, endpointId,
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, false, true, false)).get();
+
+        // Chỉ tick Negative: 6 mục (thiếu/null/sai kiểu x email, age), đều do hệ thống bù từ case gốc; case gốc không lưu.
+        assertThat(response.testCases()).hasSize(6)
+                .allMatch(tc -> tc.generationOrigin() == TestCaseGenerationOrigin.SYSTEM_FILLED)
+                .allMatch(tc -> tc.expectedStatus() == 400);
+        assertThat(response.planSummary().systemFilledCount()).isEqualTo(6);
+        // Prompt chỉ ghép phần của loại đã tick (15i).
+        assertThat(sentPrompt()).contains("Checklist Negative (bắt buộc)")
+                .doesNotContain("Checklist Positive").doesNotContain("Checklist Boundary").doesNotContain("Checklist Security");
+    }
+
+    @Test
+    void generate_noValidBaselineFromAi_itemsReportedNotFillableInsteadOfFakeCases() throws Exception {
+        stubRegisterEndpoint();
+        stubAiResponse(List.of(aiCase("Negative - Thieu email", "{\"age\":25}", 400)));
+
+        GenerateTestCasesResponse response = testCaseGenerationService.generate(projectId, endpointId, null).get();
+
+        assertThat(response.testCases()).hasSize(1);
+        assertThat(response.planSummary().aiSatisfiedCount()).isEqualTo(1);
+        assertThat(response.planSummary().notFillableCount()).isEqualTo(11);
+        assertThat(response.planSummary().items()).filteredOn(i -> i.status() == ChecklistItemStatus.NOT_FILLABLE)
+                .allMatch(i -> i.reason() != null && i.reason().contains("làm gốc"));
+    }
+
+    @Test
+    void generate_securityOnly_hasOwnChecklist_aiCoversMissingToken_systemFillsInvalidToken() throws Exception {
+        stubRegisterEndpoint();
+        endpoint.setRequiresAuth(true);
+        stubAiResponse(List.of(new GeneratedTestCase("Security - Thieu token", "mo ta", Map.of(), null, 401, "/users",
+                Map.of(), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null)));
+
+        GenerateTestCasesResponse response = testCaseGenerationService.generate(projectId, endpointId,
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, false, false, false)).get();
+
+        // Module 15i - Security có checklist riêng (thiếu token + token sai), chấm theo authOverride + 401.
+        assertThat(sentPrompt()).contains("Checklist Security (bắt buộc)").doesNotContain("Checklist Negative");
+        assertThat(response.planSummary().checklistTotal()).isEqualTo(2);
+        assertThat(response.planSummary().aiSatisfiedCount()).isEqualTo(1);
+        assertThat(response.planSummary().systemFilledCount()).isEqualTo(1);
+        assertThat(response.testCases()).hasSize(2);
+        assertThat(response.testCases()).filteredOn(tc -> tc.generationOrigin() == TestCaseGenerationOrigin.SYSTEM_FILLED)
+                .singleElement().satisfies(tc -> {
+                    assertThat(tc.authOverride()).isEqualTo(com.aiapitesting.backend.entity.TestCaseAuthOverride.INVALID);
+                    assertThat(tc.expectedStatus()).isEqualTo(401);
+                });
+        ArgumentCaptor<TestGenerationEvent> eventCaptor = ArgumentCaptor.forClass(TestGenerationEvent.class);
+        verify(testGenerationEventRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getPlanSummaryJson()).contains("SECURITY_INVALID_TOKEN");
+    }
+
+    @Test
+    void generate_checklistItemTier1CannotSee_trustedOverTier1Warning_otherCasesKeepIt() throws Exception {
+        endpoint.setMethod("GET");
+        endpoint.setPath("/api/products");
+        endpoint.setSchema("""
+                {"parameters":[{"name":"status","in":"query","required":true,"schema":{"type":"string"}}]}""");
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        // AI chỉ trả case gốc + 1 case đề xuất thêm; mục "thiếu tham số status" do hệ thống bù.
+        stubAiResponse(List.of(
+                new GeneratedTestCase("Positive - hop le", "d", Map.of(), null, 200, "/api/products?status={{status}}",
+                        Map.of("status", "ACTIVE"), null, "ly do"),
+                new GeneratedTestCase("De xuat them - luat nghiep vu", "d", Map.of(), null, 400,
+                        "/api/products?status=lung-tung", Map.of(), null, "ly do")));
+        // Tier 1 gắn "Cần xem lại" cho MỌI case (giả lập: nó không nhìn thấy lỗi thiếu tham số query).
+        org.mockito.Mockito.lenient().when(testCaseReliabilityValidator.validate(any(), any(), any()))
+                .thenReturn(new com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result(
+                        com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW, List.of("giả lập")));
+        when(testCaseReliabilityConfirmationService.confirm(eq(endpoint), anyList())).thenReturn(null);
+
+        GenerateTestCasesResponse response = testCaseGenerationService.generate(projectId, endpointId,
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, true, true, false)).get();
+
+        assertThat(response.testCases()).filteredOn(tc -> tc.generationOrigin() == TestCaseGenerationOrigin.SYSTEM_FILLED)
+                .singleElement().satisfies(tc -> {
+                    assertThat(tc.name()).contains("Thiếu tham số query bắt buộc 'status'");
+                    assertThat(tc.resolvedPath()).isEqualTo("/api/products");
+                    assertThat(tc.reliabilityStatus())
+                            .isEqualTo(com.aiapitesting.backend.entity.TestCaseReliability.RELIABLE);
+                });
+        // Case khác vẫn mang đúng cảnh báo của Tier 1 (chỉ mục Tier 1 không nhìn thấy mới được tin theo checklist).
+        assertThat(response.testCases()).filteredOn(tc -> tc.generationOrigin() == TestCaseGenerationOrigin.AI_EXTRA)
+                .singleElement().satisfies(tc -> assertThat(tc.reliabilityStatus())
+                        .isEqualTo(com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW));
+        // Chỉ case đề xuất thêm bị gắn cờ → Tier 2 chỉ xác nhận đúng case đó.
+        ArgumentCaptor<List<TestCase>> flagged = ArgumentCaptor.forClass(List.class);
+        verify(testCaseReliabilityConfirmationService).confirm(eq(endpoint), flagged.capture());
+        assertThat(flagged.getValue()).extracting(TestCase::getName).doesNotContain(
+                response.testCases().stream().filter(tc -> tc.generationOrigin() == TestCaseGenerationOrigin.SYSTEM_FILLED)
+                        .findFirst().orElseThrow().name());
+    }
+
+    @Test
+    void generate_basicAndSecurity_mergedReportSavedOnLastEvent() throws Exception {
+        stubRegisterEndpoint();
+        endpoint.setRequiresAuth(true);
+        stubAiResponse(List.of(aiCase("Positive - hop le", "{\"email\":\"an@gmail.com\",\"age\":25}", 201)));
+
+        GenerateTestCasesResponse response = testCaseGenerationService.generate(projectId, endpointId,
+                new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(true, true, false, false)).get();
+
+        // Positive 1 + Security 2 gộp chung 1 báo cáo; dòng lịch sử cuối (Security) mang bản gộp để đọc lại sau.
+        assertThat(response.planSummary().checklistTotal()).isEqualTo(3);
+        assertThat(response.planSummary().items()).extracting(i -> i.type().name())
+                .containsExactly("POSITIVE_BASELINE", "SECURITY_MISSING_TOKEN", "SECURITY_INVALID_TOKEN");
+        ArgumentCaptor<TestGenerationEvent> eventCaptor = ArgumentCaptor.forClass(TestGenerationEvent.class);
+        verify(testGenerationEventRepository, times(3)).save(eventCaptor.capture());
+        TestGenerationEvent last = eventCaptor.getAllValues().get(2);
+        assertThat(last.getPlanSummaryJson()).contains("POSITIVE_BASELINE").contains("SECURITY_MISSING_TOKEN");
+    }
+
     private void stubAiResponse(List<GeneratedTestCase> result) {
         ChatResponseMetadata metadata = ChatResponseMetadata.builder()
                 .usage(new DefaultUsage(100, 50, 150))

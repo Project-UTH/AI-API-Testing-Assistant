@@ -4,6 +4,66 @@ export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY"
 
 export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
 
+/**
+ * Module 15h - nguồn gốc case AI sinh (15i: cả nhóm Security), do hệ thống CHẤM NỘI DUNG (không dựa lời AI tự khai):
+ * AI_CHECKLIST = AI sinh, đạt mục checklist; AI_EXTRA = AI đề xuất thêm ngoài checklist;
+ * SYSTEM_FILLED = hệ thống tự bù mục AI làm thiếu/sai.
+ */
+export type TestCaseGenerationOrigin = "AI_CHECKLIST" | "AI_EXTRA" | "SYSTEM_FILLED"
+
+export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label: string; className: string; title: string }> = {
+  AI_CHECKLIST: {
+    label: "AI · theo checklist",
+    className: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+    title: "AI sinh và nội dung thật sự đạt 1 mục checklist EP/BVA tính từ spec",
+  },
+  AI_EXTRA: {
+    label: "AI đề xuất thêm",
+    className: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400",
+    title: "AI tự đề xuất ngoài checklist bắt buộc (sai kiểu, null, tổ hợp, nghiệp vụ, dữ liệu đặc biệt)",
+  },
+  SYSTEM_FILLED: {
+    label: "Hệ thống bổ sung",
+    className: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+    title: "AI làm thiếu/sai mục checklist này, hệ thống tự tạo từ 1 case hợp lệ AI đã sinh (sửa đúng 1 chỗ)",
+  },
+}
+
+export type ChecklistItemStatus = "ALREADY_COVERED" | "AI_SATISFIED" | "SYSTEM_FILLED" | "NOT_FILLABLE" | "NOT_APPLICABLE"
+
+export interface ChecklistItemResponse {
+  type: string
+  field: string | null
+  description: string
+  status: ChecklistItemStatus
+  reason: string | null
+  /** Tên các test case đạt mục này (1 mục có thể có nhiều case). */
+  coveredBy: string[]
+}
+
+/** Module 15h - báo cáo 1 lần sinh; 15i: gộp cả nhóm Security, checklist chia loại theo tiền tố của type. */
+export interface GenerationPlanSummary {
+  checklistTotal: number
+  alreadyCoveredCount: number
+  aiAskedCount: number
+  aiSatisfiedCount: number
+  systemFilledCount: number
+  notFillableCount: number
+  notApplicableCount: number
+  aiExtraCount: number
+  /** Số case thuộc checklist (AI làm đạt + hệ thống bù) lúc sinh. */
+  checklistCaseCount: number
+  /** Tên các case AI đề xuất thêm lúc sinh - chụp lại để xem được sau khi tải lại trang. */
+  extraCaseNames: string[]
+  items: ChecklistItemResponse[]
+}
+
+export interface GenerateTestCasesResponse {
+  testCases: TestCase[]
+  /** Từ 15i luôn có (cả khi chỉ sinh Security); kiểu vẫn cho null để an toàn với phản hồi cũ. */
+  planSummary: GenerationPlanSummary | null
+}
+
 /** Module 15b (Tier 1) - đối chiếu tất định với spec, chỉ áp dụng cho case kỳ vọng thành công. */
 export type TestCaseReliability = "RELIABLE" | "NEEDS_REVIEW"
 
@@ -75,6 +135,10 @@ export interface TestCase {
   pathParamFallbacks: string | null
   source: TestCaseSource
   authOverride: TestCaseAuthOverride
+  /** Module 15h - null cho case Security/MANUAL/dữ liệu tạo trước 15h. */
+  generationOrigin: TestCaseGenerationOrigin | null
+  /** Module 15h - mô tả mục checklist EP/BVA mà case này đạt (hệ thống chấm theo nội dung). */
+  checklistItem: string | null
   locked: boolean
   createdAt: string
   dependencies: TestCaseDependency[]
@@ -137,22 +201,25 @@ export interface TestCaseInput {
 
 export interface GenerateTestCasesOptions {
   includeSecurity?: boolean
-  includeAssertions?: boolean
   includePositive?: boolean
   includeNegative?: boolean
   includeBoundary?: boolean
+}
+
+/** Báo cáo checklist của lần sinh nhóm Basic gần nhất - null nếu chưa có (Module 15h). */
+export function getLatestGenerationPlan(projectId: string, endpointId: string) {
+  return apiFetch<GenerationPlanSummary | null>(`/projects/${projectId}/endpoints/${endpointId}/generation-plan`)
 }
 
 export function generateTestCases(
   projectId: string,
   endpointId: string,
   options?: GenerateTestCasesOptions
-): Promise<TestCase[]> {
-  return apiFetch<TestCase[]>(`/projects/${projectId}/endpoints/${endpointId}/generate-tests`, {
+): Promise<GenerateTestCasesResponse> {
+  return apiFetch<GenerateTestCasesResponse>(`/projects/${projectId}/endpoints/${endpointId}/generate-tests`, {
     method: "POST",
     body: JSON.stringify({
       includeSecurity: options?.includeSecurity ?? false,
-      includeAssertions: options?.includeAssertions ?? false,
       includePositive: options?.includePositive ?? false,
       includeNegative: options?.includeNegative ?? false,
       includeBoundary: options?.includeBoundary ?? false,
