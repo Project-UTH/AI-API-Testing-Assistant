@@ -88,8 +88,10 @@ public class DependencySuggestionService {
      * Cắt path OpenAPI gốc (dấu {tenThamSo} 1 ngoặc) tới ngay trước đúng vị trí tham số đang xét -
      * xử lý được tham số ở bất kỳ vị trí nào, không chỉ cuối path. Vd "/owner/{ownerId}/pet/{petId}",
      * paramName "petId" -> "/owner/{ownerId}/pet"; paramName "ownerId" -> "/owner".
+     * Package-private static để EndpointCoverageService (Module 15j) dò cùng cặp "POST tạo resource →
+     * endpoint dùng {id}" khi tính dòng RELATION - 2 nơi hiểu quan hệ endpoint giống hệt nhau.
      */
-    private String cutPathBeforeParam(String endpointPath, String paramName) {
+    static String cutPathBeforeParam(String endpointPath, String paramName) {
         String[] segments = endpointPath.split("/");
         String target = "{" + paramName + "}";
         int paramIndex = -1;

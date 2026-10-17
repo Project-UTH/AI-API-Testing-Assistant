@@ -5,12 +5,15 @@ import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn, METHOD_STYLES } from "@/lib/utils"
-import { getProjectCoverage } from "@/lib/coverage"
-import { CoverageDimensionGrid, CoverageSummary, RiskBadge } from "@/components/shared/CoverageMatrixChart"
+import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
+import { CoverageSummary, RiskBadge } from "@/components/shared/CoverageMatrixChart"
+import { CoverageGapReport } from "@/components/coverage/CoverageGapReport"
 
 /**
  * Module 15c - Coverage Matrix + Risk Engine. Toàn bộ số liệu tính tất định từ OpenAPI spec +
  * test case hiện có (không gọi AI) - xem EndpointCoverageService (backend).
+ * Module 15j - Coverage Gap Analysis: mỗi endpoint chỉ rõ còn thiếu mục nào, vì sao cần, bằng chứng, và
+ * bổ sung ngay (hệ thống tự tạo, 0 token).
  */
 export function CoveragePage() {
   const { id } = useParams<{ id: string }>()
@@ -43,8 +46,9 @@ export function CoveragePage() {
 
       <h1 className="mt-4 text-2xl font-semibold">Coverage Matrix</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Đo độ bao phủ theo đúng đặc tả OpenAPI (field bắt buộc, giá trị biên/enum, mã trạng thái, xác thực) đối chiếu với
-        test case hiện có - tính tất định, không dùng AI để suy coverage.
+        Hệ thống tự lập danh sách mục cần kiểm từ đặc tả OpenAPI (checklist EP/BVA - cùng checklist dùng khi sinh test
+        case, cộng mã trạng thái khai báo và quan hệ giữa các endpoint), rồi đọc nội dung từng test case để biết mục nào
+        đã có, đã chạy chưa, mục nào còn thiếu và vì sao. Tính tất định, không dùng AI để suy coverage.
       </p>
 
       {isLoading && <p className="mt-6 text-muted-foreground">Đang tính coverage...</p>}
@@ -54,6 +58,7 @@ export function CoveragePage() {
         <div className="mt-6 flex flex-col gap-4">
           <CoverageSummary
             coveragePercent={data.overallCoveragePercent}
+            executedPercent={data.overallExecutedPercent}
             riskWeightedCoveragePercent={data.overallRiskWeightedCoveragePercent}
           />
 
@@ -66,12 +71,14 @@ export function CoveragePage() {
           <div className="flex flex-col gap-2">
             {data.endpoints.map((endpoint) => {
               const isExpanded = expandedEndpointIds.has(endpoint.endpointId)
+              const counts = coverageCounts(endpoint)
               return (
                 <div key={endpoint.endpointId} className="rounded-lg border border-border bg-card">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-3 p-4 text-left"
+                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 p-4 text-left"
                     onClick={() => toggleExpanded(endpoint.endpointId)}
+                    aria-expanded={isExpanded}
                   >
                     {isExpanded ? (
                       <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -87,9 +94,20 @@ export function CoveragePage() {
                       {endpoint.method}
                     </span>
                     <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.path}</span>
+                    {endpoint.testCaseCount === 0 && (
+                      <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                        Chưa có test case nào
+                      </span>
+                    )}
                     <RiskBadge level={endpoint.riskLevel} reasons={endpoint.riskReasons} />
-                    <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                      {endpoint.coveragePercent}% coverage
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        {counts.covered}/{counts.relevant} mục
+                      </span>{" "}
+                      · {counts.executed} đã chạy
+                      {counts.missing > 0 && (
+                        <span className="text-amber-600 dark:text-amber-400"> · thiếu {counts.missing}</span>
+                      )}
                     </span>
                   </button>
 
@@ -97,7 +115,7 @@ export function CoveragePage() {
                     <div className="border-t border-border p-4">
                       {!endpoint.schemaReadable && (
                         <p className="mb-3 rounded-md bg-destructive/10 p-2 text-xs text-destructive">
-                          Không đọc được định nghĩa OpenAPI (schema) của endpoint này - số liệu coverage/dimension bên dưới
+                          Không đọc được định nghĩa OpenAPI (schema) của endpoint này - danh sách mục cần kiểm bên dưới
                           KHÔNG đầy đủ, không nên tin số % hiện tại.
                         </p>
                       )}
@@ -107,7 +125,7 @@ export function CoveragePage() {
                           {endpoint.riskReasons.join("; ")}
                         </div>
                       )}
-                      <CoverageDimensionGrid dimensions={endpoint.dimensions} />
+                      <CoverageGapReport projectId={id!} endpoint={endpoint} />
                     </div>
                   )}
                 </div>

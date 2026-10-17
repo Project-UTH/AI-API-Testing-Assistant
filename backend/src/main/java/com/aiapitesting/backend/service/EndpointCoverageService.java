@@ -1,16 +1,17 @@
 package com.aiapitesting.backend.service;
 
+import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
+import com.aiapitesting.backend.dto.response.ChecklistItemType;
 import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
+import com.aiapitesting.backend.dto.response.CoverageRunStatus;
 import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
 import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
 import com.aiapitesting.backend.dto.response.RiskLevel;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
-import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestCaseDependency;
-import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
@@ -26,8 +27,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,6 +36,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -43,6 +46,12 @@ import java.util.stream.Collectors;
  * {@code TestResult} hiện có trong DB - KHÔNG gọi AI, KHÔNG parse {@code TestCase.rationale} (lời
  * AI tự khai) để suy coverage. Đây là nguồn sự thật độc lập, kiểm chứng được, tách bạch khỏi phần
  * giải thích AI ở Module 15a - xem "Nguyên tắc thiết kế quan trọng" ở Module 15 trong roadmap.
+ *
+ * Module 15j (Coverage Gap Analysis) - các dòng coverage giờ là CHÍNH checklist EP/BVA của
+ * {@link TestCaseChecklistPlanner} (cùng bộ tiêu chí lúc sinh test case; trước đây 15c tự định nghĩa 4
+ * dimension hẹp hơn nên "100%" ở trang Coverage và "đủ checklist" lúc sinh là 2 thước đo khác nhau),
+ * chấm trên TOÀN BỘ test case của endpoint theo nội dung thật. Dòng còn thiếu kèm vì sao cần kiểm + bằng
+ * chứng case gần đạt; dòng đã có kèm trạng thái chạy thật; thêm dòng RELATION (chuỗi dữ liệu 2 endpoint).
  */
 @Service
 @RequiredArgsConstructor
@@ -52,17 +61,25 @@ public class EndpointCoverageService {
     private static final Set<String> SENSITIVE_FIELD_KEYWORDS = Set.of(
             "password", "email", "token", "secret", "card", "cvv", "ssn", "apikey", "api_key", "credit");
 
+    /** Bằng chứng "gần đạt" tối đa cho 1 mục - đủ để hiểu vì sao chưa tính, không làm response phình. */
+    private static final int MAX_NEAR_MISSES = 3;
+
+    private static final Pattern PATH_PARAM = Pattern.compile("\\{([^}/]+)}");
+    private static final Pattern EXACT_STATUS = Pattern.compile("\\d{3}");
+    private static final Pattern RANGE_STATUS = Pattern.compile("([1-5])XX", Pattern.CASE_INSENSITIVE);
+
     private final ProjectService projectService;
     private final EndpointRepository endpointRepository;
     private final TestCaseRepository testCaseRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestResultRepository testResultRepository;
+    private final TestCaseChecklistPlanner testCaseChecklistPlanner;
     // FAIL_ON_UNKNOWN_PROPERTIES tắt vì StoredSchema chỉ khai báo đúng field cần dùng (parameters/
     // requestBody/responseStatusCodes) - buildSchemaJson() (EndpointImportService) còn ghi thêm
     // "summary" mà parser này không cần đọc lại. Thiếu dòng này gây UnrecognizedPropertyException
-    // thật (đã xác nhận khi verify bằng dữ liệu Docker thật - mọi dimension REQUIRED_FIELD/BOUNDARY/
-    // STATUS_CODE bị rớt sạch vì exception bị extractSchemaFacts() nuốt và trả rỗng, chỉ unit test
-    // với fixture tự dựng không bắt được vì fixture không có field "summary" như data thật).
+    // thật (đã xác nhận khi verify bằng dữ liệu Docker thật - mọi dimension bị rớt sạch vì exception bị
+    // extractSchemaFacts() nuốt và trả rỗng, chỉ unit test với fixture tự dựng không bắt được vì fixture
+    // không có field "summary" như data thật).
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
@@ -82,8 +99,8 @@ public class EndpointCoverageService {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
-        // Vẫn load context của CẢ project (không chỉ 1 endpoint) - dependency risk của 1 endpoint
-        // phụ thuộc vào test case của NHỮNG endpoint khác trong cùng project.
+        // Vẫn load context của CẢ project (không chỉ 1 endpoint) - dependency risk + dòng RELATION của 1
+        // endpoint phụ thuộc vào test case/endpoint KHÁC trong cùng project.
         List<Endpoint> allEndpoints = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project);
         CoverageContext context = buildContext(project, allEndpoints);
         return computeForEndpoint(endpoint, context);
@@ -91,22 +108,30 @@ public class EndpointCoverageService {
 
     private ProjectCoverageResponse aggregateProject(UUID projectId, List<EndpointCoverageResponse> endpoints) {
         long coveredTotal = 0;
+        long executedTotal = 0;
         long dimensionTotal = 0;
         double riskWeightedSum = 0;
         double riskWeightTotal = 0;
         for (EndpointCoverageResponse e : endpoints) {
-            long covered = e.dimensions().stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
-            long relevant = e.dimensions().stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
-            coveredTotal += covered;
-            dimensionTotal += relevant;
+            coveredTotal += e.dimensions().stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
+            executedTotal += e.dimensions().stream().filter(this::isExecuted).count();
+            dimensionTotal += e.dimensions().stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
             if (e.riskScore() > 0) {
                 riskWeightedSum += e.riskScore() * (e.coveragePercent() / 100.0);
                 riskWeightTotal += e.riskScore();
             }
         }
         double overallCoveragePercent = dimensionTotal == 0 ? 100.0 : (coveredTotal * 100.0) / dimensionTotal;
+        double overallExecutedPercent = dimensionTotal == 0 ? 100.0 : (executedTotal * 100.0) / dimensionTotal;
         double overallRiskWeighted = riskWeightTotal == 0 ? overallCoveragePercent : (riskWeightedSum * 100.0) / riskWeightTotal;
-        return new ProjectCoverageResponse(projectId, round1(overallCoveragePercent), round1(overallRiskWeighted), endpoints);
+        return new ProjectCoverageResponse(projectId, round1(overallCoveragePercent), round1(overallExecutedPercent),
+                round1(overallRiskWeighted), endpoints);
+    }
+
+    /** Dòng đã có test VÀ test đó đã chạy ra kết luận thật (PASSED hoặc FAILED). */
+    private boolean isExecuted(CoverageDimensionResponse d) {
+        return d.status() == CoverageDimensionStatus.COVERED
+                && (d.runStatus() == CoverageRunStatus.PASSED || d.runStatus() == CoverageRunStatus.FAILED);
     }
 
     // ---- Dữ liệu dùng chung cho toàn project (tránh N+1 khi tính cho nhiều endpoint) ----
@@ -118,9 +143,11 @@ public class EndpointCoverageService {
         // Endpoint X là "nguồn" cho endpoint Y nếu có TestCaseDependency: case của Y phụ thuộc vào
         // case của X. Dùng để tính Dependency risk: X càng có nhiều Y khác phụ thuộc, risk càng cao.
         Map<UUID, Set<UUID>> dependentEndpointIdsBySourceEndpointId = new LinkedHashMap<>();
+        Map<UUID, List<TestCaseDependency>> dependenciesByConsumerEndpointId = new LinkedHashMap<>();
         for (TestCaseDependency dep : testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)) {
             UUID sourceEndpointId = dep.getDependsOnTestCase().getEndpoint().getId();
             UUID consumerEndpointId = dep.getTestCase().getEndpoint().getId();
+            dependenciesByConsumerEndpointId.computeIfAbsent(consumerEndpointId, k -> new ArrayList<>()).add(dep);
             if (sourceEndpointId.equals(consumerEndpointId)) {
                 continue;
             }
@@ -138,14 +165,36 @@ public class EndpointCoverageService {
             }
         }
 
-        return new CoverageContext(testCasesByEndpointId, dependentEndpointIdsBySourceEndpointId, resultCountsByEndpointId);
+        // Module 15j - lượt chạy MỚI NHẤT của từng test case (trạng thái chạy của dòng coverage).
+        Map<UUID, TestResultStatus> latestResultByTestCaseId = new HashMap<>();
+        for (TestResultRepository.TestCaseLatestResult row : testResultRepository.findLatestResultsByProject(project)) {
+            latestResultByTestCaseId.putIfAbsent(row.getTestCaseId(), row.getStatus());
+        }
+
+        // Module 15j - endpoint POST theo path, để dò "POST tạo resource → endpoint dùng {id}" (dòng RELATION).
+        Map<String, Endpoint> postEndpointByPath = new HashMap<>();
+        for (Endpoint e : endpoints) {
+            if ("POST".equalsIgnoreCase(e.getMethod()) && e.getPath() != null) {
+                postEndpointByPath.putIfAbsent(e.getPath(), e);
+            }
+        }
+
+        return new CoverageContext(testCasesByEndpointId, dependentEndpointIdsBySourceEndpointId, resultCountsByEndpointId,
+                dependenciesByConsumerEndpointId, latestResultByTestCaseId, postEndpointByPath);
     }
 
     private record CoverageContext(
             Map<UUID, List<TestCase>> testCasesByEndpointId,
             Map<UUID, Set<UUID>> dependentEndpointIdsBySourceEndpointId,
-            Map<UUID, long[]> resultCountsByEndpointId
+            Map<UUID, long[]> resultCountsByEndpointId,
+            Map<UUID, List<TestCaseDependency>> dependenciesByConsumerEndpointId,
+            Map<UUID, TestResultStatus> latestResultByTestCaseId,
+            Map<String, Endpoint> postEndpointByPath
     ) {
+    }
+
+    /** Test case đã lưu + bản đổi sang dạng chấm được (đổi 1 lần, dùng cho mọi mục checklist). */
+    private record Candidate(TestCase entity, GeneratedTestCase generated) {
     }
 
     // ---- Tính cho 1 endpoint ----
@@ -153,93 +202,187 @@ public class EndpointCoverageService {
     private EndpointCoverageResponse computeForEndpoint(Endpoint endpoint, CoverageContext context) {
         List<TestCase> testCases = context.testCasesByEndpointId().getOrDefault(endpoint.getId(), List.of());
         SchemaFacts facts = extractSchemaFacts(endpoint);
+        TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
+        List<Candidate> candidates = testCases.stream()
+                .map(tc -> new Candidate(tc, testCaseChecklistPlanner.toCandidate(tc)))
+                .toList();
 
         List<CoverageDimensionResponse> dimensions = new ArrayList<>();
-        for (String field : facts.requiredFields()) {
-            List<TestCase> matches = testCases.stream()
-                    .filter(tc -> tc.getExpectedStatus() != null && tc.getExpectedStatus() >= 400
-                            && !extractBodyFieldNames(tc.getRequestBody()).contains(field))
-                    .toList();
-            dimensions.add(new CoverageDimensionResponse(
-                    "REQUIRED_FIELD", "Trường bắt buộc: " + field,
-                    matches.isEmpty() ? CoverageDimensionStatus.MISSING : CoverageDimensionStatus.COVERED,
-                    matches.isEmpty() ? "Chưa có test case nào thiếu field '" + field + "' để kiểm tra validation" : null,
-                    toRefs(matches)));
-        }
-        for (Map.Entry<String, BoundaryRule> entry : facts.boundaryRules().entrySet()) {
-            String field = entry.getKey();
-            BoundaryRule rule = entry.getValue();
-            List<TestCase> touching = testCases.stream()
-                    .filter(tc -> fieldMap(tc, rule.location()).containsKey(field))
-                    .toList();
-            List<TestCase> atBoundary = touching.stream()
-                    .filter(tc -> isBoundaryValue(rule, fieldMap(tc, rule.location()).get(field)))
-                    .toList();
-            String detail;
-            if (!atBoundary.isEmpty()) {
-                detail = null;
-            } else if (!touching.isEmpty()) {
-                // Module 15g - phân biệt rõ "có case đụng field nhưng chưa chạm biên" khỏi "chưa có
-                // case nào đụng field" - 2 tình huống khác hẳn nhau, gộp chung sẽ đánh lừa người đọc
-                // rằng Coverage Matrix đã kiểm giá trị biên trong khi thực ra chỉ có case giá trị
-                // "an toàn ở giữa khoảng" (vd quantity=50 khi min=1/max=100).
-                detail = "Có " + touching.size() + " test case đụng field '" + field + "' nhưng chưa case nào chạm giá trị "
-                        + "biên (min/max/length) khai báo trong spec - chỉ test giá trị giữa khoảng, chưa test biên thật";
-            } else {
-                detail = "Chưa có test case nào đụng tới field '" + field + "' (có ràng buộc enum/min/max trong spec)";
-            }
-            dimensions.add(new CoverageDimensionResponse(
-                    "BOUNDARY", "Giá trị biên/enum: " + field,
-                    atBoundary.isEmpty() ? CoverageDimensionStatus.MISSING : CoverageDimensionStatus.COVERED,
-                    detail, toRefs(atBoundary)));
+        for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planAll(spec, endpoint.isRequiresAuth())) {
+            dimensions.add(checklistDimension(spec, item, candidates, endpoint.isRequiresAuth(), context));
         }
         for (String statusCode : facts.statusCodes()) {
-            List<TestCase> matches = testCases.stream()
-                    .filter(tc -> tc.getExpectedStatus() != null && tc.getExpectedStatus().toString().equals(statusCode))
-                    .toList();
-            dimensions.add(new CoverageDimensionResponse(
-                    "STATUS_CODE", "Mã trạng thái: " + statusCode,
-                    matches.isEmpty() ? CoverageDimensionStatus.MISSING : CoverageDimensionStatus.COVERED,
-                    matches.isEmpty() ? "Chưa có test case nào kỳ vọng đúng mã " + statusCode : null,
-                    toRefs(matches)));
+            dimensions.add(statusCodeDimension(statusCode, testCases, context));
         }
-        dimensions.add(authDimension401(endpoint, testCases));
+        dimensions.addAll(relationDimensions(endpoint, context));
         dimensions.add(new CoverageDimensionResponse(
                 "AUTH", "Phân quyền (403 Forbidden)", CoverageDimensionStatus.NOT_APPLICABLE,
                 "Không áp dụng - hệ thống chưa có mô hình vai trò/scope của target API để giả lập "
                         + "'có đăng nhập nhưng không đủ quyền', xem Module 15 trong roadmap",
-                List.of()));
+                List.of(), null, null, null, null, List.of()));
 
         long covered = dimensions.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
+        long executed = dimensions.stream().filter(this::isExecuted).count();
         long relevant = dimensions.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
         double coveragePercent = relevant == 0 ? 100.0 : (covered * 100.0) / relevant;
+        double executedPercent = relevant == 0 ? 100.0 : (executed * 100.0) / relevant;
 
         RiskResult risk = computeRisk(endpoint, facts, context);
 
         return new EndpointCoverageResponse(
-                endpoint.getId(), endpoint.getPath(), endpoint.getMethod(),
-                round1(coveragePercent), facts.parsed(), risk.score(), risk.level(), risk.reasons(), dimensions);
+                endpoint.getId(), endpoint.getPath(), endpoint.getMethod(), testCases.size(),
+                round1(coveragePercent), round1(executedPercent), facts.parsed(),
+                risk.score(), risk.level(), risk.reasons(), dimensions);
     }
 
-    private List<CoverageDimensionResponse.TestCaseRef> toRefs(List<TestCase> testCases) {
-        return testCases.stream().map(tc -> new CoverageDimensionResponse.TestCaseRef(tc.getId(), tc.getName())).toList();
-    }
-
-    private CoverageDimensionResponse authDimension401(Endpoint endpoint, List<TestCase> testCases) {
-        if (!endpoint.isRequiresAuth()) {
-            return new CoverageDimensionResponse(
-                    "AUTH", "Xác thực (401 Unauthorized)", CoverageDimensionStatus.NOT_APPLICABLE,
-                    "Endpoint không yêu cầu xác thực theo spec", List.of());
+    /**
+     * 1 mục checklist EP/BVA → 1 dòng coverage. COVERED khi có case đạt mục theo NỘI DUNG (quy tắc "mỗi case
+     * chỉ 1 lỗi" của planner); MISSING thì kèm case "gần đạt" làm bằng chứng vì sao chưa tính.
+     */
+    private CoverageDimensionResponse checklistDimension(
+            TestCaseChecklistPlanner.Spec spec, TestCaseChecklistPlanner.ChecklistItem item,
+            List<Candidate> candidates, boolean requiresAuth, CoverageContext context
+    ) {
+        String category = categoryOf(item.type());
+        if (item.notApplicableReason() != null) {
+            return new CoverageDimensionResponse(category, item.description(), CoverageDimensionStatus.NOT_APPLICABLE,
+                    item.notApplicableReason(), List.of(), item.type().name(), null, item.rationale(), null, List.of());
         }
-        List<TestCase> matches = testCases.stream()
-                .filter(tc -> tc.getSource() == TestCaseSource.SECURITY
-                        && (tc.getAuthOverride() == TestCaseAuthOverride.NONE || tc.getAuthOverride() == TestCaseAuthOverride.INVALID))
+        String key = TestCaseChecklistPlanner.key(item);
+        List<TestCase> covering = candidates.stream()
+                .filter(c -> testCaseChecklistPlanner.covers(spec, item, c.generated(), requiresAuth))
+                .map(Candidate::entity)
                 .toList();
-        return new CoverageDimensionResponse(
-                "AUTH", "Xác thực (401 Unauthorized)",
-                matches.isEmpty() ? CoverageDimensionStatus.MISSING : CoverageDimensionStatus.COVERED,
-                matches.isEmpty() ? "Endpoint yêu cầu auth nhưng chưa có test case Security kiểm tra thiếu/sai auth" : null,
-                toRefs(matches));
+        if (!covering.isEmpty()) {
+            return new CoverageDimensionResponse(category, item.description(), CoverageDimensionStatus.COVERED, null,
+                    toRefs(covering, context), item.type().name(), key, item.rationale(), runStatus(covering, context), List.of());
+        }
+
+        List<CoverageDimensionResponse.NearMiss> nearMisses = new ArrayList<>();
+        for (Candidate c : candidates) {
+            String reason = testCaseChecklistPlanner.explainNearMiss(spec, item, c.generated(), requiresAuth);
+            if (reason != null) {
+                nearMisses.add(new CoverageDimensionResponse.NearMiss(c.entity().getId(), c.entity().getName(), reason));
+            }
+        }
+        String detail = nearMisses.isEmpty()
+                ? "Chưa có test case nào thử đúng tình huống này"
+                : "Có " + nearMisses.size() + " test case gần đạt nhưng chưa được tính - xem lý do từng case";
+        return new CoverageDimensionResponse(category, item.description(), CoverageDimensionStatus.MISSING, detail,
+                List.of(), item.type().name(), key, item.rationale(), null,
+                List.copyOf(nearMisses.subList(0, Math.min(MAX_NEAR_MISSES, nearMisses.size()))));
+    }
+
+    /** Tiền tố tên ChecklistItemType chính là loại test case (POSITIVE/NEGATIVE/BOUNDARY/SECURITY). */
+    private String categoryOf(ChecklistItemType type) {
+        String name = type.name();
+        return name.substring(0, name.indexOf('_'));
+    }
+
+    /**
+     * Mã trạng thái spec khai báo - COVERED khi có case kỳ vọng đúng mã. Hỗ trợ dạng khoảng "4XX" của
+     * OpenAPI 3; "default" (= mọi mã còn lại) không phải mã cụ thể nên không đối chiếu được, ghi rõ thay
+     * vì để MISSING vĩnh viễn.
+     */
+    private CoverageDimensionResponse statusCodeDimension(String statusCode, List<TestCase> testCases, CoverageContext context) {
+        String label = "Mã trạng thái: " + statusCode;
+        Matcher range = RANGE_STATUS.matcher(statusCode);
+        boolean exact = EXACT_STATUS.matcher(statusCode).matches();
+        if (!exact && !range.matches()) {
+            return new CoverageDimensionResponse("STATUS_CODE", label, CoverageDimensionStatus.NOT_APPLICABLE,
+                    "'" + statusCode + "' không phải mã trạng thái cụ thể (vd 'default' = mọi mã còn lại) - không đối chiếu "
+                            + "được với kỳ vọng của test case", List.of(), null, null, null, null, List.of());
+        }
+        String why = "Spec khai báo endpoint có thể trả mã " + statusCode + "; cần ít nhất 1 test case kỳ vọng đúng mã "
+                + "này để biết API thật sự trả về như đặc tả.";
+        List<TestCase> matches = testCases.stream()
+                .filter(tc -> tc.getExpectedStatus() != null && (exact
+                        ? tc.getExpectedStatus().toString().equals(statusCode)
+                        : tc.getExpectedStatus() / 100 == Integer.parseInt(range.group(1))))
+                .toList();
+        if (matches.isEmpty()) {
+            return new CoverageDimensionResponse("STATUS_CODE", label, CoverageDimensionStatus.MISSING,
+                    "Chưa có test case nào kỳ vọng mã " + statusCode, List.of(), null, null, why, null, List.of());
+        }
+        return new CoverageDimensionResponse("STATUS_CODE", label, CoverageDimensionStatus.COVERED, null,
+                toRefs(matches, context), null, null, why, runStatus(matches, context), List.of());
+    }
+
+    /**
+     * Module 15j - quan hệ giữa 2 endpoint: endpoint dùng tham số path {x} mà project có POST tạo đúng
+     * resource đó (dò cùng cách DependencySuggestionService, Module 7) thì cần ít nhất 1 case lấy id THẬT
+     * từ response của POST (TestCaseDependency) - case chỉ dùng id đoán sẵn không chứng minh được 2
+     * endpoint chạy đúng cùng nhau. Không có POST tương ứng thì không tạo dòng (không có gì để nối).
+     */
+    private List<CoverageDimensionResponse> relationDimensions(Endpoint endpoint, CoverageContext context) {
+        if (endpoint.getPath() == null) {
+            return List.of();
+        }
+        Set<String> params = new LinkedHashSet<>();
+        Matcher matcher = PATH_PARAM.matcher(endpoint.getPath());
+        while (matcher.find()) {
+            params.add(matcher.group(1));
+        }
+        List<CoverageDimensionResponse> result = new ArrayList<>();
+        for (String param : params) {
+            String producerPath = DependencySuggestionService.cutPathBeforeParam(endpoint.getPath(), param);
+            Endpoint producer = producerPath == null || producerPath.isBlank() ? null : context.postEndpointByPath().get(producerPath);
+            if (producer == null || producer.getId().equals(endpoint.getId())) {
+                continue;
+            }
+            String producerLabel = "POST " + producer.getPath();
+            Map<UUID, TestCase> chained = new LinkedHashMap<>();
+            for (TestCaseDependency dep : context.dependenciesByConsumerEndpointId().getOrDefault(endpoint.getId(), List.of())) {
+                if (dep.getDependsOnTestCase().getEndpoint().getId().equals(producer.getId())) {
+                    chained.putIfAbsent(dep.getTestCase().getId(), dep.getTestCase());
+                }
+            }
+            String label = "Chuỗi dữ liệu: '" + param + "' lấy id thật từ response của " + producerLabel;
+            String why = "Đường dẫn dùng tham số '" + param + "' mà giá trị thật do " + producerLabel + " tạo ra. Cần ít nhất 1 "
+                    + "test case lấy id thật từ response của " + producerLabel + " (Test Data Chaining) để kiểm tra 2 endpoint "
+                    + "hoạt động đúng cùng nhau - test chỉ dùng id đoán sẵn không chứng minh được điều này.";
+            if (chained.isEmpty()) {
+                result.add(new CoverageDimensionResponse("RELATION", label, CoverageDimensionStatus.MISSING,
+                        "Chưa test case nào của endpoint này liên kết dữ liệu với test case của " + producerLabel
+                                + " - mở Sửa test case, mục 'Phụ thuộc dữ liệu', bấm 'Áp dụng' ở gợi ý",
+                        List.of(), null, null, why, null, List.of()));
+            } else {
+                List<TestCase> covering = List.copyOf(chained.values());
+                result.add(new CoverageDimensionResponse("RELATION", label, CoverageDimensionStatus.COVERED, null,
+                        toRefs(covering, context), null, null, why, runStatus(covering, context), List.of()));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Gộp trạng thái chạy của các case phủ 1 dòng: có case FAILED thì báo FAILED (đã kiểm và thấy lệch -
+     * không được che bởi case khác PASSED); không thì có PASSED là PASSED; chỉ ERROR/BLOCKED là NO_VERDICT.
+     */
+    private CoverageRunStatus runStatus(List<TestCase> covering, CoverageContext context) {
+        boolean anyPassed = false;
+        boolean anyNoVerdict = false;
+        for (TestCase tc : covering) {
+            TestResultStatus latest = context.latestResultByTestCaseId().get(tc.getId());
+            if (latest == null) {
+                continue;
+            }
+            switch (latest) {
+                case FAILED -> {
+                    return CoverageRunStatus.FAILED;
+                }
+                case PASSED -> anyPassed = true;
+                default -> anyNoVerdict = true;
+            }
+        }
+        return anyPassed ? CoverageRunStatus.PASSED : anyNoVerdict ? CoverageRunStatus.NO_VERDICT : CoverageRunStatus.NOT_RUN;
+    }
+
+    private List<CoverageDimensionResponse.TestCaseRef> toRefs(List<TestCase> testCases, CoverageContext context) {
+        return testCases.stream()
+                .map(tc -> new CoverageDimensionResponse.TestCaseRef(tc.getId(), tc.getName(),
+                        context.latestResultByTestCaseId().get(tc.getId())))
+                .toList();
     }
 
     // ---- Risk Engine: tất định, mỗi thành phần 0-20 điểm, tổng tối đa 100 ----
@@ -298,41 +441,20 @@ public class EndpointCoverageService {
         return new RiskResult(score, level, reasons);
     }
 
-    // ---- Parse Endpoint.schema (JSON lưu lúc import) ----
-
-    /** BODY đọc từ {@code TestCase.requestBody}, PATH_OR_QUERY/HEADER đọc từ {@code pathParamFallbacks}/{@code requestHeaders}. */
-    private enum Location { BODY, PATH_OR_QUERY, HEADER }
+    // ---- Parse Endpoint.schema (JSON lưu lúc import) - phần Risk Engine + mã trạng thái cần ----
 
     /**
-     * Module 15g - giữ lại CHI TIẾT ràng buộc biên (không chỉ tên field) để biết "chạm biên" nghĩa là
-     * gì: field chỉ có enum thì không có khái niệm biên số/độ dài rõ ràng - giá trị bất kỳ đã kích
-     * hoạt kiểm tra enum thật nên vẫn coi field có mặt là đủ; field có minimum/maximum/minLength/
-     * maxLength thì PHẢI có giá trị thật `<= minimum`/`>= maximum` (hoặc tương đương với length) mới
-     * tính là đã test biên - giá trị "an toàn ở giữa khoảng" không tính.
-     *
-     * @param location Module 15g (fix bug thật) - field có thể khai ràng buộc ở path/query/header
-     *                 param, không chỉ requestBody; PHẢI đọc đúng nguồn dữ liệu đó khi đối chiếu với
-     *                 test case, nếu không dimension BOUNDARY vĩnh viễn không COVERED được cho field
-     *                 loại này dù test case thật test đúng biên (bug đã phát hiện khi test bằng dữ
-     *                 liệu Docker thật, xem docs/KICH_BAN_TEST.md).
+     * @param parsed false khi Endpoint.schema không đọc được (JSON hỏng/lỗi cấu trúc) - phân biệt với "parse
+     *               được nhưng không có ràng buộc nào", để EndpointCoverageResponse.schemaReadable báo đúng,
+     *               không ngầm hiểu số % là đầy đủ khi thực ra không biết gì cả.
      */
-    private record BoundaryRule(
-            Location location, List<String> enumValues, BigDecimal minimum, BigDecimal maximum,
-            Integer minLength, Integer maxLength
-    ) {
-        boolean hasNumericOrLengthBound() {
-            return minimum != null || maximum != null || minLength != null || maxLength != null;
-        }
-    }
-
-    /** @param parsed false khi Endpoint.schema không đọc được (JSON hỏng/lỗi cấu trúc) - phân biệt với "parse được nhưng không có ràng buộc nào" (parsed=true, set rỗng), để EndpointCoverageResponse.schemaReadable báo đúng, không ngầm hiểu 100% coverage khi thực ra không biết gì cả. */
-    private record SchemaFacts(Set<String> requiredFields, Map<String, BoundaryRule> boundaryRules, Set<String> sensitiveFields, Set<String> statusCodes, boolean parsed) {
+    private record SchemaFacts(Set<String> sensitiveFields, Set<String> statusCodes, boolean parsed) {
         static SchemaFacts empty() {
-            return new SchemaFacts(Set.of(), Map.of(), Set.of(), Set.of(), true);
+            return new SchemaFacts(Set.of(), Set.of(), true);
         }
 
         static SchemaFacts unreadable() {
-            return new SchemaFacts(Set.of(), Map.of(), Set.of(), Set.of(), false);
+            return new SchemaFacts(Set.of(), Set.of(), false);
         }
     }
 
@@ -355,150 +477,31 @@ public class EndpointCoverageService {
             return SchemaFacts.unreadable();
         }
 
-        Set<String> requiredFields = new LinkedHashSet<>();
-        Map<String, BoundaryRule> boundaryRules = new LinkedHashMap<>();
         Set<String> sensitiveFields = new LinkedHashSet<>();
-
         if (stored.parameters != null) {
             for (Parameter p : stored.parameters) {
-                Location location = "header".equalsIgnoreCase(p.getIn()) ? Location.HEADER : Location.PATH_OR_QUERY;
-                collectFieldFacts(p.getName(), location, p.getSchema(), boundaryRules, sensitiveFields);
+                addIfSensitive(p.getName(), sensitiveFields);
             }
         }
         if (stored.requestBody != null && stored.requestBody.getContent() != null) {
             for (MediaType mediaType : stored.requestBody.getContent().values()) {
                 Schema<?> bodySchema = mediaType.getSchema();
-                if (bodySchema == null) {
-                    continue;
-                }
-                if (bodySchema.getRequired() != null) {
-                    requiredFields.addAll(bodySchema.getRequired());
-                }
-                if (bodySchema.getProperties() != null) {
-                    bodySchema.getProperties().forEach((name, propSchema) ->
-                            collectFieldFacts(name, Location.BODY, propSchema, boundaryRules, sensitiveFields));
+                if (bodySchema != null && bodySchema.getProperties() != null) {
+                    bodySchema.getProperties().keySet().forEach(name -> addIfSensitive(name, sensitiveFields));
                 }
             }
         }
         Set<String> statusCodes = stored.responseStatusCodes == null ? Set.of() : new LinkedHashSet<>(stored.responseStatusCodes);
-        return new SchemaFacts(requiredFields, boundaryRules, sensitiveFields, statusCodes, true);
+        return new SchemaFacts(sensitiveFields, statusCodes, true);
     }
 
-    private void collectFieldFacts(
-            String name, Location location, Schema<?> schema,
-            Map<String, BoundaryRule> boundaryRules, Set<String> sensitiveFields
-    ) {
+    private void addIfSensitive(String name, Set<String> sensitiveFields) {
         if (name == null) {
             return;
         }
         String lower = name.toLowerCase(Locale.ROOT);
         if (SENSITIVE_FIELD_KEYWORDS.stream().anyMatch(lower::contains)) {
             sensitiveFields.add(name);
-        }
-        if (schema == null) {
-            return;
-        }
-        List<String> enumValues = schema.getEnum() == null || schema.getEnum().isEmpty()
-                ? null : schema.getEnum().stream().map(String::valueOf).toList();
-        boolean hasBoundaryRule = enumValues != null
-                || schema.getMinimum() != null || schema.getMaximum() != null
-                || schema.getMinLength() != null || schema.getMaxLength() != null;
-        if (hasBoundaryRule) {
-            boundaryRules.put(name, new BoundaryRule(
-                    location, enumValues, schema.getMinimum(), schema.getMaximum(), schema.getMinLength(), schema.getMaxLength()));
-        }
-    }
-
-    /**
-     * Module 15g - CHỈ tính là "chạm biên" khi field có ràng buộc số/độ dài VÀ giá trị thật nằm ở
-     * biên hoặc vượt biên (`<= minimum`/`>= maximum`, tương đương cho length) - giá trị giữa khoảng
-     * KHÔNG tính dù field có mặt. Field chỉ có enum (không min/max/length) giữ hành vi cũ: có mặt là
-     * đủ, vì enum không có khái niệm "biên" số/độ dài rõ ràng - giá trị bất kỳ đã kích hoạt kiểm tra
-     * enum thật khi API thực thi.
-     */
-    private boolean isBoundaryValue(BoundaryRule rule, Object rawValue) {
-        if (rawValue == null) {
-            return false;
-        }
-        if (!rule.hasNumericOrLengthBound()) {
-            return true;
-        }
-        String value = String.valueOf(rawValue);
-        if (rule.minLength() != null || rule.maxLength() != null) {
-            int length = value.length();
-            if (rule.minLength() != null && length <= rule.minLength()) {
-                return true;
-            }
-            if (rule.maxLength() != null && length >= rule.maxLength()) {
-                return true;
-            }
-        }
-        if (rule.minimum() != null || rule.maximum() != null) {
-            BigDecimal numeric = parseNumeric(value);
-            if (numeric == null) {
-                return false;
-            }
-            if (rule.minimum() != null && numeric.compareTo(rule.minimum()) <= 0) {
-                return true;
-            }
-            if (rule.maximum() != null && numeric.compareTo(rule.maximum()) >= 0) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private BigDecimal parseNumeric(String value) {
-        try {
-            return new BigDecimal(value);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    /** Đọc top-level key của requestBody JSON (do AI/người dùng lưu) - trả rỗng nếu null/blank/không parse được. */
-    private Set<String> extractBodyFieldNames(String requestBodyJson) {
-        return parseJsonObject(requestBodyJson).keySet();
-    }
-
-    /**
-     * Module 15g (fix bug thật) - chọn đúng NGUỒN dữ liệu của test case theo location của field
-     * (BODY/PATH_OR_QUERY/HEADER) - trước đây dimension BOUNDARY chỉ đọc requestBody dù boundaryRules
-     * có thể chứa field khai ở path/query/header param, khiến field loại đó không bao giờ COVERED
-     * được. {@code pathParamFallbacks}/{@code requestHeaders} là JSON object phẳng {@code Map<String,
-     * String>} - dùng lại {@code parseJsonObject} vì cùng là parse 1 JSON object tuỳ ý thành Map.
-     */
-    private Map<String, Object> fieldMap(TestCase tc, Location location) {
-        return switch (location) {
-            case BODY -> parseJsonObject(tc.getRequestBody());
-            case PATH_OR_QUERY -> paramValues(tc);
-            case HEADER -> parseJsonObject(tc.getRequestHeaders());
-        };
-    }
-
-    /** Module 15h - giá trị path/query thật sự được gửi: literal trong resolvedPath ưu tiên, rồi pathParamFallbacks. */
-    private Map<String, Object> paramValues(TestCase tc) {
-        Map<String, String> fallbacks = new LinkedHashMap<>();
-        parseJsonObject(tc.getPathParamFallbacks()).forEach((k, v) -> {
-            if (v != null) {
-                fallbacks.put(k, String.valueOf(v));
-            }
-        });
-        String endpointPath = tc.getEndpoint() == null ? null : tc.getEndpoint().getPath();
-        return new LinkedHashMap<>(TestCaseParamValues.resolve(endpointPath, tc.getResolvedPath(), fallbacks));
-    }
-
-    /** Module 15g - parse 1 JSON object phẳng tuỳ ý (requestBody/pathParamFallbacks/requestHeaders đều cùng shape) - trả rỗng nếu null/blank/không parse được. */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> parseJsonObject(String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
-        try {
-            Object parsed = objectMapper.readValue(json, Object.class);
-            return parsed instanceof Map ? (Map<String, Object>) parsed : Map.of();
-        } catch (Exception e) {
-            return Map.of();
         }
     }
 

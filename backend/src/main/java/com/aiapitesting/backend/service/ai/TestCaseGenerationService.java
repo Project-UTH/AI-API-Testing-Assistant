@@ -32,7 +32,6 @@ import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import com.aiapitesting.backend.service.TestCaseReliabilityValidator;
 import com.aiapitesting.backend.service.TestCaseService;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -484,9 +483,7 @@ public class TestCaseGenerationService {
         return testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint).stream()
                 .filter(tc -> tc.getSource() == TestCaseSource.MANUAL
                         || (tc.getSource() == source && tc.isLocked()))
-                .map(tc -> new GeneratedTestCase(tc.getName(), tc.getDescription(), readStringMap(tc.getRequestHeaders()),
-                        tc.getRequestBody(), tc.getExpectedStatus(), tc.getResolvedPath(), readStringMap(tc.getPathParamFallbacks()),
-                        tc.getAuthOverride(), tc.getRationale()))
+                .map(testCaseChecklistPlanner::toCandidate)
                 .toList();
     }
 
@@ -530,18 +527,6 @@ public class TestCaseGenerationService {
     private String label(TestCaseChecklistPlanner.ChecklistItem item) {
         String text = item.description();
         return text.length() <= CHECKLIST_LABEL_MAX ? text : text.substring(0, CHECKLIST_LABEL_MAX - 3) + "...";
-    }
-
-    private Map<String, String> readStringMap(String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<Map<String, String>>() {
-            });
-        } catch (Exception e) {
-            return Map.of();
-        }
     }
 
     private Prompt buildPrompt(

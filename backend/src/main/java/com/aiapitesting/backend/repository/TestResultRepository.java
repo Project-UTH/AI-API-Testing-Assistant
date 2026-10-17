@@ -105,4 +105,16 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
         TestResultStatus getStatus();
         long getCount();
     }
+
+    // Module 15j - Coverage theo kết quả chạy: lượt chạy MỚI NHẤT của từng test case trong project, CHỈ 2
+    // cột (không kéo responseBody/assertionResultsJson TEXT lên). 1 query cho cả project, không N+1.
+    @Query("SELECT tr.testCase.id AS testCaseId, tr.status AS status FROM TestResult tr "
+            + "WHERE tr.testCase.endpoint.project = :project AND tr.createdAt = "
+            + "(SELECT MAX(tr2.createdAt) FROM TestResult tr2 WHERE tr2.testCase = tr.testCase)")
+    List<TestCaseLatestResult> findLatestResultsByProject(@Param("project") Project project);
+
+    interface TestCaseLatestResult {
+        UUID getTestCaseId();
+        TestResultStatus getStatus();
+    }
 }

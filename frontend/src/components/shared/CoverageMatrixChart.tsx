@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils"
-import type { CoverageDimension, RiskLevel } from "@/lib/coverage"
+import type { RiskLevel } from "@/lib/coverage"
 
 const RISK_STYLES: Record<RiskLevel, string> = {
   LOW: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
@@ -59,21 +59,30 @@ function MiniDonut({ percent, color }: { percent: number; color: string }) {
 
 interface CoverageSummaryProps {
   coveragePercent: number
+  executedPercent: number
   riskWeightedCoveragePercent: number
 }
 
 /**
- * 2 donut cạnh nhau: coverage phẳng vs coverage có trọng số rủi ro - khoảng cách giữa 2 số là tín
- * hiệu chính ("coverage cao nhưng API rủi ro vẫn chưa test đủ"), xem Module 15c trong roadmap.
+ * Donut cạnh nhau: coverage phẳng vs coverage có trọng số rủi ro - khoảng cách giữa 2 số là tín hiệu chính
+ * ("coverage cao nhưng API rủi ro vẫn chưa test đủ"), xem Module 15c trong roadmap. Module 15j thêm donut
+ * "đã chạy có kết quả": có test mới là thiết kế, chạy ra Pass/Fail mới là đã kiểm thật.
  */
-export function CoverageSummary({ coveragePercent, riskWeightedCoveragePercent }: CoverageSummaryProps) {
+export function CoverageSummary({ coveragePercent, executedPercent, riskWeightedCoveragePercent }: CoverageSummaryProps) {
   return (
     <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
       <div className="flex items-center gap-3">
         <MiniDonut percent={coveragePercent} color="#10b981" />
         <div className="text-sm">
-          <p className="font-medium text-foreground">Coverage (phẳng)</p>
-          <p className="text-xs text-muted-foreground">% dimension đã có test case</p>
+          <p className="font-medium text-foreground">Đã có test case</p>
+          <p className="text-xs text-muted-foreground">% mục cần kiểm (tự tính từ spec) đã có test đạt</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <MiniDonut percent={executedPercent} color="#0ea5e9" />
+        <div className="text-sm">
+          <p className="font-medium text-foreground">Đã chạy có kết quả</p>
+          <p className="text-xs text-muted-foreground">% mục mà test đã chạy ra Pass/Fail thật</p>
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -92,42 +101,12 @@ export function CoverageSummary({ coveragePercent, riskWeightedCoveragePercent }
           ro cao chưa được test đầy đủ.
         </p>
       )}
-    </div>
-  )
-}
-
-const DIMENSION_STYLES: Record<CoverageDimension["status"], string> = {
-  COVERED: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
-  MISSING: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
-  NOT_APPLICABLE: "bg-muted text-muted-foreground border-border",
-}
-
-/** Module 15f - tooltip của chip COVERED hiện rõ test case nào khiến dimension đó được tính là đã kiểm (provenance), không chỉ "có hay không". */
-function dimensionTooltip(d: CoverageDimension): string | undefined {
-  if (d.status === "COVERED") {
-    return d.coveringTestCases.length > 0
-      ? `Được kiểm bởi: ${d.coveringTestCases.map((tc) => tc.name).join(", ")}`
-      : undefined
-  }
-  return d.detail ?? undefined
-}
-
-/** Lưới chip cho từng dimension của 1 endpoint - xanh (COVERED)/vàng (MISSING)/xám (NOT_APPLICABLE), tooltip hiện detail hoặc provenance. */
-export function CoverageDimensionGrid({ dimensions }: { dimensions: CoverageDimension[] }) {
-  if (dimensions.length === 0) {
-    return <p className="text-sm text-muted-foreground">Không có dimension nào để hiển thị.</p>
-  }
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {dimensions.map((d, idx) => (
-        <span
-          key={`${d.category}-${d.label}-${idx}`}
-          title={dimensionTooltip(d)}
-          className={cn("rounded-full border px-2 py-0.5 text-xs font-medium", DIMENSION_STYLES[d.status])}
-        >
-          {d.label}
-        </span>
-      ))}
+      {executedPercent < coveragePercent && (
+        <p className="w-full text-xs text-sky-600 dark:text-sky-400">
+          {coveragePercent}% mục đã có test nhưng mới {executedPercent}% đã chạy ra kết quả - phần chênh lệch mới là thiết
+          kế, chưa được kiểm thật trên API.
+        </p>
+      )}
     </div>
   )
 }
