@@ -601,4 +601,118 @@ class TestCaseChecklistPlannerTest {
         assertThat(candidate.requestHeaders()).isEmpty();
         assertThat(planner.satisfies(spec, item2(all(), ChecklistItemType.POSITIVE_BASELINE), candidate)).isTrue();
     }
+
+    // ---- Module 15j - thử bù (attemptFill): có case gốc, hoặc dựng thẳng từ đặc tả ----
+
+    private static final String ID_ONLY_SCHEMA = """
+            {"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"integer","format":"int64"}}],
+             "responseStatusCodes":["204","404"]}""";
+
+    private Spec specAt(String path, String schema) {
+        return planner.readSpec(Endpoint.builder().id(UUID.randomUUID()).method("DELETE").path(path).schema(schema).build());
+    }
+
+    @Test
+    void attemptFill_noBaselineButEndpointHasOnlyTheTestedInput_buildsErrorCaseFromSpec() {
+        Spec idOnly = specAt("/products/{id}", ID_ONLY_SCHEMA);
+        ChecklistItem idZero = item(planner.plan(idOnly, false, false, true), ChecklistItemType.BOUNDARY_ZERO, "id");
+
+        TestCaseChecklistPlanner.FillAttempt attempt = planner.attemptFill(idOnly, idZero, null);
+
+        assertThat(attempt.blockedReason()).isNull();
+        assertThat(attempt.fromSpecOnly()).isTrue();
+        assertThat(attempt.filled().resolvedPath()).isEqualTo("/products/0");
+        assertThat(attempt.filled().expectedStatus()).isEqualTo(404);
+        assertThat(attempt.filled().requestBody()).isNull();
+    }
+
+    @Test
+    void attemptFill_noBaselineAndEndpointHasOtherRequiredInput_isBlockedNotInvented() {
+        // email VÀ age đều bắt buộc: bỏ riêng email thì case trống còn thiếu cả age (lỗi thứ 2) - không bịa giá trị age.
+        ChecklistItem missingEmail = item(all(), ChecklistItemType.NEGATIVE_MISSING_FIELD, "email");
+
+        TestCaseChecklistPlanner.FillAttempt attempt = planner.attemptFill(spec, missingEmail, null);
+
+        assertThat(attempt.filled()).isNull();
+        assertThat(attempt.blockedReason()).isEqualTo(TestCaseChecklistPlanner.NO_BASELINE_REASON);
+    }
+
+    @Test
+    void attemptFill_noBaselineAndOnlyRequiredField_buildsNegativeCasesFromSpec() {
+        Spec single = specAt("/users", """
+                {"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["email"],
+                  "properties":{"email":{"type":"string","format":"email"}}}}}}}""");
+        List<ChecklistItem> items = planner.plan(single, false, true, false);
+
+        assertThat(planner.attemptFill(single, item(items, ChecklistItemType.NEGATIVE_MISSING_FIELD, "email"), null).filled().requestBody())
+                .isEqualTo("{}");
+        assertThat(planner.attemptFill(single, item(items, ChecklistItemType.NEGATIVE_NULL_FIELD, "email"), null).filled().requestBody())
+                .isEqualTo("{\"email\":null}");
+    }
+
+    @Test
+    void attemptFill_noBaseline_neverBuildsSuccessExpectedItemsOrPositive() {
+        Spec idOnly = specAt("/products/{id}", ID_ONLY_SCHEMA);
+        ChecklistItem positive = item2(planner.plan(idOnly, true, false, false), ChecklistItemType.POSITIVE_BASELINE);
+        // Spec không cho biết API trả mã nào khi thành công và dữ liệu thật nào được chấp nhận.
+        Spec withZero = specAt("/products", """
+                {"parameters":[{"name":"qty","in":"query","schema":{"type":"integer"}}]}""");
+        ChecklistItem qtyZero = item(planner.plan(withZero, false, false, true), ChecklistItemType.BOUNDARY_ZERO, "qty");
+
+        assertThat(planner.attemptFill(idOnly, positive, null).blockedReason()).isEqualTo(TestCaseChecklistPlanner.NO_BASELINE_REASON);
+        assertThat(qtyZero.expectSuccess()).isTrue();
+        assertThat(planner.attemptFill(withZero, qtyZero, null).filled()).isNull();
+    }
+
+    @Test
+    void attemptFill_securityItemFromSpec_onlyWhenPathHasNoUnresolvedParam() {
+        ChecklistItem missingToken = item2(planner.planSecurity(true), ChecklistItemType.SECURITY_MISSING_TOKEN);
+        Spec noParams = specAt("/orders", "{\"responseStatusCodes\":[\"200\"]}");
+        Spec withPathParam = specAt("/orders/{id}", ID_ONLY_SCHEMA);
+
+        TestCaseChecklistPlanner.FillAttempt ok = planner.attemptFill(noParams, missingToken, null);
+        assertThat(ok.fromSpecOnly()).isTrue();
+        assertThat(ok.filled().expectedStatus()).isEqualTo(401);
+        assertThat(ok.filled().authOverride()).isEqualTo(com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE);
+        // {id} chưa có giá trị thật - gọi "/orders/{id}" nguyên văn không phải 1 case chạy được.
+        assertThat(planner.attemptFill(withPathParam, missingToken, null).blockedReason())
+                .isEqualTo(TestCaseChecklistPlanner.NO_BASELINE_REASON);
+    }
+
+    @Test
+    void attemptFill_withBaseline_copiesFromBaselineAndIsNotFromSpecOnly() {
+        ChecklistItem missingEmail = item(all(), ChecklistItemType.NEGATIVE_MISSING_FIELD, "email");
+
+        TestCaseChecklistPlanner.FillAttempt attempt = planner.attemptFill(spec, missingEmail, tc(BASE_BODY, 201));
+
+        assertThat(attempt.fromSpecOnly()).isFalse();
+        assertThat(attempt.filled().requestBody()).doesNotContain("email").contains("age");
+    }
+
+    @Test
+    void attemptFill_baselineExistsButNothingWorks_reportsCannotBuildNotMissingBaseline() {
+        Spec s = specAt("/users/{id}", """
+                {"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"integer","format":"int64"}}],
+                 "requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["name"],
+                   "properties":{"name":{"type":"string","format":"text"}}}}}}}""");
+        ChecklistItem idZero = item(planner.plan(s, false, false, true), ChecklistItemType.BOUNDARY_ZERO, "id");
+        // Case gốc có đường dẫn khác cấu trúc endpoint (số segment lệch) - không thay được vị trí {id}.
+        GeneratedTestCase oddBaseline = new GeneratedTestCase("n", "d", Map.of(), "{\"name\":\"a\"}", 200, "/other", Map.of(), null, null);
+
+        TestCaseChecklistPlanner.FillAttempt attempt = planner.attemptFill(s, idZero, oddBaseline);
+
+        assertThat(attempt.filled()).isNull();
+        assertThat(attempt.blockedReason()).isEqualTo(TestCaseChecklistPlanner.CANNOT_BUILD_REASON);
+    }
+
+    @Test
+    void isUsableBaseline_excludesCasesThatDropTheTokenOnAuthEndpoints() {
+        GeneratedTestCase noToken = new GeneratedTestCase("n", "d", Map.of(), BASE_BODY, 201,
+                "/users?minPrice={{minPrice}}", Map.of("minPrice", "10"), com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE, null);
+
+        assertThat(planner.isUsableBaseline(spec, tc(BASE_BODY, 201), true)).isTrue();
+        assertThat(planner.isUsableBaseline(spec, noToken, true)).isFalse();
+        assertThat(planner.isUsableBaseline(spec, noToken, false)).isTrue();
+        assertThat(planner.isUsableBaseline(spec, tc(BASE_BODY, 400), true)).isFalse();
+    }
 }

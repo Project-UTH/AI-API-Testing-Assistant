@@ -66,6 +66,19 @@ public class TestCaseChecklistPlanner {
     static final String NO_AUTH_REASON =
             "Endpoint không yêu cầu xác thực (spec không khai security) - không có gì để kiểm khi thiếu/sai token";
 
+    /**
+     * Module 15j - lý do không bù được mục (hiện cả ở trang Coverage lẫn kết quả bù): không có case gốc hợp lệ
+     * để mượn dữ liệu của các field/tham số khác, và mục này cần dữ liệu đó nên không tự dựng từ đặc tả được.
+     */
+    public static final String NO_BASELINE_REASON = "Mục này cần dữ liệu hợp lệ của các field/tham số khác, nhưng endpoint "
+            + "chưa có test case hợp lệ nào (kỳ vọng thành công, đủ field bắt buộc, không vi phạm ràng buộc spec) để mượn - "
+            + "hệ thống không tự bịa dữ liệu vì không biết hệ thống đích chấp nhận gì. Hãy sinh test case bằng AI (tick "
+            + "Positive) hoặc tự thêm 1 case hợp lệ, rồi bấm Bổ sung lại";
+
+    /** Module 15j - có case gốc nhưng vẫn không dựng được đúng 1 lỗi từ nó (vd không đối chiếu được vị trí tham số path). */
+    public static final String CANNOT_BUILD_REASON = "Hệ thống không tạo được case đúng 1 lỗi cho mục này từ case gốc hiện "
+            + "có (vd không đối chiếu được vị trí tham số path trong đường dẫn của case gốc)";
+
     private static final String NOT_FORBIDDEN_NOTE = "spec không cấm nên kỳ vọng thành công (2xx)";
 
     private static final int MAX_LITERAL_IN_DESCRIPTION = 20;
@@ -507,6 +520,58 @@ public class TestCaseChecklistPlanner {
 
     private static boolean overridesAuth(GeneratedTestCase candidate) {
         return candidate.authOverride() == TestCaseAuthOverride.NONE || candidate.authOverride() == TestCaseAuthOverride.INVALID;
+    }
+
+    /**
+     * Module 15j - kết quả thử bù 1 mục: case tạo được, hoặc lý do không tạo được. fromSpecOnly = true khi case
+     * được dựng thẳng từ đặc tả, không mượn dữ liệu của case nào (endpoint không có đầu vào nào khác ngoài mục này).
+     */
+    public record FillAttempt(GeneratedTestCase filled, boolean fromSpecOnly, String blockedReason) {
+    }
+
+    /** Case gốc dùng được: kỳ vọng thành công, không vi phạm ràng buộc, và (endpoint cần xác thực) không phải case cố ý bỏ/sai token. */
+    public boolean isUsableBaseline(Spec spec, GeneratedTestCase candidate, boolean endpointRequiresAuth) {
+        return !(endpointRequiresAuth && overridesAuth(candidate)) && isValidBaseline(spec, candidate);
+    }
+
+    /**
+     * Module 15j - thử bù 1 mục. Có case gốc thì copy-rồi-sửa-1-chỗ như {@link #fill}; không có (hoặc không dựng
+     * được từ nó) thì thử dựng thẳng từ đặc tả. Dùng CHUNG cho trang Coverage (quyết định nút Bổ sung có bấm được
+     * không) và CoverageGapFillService (bù thật) - 2 nơi không thể nói khác nhau về cùng 1 mục.
+     */
+    public FillAttempt attemptFill(Spec spec, ChecklistItem item, GeneratedTestCase baselineOrNull) {
+        if (baselineOrNull != null) {
+            GeneratedTestCase filled = fill(spec, item, baselineOrNull);
+            if (filled != null) {
+                return new FillAttempt(filled, false, null);
+            }
+        }
+        GeneratedTestCase fromSpec = fillFromSpecOnly(spec, item);
+        if (fromSpec != null) {
+            return new FillAttempt(fromSpec, true, null);
+        }
+        return new FillAttempt(null, false, baselineOrNull != null ? CANNOT_BUILD_REASON : NO_BASELINE_REASON);
+    }
+
+    /**
+     * Dựng case thẳng từ đặc tả khi endpoint KHÔNG có đầu vào nào khác cần dữ liệu hợp lệ: bắt đầu từ 1 case "trống"
+     * (không body/header, đường dẫn gốc) rồi sửa đúng 1 chỗ. Không có chỗ nào để bịa dữ liệu vì tự kiểm tra bằng
+     * chính {@link #satisfies} - nếu endpoint còn field/tham số bắt buộc nào khác (case trống sẽ vi phạm thêm lỗi
+     * thứ 2) hoặc đường dẫn còn tham số {x} chưa có giá trị thì trả null, không tạo case sai. Chỉ cho mục kỳ vọng
+     * LỖI: mục kỳ vọng thành công cần biết API trả mã nào và dữ liệu thật được chấp nhận - đặc tả không cho biết.
+     */
+    private GeneratedTestCase fillFromSpecOnly(Spec spec, ChecklistItem item) {
+        if (item.expectSuccess() || item.notApplicableReason() != null) {
+            return null;
+        }
+        GeneratedTestCase bare = new GeneratedTestCase("(dựng từ đặc tả)", null, Map.of(), null, null,
+                spec.endpointPath(), Map.of(), TestCaseAuthOverride.DEFAULT, null);
+        GeneratedTestCase filled = fill(spec, item, bare);
+        if (filled == null || filled.resolvedPath() == null
+                || filled.resolvedPath().replaceAll("\\{\\{[^}]*}}", "").contains("{")) {
+            return null;
+        }
+        return filled;
     }
 
     /**

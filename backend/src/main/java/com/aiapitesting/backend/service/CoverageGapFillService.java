@@ -49,9 +49,8 @@ public class CoverageGapFillService {
     /** Độ dài cột TestCase.checklistItem (VARCHAR(255)). */
     private static final int CHECKLIST_LABEL_MAX = 255;
 
-    static final String NO_BASELINE_REASON = "Chưa có test case hợp lệ nào (kỳ vọng thành công, đủ field bắt buộc, không vi "
-            + "phạm ràng buộc spec) để làm gốc tạo case bù - hãy sinh test case bằng AI (tick Positive) hoặc tự thêm 1 case "
-            + "hợp lệ, rồi bấm Bổ sung lại";
+    /** Dùng chung với trang Coverage (cờ fillable) - 2 nơi nói cùng 1 lý do, định nghĩa ở planner. */
+    static final String NO_BASELINE_REASON = TestCaseChecklistPlanner.NO_BASELINE_REASON;
 
     private final ProjectService projectService;
     private final EndpointRepository endpointRepository;
@@ -66,7 +65,7 @@ public class CoverageGapFillService {
     private record Candidate(TestCase entity, GeneratedTestCase generated) {
     }
 
-    /** Case bù chờ lưu + case gốc của nó (để chép liên kết dữ liệu Module 7 còn dùng được). */
+    /** Case bù chờ lưu + case gốc của nó (để chép liên kết dữ liệu Module 7 còn dùng được); baseline = null khi dựng thẳng từ đặc tả. */
     private record Pending(TestCase entity, TestCase baseline) {
     }
 
@@ -91,7 +90,7 @@ public class CoverageGapFillService {
                 .filter(item -> candidates.stream().noneMatch(c -> testCaseChecklistPlanner.covers(spec, item, c.generated(), requiresAuth)))
                 .toList();
         if (missing.isEmpty()) {
-            return new CoverageFillResponse(0, List.of(), List.of(), null);
+            return new CoverageFillResponse(0, List.of(), List.of(), null, 0);
         }
 
         Candidate baseline = pickBaseline(project, spec, candidates, requiresAuth);
@@ -101,21 +100,20 @@ public class CoverageGapFillService {
 
         List<Pending> pending = new ArrayList<>();
         List<CoverageFillResponse.NotFilled> notFilled = new ArrayList<>();
+        int fromSpecCount = 0;
         for (TestCaseChecklistPlanner.ChecklistItem item : missing) {
             String key = TestCaseChecklistPlanner.key(item);
             boolean security = isSecurity(item);
             Candidate base = security ? securityBaseline : baseline;
-            if (base == null) {
-                notFilled.add(new CoverageFillResponse.NotFilled(key, item.description(), NO_BASELINE_REASON));
+            // Cùng attemptFill với trang Coverage: có case gốc thì copy-sửa-1-chỗ, không có thì thử dựng thẳng từ
+            // đặc tả (chỉ khi endpoint không có đầu vào nào khác cần dữ liệu hợp lệ) - nên nút sáng thì chắc bù được.
+            TestCaseChecklistPlanner.FillAttempt attempt =
+                    testCaseChecklistPlanner.attemptFill(spec, item, base == null ? null : base.generated());
+            if (attempt.filled() == null) {
+                notFilled.add(new CoverageFillResponse.NotFilled(key, item.description(), attempt.blockedReason()));
                 continue;
             }
-            GeneratedTestCase filled = testCaseChecklistPlanner.fill(spec, item, base.generated());
-            if (filled == null) {
-                notFilled.add(new CoverageFillResponse.NotFilled(key, item.description(),
-                        "Hệ thống không tạo được case đúng 1 lỗi cho mục này từ case gốc '" + base.entity().getName()
-                                + "' (vd không đối chiếu được vị trí tham số path trong đường dẫn của case gốc)"));
-                continue;
-            }
+            GeneratedTestCase filled = attempt.filled();
             String fallbacksJson = writeJson(filled.pathParamFallbacks());
             try {
                 testCasePathValidator.validate(filled.resolvedPath(), fallbacksJson, InvalidRequestException::new);
@@ -123,19 +121,26 @@ public class CoverageGapFillService {
                 notFilled.add(new CoverageFillResponse.NotFilled(key, item.description(), e.getMessage()));
                 continue;
             }
-            pending.add(new Pending(toEntity(endpoint, item, filled, fallbacksJson, base.entity().getName(), security),
-                    base.entity()));
+            // Dựng từ đặc tả thì không có case gốc nào để ghi tên hay chép liên kết dữ liệu.
+            TestCase source = attempt.fromSpecOnly() ? null : base.entity();
+            fromSpecCount += attempt.fromSpecOnly() ? 1 : 0;
+            pending.add(new Pending(toEntity(endpoint, item, filled, fallbacksJson, source == null ? null : source.getName(),
+                    security), source));
         }
 
-        List<TestCase> saved = testCaseRepository.saveAll(pending.stream().map(Pending::entity).toList());
+        List<TestCase> saved = pending.isEmpty()
+                ? List.of() : testCaseRepository.saveAll(pending.stream().map(Pending::entity).toList());
         copyDependencies(pending);
 
+        // Tên case gốc chỉ có nghĩa khi ít nhất 1 case bù thật sự mượn dữ liệu từ nó.
         Candidate usedBaseline = baseline != null ? baseline : securityBaseline;
+        boolean anyBorrowed = pending.stream().anyMatch(p -> p.baseline() != null);
         return new CoverageFillResponse(
                 saved.size(),
                 saved.stream().map(tc -> new CoverageDimensionResponse.TestCaseRef(tc.getId(), tc.getName(), null)).toList(),
                 notFilled,
-                pending.isEmpty() || usedBaseline == null ? null : usedBaseline.entity().getName());
+                anyBorrowed && usedBaseline != null ? usedBaseline.entity().getName() : null,
+                fromSpecCount);
     }
 
     /**
@@ -149,8 +154,7 @@ public class CoverageGapFillService {
             latest.putIfAbsent(row.getTestCaseId(), row.getStatus());
         }
         return candidates.stream()
-                .filter(c -> !(requiresAuth && overridesAuth(c.generated())))
-                .filter(c -> testCaseChecklistPlanner.isValidBaseline(spec, c.generated()))
+                .filter(c -> testCaseChecklistPlanner.isUsableBaseline(spec, c.generated(), requiresAuth))
                 .min(Comparator.comparingInt(c -> baselineRank(c.entity(), latest)))
                 .orElse(null);
     }
@@ -176,8 +180,11 @@ public class CoverageGapFillService {
         return TestCase.builder()
                 .endpoint(endpoint)
                 .name(filled.name())
-                .description("Hệ thống tự bổ sung từ trang Coverage (copy case gốc '" + baselineName + "', sửa đúng 1 chỗ) "
-                        + "vì chưa có test case nào đạt mục checklist: " + item.description())
+                .description((baselineName == null
+                        ? "Hệ thống tự dựng từ đặc tả OpenAPI (trang Coverage) - endpoint không có đầu vào nào khác ngoài mục "
+                                + "này nên không cần case gốc"
+                        : "Hệ thống tự bổ sung từ trang Coverage (copy case gốc '" + baselineName + "', sửa đúng 1 chỗ)")
+                        + " vì chưa có test case nào đạt mục checklist: " + item.description())
                 .requestHeaders(writeJson(filled.requestHeaders()))
                 .requestBody(filled.requestBody())
                 .rationale(item.rationale())
@@ -202,6 +209,9 @@ public class CoverageGapFillService {
         Map<UUID, List<TestCaseDependency>> baselineDependencies = new HashMap<>();
         List<TestCaseDependency> copies = new ArrayList<>();
         for (Pending p : pending) {
+            if (p.baseline() == null) {
+                continue; // dựng từ đặc tả: không có case gốc nên không có liên kết nào để chép
+            }
             List<TestCaseDependency> dependencies = baselineDependencies.computeIfAbsent(
                     p.baseline().getId(), id -> testCaseDependencyRepository.findAllByTestCase(p.baseline()));
             if (dependencies.isEmpty()) {
@@ -229,10 +239,6 @@ public class CoverageGapFillService {
 
     private boolean isSecurity(TestCaseChecklistPlanner.ChecklistItem item) {
         return item.type().name().startsWith("SECURITY_");
-    }
-
-    private boolean overridesAuth(GeneratedTestCase candidate) {
-        return candidate.authOverride() == TestCaseAuthOverride.NONE || candidate.authOverride() == TestCaseAuthOverride.INVALID;
     }
 
     private String truncate(String text) {

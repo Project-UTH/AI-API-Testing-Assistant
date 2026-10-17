@@ -25,13 +25,29 @@ import java.util.UUID;
  * @param whyNeeded         15j - vì sao cần kiểm mục này, câu mẫu tất định sinh từ spec (không phải AI tự khai)
  * @param runStatus         15j - chỉ có khi COVERED: các case phủ dòng này đã chạy ra kết quả chưa
  * @param nearMisses        15j - chỉ có khi MISSING: case "gần đạt" nhưng không được tính, kèm lý do (bằng chứng)
+ * @param fillable          15j - chỉ true khi dòng MISSING này hệ thống bù được NGAY BÂY GIỜ (có case gốc hợp lệ để
+ *                          mượn, hoặc dựng thẳng được từ đặc tả) - frontend dùng để làm mờ nút Bổ sung từ trước
+ *                          thay vì để người dùng bấm rồi mới biết thất bại
+ * @param fillBlockedReason 15j - khi dòng MISSING có {@code itemKey} nhưng chưa bù được: vì sao + cần làm gì
  */
 public record CoverageDimensionResponse(
         String category, String label, CoverageDimensionStatus status, String detail,
         List<TestCaseRef> coveringTestCases,
         String checklistType, String itemKey, String whyNeeded, CoverageRunStatus runStatus,
-        List<NearMiss> nearMisses
+        List<NearMiss> nearMisses,
+        boolean fillable, String fillBlockedReason
 ) {
+    /** Dòng không bù được/không cần bù (COVERED, NOT_APPLICABLE, STATUS_CODE, RELATION): fillable=false, không có lý do. */
+    public CoverageDimensionResponse(
+            String category, String label, CoverageDimensionStatus status, String detail,
+            List<TestCaseRef> coveringTestCases,
+            String checklistType, String itemKey, String whyNeeded, CoverageRunStatus runStatus,
+            List<NearMiss> nearMisses
+    ) {
+        this(category, label, status, detail, coveringTestCases, checklistType, itemKey, whyNeeded, runStatus,
+                nearMisses, false, null);
+    }
+
     /** @param latestResult 15j - trạng thái lần chạy mới nhất của case, null khi chưa chạy lần nào */
     public record TestCaseRef(UUID id, String name, TestResultStatus latestResult) {
     }

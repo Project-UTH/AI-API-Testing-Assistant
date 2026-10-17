@@ -207,9 +207,20 @@ public class EndpointCoverageService {
                 .map(tc -> new Candidate(tc, testCaseChecklistPlanner.toCandidate(tc)))
                 .toList();
 
+        // Case gốc để mượn dữ liệu khi bù - chọn giống CoverageGapFillService (mục Security chỉ đổi cách gọi nên
+        // không cần body hợp lệ tuyệt đối: không có case hợp lệ thì lấy case đầu tiên), để nút Bổ sung chỉ sáng khi
+        // thật sự bù được. Khác duy nhất: ở đây lấy case hợp lệ đầu tiên, còn lúc bù thật ưu tiên case đã chạy PASS.
+        GeneratedTestCase baseline = candidates.stream()
+                .map(Candidate::generated)
+                .filter(g -> testCaseChecklistPlanner.isUsableBaseline(spec, g, endpoint.isRequiresAuth()))
+                .findFirst().orElse(null);
+        GeneratedTestCase securityBaseline = baseline != null ? baseline
+                : candidates.isEmpty() ? null : candidates.get(0).generated();
+
         List<CoverageDimensionResponse> dimensions = new ArrayList<>();
         for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planAll(spec, endpoint.isRequiresAuth())) {
-            dimensions.add(checklistDimension(spec, item, candidates, endpoint.isRequiresAuth(), context));
+            GeneratedTestCase base = item.type().name().startsWith("SECURITY_") ? securityBaseline : baseline;
+            dimensions.add(checklistDimension(spec, item, candidates, endpoint.isRequiresAuth(), context, base));
         }
         for (String statusCode : facts.statusCodes()) {
             dimensions.add(statusCodeDimension(statusCode, testCases, context));
@@ -237,11 +248,13 @@ public class EndpointCoverageService {
 
     /**
      * 1 mục checklist EP/BVA → 1 dòng coverage. COVERED khi có case đạt mục theo NỘI DUNG (quy tắc "mỗi case
-     * chỉ 1 lỗi" của planner); MISSING thì kèm case "gần đạt" làm bằng chứng vì sao chưa tính.
+     * chỉ 1 lỗi" của planner); MISSING thì kèm case "gần đạt" làm bằng chứng vì sao chưa tính, và cờ
+     * {@code fillable} cho biết nút Bổ sung có bù được mục này ngay bây giờ không (thử bù thật bằng
+     * {@code attemptFill}, cùng hàm dịch vụ bù dùng - không đoán).
      */
     private CoverageDimensionResponse checklistDimension(
             TestCaseChecklistPlanner.Spec spec, TestCaseChecklistPlanner.ChecklistItem item,
-            List<Candidate> candidates, boolean requiresAuth, CoverageContext context
+            List<Candidate> candidates, boolean requiresAuth, CoverageContext context, GeneratedTestCase baseline
     ) {
         String category = categoryOf(item.type());
         if (item.notApplicableReason() != null) {
@@ -268,9 +281,11 @@ public class EndpointCoverageService {
         String detail = nearMisses.isEmpty()
                 ? "Chưa có test case nào thử đúng tình huống này"
                 : "Có " + nearMisses.size() + " test case gần đạt nhưng chưa được tính - xem lý do từng case";
+        TestCaseChecklistPlanner.FillAttempt attempt = testCaseChecklistPlanner.attemptFill(spec, item, baseline);
         return new CoverageDimensionResponse(category, item.description(), CoverageDimensionStatus.MISSING, detail,
                 List.of(), item.type().name(), key, item.rationale(), null,
-                List.copyOf(nearMisses.subList(0, Math.min(MAX_NEAR_MISSES, nearMisses.size()))));
+                List.copyOf(nearMisses.subList(0, Math.min(MAX_NEAR_MISSES, nearMisses.size()))),
+                attempt.filled() != null, attempt.blockedReason());
     }
 
     /** Tiền tố tên ChecklistItemType chính là loại test case (POSITIVE/NEGATIVE/BOUNDARY/SECURITY). */

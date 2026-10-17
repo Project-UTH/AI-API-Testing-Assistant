@@ -159,20 +159,110 @@ class CoverageGapFillServiceTest {
         verify(testCaseRepository, never()).saveAll(anyList());
     }
 
-    /** Không có case gốc hợp lệ thì KHÔNG tạo case sai âm thầm - báo rõ từng mục và cách khắc phục. */
+    /**
+     * Không có case gốc hợp lệ VÀ endpoint còn đầu vào bắt buộc khác (email + age) thì KHÔNG bịa dữ liệu cho
+     * field còn lại - báo rõ từng mục và cách khắc phục, không tạo case sai âm thầm.
+     */
     @Test
-    void fill_noValidBaseline_reportsEveryItemAsNotFilledWithReason() {
-        Endpoint endpoint = endpoint("/users", "POST", false, EMAIL_SCHEMA);
+    void fill_noValidBaselineAndOtherRequiredInputs_reportsEveryItemAsNotFilledWithReason() {
+        Endpoint endpoint = endpoint("/users", "POST", false, """
+                {"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["email","age"],
+                  "properties":{"email":{"type":"string","format":"email"},"age":{"type":"integer","format":"int32"}}}}}}}""");
         TestCase onlyNegative = testCase(endpoint, "Negative - thieu email", 400, "{}");
         when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of(onlyNegative));
 
         CoverageFillResponse response = coverageGapFillService.fill(projectId, endpoint.getId(), null);
 
         assertThat(response.createdCount()).isZero();
-        // Positive (không bù được vì chính nó là case gốc) + email null + email sai kiểu.
-        assertThat(response.notFilled()).hasSize(3)
+        assertThat(response.fromSpecCount()).isZero();
+        assertThat(response.notFilled()).isNotEmpty()
                 .allSatisfy(nf -> assertThat(nf.reason()).isEqualTo(CoverageGapFillService.NO_BASELINE_REASON));
         assertThat(response.baselineTestCaseName()).isNull();
+        verify(testCaseRepository, never()).saveAll(anyList());
+    }
+
+    /**
+     * Endpoint chỉ có 1 tham số path (vd DELETE /products/{id}), chưa có test case nào: các mục kỳ vọng LỖI không cần
+     * dữ liệu từ field nào khác nên dựng thẳng từ đặc tả; riêng mục Positive cần id thật nên vẫn không tự tạo.
+     */
+    @Test
+    void fill_noCasesAtAll_pathIdOnlyEndpoint_buildsErrorItemsFromSpecAndReportsPositive() {
+        Endpoint endpoint = endpoint("/products/{id}", "DELETE", false, """
+                {"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"integer","format":"int64"}}],
+                 "responseStatusCodes":["204","404"]}""");
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of());
+
+        CoverageFillResponse response = coverageGapFillService.fill(projectId, endpoint.getId(), null);
+
+        // 1 sai kiểu + 5 biên của id (lớn nhất int64, vượt, dưới nhỏ nhất, 0, -1).
+        assertThat(response.createdCount()).isEqualTo(6);
+        assertThat(response.fromSpecCount()).isEqualTo(6);
+        assertThat(response.baselineTestCaseName()).isNull();
+        assertThat(response.notFilled()).singleElement().satisfies(nf -> {
+            assertThat(nf.itemKey()).isEqualTo("POSITIVE_BASELINE|||");
+            assertThat(nf.reason()).isEqualTo(CoverageGapFillService.NO_BASELINE_REASON);
+        });
+        List<TestCase> saved = savedCases();
+        assertThat(saved).extracting(TestCase::getResolvedPath).containsExactlyInAnyOrder(
+                "/products/khong-phai-so", "/products/9223372036854775807", "/products/9223372036854775808",
+                "/products/-9223372036854775809", "/products/0", "/products/-1");
+        assertThat(saved).allSatisfy(tc -> {
+            assertThat(tc.getGenerationOrigin()).isEqualTo(TestCaseGenerationOrigin.SYSTEM_FILLED);
+            assertThat(tc.getRequestBody()).isNull();
+            assertThat(tc.getDescription()).contains("dựng từ đặc tả").doesNotContain("copy case gốc");
+        });
+        // Id không tồn tại kỳ vọng 404; id sai kiểu/vượt giới hạn kiểu kỳ vọng 400.
+        assertThat(saved).filteredOn(tc -> tc.getResolvedPath().equals("/products/0"))
+                .singleElement().satisfies(tc -> assertThat(tc.getExpectedStatus()).isEqualTo(404));
+        assertThat(saved).filteredOn(tc -> tc.getResolvedPath().equals("/products/9223372036854775808"))
+                .singleElement().satisfies(tc -> assertThat(tc.getExpectedStatus()).isEqualTo(400));
+        // Không có case gốc nên không đụng tới liên kết dữ liệu.
+        verify(testCaseDependencyRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void fill_noCasesAtAll_singleRequiredField_buildsNegativeCasesFromSpec() {
+        Endpoint endpoint = endpoint("/users", "POST", false, EMAIL_SCHEMA);
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of());
+
+        CoverageFillResponse response = coverageGapFillService.fill(projectId, endpoint.getId(), null);
+
+        assertThat(response.createdCount()).isEqualTo(3);
+        assertThat(response.notFilled()).singleElement().satisfies(nf -> assertThat(nf.itemKey()).isEqualTo("POSITIVE_BASELINE|||"));
+        assertThat(savedCases()).extracting(TestCase::getRequestBody)
+                .containsExactlyInAnyOrder("{}", "{\"email\":null}", "{\"email\":12345}");
+        assertThat(savedCases()).allSatisfy(tc -> assertThat(tc.getExpectedStatus()).isEqualTo(400));
+    }
+
+    /** Endpoint cần token, chưa có test nào, không có tham số path: 2 mục Security dựng được từ đặc tả (chỉ đổi cách gọi). */
+    @Test
+    void fill_noCasesAtAll_authEndpointWithoutPathParams_buildsSecurityCasesFromSpec() {
+        Endpoint endpoint = endpoint("/orders", "GET", true, "{\"responseStatusCodes\":[\"200\",\"401\"]}");
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of());
+
+        coverageGapFillService.fill(projectId, endpoint.getId(), new CoverageFillRequest(List.of(
+                "SECURITY_MISSING_TOKEN|||", "SECURITY_INVALID_TOKEN|||")));
+
+        assertThat(savedCases()).hasSize(2).allSatisfy(tc -> {
+            assertThat(tc.getSource()).isEqualTo(TestCaseSource.SECURITY);
+            assertThat(tc.getExpectedStatus()).isEqualTo(401);
+            assertThat(tc.getResolvedPath()).isEqualTo("/orders");
+        });
+    }
+
+    /** Tham số path chưa có giá trị thật: gọi "/orders/{id}" nguyên văn không chạy được, nên không dựng case Security. */
+    @Test
+    void fill_noCasesAtAll_authEndpointWithPathParam_securityNotBuiltBecauseIdUnknown() {
+        Endpoint endpoint = endpoint("/orders/{id}", "GET", true, """
+                {"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"integer","format":"int64"}}]}""");
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of());
+
+        CoverageFillResponse response = coverageGapFillService.fill(projectId, endpoint.getId(),
+                new CoverageFillRequest(List.of("SECURITY_MISSING_TOKEN|||")));
+
+        assertThat(response.createdCount()).isZero();
+        assertThat(response.notFilled()).singleElement()
+                .satisfies(nf -> assertThat(nf.reason()).isEqualTo(CoverageGapFillService.NO_BASELINE_REASON));
     }
 
     /** Case gốc đã chạy PASS thật được ưu tiên hơn case tạo trước nhưng chưa từng chạy. */

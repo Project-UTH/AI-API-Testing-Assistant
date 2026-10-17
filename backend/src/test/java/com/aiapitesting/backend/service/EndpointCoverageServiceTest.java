@@ -419,6 +419,74 @@ class EndpointCoverageServiceTest {
         assertThat(dimension(result, "SECURITY_MISSING_TOKEN", null).status()).isEqualTo(CoverageDimensionStatus.COVERED);
     }
 
+    // ---- Cờ "bù được ngay bây giờ" (nút Bổ sung) ----
+
+    /** email + age đều bắt buộc: chưa có test nào thì không có dữ liệu hợp lệ để mượn - mọi mục thiếu đều không bù được. */
+    private String twoRequiredFieldsSchema() {
+        Schema<?> bodySchema = new Schema<>().type("object").required(List.of("email", "age")).properties(Map.of(
+                "email", new Schema<>().type("string").format("email"),
+                "age", new Schema<>().type("integer").format("int32")));
+        return buildSchemaJson(jsonBody(bodySchema), List.of("201"));
+    }
+
+    @Test
+    void getEndpointCoverage_noCases_otherRequiredInputs_nothingFillableAndReasonGiven() {
+        Endpoint endpoint = endpoint("/users", "POST", false, twoRequiredFieldsSchema());
+        stubProject(List.of(endpoint), List.of(), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(result.dimensions()).filteredOn(d -> d.itemKey() != null && d.status() == CoverageDimensionStatus.MISSING)
+                .isNotEmpty()
+                .allSatisfy(d -> {
+                    assertThat(d.fillable()).isFalse();
+                    assertThat(d.fillBlockedReason()).isEqualTo(TestCaseChecklistPlanner.NO_BASELINE_REASON);
+                });
+    }
+
+    @Test
+    void getEndpointCoverage_withValidBaseline_missingItemsBecomeFillable() {
+        Endpoint endpoint = endpoint("/users", "POST", false, twoRequiredFieldsSchema());
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"email\":\"a@b.com\",\"age\":25}");
+        stubProject(List.of(endpoint), List.of(positive), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        CoverageDimensionResponse missingEmail = dimension(result, "NEGATIVE_MISSING_FIELD", "'email'");
+        assertThat(missingEmail.status()).isEqualTo(CoverageDimensionStatus.MISSING);
+        assertThat(missingEmail.fillable()).isTrue();
+        assertThat(missingEmail.fillBlockedReason()).isNull();
+        // Đã đạt thì không có gì để bù: không gắn cờ, không có lý do.
+        CoverageDimensionResponse baselineRow = dimension(result, "POSITIVE_BASELINE", null);
+        assertThat(baselineRow.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+        assertThat(baselineRow.fillable()).isFalse();
+        assertThat(baselineRow.fillBlockedReason()).isNull();
+    }
+
+    /** Endpoint chỉ có tham số path id, chưa có test nào: biên của id dựng được từ đặc tả; Positive thì cần id thật. */
+    @Test
+    void getEndpointCoverage_noCases_pathIdOnlyEndpoint_boundaryFillableFromSpecPositiveNot() {
+        Endpoint endpoint = endpoint("/products/{id}", "DELETE", false, buildSchemaJson(
+                List.of(new Parameter().name("id").in("path").required(true)
+                        .schema(new Schema<>().type("integer").format("int64"))), null, List.of("204", "404")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(result.testCaseCount()).isZero();
+        assertThat(result.dimensions()).filteredOn(d -> d.category().equals("BOUNDARY"))
+                .hasSize(5)
+                .allSatisfy(d -> {
+                    assertThat(d.status()).isEqualTo(CoverageDimensionStatus.MISSING);
+                    assertThat(d.fillable()).isTrue();
+                });
+        CoverageDimensionResponse positive = dimension(result, "POSITIVE_BASELINE", null);
+        assertThat(positive.fillable()).isFalse();
+        assertThat(positive.fillBlockedReason()).isEqualTo(TestCaseChecklistPlanner.NO_BASELINE_REASON);
+        // Mã trạng thái / quan hệ endpoint không có cách bù tự động: không gắn cờ.
+        assertThat(dimensionByCategory(result, "STATUS_CODE", "204").fillable()).isFalse();
+    }
+
     // ---- Trạng thái chạy ----
 
     @Test

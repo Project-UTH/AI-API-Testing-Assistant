@@ -36,6 +36,10 @@ export interface CoverageDimension {
   whyNeeded: string | null
   runStatus: CoverageRunStatus | null
   nearMisses: CoverageNearMiss[]
+  /** Chỉ true khi dòng MISSING này hệ thống bù được NGAY BÂY GIỜ (có case gốc hợp lệ để mượn, hoặc dựng thẳng từ đặc tả). */
+  fillable: boolean
+  /** Dòng MISSING có itemKey nhưng chưa bù được: vì sao + cần làm gì. */
+  fillBlockedReason: string | null
 }
 
 export interface EndpointCoverage {
@@ -66,19 +70,32 @@ export interface CoverageFillResult {
   created: CoverageTestCaseRef[]
   notFilled: { itemKey: string; label: string; reason: string }[]
   baselineTestCaseName: string | null
+  /** Số case dựng thẳng từ đặc tả (endpoint không có đầu vào nào khác cần dữ liệu hợp lệ nên không cần case gốc) - nằm trong createdCount. */
+  fromSpecCount: number
 }
 
 /** Module 15j - đếm theo đúng cách backend tính % (bỏ NOT_APPLICABLE khỏi mẫu số) - dùng chung cho mọi nơi hiển thị "X/Y mục". */
 export function coverageCounts(endpoint: EndpointCoverage) {
   const relevant = endpoint.dimensions.filter((d) => d.status !== "NOT_APPLICABLE")
   const covered = relevant.filter((d) => d.status === "COVERED")
+  const fillableRows = relevant.filter((d) => d.status === "MISSING" && d.itemKey && d.fillable)
+  const blockedRows = relevant.filter((d) => d.status === "MISSING" && d.itemKey && !d.fillable)
+  // Gom theo lý do để hiện 1 lần ("N mục: <lý do>") thay vì lặp lại cùng đoạn chữ dài ở từng dòng.
+  const blockedReasons = new Map<string, number>()
+  for (const row of blockedRows) {
+    const reason = row.fillBlockedReason ?? "Hệ thống chưa bù tự động được mục này"
+    blockedReasons.set(reason, (blockedReasons.get(reason) ?? 0) + 1)
+  }
   return {
     relevant: relevant.length,
     covered: covered.length,
     executed: covered.filter((d) => d.runStatus === "PASSED" || d.runStatus === "FAILED").length,
     failing: covered.filter((d) => d.runStatus === "FAILED").length,
     missing: relevant.length - covered.length,
-    fillableKeys: relevant.filter((d) => d.status === "MISSING" && d.itemKey).map((d) => d.itemKey as string),
+    /** Khoá các mục bù được ngay - gửi thẳng cho fillCoverageGaps. */
+    fillableKeys: fillableRows.map((d) => d.itemKey as string),
+    blockedCount: blockedRows.length,
+    blockedReasons: [...blockedReasons.entries()].map(([reason, count]) => ({ reason, count })),
   }
 }
 

@@ -81,7 +81,7 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
   const counts = coverageCounts(endpoint)
 
   const mutation = useMutation({
-    mutationFn: (itemKeys?: string[]) => fillCoverageGaps(projectId, endpoint.endpointId, itemKeys),
+    mutationFn: (itemKeys: string[]) => fillCoverageGaps(projectId, endpoint.endpointId, itemKeys),
     onSuccess: (result) => {
       setFillResult(result)
       queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
@@ -90,10 +90,9 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
     },
   })
 
-  /** Dòng đang được bù: bấm "Bổ sung tất cả" (không truyền key) thì mọi dòng có key đều đang chờ. */
+  /** Dòng đang được bù: chỉ các khoá nằm trong lượt đang chạy (bấm 1 dòng hoặc bấm bù tất cả). */
   function isFilling(itemKey: string | null) {
-    if (!mutation.isPending || !itemKey) return false
-    return mutation.variables === undefined || mutation.variables.includes(itemKey)
+    return mutation.isPending && itemKey !== null && (mutation.variables?.includes(itemKey) ?? false)
   }
 
   return (
@@ -121,15 +120,15 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
         <Button
           size="sm"
           disabled={counts.fillableKeys.length === 0 || mutation.isPending}
-          onClick={() => mutation.mutate(undefined)}
-          title="Hệ thống copy 1 test case hợp lệ đang có rồi sửa đúng 1 chỗ cho từng mục - không gọi AI, không tốn token."
+          onClick={() => mutation.mutate(counts.fillableKeys)}
+          title={
+            counts.fillableKeys.length === 0
+              ? "Chưa có mục nào bù tự động được - xem lý do bên dưới."
+              : "Hệ thống tạo test case cho các mục còn thiếu mà bù được ngay: mượn dữ liệu từ 1 test case hợp lệ đang có (hoặc dựng từ đặc tả nếu endpoint không có đầu vào nào khác) rồi sửa đúng 1 chỗ. Không gọi AI, không tốn token."
+          }
         >
-          {mutation.isPending && mutation.variables === undefined ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Wand2 className="h-3.5 w-3.5" />
-          )}
-          Bổ sung {counts.fillableKeys.length} mục còn thiếu
+          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+          Bổ sung {counts.fillableKeys.length} mục bù được ngay
         </Button>
         <span className="text-xs text-muted-foreground">Hệ thống tự tạo · 0 token</span>
         <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -137,6 +136,22 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
           Hiện cả mục đã đạt / không áp dụng
         </label>
       </div>
+
+      {counts.blockedCount > 0 && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 text-xs">
+          <p className="font-medium text-amber-600 dark:text-amber-400">
+            {counts.blockedCount} mục chưa bổ sung tự động được
+            {counts.fillableKeys.length === 0 && " (nút Bổ sung đã được làm mờ vì chưa có mục nào bù được)"}
+          </p>
+          <ul className="mt-1 flex flex-col gap-1 text-muted-foreground">
+            {counts.blockedReasons.map(({ reason, count }) => (
+              <li key={reason}>
+                • <span className="font-medium text-foreground">{count} mục:</span> {reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {mutation.isError && (
         <p className="rounded-md bg-destructive/10 p-2 text-xs text-destructive">
@@ -267,9 +282,13 @@ function GapRow({ row, filling, onFill, fillDisabled }: GapRowProps) {
           <Button
             size="xs"
             variant="outline"
-            disabled={fillDisabled}
+            disabled={fillDisabled || !row.fillable}
             onClick={() => onFill(row.itemKey as string)}
-            title="Hệ thống tự tạo 1 test case cho đúng mục này (0 token)"
+            title={
+              row.fillable
+                ? "Hệ thống tự tạo 1 test case cho đúng mục này (0 token)"
+                : (row.fillBlockedReason ?? "Hệ thống chưa bù tự động được mục này")
+            }
           >
             {filling ? <Loader2 className="animate-spin" /> : <Wand2 />}
             Bổ sung
@@ -339,6 +358,12 @@ function FillResultBox({ result, onClose }: { result: CoverageFillResult; onClos
           <p className="text-sm font-medium text-green-600 dark:text-green-400">
             Đã bổ sung {result.createdCount} test case
             {result.baselineTestCaseName && <> từ case gốc '{result.baselineTestCaseName}'</>}
+            {result.fromSpecCount > 0 && (
+              <>
+                {" "}
+                · {result.fromSpecCount} case dựng thẳng từ đặc tả (endpoint không có đầu vào nào khác nên không cần case gốc)
+              </>
+            )}
           </p>
           <ul className="mt-1 pl-3 text-muted-foreground">
             {result.created.map((tc) => (
