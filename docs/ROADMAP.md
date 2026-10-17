@@ -1,6 +1,8 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-10-17 (✅ Code xong Module 15j - Coverage Gap Analysis trên branch `feature/module-15j-coverage-gap`: trang Coverage chấm bằng CHÍNH checklist EP/BVA 15i (trước đây 15c tự định nghĩa 4 dimension hẹp hơn → "100%" ở trang Coverage và "đủ checklist" lúc sinh là 2 thước đo khác nhau), mỗi mục thiếu có "vì sao cần" + bằng chứng case gần đạt, mỗi mục đã có kèm trạng thái chạy thật, thêm dòng quan hệ endpoint (Test Data Chaining), nút "Bổ sung" tất định 0 token (đã sửa 2026-10-18: bù được cả khi chưa có case gốc nếu endpoint không có đầu vào nào khác, và làm mờ nút + hiện lý do khi chưa bù được). 306/306 test pass, `npx tsc -b --force` sạch, `npm run build` OK; chưa verify trên Docker thật. Xem Module 15j.)
+> Cập nhật lần cuối: 2026-10-18 (Ghi kế hoạch tiếp theo của 15j - gộp giao diện báo cáo lần sinh với Coverage, sửa hiển thị mục Positive - và kế hoạch Module 16 (Test Stability & Failure Analysis, chức năng 2), CHƯA CODE; phần đã bàn nhưng chưa chốt (vai trò Risk, gợi ý cho mục chưa phủ) ghi riêng, không làm nếu chưa xác nhận.)
+>
+> Cập nhật trước đó: 2026-10-17 (✅ Code xong Module 15j - Coverage Gap Analysis trên branch `feature/module-15j-coverage-gap`: trang Coverage chấm bằng CHÍNH checklist EP/BVA 15i (trước đây 15c tự định nghĩa 4 dimension hẹp hơn → "100%" ở trang Coverage và "đủ checklist" lúc sinh là 2 thước đo khác nhau), mỗi mục thiếu có "vì sao cần" + bằng chứng case gần đạt, mỗi mục đã có kèm trạng thái chạy thật, thêm dòng quan hệ endpoint (Test Data Chaining), nút "Bổ sung" tất định 0 token (đã sửa 2026-10-18: bù được cả khi chưa có case gốc nếu endpoint không có đầu vào nào khác, và làm mờ nút + hiện lý do khi chưa bù được). 306/306 test pass, `npx tsc -b --force` sạch, `npm run build` OK; chưa verify trên Docker thật. Xem Module 15j.)
 >
 > Cập nhật trước đó: 2026-10-16 (✅ Code xong Module 15i: checklist chuẩn riêng từng loại (biên ngầm int32/số 0/chuỗi rỗng, Negative null/sai kiểu/enum, Security thiếu/sai token), tách prompt theo loại, bỏ giới hạn 15 mục, max-tokens 16000, báo cáo UI chia theo loại. 270/270 test pass; đã rà lại toàn bộ checklist theo chuẩn EP/BVA (exclusive, biên int32/int64 hai đầu, id không tồn tại, enum hợp lệ, tham số query/header bắt buộc); chưa verify bằng AI thật. Cập nhật trước đó: 15h bổ sung: báo cáo checklist lưu ở backend, không mất khi tải lại trang; khung mặc định thu gọn, bấm ▸ mới mở; giải thích khi checklist rỗng. 257/257 test pass với `DB_PASSWORD= ./mvnw clean test`. Ghi thêm kế hoạch 15i - tách prompt + checklist theo từng loại test case, chưa code.)
 >
@@ -49,6 +51,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 13. Đăng nhập/Đăng ký với Google | ✅ Xong |
 | 14. Hoàn thiện & Demo | 🟡 Đang làm (Docker hoá xong, còn polish/tài liệu/demo) |
 | 15. Explainable & Reliable AI Testing | 🔄 15a-15i đã merge vào `main` (PR #11; 15i còn chờ verify bằng AI thật); 15j (Coverage Gap Analysis) đã code trên `feature/module-15j-coverage-gap`, 306/306 test pass, chờ verify trên Docker thật |
+| 16. Test Stability & Failure Analysis (chức năng 2) | ⬜ Chưa bắt đầu - mới có kế hoạch dự kiến (xem Module 16), làm sau khi chốt xong 15j |
 
 ---
 
@@ -849,7 +852,7 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 **Bổ sung sau khi đối chiếu 1 nguồn tham khảo người dùng tự tìm** (cuộc trò chuyện ChatGPT, nội dung chính đề xuất pivot toàn bộ đồ án thành "AI-Powered Risk-Based API Testing Agent" với Risk Engine + AI Test Planner + Risk-weighted Coverage + Evidence-based RCA). Đã đối chiếu và CHỈ nhận 2 phần phù hợp quy mô + đúng nguyên tắc "tất định, không để AI tự quyết" đã chốt ở 15c gốc:
 - **Nhận:** Risk Engine (risk score tất định, không gọi AI) + Risk-weighted Coverage — gộp thẳng vào `EndpointCoverageService` dưới đây, không tạo service/bảng riêng.
 - **Nhận bản rút gọn:** ý tưởng "AI Test Planner đề xuất kế hoạch trước khi sinh" → chỉ lấy phần auto-suggest checkbox dựa trên risk score (tất định), KHÔNG làm AI Planner gọi AI riêng, KHÔNG tạo bảng `test_plan`/`test_plan_scenario`.
-- **Không nhận:** Evidence-based Failure Analysis/phân biệt bug-vs-flaky (thuộc phạm vi Module 10, không phải bài toán coverage/reliability của module này), đổi tên/định vị lại đồ án (quyết định chiến lược ngoài phạm vi module kỹ thuật này).
+- **Không nhận:** Evidence-based Failure Analysis/phân biệt bug-vs-flaky (thuộc phạm vi Module 10, không phải bài toán coverage/reliability của module này; **cập nhật 2026-10-18: nay đã có kế hoạch riêng ở Module 16 - Test Stability & Failure Analysis, vẫn tách khỏi 15c**), đổi tên/định vị lại đồ án (quyết định chiến lược ngoài phạm vi module kỹ thuật này).
 
 **Backend**
 - [x] `EndpointImportService`: tính `requiresAuth` (boolean) từ `operation.getSecurity()` (không rỗng) hoặc security toàn cục `openApi.getSecurity()` khi operation không override, lúc import - cột mới `Endpoint.requiresAuth` (`TINYINT(1) DEFAULT 0`, theo đúng lưu ý "cần khai rõ DEFAULT" đã rút ra ở Module 11a)
@@ -1184,6 +1187,44 @@ Kỳ vọng của biên ngầm theo luật "**spec không cấm thì hợp lệ 
 - Bù tất định chỉ sửa đúng 1 chỗ trên case gốc nên phụ thuộc case gốc (trừ mục kỳ vọng lỗi của endpoint không có đầu vào nào khác - dựng thẳng từ đặc tả): không có case hợp lệ nào mà mục cần dữ liệu của field khác thì không bù, nút làm mờ kèm lý do (gợi ý sinh AI hoặc tự thêm). Case bù thuộc nhóm hệ thống quản lý - chưa khoá thì lần "Sinh Test Case" sau thay thế (đúng cơ chế xoá-và-thay hiện có).
 - **Coverage response schema / assertion** (thuộc tính nào của response chưa có assertion) CHƯA làm: `Endpoint.schema` cố ý bỏ response schema lúc import (chiếm ~68% dung lượng, từng làm AI từ chối request); làm thật cần cột riêng không gửi AI + import lại (import lại xoá toàn bộ test case) - để giai đoạn sau.
 - Các giới hạn của checklist 15h/15i vẫn áp dụng (field cấp 1 của body, 403 không áp dụng, `format/pattern` chưa có mục riêng).
+
+**Việc tiếp theo của 15j - ĐÃ CHỐT HƯỚNG, CHƯA CODE (2026-10-18, sau khi người dùng dùng thật trang Coverage):**
+- [ ] **Gộp giao diện báo cáo lần sinh với Coverage.** Hiện có 2 màn hình chồng nhau và cho 2 con số khác nhau về cùng 1 endpoint (vd `DELETE /api/products/{id}`: báo cáo lần sinh ở trang Project ghi "đủ 1/1 mục", Coverage ghi "cần kiểm 10, còn thiếu 7") - vì báo cáo lần sinh chỉ đếm các loại được tick lúc sinh còn Coverage đếm tất cả. Hướng: Coverage là nơi DUY NHẤT xem chi tiết từng mục. Trang Project mỗi endpoint chỉ giữ 2 dòng gọn: (1) "Coverage: X/Y mục · Z đã chạy · thiếu M" (lấy từ `project-coverage` trang này đã tải sẵn để hiện badge risk - không thêm request) kèm link "Xem chi tiết ở Coverage" mở thẳng trang Coverage với đúng endpoint đó đã mở sẵn (`?endpoint=<id>`); (2) "Lần sinh gần nhất: AI làm đạt X/Y mục được giao · hệ thống bù M · AI đề xuất thêm K". Giữ dòng (2) vì Coverage chỉ nhìn bộ test hiện tại, không biết case nào do AI viết đúng - đây là số liệu đánh giá chính AI, có giá trị cho báo cáo đồ án. Dữ liệu `TestGenerationEvent.planSummaryJson` vẫn lưu như cũ, chỉ đổi cách hiển thị; tên các case "AI đề xuất thêm" xem ở trang Test Case (đã có nhãn riêng). Mất: danh sách đầy đủ từng mục ngay tại trang Project (phải sang Coverage, thêm 1 cú bấm).
+- [ ] **Sửa hiển thị mục Positive ở Coverage:** mục "Dữ liệu hợp lệ đầy đủ" hiện đang liệt kê cả các case Boundary hợp lệ (`stock = 0`, `price = 0`, `stock` max int32...) là "được kiểm bởi" - đúng về đo lường (spec không cấm các giá trị đó nên chúng cũng là dữ liệu hợp lệ, kỳ vọng 2xx) nhưng gây hiểu nhầm là Positive được kiểm bằng Boundary, và lệch với báo cáo lần sinh 15h (chỉ ghi case Positive thuần dưới mục Positive). Hướng: mỗi case chỉ hiện ở mục cụ thể nhất mà nó được tạo ra để kiểm; mục Positive chỉ liệt kê case không đạt mục cụ thể nào khác; nếu KHÔNG có case Positive thuần thì mới dùng case biên hợp lệ làm bằng chứng, kèm ghi chú "được tính nhờ case biên hợp lệ, chưa có case Positive riêng". Số "đạt x/y" và các % không đổi, chỉ danh sách "Được kiểm bởi" gọn đúng nghĩa.
+
+**Đã bàn, CHƯA CHỐT - chờ quyết định, không làm nếu chưa có xác nhận:**
+- **Vai trò của Risk:** Risk hiện chỉ hiện badge + 1 vòng tròn "theo trọng số rủi ro" (khó hiểu nhất trong 3 vòng), không dẫn tới hành động nào; trọng số là heuristic chưa kiểm chứng; thành phần "tỷ lệ fail lịch sử" bị nhiễu (vd `POST /api/products` bị +20 vì fail 3/3 lượt chạy, nhưng case hợp lệ cũng fail nên nhiều khả năng do token hết hạn/môi trường chứ không phải API rủi ro hơn). Đề xuất: giữ Risk nhưng dùng để SẮP XẾP (ưu tiên = rủi ro × số mục còn thiếu - endpoint rủi ro cao mà còn nhiều lỗ hổng lên đầu), bỏ vòng tròn thứ 3 chỉ giữ "Đã có test case" + "Đã chạy có kết quả", và để Module 16 phân loại nguyên nhân fail rồi Risk chỉ đếm fail do API.
+- **Gợi ý cho mục chưa được phủ** (hiện mới có "vì sao cần" + bằng chứng gần đạt + nút bù thẳng): (A) nút Bổ sung mở form test case điền sẵn để xem/sửa trước khi lưu (tất định, 0 token, việc nhỏ - khớp tinh thần "người dùng review trước khi chạy"); (B) gợi ý sửa case "gần đạt" kèm nút "Sửa giúp" (tất định, 0 token, không đụng case "AI đề xuất thêm"); (C) AI đề xuất cho mục hệ thống không tự bù được (409, quan hệ endpoint, chưa có case gốc) - tốn token, người dùng tự bấm, cần prompt mới. Đề xuất làm A trước, B sau, C để sau cùng.
+
+---
+
+## 16. Test Stability & Failure Analysis (chức năng 2) - KẾ HOẠCH DỰ KIẾN, CHƯA CODE
+
+*Phụ thuộc: Module 6 (thực thi), Module 10 (Bug Report), 15j (Coverage). Làm sau khi chốt xong 15j.*
+
+**Bối cảnh:** hiện sau khi chạy app chỉ báo Pass/Fail, QA phải tự đoán fail do API lỗi thật, token hết hạn, mạng chập chờn, dữ liệu bị đổi hay chính test không ổn định. Dữ liệu thật đã gặp: `POST /api/products` fail 3/3 lượt chạy, kể cả case "dữ liệu hợp lệ đầy đủ" - nhiều khả năng do token/môi trường, nhưng Risk vẫn cộng +20 ("tỷ lệ fail lịch sử 100%") và Coverage báo "4 mục đã chạy nhưng API lệch kỳ vọng". Chức năng này trả lời "fail VÌ SAO, kết quả có đáng tin không", đồng thời làm số liệu Coverage/Risk chỉ đếm fail do API thật. Đây cũng là góc "sau khi chạy" mà khảo sát Testsigma ở Module 15 ghi nhận là điểm mạnh của đối thủ.
+
+**Nguyên tắc (đã chốt khi bàn):**
+- **Không phụ thuộc target cụ thể** - `shop-api-target` chỉ là 1 hệ thống đích để test, nhóm sẽ dùng cho dự án ngoài khác. Chỉ dựa vào OpenAPI, dữ liệu app TỰ thu khi gọi API black-box (kết quả, mã trạng thái thật, loại lỗi kết nối, thời gian phản hồi, cấu hình lúc chạy, tương quan giữa các test cùng 1 lần chạy, kết quả khi chạy lại) và chuẩn HTTP; phân loại theo MẪU HÀNH VI QUA THỜI GIAN, mã 404/409 chỉ là tín hiệu phụ vì mỗi API dùng mã lỗi khác nhau.
+- **Phân loại tất định, AI chỉ là phụ** (cùng triết lý chi phí AI Module 15): code đếm và so sánh dữ liệu có cấu trúc chính xác 100% nên không đẩy cho AI; AI chỉ đọc NỘI DUNG lỗi trả về (chữ tự do mỗi API viết một kiểu) khi luật không kết luận được hoặc khi người dùng tự bấm "AI giải thích" (cùng kiểu Tier 3, tính vào quota).
+- **Chỉ "nghi ngờ kèm bằng chứng", không khẳng định:** kiểm thử black-box không nhìn thấy bên trong hệ thống đích và không biết target có deploy giữa 2 lần chạy; không phân biệt được bug thật với kỳ vọng test sai. Dưới N lần chạy cùng phiên bản test (đề xuất N=5, ngưỡng là tham số thiết kế chưa calibrate) thì ghi "chưa đủ dữ liệu" - 1 lần FAIL không đủ để kết luận flaky.
+
+**Giai đoạn 1 - phân tích nguyên nhân fail (làm trước, dùng được ngay từ lần chạy đầu tiên):**
+- [ ] `TestResult` thêm `durationMs`, `errorKind` (TIMEOUT/CONNECTION/DNS/OTHER), `testCaseFingerprint` (hash method + resolvedPath + headers + body + expectedStatus + authOverride + assertions); `TestExecution` thêm snapshot `targetBaseUrl` + mốc đổi token của project (CHỈ lưu thời điểm, không lưu/hash token - đúng quy tắc bảo mật). Cột nullable; dữ liệu cũ không có fingerprint thì không đưa vào phân tích theo lịch sử.
+- [ ] Phân loại tất định: chưa đủ dữ liệu / môi trường (nhiều test cùng lỗi trong 1 lần chạy, timeout, 502/503/504/429) / cấu hình xác thực (401/403 đồng loạt, hoặc ngay sau khi đổi token) / dữ liệu-trạng thái (pass liên tục rồi fail liên tục không xen kẽ, chạy lại vẫn fail) / lỗi ổn định (cùng mã sai lặp lại).
+- [ ] Coverage (`runStatus`) và Risk (thành phần "tỷ lệ fail lịch sử") chỉ đếm fail do API/lỗi ổn định, không đếm fail do môi trường/token.
+- [ ] Giao diện: nhãn nguyên nhân nghi ngờ + bằng chứng cạnh kết quả fail ở trang Kết quả thực thi và Coverage.
+
+**Giai đoạn 2 - phát hiện test không ổn định (chỉ làm nếu còn thời gian, không thì ghi "hướng phát triển"):**
+- [ ] Flaky: cùng phiên bản test (cùng fingerprint) đổi Pass/Fail xen kẽ từ 2 lần trở lên, kèm tỷ lệ đổi trạng thái.
+- [ ] Chạy lại để thu bằng chứng: tối đa 3-5 lần, có khoảng nghỉ (tránh rate limit 429); POST/PUT/PATCH/DELETE phải qua hộp xác nhận cảnh báo "có thể tạo/sửa/xoá dữ liệu thật trên hệ thống đích"; mỗi lần là 1 execution mới (ràng buộc unique `(execution_id, test_case_id)`), chạy `@Async`, kéo theo case phụ thuộc như Module 7.
+- Khó demo: `shop-api-target` trả kết quả cố định nên gần như không có flaky thật - cần 1 API có hành vi ngẫu nhiên (vd API công khai kiểu httpbin `/status/200,500`, `/delay/{n}`) hoặc dự án ngoài thật. Kiểm chứng bộ phân loại chủ yếu bằng bộ lịch sử chạy tổng hợp có nhãn (tất định, đo Precision/Recall như 15f), không cần gọi API thật.
+
+**Bẫy đã biết của code hiện tại (không xử lý thì kết luận sai, đúng với mọi target):**
+1. `TestCaseService.update()` sửa test nhưng giữ nguyên `TestResult` cũ - đổi kỳ vọng 400→422 làm lịch sử FAIL→PASS bị đọc nhầm thành flaky → cần fingerprint, chỉ so các lần chạy cùng phiên bản.
+2. Sinh lại test case xoá `TestResult` của case chưa khoá (`TestCaseGenerationService`) - chỉ case đã khoá/MANUAL tích luỹ được lịch sử dài; ghi rõ là giới hạn, không sửa cơ chế xoá.
+3. `BLOCKED` (do chuỗi phụ thuộc Module 7) phải loại khỏi phép đếm của case đó và quy về case nguồn.
+4. `BugReportStatusService.onNewTestResult()` tự Reopen/gợi ý Đóng sau mỗi kết quả - bug sẽ mở/đóng liên tục với test chập chờn; ít nhất cần nhãn "không ổn định" trên bug và tự gợi ý `BugFrequency`.
 
 ---
 
