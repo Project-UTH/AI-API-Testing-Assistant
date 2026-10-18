@@ -24,6 +24,8 @@ public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
 
     long countByProject(Project project);
 
+    boolean existsByTestCaseAndStatusNot(TestCase testCase, BugStatus status);
+
     long countByProjectAndStatusNot(Project project, BugStatus status);
 
     long countByStatusNot(BugStatus status);
