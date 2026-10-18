@@ -149,6 +149,24 @@ class ExecutionFailureAnalyzerTest {
     }
 
     @Test
+    void endpointRequiresAuthFlagFromSpec_decidesWhetherCredentialsCaveatIsAdded() {
+        Endpoint login = Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/auth/login").requiresAuth(false).build();
+        Endpoint protectedEndpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/me").requiresAuth(true).build();
+        endpoint = login;
+        TestResult onLogin = result(TestResultStatus.FAILED, 200, 401, "fp-login");
+        endpoint = protectedEndpoint;
+        TestResult onProtected = result(TestResultStatus.FAILED, 200, 401, "fp-me");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, List.of(onLogin, onProtected));
+
+        assertThat(onLogin.getFailureCause()).isEqualTo(FailureCause.AUTH_CONFIG);
+        assertThat(onLogin.getFailureEvidence()).contains("tài khoản/mật khẩu");
+        assertThat(onProtected.getFailureCause()).isEqualTo(FailureCause.AUTH_CONFIG);
+        assertThat(onProtected.getFailureEvidence()).doesNotContain("tài khoản/mật khẩu");
+    }
+
+    @Test
     void historyIsFilteredBySameFingerprint_editedTestStartsFromScratch() {
         TestResult current = result(TestResultStatus.FAILED, 200, 404, "fp-new");
         // Lịch sử có 2 lần Pass của PHIÊN BẢN CŨ (fp-old) - không được tính, nếu không sẽ ra "Pass rồi Fail liên tiếp".

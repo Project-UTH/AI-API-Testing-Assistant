@@ -184,6 +184,31 @@ class FailureCauseClassifierTest {
         assertThat(classifier.classify(in).evidence()).anyMatch(e -> e.contains("TRƯỚC lần Pass gần nhất") && e.contains("hết hạn tự nhiên"));
     }
 
+    private Input unauthorized(Boolean endpointRequiresAuth) {
+        return new Input(TestResultStatus.FAILED, 200, 401, null, 10L, null, TestCaseAuthOverride.DEFAULT, history(fail(1, 401)),
+                "http://target", null, ExecutionContext.none(), List.of(), null, endpointRequiresAuth);
+    }
+
+    /** Endpoint đăng nhập (spec không khai cần xác thực): vẫn gắn nhãn nhưng nói thẳng 401 có thể do tài khoản/mật khẩu. */
+    @Test
+    void unauthorizedOnEndpointThatDoesNotRequireAuth_keepsLabelButAddsCredentialsCaveat() {
+        Result result = classifier.classify(unauthorized(false));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.AUTH_CONFIG);
+        assertThat(result.evidence()).anyMatch(e -> e.contains("spec không khai endpoint này yêu cầu xác thực")
+                && e.contains("401") && e.contains("tài khoản/mật khẩu"));
+    }
+
+    @Test
+    void unauthorizedOnEndpointThatRequiresOrUnknownAuth_hasNoCredentialsCaveat() {
+        for (Boolean requiresAuth : new Boolean[]{true, null}) {
+            Result result = classifier.classify(unauthorized(requiresAuth));
+
+            assertThat(result.cause()).as("requiresAuth=" + requiresAuth).isEqualTo(FailureCause.AUTH_CONFIG);
+            assertThat(result.evidence()).as("requiresAuth=" + requiresAuth).noneMatch(e -> e.contains("tài khoản/mật khẩu"));
+        }
+    }
+
     @Test
     void authBeatsDataStatePattern() {
         // Pass, Fail(401), Fail(401): đúng "bậc thang" nhưng 401 ngoài kỳ vọng thuộc nhóm xác thực - luật xác thực đứng trước.
@@ -395,6 +420,30 @@ class FailureCauseClassifierTest {
         assertThat(result.cause()).isEqualTo(FailureCause.UNDETERMINED);
         assertThat(result.evidence()).anyMatch(e -> e.contains("1 lần Fail chưa đủ"))
                 .anyMatch(e -> e.contains("đã được sửa") && e.contains("Fail(500)"));
+    }
+
+    /** Sau khi sửa đã chạy Pass rồi mới Fail: việc sửa test không còn là nghi can chính nên không nhắc lại. */
+    @Test
+    void failAfterSeveralRunsOfTheNewVersion_noEditedEvidence() {
+        HistoryPoint before = new HistoryPoint(TestResultStatus.PASSED, 404, T0, "http://target");
+        Input in = withAssertions(404, 404, List.of(failedAssertion("1", "EQUALS", "1", null)),
+                history(pass(5), fail(6, 404)), before);
+
+        Result result = classifier.classify(in);
+
+        assertThat(result.cause()).isEqualTo(FailureCause.ASSERTION_FAILED);
+        assertThat(result.evidence()).noneMatch(e -> e.contains("đã được sửa"));
+    }
+
+    @Test
+    void undeterminedAfterSeveralRunsOfTheNewVersion_noEditedEvidence() {
+        HistoryPoint before = new HistoryPoint(TestResultStatus.FAILED, 500, T0, "http://target");
+        Input in = withAssertions(200, 500, List.of(), history(pass(5), fail(6, 500)), before);
+
+        Result result = classifier.classify(in);
+
+        assertThat(result.cause()).isEqualTo(FailureCause.UNDETERMINED);
+        assertThat(result.evidence()).noneMatch(e -> e.contains("đã được sửa"));
     }
 
     @Test

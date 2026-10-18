@@ -1237,6 +1237,11 @@ Kỳ vọng của biên ngầm theo luật "**spec không cấm thì hợp lệ 
 - [x] **Bằng chứng "test vừa được sửa":** lần chạy gần nhất ở phiên bản KHÁC (fingerprint khác) được ghi vào bằng chứng của `ASSERTION_FAILED` và `UNDETERMINED`: "Test case đã được sửa kể từ lần chạy gần nhất ở phiên bản trước, kết quả lúc đó là Pass - lần Fail này có thể do chính thay đổi vừa làm". Lấy lần chạy GẦN NHẤT của phiên bản khác (không phải cũ nhất). Lịch sử phiên bản cũ vẫn KHÔNG được đếm vào mẫu "bậc thang"/"lỗi ổn định".
 - Test +13 (`FailureCauseClassifierTest` +9, `ExecutionFailureAnalyzerTest` +4): 375/375 pass; `tsc` + build sạch. Giao diện: chip tím "Assertion sai" + gợi ý "Mã trạng thái đã đúng - kiểm tra assertion...". `api-contract` mục 4h cập nhật.
 
+**Tinh chỉnh bằng chứng sau khi dùng thử (2026-10-18):**
+- [x] **Dòng "test vừa được sửa" chỉ hiện ở lần chạy ĐẦU TIÊN của phiên bản mới** (lịch sử cùng phiên bản chỉ có chính lần đó). Trước đó dòng này vẫn hiện khi đã chạy Pass rồi mới Fail ở phiên bản mới - lúc đó việc sửa test không còn là nghi can chính, nhắc lại gây hiểu nhầm.
+- [x] **Cảnh báo cho nhãn "Nghi token/xác thực" ở endpoint spec không khai yêu cầu xác thực** (vd `POST /auth/login`, nơi 401 thường là sai tài khoản/mật khẩu trong request): thêm dòng lưu ý vào bằng chứng, GIỮ NGUYÊN nhãn và nhóm `notApiFault`. Thông tin lấy từ `Endpoint.requiresAuth` (suy ra từ `security` của spec) truyền qua `FailureCauseClassifier.Input.endpointRequiresAuth`. Giới hạn: spec không khai `security` ở đâu cả thì mọi endpoint đều rơi vào nhóm này nên dòng lưu ý xuất hiện cả khi 401 thật sự do token - lời lưu ý viết ở dạng điều kiện ("nếu đây là endpoint đăng nhập...") để không khẳng định sai.
+- Test +5 (`FailureCauseClassifierTest` +4, `ExecutionFailureAnalyzerTest` +1): 415/415 pass.
+
 **Giới hạn đã biết của giai đoạn 1:** nhãn là kết quả chấm lúc chạy (không cập nhật khi có thêm lịch sử); kết quả trước Module 16 không có fingerprint nên không đưa vào phân tích theo lịch sử; ngưỡng chưa calibrate; `Target Base URL` khác lần chạy trước chỉ là bằng chứng bổ sung, không tự quyết loại; chưa phân biệt được bug API thật với kỳ vọng test sai (ghi thẳng trong `STABLE_FAILURE`); chưa có cảnh báo ở hộp tạo Bug Report khi tạo từ kết quả "không phải do API" (mục tuỳ chọn, để sau).
 
 **Giai đoạn 2 - phát hiện test không ổn định (đã code 2026-10-18):**

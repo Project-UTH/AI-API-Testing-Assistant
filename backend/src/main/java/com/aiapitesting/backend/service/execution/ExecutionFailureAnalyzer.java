@@ -82,7 +82,8 @@ public class ExecutionFailureAnalyzer {
                     result.getTestCase().getAuthOverride(),
                     historyOf(result, rows, Map.of()),
                     execution.getTargetBaseUrlSnapshot(), execution.getTargetAuthUpdatedAtSnapshot(), context,
-                    failedAssertionsOf(result), lastOtherVersionOf(result, rows));
+                    failedAssertionsOf(result), lastOtherVersionOf(result, rows),
+                    result.getTestCase().getEndpoint() == null ? null : result.getTestCase().getEndpoint().isRequiresAuth());
             FailureCauseClassifier.Result classified = failureCauseClassifier.classify(input);
             if (classified != null) {
                 result.setFailureCause(classified.cause());

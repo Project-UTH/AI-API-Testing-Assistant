@@ -67,13 +67,26 @@ public class FailureCauseClassifier {
      * @param failedAssertions  các assertion sai của kết quả này (rỗng nếu không có)
      * @param lastOtherVersion  lần chạy gần nhất của test case này ở PHIÊN BẢN KHÁC (test đã được sửa kể từ đó),
      *                          null nếu chưa từng chạy ở phiên bản nào khác - bằng chứng "fail ngay sau khi sửa test"
+     * @param endpointRequiresAuth spec có khai endpoint yêu cầu xác thực không (null = không biết). FALSE thì 401/403 có thể
+     *                          do thông tin đăng nhập trong request (vd endpoint đăng nhập) chứ không phải token của project
      */
     public record Input(
             TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
             String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
             Instant authUpdatedAt, ExecutionContext context,
-            List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion
+            List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion, Boolean endpointRequiresAuth
     ) {
+        /** Dạng không có thông tin về spec xác thực - giữ cho các nơi chưa cần. */
+        public Input(
+                TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
+                String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
+                Instant authUpdatedAt, ExecutionContext context,
+                List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion
+        ) {
+            this(status, expectedStatus, responseStatus, errorKind, durationMs, errorMessage, authOverride, history,
+                    currentBaseUrl, authUpdatedAt, context, failedAssertions, lastOtherVersion, null);
+        }
+
         /** Dạng ngắn (không có thông tin assertion/phiên bản khác) - giữ cho các nơi chưa cần 2 thông tin này. */
         public Input(
                 TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
@@ -81,7 +94,7 @@ public class FailureCauseClassifier {
                 Instant authUpdatedAt, ExecutionContext context
         ) {
             this(status, expectedStatus, responseStatus, errorKind, durationMs, errorMessage, authOverride, history,
-                    currentBaseUrl, authUpdatedAt, context, List.of(), null);
+                    currentBaseUrl, authUpdatedAt, context, List.of(), null, null);
         }
     }
 
@@ -189,6 +202,11 @@ public class FailureCauseClassifier {
         if (previous == null) {
             return;
         }
+        // CHỈ khi đây là lần chạy ĐẦU TIÊN của phiên bản hiện tại (lịch sử cùng phiên bản chỉ có chính nó): nếu sau khi sửa
+        // test đã có thêm lần chạy khác (vd Pass rồi mới Fail) thì thay đổi test không còn là nghi can chính của lần Fail này.
+        if (in.history() != null && in.history().size() > 1) {
+            return;
+        }
         String result = previous.status() == TestResultStatus.PASSED ? "Pass"
                 : previous.status() == TestResultStatus.FAILED ? "Fail(" + previous.responseStatus() + ")"
                 : previous.status().name();
@@ -258,6 +276,13 @@ public class FailureCauseClassifier {
         List<String> evidence = new ArrayList<>();
         evidence.add("Nhận " + in.responseStatus() + " trong khi kỳ vọng " + in.expectedStatus()
                 + "; test dùng token mặc định của project (không phải case Security cố ý bỏ/sai token)");
+        if (Boolean.FALSE.equals(in.endpointRequiresAuth())) {
+            // Vẫn gắn nhãn (test dùng dữ liệu xác thực không được chấp nhận nên không phải bằng chứng về API) nhưng nói thẳng
+            // giới hạn: endpoint đăng nhập thường nhận 401 khi tài khoản/mật khẩu trong request sai - không liên quan token.
+            evidence.add("Lưu ý: spec không khai endpoint này yêu cầu xác thực - nếu đây là endpoint đăng nhập hoặc nhận "
+                    + "thông tin đăng nhập trong request, " + in.responseStatus() + " có thể do tài khoản/mật khẩu trong test "
+                    + "sai chứ không phải token của project");
+        }
         if (ctx.defaultAuthUnauthorizedCount() >= 2) {
             evidence.add(ctx.defaultAuthUnauthorizedCount() + "/" + ctx.defaultAuthCalledCount()
                     + " test dùng token mặc định trong cùng lượt chạy cũng bị từ chối xác thực - nghi token sai/hết hạn "
