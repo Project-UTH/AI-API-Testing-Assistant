@@ -40,7 +40,7 @@ public interface TestCaseDependencyRepository extends JpaRepository<TestCaseDepe
     // Toàn bộ dependency trong project (cả 2 phía FK), JOIN FETCH sâu tới dependsOnTestCase.endpoint
     // để TestExecutionService dùng ngay không cần query thêm. JOIN FETCH THÊM tcd.testCase.endpoint
     // (phía consumer, trước đây chỉ fetch phía dependsOnTestCase) - EndpointCoverageService (Module
-    // 15c, Risk Engine) đọc dep.getTestCase().getEndpoint().getId() SAU khi phương thức repository
+    // 15c) đọc dep.getTestCase().getEndpoint().getId() SAU khi phương thức repository
     // đã trả về (session đã đóng, spring.jpa.open-in-view=false) -> thiếu JOIN FETCH này gây
     // LazyInitializationException "no session" (đã xác nhận thật, bắt được khi verify bằng dữ liệu
     // thật qua Docker, không lộ ra ở unit test vì Mockito không mô phỏng đúng hành vi session/proxy

@@ -11,7 +11,7 @@ interface GenerationPlanReportProps {
   endpointId: string
   /** Báo cáo vừa nhận khi sinh trong phiên này - có thì dùng luôn, không gọi API. */
   freshPlan?: GenerationPlanSummary
-  /** Coverage của endpoint (đã tải sẵn ở EndpointList để hiện badge risk) - không gọi thêm request. */
+  /** Coverage của endpoint (đã tải sẵn ở EndpointList) - không gọi thêm request. */
   coverage?: EndpointCoverage
 }
 

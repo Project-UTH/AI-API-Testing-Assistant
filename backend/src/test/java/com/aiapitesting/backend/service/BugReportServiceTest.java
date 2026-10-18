@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.request.CreateBugReportRequest;
 import com.aiapitesting.backend.dto.response.BugReportDraftResponse;
 import com.aiapitesting.backend.dto.response.BugReportPageResponse;
+import com.aiapitesting.backend.dto.response.BugReportBatchGenerateResponse;
 import com.aiapitesting.backend.dto.response.BugReportResponse;
 import com.aiapitesting.backend.entity.BugFrequency;
 import com.aiapitesting.backend.entity.BugPriority;
@@ -14,6 +15,7 @@ import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
+import com.aiapitesting.backend.entity.FailureCause;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestResult;
@@ -154,6 +156,30 @@ class BugReportServiceTest {
         assertThat(response.build()).isEqualTo("v1.2.0");
         verify(projectRepository, never()).save(any());
         verify(projectRepository, never()).findMaxBugReportProjectSeqByOwner(any());
+    }
+
+    @Test
+    void generateForProject_skipsFailsThatAreEnvironmentTokenOrUnstable() {
+        TestResult authFail = resultWithCause(FailureCause.AUTH_CONFIG, false);
+        TestResult envFail = resultWithCause(FailureCause.ENVIRONMENT, false);
+        TestResult flakyFail = resultWithCause(FailureCause.FLAKY, false);
+        TestResult unstableFail = resultWithCause(FailureCause.STABLE_FAILURE, true);
+        failedResult.setFailureCause(FailureCause.ASSERTION_FAILED);
+        when(testResultRepository.findAllFailedByProject(project))
+                .thenReturn(List.of(failedResult, authFail, envFail, flakyFail, unstableFail));
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(projectRepository.findMaxBugReportProjectSeqByOwner(owner)).thenReturn(Optional.empty());
+        when(bugReportRepository.findMaxSeqInProjectByProject(project)).thenReturn(Optional.empty());
+
+        BugReportBatchGenerateResponse response = bugReportService.generateForProject(projectId, null);
+
+        assertThat(response.created()).hasSize(1);
+        assertThat(response.skippedCount()).isEqualTo(4);
+    }
+
+    private TestResult resultWithCause(FailureCause cause, boolean unstable) {
+        return TestResult.builder().id(UUID.randomUUID()).testCase(testCase).execution(failedResult.getExecution())
+                .status(TestResultStatus.FAILED).responseStatus(500).failureCause(cause).unstable(unstable).build();
     }
 
     @Test

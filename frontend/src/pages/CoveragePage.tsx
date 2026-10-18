@@ -6,11 +6,11 @@ import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn, METHOD_STYLES } from "@/lib/utils"
 import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
-import { CoverageSummary, RiskBadge } from "@/components/shared/CoverageMatrixChart"
+import { CoverageSummary } from "@/components/shared/CoverageMatrixChart"
 import { CoverageGapReport } from "@/components/coverage/CoverageGapReport"
 
 /**
- * Module 15c - Coverage Matrix + Risk Engine. Toàn bộ số liệu tính tất định từ OpenAPI spec +
+ * Module 15c - Coverage Matrix. Toàn bộ số liệu tính tất định từ OpenAPI spec +
  * test case hiện có (không gọi AI) - xem EndpointCoverageService (backend).
  * Module 15j - Coverage Gap Analysis: mỗi endpoint chỉ rõ còn thiếu mục nào, vì sao cần, bằng chứng, và
  * bổ sung ngay (hệ thống tự tạo, 0 token).
@@ -70,7 +70,6 @@ export function CoveragePage() {
           <CoverageSummary
             coveragePercent={data.overallCoveragePercent}
             executedPercent={data.overallExecutedPercent}
-            riskWeightedCoveragePercent={data.overallRiskWeightedCoveragePercent}
           />
 
           {data.endpoints.length === 0 && (
@@ -114,7 +113,6 @@ export function CoveragePage() {
                         Chưa có test case nào
                       </span>
                     )}
-                    <RiskBadge level={endpoint.riskLevel} reasons={endpoint.riskReasons} />
                     <span className="shrink-0 text-xs text-muted-foreground">
                       <span className="font-medium text-foreground">
                         {counts.covered}/{counts.relevant} mục
@@ -133,12 +131,6 @@ export function CoveragePage() {
                           Không đọc được định nghĩa OpenAPI (schema) của endpoint này - danh sách mục cần kiểm bên dưới
                           KHÔNG đầy đủ, không nên tin số % hiện tại.
                         </p>
-                      )}
-                      {endpoint.riskReasons.length > 0 && (
-                        <div className="mb-3 text-xs text-muted-foreground">
-                          <span className="font-medium">Vì sao risk {endpoint.riskScore}/100: </span>
-                          {endpoint.riskReasons.join("; ")}
-                        </div>
                       )}
                       <CoverageGapReport projectId={id!} endpoint={endpoint} />
                     </div>

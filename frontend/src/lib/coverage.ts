@@ -3,8 +3,6 @@ import type { TestResultStatus } from "@/lib/executions"
 
 export type CoverageDimensionStatus = "COVERED" | "MISSING" | "NOT_APPLICABLE"
 
-export type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
-
 /** Module 15j - dòng đã có test thì các test đó đã chạy ra kết quả chưa (lần chạy mới nhất). */
 export type CoverageRunStatus = "NOT_RUN" | "NO_VERDICT" | "PASSED" | "FAILED"
 
@@ -51,9 +49,6 @@ export interface EndpointCoverage {
   /** % dòng vừa có test vừa đã chạy ra kết quả thật (PASSED/FAILED) - luôn nhỏ hơn hoặc bằng coveragePercent. */
   executedPercent: number
   schemaReadable: boolean
-  riskScore: number
-  riskLevel: RiskLevel
-  riskReasons: string[]
   dimensions: CoverageDimension[]
 }
 
@@ -61,7 +56,6 @@ export interface ProjectCoverage {
   projectId: string
   overallCoveragePercent: number
   overallExecutedPercent: number
-  overallRiskWeightedCoveragePercent: number
   endpoints: EndpointCoverage[]
 }
 

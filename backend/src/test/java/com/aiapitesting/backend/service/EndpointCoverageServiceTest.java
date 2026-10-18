@@ -6,7 +6,6 @@ import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
 import com.aiapitesting.backend.dto.response.CoverageRunStatus;
 import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
 import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
-import com.aiapitesting.backend.dto.response.RiskLevel;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.FailureCause;
 import com.aiapitesting.backend.entity.Project;
@@ -558,24 +557,6 @@ class EndpointCoverageServiceTest {
         assertThat(dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null).runStatus()).isEqualTo(CoverageRunStatus.FAILED);
     }
 
-    @Test
-    void getEndpointCoverage_risk_excludesFailsNotCausedByApiAndExplainsIt() {
-        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
-        stubProject(List.of(endpoint), List.of(), List.of());
-        // 4 lượt: 1 Pass + 1 Fail do API (UNDETERMINED) + 2 Fail do token (loại). Tỷ lệ fail = 1/2, không phải 3/4.
-        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of(
-                endpointStatusCount(endpoint.getId(), TestResultStatus.PASSED, 1),
-                endpointStatusCount(endpoint.getId(), TestResultStatus.FAILED, FailureCause.UNDETERMINED, 1),
-                endpointStatusCount(endpoint.getId(), TestResultStatus.FAILED, FailureCause.AUTH_CONFIG, 2)));
-
-        EndpointCoverageResponse result = coverageOf(endpoint);
-
-        // POST (+10) + field nhạy cảm 'email' (+10) + fail 50% (+10) = 30; nếu KHÔNG loại thì fail 75% → +15 = 35.
-        assertThat(result.riskScore()).isEqualTo(30);
-        assertThat(result.riskReasons()).anyMatch(r -> r.contains("50%") && r.contains("1/2"))
-                .anyMatch(r -> r.contains("Đã loại 2 lượt fail"));
-    }
-
     // ---- Module 16 gđ2 - kết quả của test không ổn định không phải bằng chứng chắc chắn ----
 
     @Test
@@ -665,42 +646,17 @@ class EndpointCoverageServiceTest {
         assertThat(orphanResult.dimensions()).noneMatch(d -> d.category().equals("RELATION"));
     }
 
-    // ---- Risk Engine + tổng hợp project (giữ nguyên từ 15c) ----
+    // ---- Tổng hợp project ----
 
     @Test
-    void getEndpointCoverage_deleteMethodWithAuthAndDependentsAndFailHistory_scoresHigherRisk() {
-        Endpoint deleteEndpoint = endpoint("/users/{id}", "DELETE", true, buildSchemaJson(null, List.of("204")));
-        Endpoint dependentEndpoint = endpoint("/orders", "POST", false, buildSchemaJson(null, List.of("201")));
-        TestCase sourceCase = testCase(deleteEndpoint, "tc", 204, null);
-        TestCase consumerCase = testCase(dependentEndpoint, "tc", 201, null);
-        TestCaseDependency dependency = TestCaseDependency.builder()
-                .id(UUID.randomUUID()).testCase(consumerCase).dependsOnTestCase(sourceCase)
-                .jsonPath("$.id").placeholderName("userId").createdAt(Instant.now()).build();
-        stubProject(List.of(deleteEndpoint, dependentEndpoint), List.of(sourceCase, consumerCase), List.of(dependency));
-        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of(
-                endpointStatusCount(deleteEndpoint.getId(), TestResultStatus.FAILED, 4),
-                endpointStatusCount(deleteEndpoint.getId(), TestResultStatus.PASSED, 6)));
-
-        EndpointCoverageResponse result = coverageOf(deleteEndpoint);
-
-        // DELETE(+20) + auth(+20) + 1 dependent(+10) + fail rate 40%(+8) = 58 -> HIGH
-        assertThat(result.riskScore()).isEqualTo(58);
-        assertThat(result.riskLevel()).isEqualTo(RiskLevel.HIGH);
-        assertThat(result.riskReasons()).isNotEmpty();
-    }
-
-    @Test
-    void getProjectCoverage_riskWeightedPercent_lowerThanFlatWhenHighRiskEndpointUncovered() {
-        // GET /products: risk thấp (GET = 0 điểm), đã có case hợp lệ khớp mã 200 -> 100%.
-        Endpoint lowRisk = endpoint("/products", "GET", false, buildSchemaJson(null, List.of("200")));
-        // DELETE /payment: risk cao (DELETE + auth) nhưng KHÔNG có test case nào -> 0%.
-        Endpoint highRisk = endpoint("/payment", "DELETE", true, buildSchemaJson(null, List.of("204")));
-        TestCase lowRiskCovered = testCase(lowRisk, "Positive", 200, null);
-        stubProject(List.of(lowRisk, highRisk), List.of(lowRiskCovered), List.of());
+    void getProjectCoverage_noRunYet_executedPercentIsZero() {
+        Endpoint covered = endpoint("/products", "GET", false, buildSchemaJson(null, List.of("200")));
+        Endpoint uncovered = endpoint("/payment", "DELETE", true, buildSchemaJson(null, List.of("204")));
+        TestCase coveredCase = testCase(covered, "Positive", 200, null);
+        stubProject(List.of(covered, uncovered), List.of(coveredCase), List.of());
 
         ProjectCoverageResponse result = endpointCoverageService.getProjectCoverage(projectId);
 
-        assertThat(result.overallRiskWeightedCoveragePercent()).isLessThan(result.overallCoveragePercent());
         // Chưa có lượt chạy nào: có test nhưng chưa kiểm thật.
         assertThat(result.overallExecutedPercent()).isZero();
     }
@@ -758,36 +714,6 @@ class EndpointCoverageServiceTest {
             @Override
             public FailureCause getFailureCause() {
                 return cause;
-            }
-        };
-    }
-
-    private TestResultRepository.EndpointStatusCount endpointStatusCount(UUID endpointId, TestResultStatus status, long count) {
-        return endpointStatusCount(endpointId, status, null, count);
-    }
-
-    private TestResultRepository.EndpointStatusCount endpointStatusCount(
-            UUID endpointId, TestResultStatus status, FailureCause cause, long count
-    ) {
-        return new TestResultRepository.EndpointStatusCount() {
-            @Override
-            public UUID getEndpointId() {
-                return endpointId;
-            }
-
-            @Override
-            public TestResultStatus getStatus() {
-                return status;
-            }
-
-            @Override
-            public FailureCause getFailureCause() {
-                return cause;
-            }
-
-            @Override
-            public long getCount() {
-                return count;
             }
         };
     }

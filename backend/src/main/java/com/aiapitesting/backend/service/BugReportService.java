@@ -323,7 +323,8 @@ public class BugReportService {
         List<BugReportResponse> created = new ArrayList<>();
         int skipped = 0;
         for (TestResult result : candidates) {
-            if (result.getStatus() != TestResultStatus.FAILED || bugReportRepository.existsBySourceTestResultId(result.getId())) {
+            if (result.getStatus() != TestResultStatus.FAILED || bugReportRepository.existsBySourceTestResultId(result.getId())
+                    || isUnreliableFailure(result)) {
                 skipped++;
                 continue;
             }
@@ -335,6 +336,15 @@ public class BugReportService {
             created.add(BugReportResponse.from(bug));
         }
         return new BugReportBatchGenerateResponse(created, skipped);
+    }
+
+    /**
+     * Fail do môi trường/token/cấu hình test hoặc của test không ổn định không đủ tin cậy để thành bug - cùng tiêu
+     * chí với việc tự mở lại/đóng bug ở {@link BugReportStatusService}.
+     */
+    private boolean isUnreliableFailure(TestResult result) {
+        return (result.getFailureCause() != null && result.getFailureCause().suppressesBugAutomation())
+                || Boolean.TRUE.equals(result.getUnstable());
     }
 
     private BugReport buildAndSaveBugReport(

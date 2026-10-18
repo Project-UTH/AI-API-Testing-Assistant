@@ -95,23 +95,6 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
             + "WHERE tr.id IN :ids AND tc.endpoint.project = :project")
     List<TestResult> findAllByIdInAndTestCaseEndpointProject(@Param("ids") List<UUID> ids, @Param("project") Project project);
 
-    // Risk Engine (Module 15c) - tỷ lệ fail lịch sử theo từng endpoint, dùng làm 1 thành phần risk
-    // score. 1 query GROUP BY cho cả project (tránh N+1 theo từng endpoint), cùng công thức
-    // countByEndpointIds/countGroupedByOwnerIds đã dùng ở TestCaseRepository.
-    // Module 16 - thêm failureCause vào GROUP BY để Risk loại được các lượt fail do môi trường/token/cấu hình test
-    // (không nói gì về API đang test) khỏi tỷ lệ fail. failureCause null = PASSED/BLOCKED/dữ liệu cũ.
-    @Query("SELECT tr.testCase.endpoint.id AS endpointId, tr.status AS status, tr.failureCause AS failureCause, COUNT(tr) AS count "
-            + "FROM TestResult tr WHERE tr.testCase.endpoint.project = :project "
-            + "GROUP BY tr.testCase.endpoint.id, tr.status, tr.failureCause")
-    List<EndpointStatusCount> countGroupedByEndpointAndStatus(@Param("project") Project project);
-
-    interface EndpointStatusCount {
-        UUID getEndpointId();
-        TestResultStatus getStatus();
-        FailureCause getFailureCause();
-        long getCount();
-    }
-
     // Module 15j - Coverage theo kết quả chạy: lượt chạy MỚI NHẤT của từng test case trong project, CHỈ vài
     // cột (không kéo responseBody/assertionResultsJson TEXT lên). 1 query cho cả project, không N+1.
     // Module 16 - thêm failureCause: FAILED do môi trường/token không được tính là "đã kiểm và thấy API lệch".

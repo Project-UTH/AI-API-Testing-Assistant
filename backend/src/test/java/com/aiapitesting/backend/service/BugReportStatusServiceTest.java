@@ -144,6 +144,46 @@ class BugReportStatusServiceTest {
     }
 
     @Test
+    void onNewTestResult_failedAfterTestWasEdited_doesNotReopenClosedBugButNotesIt() {
+        TestResult source = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).testCaseFingerprint("v1").build();
+        BugReport bug = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.CLOSED).sourceTestResult(source).build();
+        when(bugReportRepository.findAllByTestCase(testCase)).thenReturn(List.of(bug));
+        TestResult result = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).testCaseFingerprint("v2").build();
+
+        bugReportStatusService.onNewTestResult(result);
+
+        assertThat(bug.getStatus()).isEqualTo(BugStatus.CLOSED);
+        assertThat(bug.getNote()).contains("đã được sửa");
+        verify(bugReportRepository).saveAll(List.of(bug));
+    }
+
+    @Test
+    void onNewTestResult_failedAfterTestWasEdited_doesNotRepeatTheNoteOnLaterRuns() {
+        TestResult source = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).testCaseFingerprint("v1").build();
+        BugReport bug = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.CLOSED).sourceTestResult(source).build();
+        when(bugReportRepository.findAllByTestCase(testCase)).thenReturn(List.of(bug));
+        TestResult result = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).testCaseFingerprint("v2").build();
+
+        bugReportStatusService.onNewTestResult(result);
+        String noteAfterFirstRun = bug.getNote();
+        bugReportStatusService.onNewTestResult(result);
+
+        assertThat(bug.getNote()).isEqualTo(noteAfterFirstRun);
+    }
+
+    @Test
+    void onNewTestResult_failedWithSameFingerprintAsBugSource_stillReopensClosedBug() {
+        TestResult source = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).testCaseFingerprint("v1").build();
+        BugReport bug = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.CLOSED).sourceTestResult(source).build();
+        when(bugReportRepository.findAllByTestCase(testCase)).thenReturn(List.of(bug));
+        TestResult result = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).testCaseFingerprint("v1").build();
+
+        bugReportStatusService.onNewTestResult(result);
+
+        assertThat(bug.getStatus()).isEqualTo(BugStatus.REOPENED);
+    }
+
+    @Test
     void onNewTestResult_errorStatus_ignoredEntirely() {
         TestResult result = TestResult.builder().testCase(testCase).status(TestResultStatus.ERROR).build();
 

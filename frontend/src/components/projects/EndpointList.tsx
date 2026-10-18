@@ -12,7 +12,6 @@ import { generateTestCases, type GenerateTestCasesResponse } from "@/lib/testcas
 import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
 import { getDashboardSummary } from "@/lib/dashboard"
 import { getProjectCoverage } from "@/lib/coverage"
-import { RiskBadge } from "@/components/shared/CoverageMatrixChart"
 
 interface EndpointListProps {
   projectId: string
@@ -37,14 +36,12 @@ export function EndpointList({ projectId }: EndpointListProps) {
     queryFn: () => getDashboardSummary(),
   })
 
-  // Module 15c - chỉ hiển thị badge risk để người dùng tự quyết định tích gì, KHÔNG tự tick
-  // checkbox (bộ checkbox Positive/Negative/Boundary/Security hiện dùng CHUNG cho mọi endpoint
-  // đang chọn cùng lúc, nên tự tick theo risk của 1 endpoint sẽ ảnh hưởng nhầm sang endpoint khác).
+  // Coverage của từng endpoint, truyền xuống báo cáo kế hoạch sinh test case.
   const { data: coverage } = useQuery({
     queryKey: ["project-coverage", projectId],
     queryFn: () => getProjectCoverage(projectId),
   })
-  const riskByEndpointId = new Map((coverage?.endpoints ?? []).map((e) => [e.endpointId, e]))
+  const coverageByEndpointId = new Map((coverage?.endpoints ?? []).map((e) => [e.endpointId, e]))
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [generationState, setGenerationState] = useState<Record<string, GenerationState>>({})
@@ -101,7 +98,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
           queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
           // Báo cáo checklist đã lưu ở backend vừa đổi - bỏ bản cũ trong cache.
           queryClient.invalidateQueries({ queryKey: ["generation-plan", projectId, endpointId] })
-          // Bộ test case đổi thì Coverage/risk badge cũng đổi - trước đây không tự cập nhật.
+          // Bộ test case đổi thì Coverage cũng đổi - trước đây không tự cập nhật.
           queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
         })
         .catch((error) => {
@@ -245,12 +242,6 @@ export function EndpointList({ projectId }: EndpointListProps) {
                   {endpoint.method}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.path}</span>
-                {riskByEndpointId.get(endpoint.id) && (
-                  <RiskBadge
-                    level={riskByEndpointId.get(endpoint.id)!.riskLevel}
-                    reasons={riskByEndpointId.get(endpoint.id)!.riskReasons}
-                  />
-                )}
                 {endpoint.summary && (
                   <span className="shrink-0 truncate text-sm text-muted-foreground">
                     {endpoint.summary}
@@ -286,7 +277,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
                   projectId={projectId}
                   endpointId={endpoint.id}
                   freshPlan={state.result?.planSummary ?? undefined}
-                  coverage={riskByEndpointId.get(endpoint.id)}
+                  coverage={coverageByEndpointId.get(endpoint.id)}
                 />
               )}
             </li>

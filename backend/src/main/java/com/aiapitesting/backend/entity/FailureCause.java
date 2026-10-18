@@ -45,7 +45,7 @@ public enum FailureCause {
     }
 
     /**
-     * Bằng chứng mạnh rằng fail KHÔNG phải do API đang test: loại khỏi tỷ lệ fail của Risk, không tính là "đã
+     * Bằng chứng mạnh rằng fail KHÔNG phải do API đang test: không tính là "đã
      * kiểm và thấy lệch" ở Coverage, không tự mở lại Bug Report. DATA_STATE cố ý KHÔNG nằm ở đây (bằng chứng
      * yếu - tránh loại oan một fail thật).
      */
