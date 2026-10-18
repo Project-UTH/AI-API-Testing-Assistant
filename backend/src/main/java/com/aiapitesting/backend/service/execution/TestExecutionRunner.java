@@ -52,7 +52,10 @@ public class TestExecutionRunner {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Module 16 - dữ liệu phụ thu được quanh 1 lần gọi target, truyền xuống finish() để lưu cùng TestResult. */
-    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint) {
+    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint, String schemaViolationsJson) {
+        Meta(Long durationMs, ErrorKind errorKind, String fingerprint) {
+            this(durationMs, errorKind, fingerprint, null);
+        }
     }
 
     @Async
@@ -148,8 +151,9 @@ public class TestExecutionRunner {
         long startedNanos = System.nanoTime();
         try {
             RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
-            Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint);
             boolean statusMatches = Objects.equals(result.statusCode(), testCase.getExpectedStatus());
+            Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
+                    statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null);
 
             // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
             // status code đã sai.
@@ -169,6 +173,31 @@ public class TestExecutionRunner {
                     "Không gọi được target API: " + e.getMessage(),
                     statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null,
                     new Meta(elapsedMillis(startedNanos), ErrorKindClassifier.classify(e), fingerprint), savedResults);
+        }
+    }
+
+    /**
+     * Cảnh báo phản hồi lệch schema của spec - CHỈ khi mã trạng thái đúng kỳ vọng và là 2xx có schema. Mọi lỗi ở bước này
+     * (schema hỏng, endpoint không đọc được) chỉ bỏ qua: tính năng cảnh báo không được làm hỏng lượt chạy.
+     */
+    private String schemaViolationsJsonOf(TestCase testCase, Integer statusCode, String responseBody) {
+        try {
+            if (statusCode == null || statusCode < 200 || statusCode > 299 || testCase.getEndpoint() == null) {
+                return null;
+            }
+            String allSchemas = testCase.getEndpoint().getResponseSchemas();
+            if (allSchemas == null || allSchemas.isBlank()) {
+                return null;
+            }
+            com.fasterxml.jackson.databind.JsonNode schema = objectMapper.readTree(allSchemas).get(String.valueOf(statusCode));
+            if (schema == null) {
+                return null;
+            }
+            List<String> violations = ResponseSchemaValidator.validate(schema.toString(), responseBody);
+            return violations.isEmpty() ? null : objectMapper.writeValueAsString(violations);
+        } catch (Exception e) {
+            log.warn("Khong doi chieu duoc schema response cua test case {}: {}", testCase.getId(), e.toString());
+            return null;
         }
     }
 
@@ -199,6 +228,7 @@ public class TestExecutionRunner {
                 .durationMs(meta.durationMs())
                 .errorKind(meta.errorKind())
                 .testCaseFingerprint(meta.fingerprint())
+                .schemaViolationsJson(meta.schemaViolationsJson())
                 .build();
         testResultRepository.save(result);
         savedResults.add(result);

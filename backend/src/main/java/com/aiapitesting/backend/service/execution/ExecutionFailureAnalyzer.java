@@ -285,6 +285,7 @@ public class ExecutionFailureAnalyzer {
         int connectionErrors = 0;
         int defaultAuthCalled = 0;
         int defaultAuthUnauthorized = 0;
+        int defaultAuthAccepted = 0;
         for (TestResult r : results) {
             boolean calledTarget = r.getResponseStatus() != null || r.getErrorKind() != null;
             if (!calledTarget) {
@@ -297,6 +298,12 @@ public class ExecutionFailureAnalyzer {
             TestCaseAuthOverride override = r.getTestCase().getAuthOverride();
             if (override == null || override == TestCaseAuthOverride.DEFAULT) {
                 defaultAuthCalled++;
+                // Chỉ endpoint spec khai YÊU CẦU xác thực mới chứng minh được token còn dùng: endpoint công khai nhận 200 dù
+                // token hỏng.
+                boolean authRequired = r.getTestCase().getEndpoint() != null && r.getTestCase().getEndpoint().isRequiresAuth();
+                if (authRequired && r.getResponseStatus() != null && !AUTH_STATUSES.contains(r.getResponseStatus())) {
+                    defaultAuthAccepted++;
+                }
                 Integer expected = r.getTestCase().getExpectedStatus();
                 if (r.getStatus() == TestResultStatus.FAILED && r.getResponseStatus() != null
                         && AUTH_STATUSES.contains(r.getResponseStatus()) && (expected == null || !AUTH_STATUSES.contains(expected))) {
@@ -304,7 +311,8 @@ public class ExecutionFailureAnalyzer {
                 }
             }
         }
-        return new FailureCauseClassifier.ExecutionContext(connectionErrors, called, defaultAuthUnauthorized, defaultAuthCalled);
+        return new FailureCauseClassifier.ExecutionContext(connectionErrors, called, defaultAuthUnauthorized, defaultAuthCalled,
+                defaultAuthAccepted);
     }
 
     private String writeEvidence(List<String> evidence) {

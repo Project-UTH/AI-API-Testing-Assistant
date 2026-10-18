@@ -35,7 +35,9 @@ public record TestResultResponse(
         /** Module 16 gđ2 - HTTP method của endpoint (frontend dùng để cảnh báo khi chạy lại test có thể ghi dữ liệu). */
         String endpointMethod,
         /** Module 16 gđ2 - độ ổn định hiện tại của test case; null khi không đáng chú ý (ổn định/chưa đủ dữ liệu) hoặc lượt chạy chưa xong. */
-        StabilityResponse stability
+        StabilityResponse stability,
+        /** Cảnh báo phản hồi thật lệch schema response của spec (kiểu/trường bắt buộc); rỗng = khớp hoặc không kiểm. Không đổi Pass/Fail. */
+        List<String> schemaViolations
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -62,7 +64,8 @@ public record TestResultResponse(
                 result.getFailureCause() == null ? null
                         : FailureCauseResponse.of(result.getFailureCause(), parseEvidence(result.getFailureEvidence())),
                 result.getTestCase().getEndpoint().getMethod(),
-                stability
+                stability,
+                parseEvidence(result.getSchemaViolationsJson())
         );
     }
 

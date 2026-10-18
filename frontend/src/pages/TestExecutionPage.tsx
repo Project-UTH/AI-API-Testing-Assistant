@@ -311,6 +311,14 @@ export function TestExecutionPage() {
                   </span>
                   {result.failureCause && <FailureCauseChip cause={result.failureCause} />}
                   <UnstableBadge result={result} />
+                  {result.schemaViolations.length > 0 && (
+                    <span
+                      className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+                      title="Phản hồi lệch schema khai báo trong spec - kết quả Pass/Fail không đổi"
+                    >
+                      Lệch schema
+                    </span>
+                  )}
                   {result.errorMessage && (
                     <span className="shrink-0 truncate text-xs text-destructive sm:max-w-64" title={result.errorMessage}>
                       {result.errorMessage}
@@ -336,6 +344,21 @@ export function TestExecutionPage() {
                 <div className="flex flex-col gap-3 border-t border-border p-3">
                   <StabilityNote result={result} projectId={projectId} />
                   <FailureCauseDetail result={result} />
+                  {result.schemaViolations.length > 0 && (
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                      <p className="font-medium text-amber-700 dark:text-amber-400">
+                        Phản hồi lệch schema khai báo trong spec (chỉ cảnh báo, kết quả không đổi)
+                      </p>
+                      <ul className="mt-1.5 list-disc pl-5 text-foreground">
+                        {result.schemaViolations.map((violation) => (
+                          <li key={violation}>{violation}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-1.5 text-muted-foreground">
+                        Chỉ kiểm kiểu dữ liệu và trường bắt buộc. Có thể API sai so với spec, hoặc spec khai báo chưa đúng.
+                      </p>
+                    </div>
+                  )}
                   {result.errorMessage && (
                     <div>
                       <p className="mb-1 text-xs font-medium text-muted-foreground">Lỗi</p>

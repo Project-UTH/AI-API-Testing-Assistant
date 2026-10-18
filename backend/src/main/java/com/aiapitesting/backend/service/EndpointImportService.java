@@ -67,6 +67,9 @@ public class EndpointImportService {
     private final SafeUrlFetcher safeUrlFetcher;
     private final AesEncryptionService aesEncryptionService;
     private final TargetAuthHeaderResolver targetAuthHeaderResolver;
+    /** Spec quá lớn thì bỏ qua đối chiếu schema (tránh phình DB) - chỉ mất cảnh báo, không ảnh hưởng gì khác. */
+    private static final int MAX_RESPONSE_SCHEMAS_LENGTH = 200_000;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
@@ -219,6 +222,7 @@ public class EndpointImportService {
                 .method(method)
                 .summary(operation.getSummary())
                 .schema(buildSchemaJson(operation))
+                .responseSchemas(buildResponseSchemasJson(operation))
                 .requiresAuth(resolveRequiresAuth(operation, hasGlobalSecurity))
                 .build();
     }
@@ -233,6 +237,35 @@ public class EndpointImportService {
             return hasGlobalSecurity;
         }
         return !operation.getSecurity().isEmpty();
+    }
+
+    /** Schema response 2xx có nội dung JSON, để đối chiếu phản hồi thật lúc chạy test (không gửi cho AI). */
+    private String buildResponseSchemasJson(Operation operation) {
+        if (operation.getResponses() == null) {
+            return null;
+        }
+        Map<String, Object> schemas = new LinkedHashMap<>();
+        operation.getResponses().forEach((code, response) -> {
+            if (code == null || !code.matches("2\\d\\d") || response == null || response.getContent() == null) {
+                return;
+            }
+            response.getContent().forEach((mediaType, content) -> {
+                // "*/*" là mặc định của springdoc khi controller không khai produces - vẫn là JSON trong thực tế.
+                if (mediaType != null && (mediaType.toLowerCase().contains("json") || "*/*".equals(mediaType))
+                        && content.getSchema() != null && !schemas.containsKey(code)) {
+                    schemas.put(code, content.getSchema());
+                }
+            });
+        });
+        if (schemas.isEmpty()) {
+            return null;
+        }
+        try {
+            String json = io.swagger.v3.core.util.Json.mapper().writeValueAsString(schemas);
+            return json.length() > MAX_RESPONSE_SCHEMAS_LENGTH ? null : json;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

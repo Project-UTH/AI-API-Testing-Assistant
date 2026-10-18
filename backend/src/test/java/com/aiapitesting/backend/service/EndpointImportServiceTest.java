@@ -59,6 +59,27 @@ class EndpointImportServiceTest {
             }
             """;
 
+    private static final String OPENAPI_WITH_RESPONSE_SCHEMA = """
+            {
+              "openapi": "3.0.0",
+              "info": { "title": "Sample", "version": "1.0" },
+              "paths": {
+                "/pets/{id}": {
+                  "get": {
+                    "summary": "Get pet",
+                    "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+                    "responses": {
+                      "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } },
+                      "404": { "description": "missing", "content": { "application/json": { "schema": { "type": "object", "properties": { "code": { "type": "string" } } } } } }
+                    }
+                  }
+                }
+              },
+              "components": { "schemas": { "Pet": { "type": "object", "required": ["id", "name"],
+                "properties": { "id": { "type": "integer" }, "name": { "type": "string" } } } } }
+            }
+            """;
+
     private static final String SAMPLE_OPENAPI_WITH_SERVERS = """
             {
               "openapi": "3.0.0",
@@ -160,6 +181,52 @@ class EndpointImportServiceTest {
         ImportImpactResponse impact = endpointImportService.getImportImpact(projectId);
 
         assertThat(impact).isEqualTo(new ImportImpactResponse(7, 74, 3, 2, 23, 90, 5, 4, 9, 30));
+    }
+
+    @Test
+    void importFromFile_storesOnly2xxJsonResponseSchemasInSeparateColumnWithRefsInlined() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "spec.json", "application/json", OPENAPI_WITH_RESPONSE_SCHEMA.getBytes(StandardCharsets.UTF_8));
+
+        endpointImportService.importFromFile(projectId, file, null, null, null);
+
+        ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
+        verify(endpointRepository).saveAll(captor.capture());
+        String responseSchemas = captor.getValue().get(0).getResponseSchemas();
+        assertThat(responseSchemas).contains("\"200\"").contains("\"required\"").contains("\"name\"").doesNotContain("$ref");
+        assertThat(responseSchemas).as("chỉ lấy 2xx, không lấy 404").doesNotContain("\"404\"");
+        // Schema AI vẫn không phình ra: cột `schema` giữ nguyên thiết kế (chỉ mã trạng thái, không có body response).
+        assertThat(captor.getValue().get(0).getSchema()).doesNotContain("\"required\":[\"id\"");
+    }
+
+    @Test
+    void importFromFile_wildcardMediaTypeIsTreatedAsJson_becauseSpringdocDefaultsToIt() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        String spec = OPENAPI_WITH_RESPONSE_SCHEMA.replace("application/json", "*/*");
+        MockMultipartFile file = new MockMultipartFile("file", "spec.json", "application/json", spec.getBytes(StandardCharsets.UTF_8));
+
+        endpointImportService.importFromFile(projectId, file, null, null, null);
+
+        ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
+        verify(endpointRepository).saveAll(captor.capture());
+        assertThat(captor.getValue().get(0).getResponseSchemas()).contains("\"200\"");
+    }
+
+    @Test
+    void importFromFile_specWithoutResponseSchema_leavesResponseSchemasNull() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "spec.json", "application/json", SAMPLE_OPENAPI.getBytes(StandardCharsets.UTF_8));
+
+        endpointImportService.importFromFile(projectId, file, null, null, null);
+
+        ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
+        verify(endpointRepository).saveAll(captor.capture());
+        assertThat(captor.getValue().get(0).getResponseSchemas()).isNull();
     }
 
     @Test

@@ -225,6 +225,33 @@ class ExecutionFailureAnalyzerTest {
     }
 
     @Test
+    void tokenProvenValidByAnotherTestOnAProtectedEndpoint_aLoneForbiddenIsNotBlamedOnTheToken() {
+        // Target trả 403 cho JSON hỏng dù token tốt (bug của API): test khác trên endpoint yêu cầu xác thực nhận 200.
+        Endpoint protectedEndpoint = Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/api/products").requiresAuth(true).build();
+        endpoint = protectedEndpoint;
+        TestResult lone403 = result(TestResultStatus.FAILED, 400, 403, "fp-a");
+        TestResult proof = result(TestResultStatus.PASSED, 200, 200, "fp-b");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, List.of(lone403, proof));
+
+        assertThat(lone403.getFailureCause()).isNotEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
+    void passOnAPublicEndpointDoesNotProveTheTokenIsValid() {
+        Endpoint publicEndpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/health").requiresAuth(false).build();
+        TestResult rejected = result(TestResultStatus.FAILED, 200, 401, "fp-a");
+        endpoint = publicEndpoint;
+        TestResult publicPass = result(TestResultStatus.PASSED, 200, 200, "fp-b");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, List.of(rejected, publicPass));
+
+        assertThat(rejected.getFailureCause()).isEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
     void endpointRequiresAuthFlagFromSpec_decidesWhetherCredentialsCaveatIsAdded() {
         Endpoint login = Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/auth/login").requiresAuth(false).build();
         Endpoint protectedEndpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/me").requiresAuth(true).build();

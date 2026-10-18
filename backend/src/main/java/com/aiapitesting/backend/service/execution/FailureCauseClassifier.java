@@ -53,10 +53,18 @@ public class FailureCauseClassifier {
 
     /**
      * Số liệu "anh em" cùng 1 lượt chạy: dùng để nói "N/M test cùng lỗi" - bằng chứng mạnh hơn 1 kết quả riêng lẻ.
+     * {@code defaultAuthAcceptedCount}: số test dùng token mặc định đã nhận phản hồi KHÔNG phải 401/403 - bằng chứng token
+     * còn dùng được, nên 1 lần 403 riêng lẻ là hành vi của API (vd target trả 403 cho JSON hỏng) chứ không phải token hỏng.
      */
-    public record ExecutionContext(int sameKindErrorCount, int calledCount, int defaultAuthUnauthorizedCount, int defaultAuthCalledCount) {
+    public record ExecutionContext(int sameKindErrorCount, int calledCount, int defaultAuthUnauthorizedCount, int defaultAuthCalledCount,
+                                   int defaultAuthAcceptedCount) {
+        /** Dạng không có số liệu "token đã được chấp nhận" - giữ cho các nơi chưa cần. */
+        public ExecutionContext(int sameKindErrorCount, int calledCount, int defaultAuthUnauthorizedCount, int defaultAuthCalledCount) {
+            this(sameKindErrorCount, calledCount, defaultAuthUnauthorizedCount, defaultAuthCalledCount, 0);
+        }
+
         public static ExecutionContext none() {
-            return new ExecutionContext(0, 0, 0, 0);
+            return new ExecutionContext(0, 0, 0, 0, 0);
         }
     }
 
@@ -352,8 +360,12 @@ public class FailureCauseClassifier {
 
     private boolean isUnexpectedAuthFailure(Input in) {
         boolean usesDefaultAuth = in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT;
+        // Token đã chứng minh còn dùng được (test dùng token mặc định khác trong cùng lượt nhận phản hồi không phải
+        // 401/403) thì 401/403 riêng lẻ KHÔNG được quy cho token - nếu không sẽ che đúng loại lỗi thật của API.
+        boolean tokenProvenValid = in.context() != null && in.context().defaultAuthAcceptedCount() > 0;
         return in.status() == TestResultStatus.FAILED
                 && usesDefaultAuth
+                && !tokenProvenValid
                 && in.responseStatus() != null && AUTH_STATUSES.contains(in.responseStatus())
                 && (in.expectedStatus() == null || !AUTH_STATUSES.contains(in.expectedStatus()));
     }

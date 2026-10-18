@@ -79,6 +79,8 @@ export interface TestResult {
   endpointMethod: string
   /** null khi không đáng chú ý (ổn định/chưa đủ dữ liệu) hoặc lượt chạy chưa xong. */
   stability: Stability | null
+  /** Cảnh báo phản hồi thật lệch schema response của spec (kiểu/trường bắt buộc); rỗng = khớp hoặc không kiểm. Không đổi Pass/Fail. */
+  schemaViolations: string[]
 }
 
 export interface TestExecution {
