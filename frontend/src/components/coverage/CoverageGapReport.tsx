@@ -109,10 +109,11 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
             <span className="text-destructive"> · {counts.failing} mục đã chạy nhưng API lệch kỳ vọng</span>
           )}
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Danh sách mục cần kiểm do hệ thống tự tính từ đặc tả OpenAPI theo kỹ thuật EP/BVA - cùng checklist dùng khi sinh
-          test case. Một test case chỉ được tính cho 1 mục khi hệ thống đọc nội dung thật thấy đúng tình huống đó và chỉ vi
-          phạm đúng 1 ràng buộc (không dựa vào tên case hay lời AI tự khai).
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          title="EP/BVA: phân vùng tương đương và giá trị biên. Một test case chỉ được tính cho 1 mục khi hệ thống đọc nội dung thật thấy đúng tình huống đó và chỉ vi phạm đúng 1 ràng buộc (không dựa vào tên case hay lời AI tự khai)."
+        >
+          Mục cần kiểm do hệ thống tự tính từ spec OpenAPI (kỹ thuật EP/BVA) - cùng checklist dùng khi sinh test case.
         </p>
       </div>
 
@@ -245,6 +246,8 @@ interface GapRowProps {
 }
 
 function GapRow({ row, filling, onFill, fillDisabled }: GapRowProps) {
+  // Mục còn thiếu: lý do/bằng chứng gập sẵn, mở khi cần - trước đây mỗi mục luôn chiếm 3-4 dòng nên 1 endpoint dài ~1500px.
+  const [showWhy, setShowWhy] = useState(false)
   const implicit = row.checklistType !== null && IMPLICIT_TYPES.has(row.checklistType) && row.label.includes("thành công")
   const StatusIcon = row.status === "COVERED" ? CheckCircle2 : row.status === "MISSING" ? CircleAlert : MinusCircle
 
@@ -277,6 +280,16 @@ function GapRow({ row, filling, onFill, fillDisabled }: GapRowProps) {
           >
             {RUN_STATUS_DISPLAY[row.runStatus].label}
           </span>
+        )}
+        {row.status === "MISSING" && (row.whyNeeded || row.detail || row.nearMisses.length > 0) && (
+          <button
+            type="button"
+            aria-expanded={showWhy}
+            className="shrink-0 text-primary underline-offset-4 hover:underline"
+            onClick={() => setShowWhy((v) => !v)}
+          >
+            {showWhy ? "Ẩn lý do" : "Vì sao?"}
+          </button>
         )}
         {row.status === "MISSING" && row.itemKey && (
           <Button
@@ -312,7 +325,7 @@ function GapRow({ row, filling, onFill, fillDisabled }: GapRowProps) {
             ))}
           </div>
         )}
-        {row.status === "MISSING" && (
+        {row.status === "MISSING" && showWhy && (
           <>
             {row.whyNeeded && (
               <p>

@@ -51,9 +51,7 @@ export function CoveragePage() {
     <div>
       <h2 className="text-lg font-semibold">Coverage Matrix</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Hệ thống tự lập danh sách mục cần kiểm từ đặc tả OpenAPI (checklist EP/BVA - cùng checklist dùng khi sinh test
-        case, cộng mã trạng thái khai báo và quan hệ giữa các endpoint), rồi đọc nội dung từng test case để biết mục nào
-        đã có, đã chạy chưa, mục nào còn thiếu và vì sao. Tính tất định, không dùng AI để suy coverage.
+        Các tình huống cần kiểm tra được suy ra từ spec OpenAPI, đối chiếu với test case hiện có. Tính tất định, không dùng AI.
       </p>
 
       {isLoading && <p className="mt-6 text-muted-foreground">Đang tính coverage...</p>}

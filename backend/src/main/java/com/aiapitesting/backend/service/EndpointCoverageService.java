@@ -206,7 +206,7 @@ public class EndpointCoverageService {
         dimensions.add(new CoverageDimensionResponse(
                 "AUTH", "Phân quyền (403 Forbidden)", CoverageDimensionStatus.NOT_APPLICABLE,
                 "Không áp dụng - hệ thống chưa có mô hình vai trò/scope của target API để giả lập "
-                        + "'có đăng nhập nhưng không đủ quyền', xem Module 15 trong roadmap",
+                        + "'có đăng nhập nhưng không đủ quyền'",
                 List.of(), null, null, null, null, List.of()));
 
         long covered = dimensions.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();

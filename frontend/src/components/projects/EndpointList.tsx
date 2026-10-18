@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Coins, Loader2, Sparkles } from "lucide-react"
+import { ChevronDown, Coins, Loader2, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -11,7 +11,7 @@ import { listEndpoints } from "@/lib/endpoints"
 import { generateTestCases, type GenerateTestCasesResponse } from "@/lib/testcases"
 import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
 import { getDashboardSummary } from "@/lib/dashboard"
-import { getProjectCoverage } from "@/lib/coverage"
+import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
 
 interface EndpointListProps {
   projectId: string
@@ -44,6 +44,8 @@ export function EndpointList({ projectId }: EndpointListProps) {
   const coverageByEndpointId = new Map((coverage?.endpoints ?? []).map((e) => [e.endpointId, e]))
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // Endpoint đang mở phần chi tiết (coverage + báo cáo lần sinh) - mặc định gập để danh sách gọn, 1 dòng/endpoint.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [generationState, setGenerationState] = useState<Record<string, GenerationState>>({})
   const [includeSecurity, setIncludeSecurity] = useState(false)
   // Mặc định cả 3 đều bật - giữ đúng hành vi cũ (luôn sinh đủ Positive/Negative/Boundary) cho tới
@@ -64,6 +66,18 @@ export function EndpointList({ projectId }: EndpointListProps) {
         next.add(endpointId)
       } else {
         next.delete(endpointId)
+      }
+      return next
+    })
+  }
+
+  function toggleExpanded(endpointId: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(endpointId)) {
+        next.delete(endpointId)
+      } else {
+        next.add(endpointId)
       }
       return next
     })
@@ -136,10 +150,12 @@ export function EndpointList({ projectId }: EndpointListProps) {
   const todayTokens = summary?.aiTokensToday ?? 0
   const dailyLimit = summary?.aiDailyTokenLimit ?? 0
   const nearOrOverQuota = dailyLimit > 0 && todayTokens >= dailyLimit
+  // Số token chỉ đáng nhìn khi đã dùng đáng kể (từ nửa hạn mức) - lúc còn thoải mái nó chỉ là 1 khối nhiễu ngay đầu danh sách.
+  const showTokenUsage = dailyLimit > 0 && todayTokens >= dailyLimit / 2
 
   return (
     <div className="mt-4 flex flex-col gap-3">
-      {summary && (
+      {summary && showTokenUsage && (
         <div
           className={cn(
             "flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm",
@@ -165,52 +181,22 @@ export function EndpointList({ projectId }: EndpointListProps) {
       )}
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
-          {selectedIds.size > 0 ? `Đã chọn ${selectedIds.size} endpoint` : "Chọn endpoint để sinh test case"}
+          Tick endpoint rồi chọn loại test case để sinh (Sinh Test Case dùng AI, tốn token).
         </span>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includePositive}
-              onCheckedChange={(checked) => setIncludePositive(checked === true)}
-            />
-            Positive
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includeNegative}
-              onCheckedChange={(checked) => setIncludeNegative(checked === true)}
-            />
-            Negative
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includeBoundary}
-              onCheckedChange={(checked) => setIncludeBoundary(checked === true)}
-            />
-            Boundary
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includeSecurity}
-              onCheckedChange={(checked) => setIncludeSecurity(checked === true)}
-            />
-            + Security
-          </label>
-          <Button
-            size="sm"
-            disabled={selectedIds.size === 0 || !hasAnyCategorySelected}
-            onClick={handleGenerate}
-          >
-            <Sparkles className="h-4 w-4" />
-            Sinh Test Case
-          </Button>
-        </div>
+        <button
+          type="button"
+          className="text-xs text-primary underline-offset-4 hover:underline"
+          onClick={() =>
+            setSelectedIds(
+              selectedIds.size === endpoints.length
+                ? new Set()
+                : new Set(endpoints.filter((e) => generationState[e.id]?.status !== "pending").map((e) => e.id))
+            )
+          }
+        >
+          {selectedIds.size === endpoints.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+        </button>
       </div>
-      {!hasAnyCategorySelected && (
-        <p className="text-xs text-destructive">
-          Phải tích ít nhất 1 trong Positive/Negative/Boundary/Security để có thứ sinh ra.
-        </p>
-      )}
 
       <ul className="flex flex-col gap-2">
         {endpoints.map((endpoint) => {
@@ -225,6 +211,9 @@ export function EndpointList({ projectId }: EndpointListProps) {
           const alreadyGenerated = state?.status === "success"
           const selected = selectedIds.has(endpoint.id)
           const willRegenerate = alreadyGenerated && selected
+          const isExpanded = expandedIds.has(endpoint.id)
+          const coverageOfEndpoint = coverageByEndpointId.get(endpoint.id)
+          const counts = coverageOfEndpoint ? coverageCounts(coverageOfEndpoint) : null
           return (
             <li key={endpoint.id} className="rounded-lg border border-border p-3">
               <div className="flex items-center gap-3">
@@ -241,38 +230,62 @@ export function EndpointList({ projectId }: EndpointListProps) {
                 >
                   {endpoint.method}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.path}</span>
+                <span className="min-w-0 truncate font-mono text-sm">{endpoint.path}</span>
                 {endpoint.summary && (
-                  <span className="shrink-0 truncate text-sm text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground" title={endpoint.summary}>
                     {endpoint.summary}
                   </span>
                 )}
-                {state?.status === "pending" && (
-                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-                )}
-                {state?.status === "success" && willRegenerate && (
-                  <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
-                    Sinh lại sẽ thay test case AI đã sinh (trừ case đang khoá 🔒), giữ nguyên test case bạn tự thêm
-                  </span>
-                )}
-                {state?.status === "success" && !willRegenerate && (
-                  <span className="shrink-0 text-xs text-green-600 dark:text-green-400">
-                    Có {state.count} test case
-                  </span>
-                )}
-                {state?.status === "error" && (
-                  <span className="shrink-0 text-xs text-destructive">{state.message}</span>
-                )}
+                {!endpoint.summary && <span className="flex-1" />}
+                {state?.status === "pending" && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
+                {state?.status === "error" && <span className="shrink-0 text-xs text-destructive">{state.message}</span>}
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {endpoint.testCaseCount > 0 ? (
+                    <>
+                      <span className="font-medium text-foreground">{endpoint.testCaseCount}</span> test
+                      {counts && (
+                        <>
+                          {" · "}
+                          <span className="font-medium text-foreground">
+                            {counts.covered}/{counts.relevant}
+                          </span>{" "}
+                          mục
+                          {counts.missing > 0 && (
+                            <span className="text-amber-600 dark:text-amber-400"> · thiếu {counts.missing}</span>
+                          )}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    "Chưa có test case"
+                  )}
+                </span>
                 {endpoint.testCaseCount > 0 && (
-                  <Link
-                    to={`/projects/${projectId}/test-cases?endpointId=${endpoint.id}`}
-                    className="shrink-0 text-xs text-primary underline-offset-4 hover:underline"
-                  >
-                    Xem test case
-                  </Link>
+                  <>
+                    <Link
+                      to={`/projects/${projectId}/test-cases?endpointId=${endpoint.id}`}
+                      className="shrink-0 text-xs text-primary underline-offset-4 hover:underline"
+                    >
+                      Xem test case
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label={isExpanded ? "Thu gọn chi tiết" : "Mở chi tiết"}
+                      aria-expanded={isExpanded}
+                      className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() => toggleExpanded(endpoint.id)}
+                    >
+                      <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
+                    </button>
+                  </>
                 )}
               </div>
-              {state?.status === "success" && !willRegenerate && state.count > 0 && (
+              {willRegenerate && (
+                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                  Sinh lại sẽ thay các test case AI chưa khoá 🔒; test case bạn tự thêm được giữ nguyên.
+                </p>
+              )}
+              {isExpanded && state?.status === "success" && state.count > 0 && (
                 <GenerationPlanReport
                   projectId={projectId}
                   endpointId={endpoint.id}
@@ -284,6 +297,44 @@ export function EndpointList({ projectId }: EndpointListProps) {
           )
         })}
       </ul>
+
+      {selectedIds.size > 0 && (
+        <div className="sticky bottom-4 z-20 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-lg">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm font-medium">Đã chọn {selectedIds.size} endpoint</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Checkbox checked={includePositive} onCheckedChange={(checked) => setIncludePositive(checked === true)} />
+                Positive
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Checkbox checked={includeNegative} onCheckedChange={(checked) => setIncludeNegative(checked === true)} />
+                Negative
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Checkbox checked={includeBoundary} onCheckedChange={(checked) => setIncludeBoundary(checked === true)} />
+                Boundary
+              </label>
+              <label
+                className="flex items-center gap-1.5 text-sm text-muted-foreground"
+                title="Test kiểm tra API chặn truy cập khi bỏ hoặc gửi sai token"
+              >
+                <Checkbox checked={includeSecurity} onCheckedChange={(checked) => setIncludeSecurity(checked === true)} />
+                + Security
+              </label>
+              <Button size="sm" disabled={!hasAnyCategorySelected} onClick={handleGenerate}>
+                <Sparkles className="h-4 w-4" />
+                Sinh Test Case
+              </Button>
+            </div>
+          </div>
+          {!hasAnyCategorySelected && (
+            <p className="text-xs text-destructive">
+              Phải tích ít nhất 1 trong Positive/Negative/Boundary/Security để có thứ sinh ra.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
