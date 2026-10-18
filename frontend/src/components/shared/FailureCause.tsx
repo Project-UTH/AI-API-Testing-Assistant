@@ -27,9 +27,9 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
   DATA_STATE: "Dữ liệu/trạng thái của hệ thống đích có thể đã đổi (tài nguyên bị xoá, dữ liệu trùng) - kiểm tra rồi chạy lại.",
   STABLE_FAILURE: "Fail lặp lại nhiều lần: xem lại kỳ vọng của test hoặc điều tra API - hệ thống không phân biệt được 2 khả năng này.",
   RESOURCE_NOT_FOUND:
-    "Test gọi bằng id dự phòng nên có thể id này không tồn tại: thêm Test Data Chaining (tạo tài nguyên bằng POST rồi lấy id) hoặc đổi giá trị dự phòng thành id có thật.",
+    "Test gọi bằng id dự phòng nên có thể id này không tồn tại. Mở Sửa test case: ở mục \"Phụ thuộc dữ liệu\" (Test Data Chaining) lấy id từ kết quả của 1 test POST tạo tài nguyên, hoặc đổi giá trị dự phòng thành id có thật.",
   EXPECTATION_MISMATCH:
-    "API trả mã khác kỳ vọng nhưng cùng nhóm nghĩa (vd 401/403, 400/422): nếu đồng ý với cách API chọn mã thì sửa kỳ vọng của test. Kết quả vẫn là Fail.",
+    "Kết quả vẫn là Fail. API trả mã khác kỳ vọng nhưng cùng nhóm nghĩa (vd 401/403, 400/422): nếu đồng ý với cách API chọn mã thì sửa kỳ vọng của test.",
   UNDETERMINED: "Chạy lại vài lần để có thêm bằng chứng trước khi kết luận.",
 }
 

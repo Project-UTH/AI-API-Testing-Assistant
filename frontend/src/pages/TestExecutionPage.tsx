@@ -269,7 +269,7 @@ export function TestExecutionPage() {
           )}
           <Link
             to={`/projects/${projectId}/${endpointFilter && execution.results.length > 0 ? `executions/${executionId}` : "test-cases"}`}
-            className="mt-2 inline-block text-primary underline-offset-4 hover:underline"
+            className="mt-2 inline-block text-primary underline underline-offset-4"
           >
             {endpointFilter && execution.results.length > 0 ? "Xem tất cả kết quả của lần chạy" : "Về danh sách Test case"}
           </Link>
@@ -316,7 +316,7 @@ export function TestExecutionPage() {
                       className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
                       title="Phản hồi lệch schema khai báo trong spec - kết quả Pass/Fail không đổi"
                     >
-                      Lệch schema
+                      Lệch schema (cảnh báo)
                     </span>
                   )}
                   {result.errorMessage && (

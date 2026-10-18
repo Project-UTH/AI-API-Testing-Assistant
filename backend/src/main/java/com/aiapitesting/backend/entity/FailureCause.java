@@ -34,14 +34,14 @@ public enum FailureCause {
      * tại trên hệ thống đích nên test chưa chạm tới logic cần kiểm (Negative/Boundary chưa tới bước validate). Thuộc nhóm
      * "không phải do API": không tính là đã kiểm thấy lệch ở Coverage, không tự tạo bug.
      */
-    RESOURCE_NOT_FOUND("Nghi chưa chạm đúng dữ liệu", true),
+    RESOURCE_NOT_FOUND("Có thể id không tồn tại", true),
     /**
      * Mã trạng thái thực tế lệch kỳ vọng nhưng CÙNG NHÓM nghĩa (401/403 cùng là từ chối xác thực, 400/422 cùng là từ chối
      * input, 200/201/204 cùng là thành công): API hành xử nhất quán, nhiều khả năng kỳ vọng của test chưa khớp cách API
      * chọn mã. Chỉ là nhãn gợi ý, kết quả vẫn FAILED. KHÔNG BAO GIỜ gắn khi API trả 5xx, khi test Security bỏ/sai token mà
      * API trả 2xx (bỏ qua xác thực), hoặc test kỳ vọng lỗi mà API chấp nhận (4xx → 2xx). Không tự tạo bug.
      */
-    EXPECTATION_MISMATCH("Nghi kỳ vọng lệch mã", false),
+    EXPECTATION_MISMATCH("Kỳ vọng có thể quá chặt", false),
     /** Chưa đủ dữ liệu để kết luận. */
     UNDETERMINED("Chưa đủ dữ liệu", false);
 

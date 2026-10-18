@@ -147,6 +147,12 @@ export function EndpointList({ projectId }: EndpointListProps) {
     )
   }
 
+  // "Chọn tất cả" chỉ xét endpoint chọn được (không đang sinh) - so với toàn bộ thì khi có endpoint đang sinh nhãn kẹt ở "Chọn tất cả".
+  const selectableEndpoints = endpoints.filter((e) => generationState[e.id]?.status !== "pending")
+  const allSelectableSelected = selectableEndpoints.length > 0 && selectableEndpoints.every((e) => selectedIds.has(e.id))
+  const pendingCount = endpoints.filter((e) => generationState[e.id]?.status === "pending").length
+  // Số endpoint đã tick mà đã có test case: sinh lại sẽ thay test case AI chưa khoá của chúng.
+  const regenerateCount = endpoints.filter((e) => selectedIds.has(e.id) && e.testCaseCount > 0).length
   const todayTokens = summary?.aiTokensToday ?? 0
   const dailyLimit = summary?.aiDailyTokenLimit ?? 0
   const nearOrOverQuota = dailyLimit > 0 && todayTokens >= dailyLimit
@@ -185,16 +191,10 @@ export function EndpointList({ projectId }: EndpointListProps) {
         </span>
         <button
           type="button"
-          className="text-xs text-primary underline-offset-4 hover:underline"
-          onClick={() =>
-            setSelectedIds(
-              selectedIds.size === endpoints.length
-                ? new Set()
-                : new Set(endpoints.filter((e) => generationState[e.id]?.status !== "pending").map((e) => e.id))
-            )
-          }
+          className="text-xs text-primary underline underline-offset-4"
+          onClick={() => setSelectedIds(allSelectableSelected ? new Set() : new Set(selectableEndpoints.map((e) => e.id)))}
         >
-          {selectedIds.size === endpoints.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+          {allSelectableSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
         </button>
       </div>
 
@@ -208,9 +208,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
             (endpoint.testCaseCount > 0
               ? { status: "success", count: endpoint.testCaseCount }
               : undefined)
-          const alreadyGenerated = state?.status === "success"
           const selected = selectedIds.has(endpoint.id)
-          const willRegenerate = alreadyGenerated && selected
           const isExpanded = expandedIds.has(endpoint.id)
           const coverageOfEndpoint = coverageByEndpointId.get(endpoint.id)
           const counts = coverageOfEndpoint ? coverageCounts(coverageOfEndpoint) : null
@@ -218,6 +216,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
             <li key={endpoint.id} className="rounded-lg border border-border p-3">
               <div className="flex items-center gap-3">
                 <Checkbox
+                  aria-label={`Chọn ${endpoint.method} ${endpoint.path}`}
                   checked={selected}
                   disabled={state?.status === "pending"}
                   onCheckedChange={(checked) => toggleSelect(endpoint.id, checked === true)}
@@ -251,7 +250,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
                           </span>{" "}
                           mục
                           {counts.missing > 0 && (
-                            <span className="text-amber-600 dark:text-amber-400"> · thiếu {counts.missing}</span>
+                            <span className="text-amber-700 dark:text-amber-400"> · thiếu {counts.missing}</span>
                           )}
                         </>
                       )}
@@ -264,13 +263,13 @@ export function EndpointList({ projectId }: EndpointListProps) {
                   <>
                     <Link
                       to={`/projects/${projectId}/test-cases?endpointId=${endpoint.id}`}
-                      className="shrink-0 text-xs text-primary underline-offset-4 hover:underline"
+                      className="shrink-0 text-xs text-primary underline underline-offset-4"
                     >
                       Xem test case
                     </Link>
                     <button
                       type="button"
-                      aria-label={isExpanded ? "Thu gọn chi tiết" : "Mở chi tiết"}
+                      aria-label={`${isExpanded ? "Thu gọn" : "Mở"} chi tiết ${endpoint.method} ${endpoint.path}`}
                       aria-expanded={isExpanded}
                       className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                       onClick={() => toggleExpanded(endpoint.id)}
@@ -280,11 +279,6 @@ export function EndpointList({ projectId }: EndpointListProps) {
                   </>
                 )}
               </div>
-              {willRegenerate && (
-                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                  Sinh lại sẽ thay các test case AI chưa khoá 🔒; test case bạn tự thêm được giữ nguyên.
-                </p>
-              )}
               {isExpanded && state?.status === "success" && state.count > 0 && (
                 <GenerationPlanReport
                   projectId={projectId}
@@ -298,8 +292,15 @@ export function EndpointList({ projectId }: EndpointListProps) {
         })}
       </ul>
 
-      {selectedIds.size > 0 && (
+      {(selectedIds.size > 0 || pendingCount > 0) && (
         <div className="sticky bottom-4 z-20 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-lg">
+          {pendingCount > 0 && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Đang sinh test case cho {pendingCount} endpoint, có thể mất vài chục giây...
+            </p>
+          )}
+          {selectedIds.size > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-sm font-medium">Đã chọn {selectedIds.size} endpoint</span>
             <div className="flex flex-wrap items-center gap-3">
@@ -328,7 +329,14 @@ export function EndpointList({ projectId }: EndpointListProps) {
               </Button>
             </div>
           </div>
-          {!hasAnyCategorySelected && (
+          )}
+          {selectedIds.size > 0 && regenerateCount > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              {regenerateCount} endpoint đã có test case: sinh lại sẽ thay các test case AI chưa khoá 🔒 của chúng, kèm kết quả
+              chạy và bug report của các test case đó. Test case bạn tự thêm và test case đã khoá được giữ nguyên.
+            </p>
+          )}
+          {selectedIds.size > 0 && !hasAnyCategorySelected && (
             <p className="text-xs text-destructive">
               Phải tích ít nhất 1 trong Positive/Negative/Boundary/Security để có thứ sinh ra.
             </p>

@@ -44,22 +44,16 @@ export function ProjectDetailPage() {
             <span className="mx-1 text-muted-foreground">·</span>
             <span className="text-muted-foreground">Xác thực:</span>
             <span className="font-medium">{TARGET_AUTH_LABEL[project.targetAuthType]}</span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="ml-auto"
-              onClick={() => setTargetAuthOpen(true)}
-            >
-              <KeyRound className="h-4 w-4" />
-              Sửa xác thực
-            </Button>
-          </div>
-
-          <div className="mt-4 flex justify-end">
-            <Button size="sm" onClick={() => setImportOpen(true)}>
-              <Upload className="h-4 w-4" />
-              Import OpenAPI
-            </Button>
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setTargetAuthOpen(true)}>
+                <KeyRound className="h-4 w-4" />
+                Sửa xác thực
+              </Button>
+              <Button size="sm" onClick={() => setImportOpen(true)}>
+                <Upload className="h-4 w-4" />
+                Import OpenAPI
+              </Button>
+            </div>
           </div>
 
           <EndpointList projectId={id!} />
