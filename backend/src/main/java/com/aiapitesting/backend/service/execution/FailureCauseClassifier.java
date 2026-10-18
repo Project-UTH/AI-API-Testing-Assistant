@@ -51,11 +51,30 @@ public class FailureCauseClassifier {
         }
     }
 
+    /** 1 assertion sai của kết quả hiện tại (chỉ có khi mã trạng thái đã đúng kỳ vọng - xem {@link FailureCause#ASSERTION_FAILED}). */
+    public record FailedAssertion(String jsonPath, String operator, String expectedValue, String actualValue) {
+    }
+
+    /**
+     * @param failedAssertions  các assertion sai của kết quả này (rỗng nếu không có)
+     * @param lastOtherVersion  lần chạy gần nhất của test case này ở PHIÊN BẢN KHÁC (test đã được sửa kể từ đó),
+     *                          null nếu chưa từng chạy ở phiên bản nào khác - bằng chứng "fail ngay sau khi sửa test"
+     */
     public record Input(
             TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
             String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
-            Instant authUpdatedAt, ExecutionContext context
+            Instant authUpdatedAt, ExecutionContext context,
+            List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion
     ) {
+        /** Dạng ngắn (không có thông tin assertion/phiên bản khác) - giữ cho các nơi chưa cần 2 thông tin này. */
+        public Input(
+                TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
+                String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
+                Instant authUpdatedAt, ExecutionContext context
+        ) {
+            this(status, expectedStatus, responseStatus, errorKind, durationMs, errorMessage, authOverride, history,
+                    currentBaseUrl, authUpdatedAt, context, List.of(), null);
+        }
     }
 
     public record Result(FailureCause cause, List<String> evidence) {
@@ -79,6 +98,14 @@ public class FailureCauseClassifier {
         // 2. Môi trường: lỗi kết nối/timeout/DNS, hoặc target báo quá tải/cổng lỗi.
         if (in.errorKind() != null) {
             return new Result(FailureCause.ENVIRONMENT, environmentEvidence(in, history, ctx));
+        }
+
+        // 2b. FAILED mà mã trạng thái ĐÃ ĐÚNG kỳ vọng thì chỉ có thể fail do assertion (runner chỉ chấm assertion
+        //     khi mã đúng) - nói thẳng fail đến từ nội dung phản hồi, không phải mã trạng thái. Đặt trước các luật
+        //     dựa vào mã (502/503, 401/403...) vì mã đó chính là điều test kỳ vọng nên không phải dấu hiệu lỗi.
+        if (in.status() == TestResultStatus.FAILED && in.expectedStatus() != null
+                && Objects.equals(in.expectedStatus(), in.responseStatus())) {
+            return new Result(FailureCause.ASSERTION_FAILED, assertionEvidence(in));
         }
         if (in.responseStatus() != null && ENVIRONMENT_STATUSES.contains(in.responseStatus())) {
             List<String> evidence = new ArrayList<>();
@@ -109,6 +136,47 @@ public class FailureCauseClassifier {
             }
         }
         return new Result(FailureCause.UNDETERMINED, undeterminedEvidence(in, verdicts));
+    }
+
+    // ---- Assertion + test vừa được sửa ----
+
+    /** Số assertion sai tối đa liệt kê trong bằng chứng - đủ để hiểu, không làm phình kết quả. */
+    private static final int MAX_LISTED_ASSERTIONS = 5;
+
+    private List<String> assertionEvidence(Input in) {
+        List<FailedAssertion> failed = in.failedAssertions() == null ? List.of() : in.failedAssertions();
+        List<String> evidence = new ArrayList<>();
+        evidence.add("Mã trạng thái đúng kỳ vọng (" + in.expectedStatus() + ")"
+                + (failed.isEmpty() ? " nên lần Fail này do assertion về nội dung phản hồi"
+                : " nhưng " + failed.size() + " assertion sai - lần Fail này do nội dung phản hồi, không phải do mã trạng thái"));
+        for (FailedAssertion a : failed.stream().limit(MAX_LISTED_ASSERTIONS).toList()) {
+            evidence.add("Assertion `" + a.jsonPath() + "` " + a.operator() + ("EXISTS".equals(a.operator())
+                    ? ": không tìm thấy trường này trong phản hồi"
+                    : ": kỳ vọng \"" + a.expectedValue() + "\", thực tế \"" + (a.actualValue() == null ? "—" : a.actualValue()) + "\""));
+        }
+        if (failed.size() > MAX_LISTED_ASSERTIONS) {
+            evidence.add("... và " + (failed.size() - MAX_LISTED_ASSERTIONS) + " assertion sai khác");
+        }
+        addEditedEvidence(evidence, in);
+        evidence.add("Có thể assertion viết chưa đúng (đường dẫn trường, giá trị kỳ vọng) hoặc API trả nội dung khác mong "
+                + "đợi - kiểm thử black-box không phân biệt được 2 khả năng này");
+        return evidence;
+    }
+
+    /**
+     * Test case đã được SỬA kể từ lần chạy gần nhất ở phiên bản cũ: lịch sử Pass/Fail cũ thuộc phiên bản khác nên không
+     * được đếm, nhưng việc "vừa sửa test rồi fail" là manh mối mạnh nhất - nói thẳng thay vì chỉ "mới chạy 1 lần".
+     */
+    private void addEditedEvidence(List<String> evidence, Input in) {
+        HistoryPoint previous = in.lastOtherVersion();
+        if (previous == null) {
+            return;
+        }
+        String result = previous.status() == TestResultStatus.PASSED ? "Pass"
+                : previous.status() == TestResultStatus.FAILED ? "Fail(" + previous.responseStatus() + ")"
+                : previous.status().name();
+        evidence.add("Test case đã được sửa kể từ lần chạy gần nhất ở phiên bản trước" + (previous.at() == null ? "" : " (lúc " + previous.at() + ")")
+                + ", kết quả lúc đó là " + result + " - lần Fail này có thể do chính thay đổi vừa làm");
     }
 
     // ---- Môi trường ----
@@ -258,6 +326,7 @@ public class FailureCauseClassifier {
         if (verdicts.stream().anyMatch(h -> h.status() == TestResultStatus.PASSED)) {
             evidence.add("Test này từng Pass ở cùng phiên bản - nên chạy lại để xác nhận lần Fail này");
         }
+        addEditedEvidence(evidence, in);
         return evidence;
     }
 

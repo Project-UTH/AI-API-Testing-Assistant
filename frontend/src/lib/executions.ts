@@ -20,6 +20,7 @@ export type FailureCauseCode =
   | "TEST_SETUP"
   | "ENVIRONMENT"
   | "AUTH_CONFIG"
+  | "ASSERTION_FAILED"
   | "DATA_STATE"
   | "STABLE_FAILURE"
   | "UNDETERMINED"

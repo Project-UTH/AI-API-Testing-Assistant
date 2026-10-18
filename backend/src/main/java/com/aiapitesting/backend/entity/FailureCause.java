@@ -13,6 +13,12 @@ public enum FailureCause {
     ENVIRONMENT("Nghi lỗi môi trường", true),
     /** Token/xác thực của project: nhận 401/403 trong khi kỳ vọng khác và dùng token mặc định. */
     AUTH_CONFIG("Nghi token/xác thực", true),
+    /**
+     * Mã trạng thái ĐÚNG kỳ vọng nhưng assertion về nội dung phản hồi sai - cho biết rõ lần fail đến từ nội dung
+     * phản hồi chứ không phải mã trạng thái. Không thuộc nhóm "không phải do API": có thể assertion viết chưa đúng
+     * (jsonPath, giá trị kỳ vọng) hoặc API trả nội dung khác mong đợi - black-box không phân biệt được.
+     */
+    ASSERTION_FAILED("Assertion sai", false),
     /** Dữ liệu/trạng thái hệ thống đích đổi: từng Pass rồi Fail liên tiếp, không xen kẽ. */
     DATA_STATE("Nghi dữ liệu/trạng thái đổi", false),
     /** Fail lặp lại cùng 1 kết quả nhiều lần, chưa từng Pass - có thể là bug thật hoặc kỳ vọng test sai. */

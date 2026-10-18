@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.service.execution;
 
+import com.aiapitesting.backend.dto.response.AssertionResultResponse;
 import com.aiapitesting.backend.entity.ErrorKind;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestExecution;
@@ -61,12 +62,14 @@ public class ExecutionFailureAnalyzer {
         FailureCauseClassifier.ExecutionContext context = buildContext(results);
 
         for (TestResult result : failed) {
+            List<TestResultRepository.HistoryRow> rows = historyByTestCaseId.getOrDefault(result.getTestCase().getId(), List.of());
             FailureCauseClassifier.Input input = new FailureCauseClassifier.Input(
                     result.getStatus(), result.getTestCase().getExpectedStatus(), result.getResponseStatus(),
                     result.getErrorKind(), result.getDurationMs(), result.getErrorMessage(),
                     result.getTestCase().getAuthOverride(),
-                    historyOf(result, historyByTestCaseId.getOrDefault(result.getTestCase().getId(), List.of())),
-                    execution.getTargetBaseUrlSnapshot(), execution.getTargetAuthUpdatedAtSnapshot(), context);
+                    historyOf(result, rows),
+                    execution.getTargetBaseUrlSnapshot(), execution.getTargetAuthUpdatedAtSnapshot(), context,
+                    failedAssertionsOf(result), lastOtherVersionOf(result, rows));
             FailureCauseClassifier.Result classified = failureCauseClassifier.classify(input);
             if (classified != null) {
                 result.setFailureCause(classified.cause());
@@ -89,6 +92,44 @@ public class ExecutionFailureAnalyzer {
             }
         }
         return history;
+    }
+
+    /**
+     * Lần chạy gần nhất của test case này ở PHIÊN BẢN KHÁC (fingerprint khác) - tức test đã được sửa kể từ đó. Dòng lịch
+     * sử sắp theo thời gian tăng dần nên lấy phần tử cuối thoả điều kiện. Null nếu kết quả hiện tại không có fingerprint
+     * (không biết phiên bản) hoặc chưa từng chạy ở phiên bản nào khác.
+     */
+    private FailureCauseClassifier.HistoryPoint lastOtherVersionOf(TestResult result, List<TestResultRepository.HistoryRow> rows) {
+        if (result.getTestCaseFingerprint() == null) {
+            return null;
+        }
+        TestResultRepository.HistoryRow last = null;
+        for (TestResultRepository.HistoryRow row : rows) {
+            if (!Objects.equals(row.getFingerprint(), result.getTestCaseFingerprint())) {
+                last = row;
+            }
+        }
+        return last == null ? null : new FailureCauseClassifier.HistoryPoint(
+                last.getStatus(), last.getResponseStatus(), last.getCreatedAt(), last.getBaseUrl());
+    }
+
+    /** Các assertion sai của kết quả (đọc từ JSON đã lưu); JSON thiếu/hỏng thì rỗng - không được làm hỏng bước phân tích. */
+    private List<FailureCauseClassifier.FailedAssertion> failedAssertionsOf(TestResult result) {
+        if (result.getAssertionResultsJson() == null || result.getAssertionResultsJson().isBlank()) {
+            return List.of();
+        }
+        try {
+            List<AssertionResultResponse> all = objectMapper.readValue(result.getAssertionResultsJson(),
+                    new com.fasterxml.jackson.core.type.TypeReference<List<AssertionResultResponse>>() {
+                    });
+            return all.stream()
+                    .filter(a -> !a.passed())
+                    .map(a -> new FailureCauseClassifier.FailedAssertion(
+                            a.jsonPath(), a.operator() == null ? null : a.operator().name(), a.expectedValue(), a.actualValue()))
+                    .toList();
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     private FailureCauseClassifier.ExecutionContext buildContext(List<TestResult> results) {

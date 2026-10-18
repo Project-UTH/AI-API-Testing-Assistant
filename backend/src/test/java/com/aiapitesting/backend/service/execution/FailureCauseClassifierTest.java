@@ -293,6 +293,108 @@ class FailureCauseClassifierTest {
         assertThat(classifier.classify(failed(200, 500, null)).cause()).isEqualTo(FailureCause.UNDETERMINED);
     }
 
+    // ---- ASSERTION_FAILED + test vừa được sửa ----
+
+    private Input withAssertions(Integer expected, Integer actual, List<FailureCauseClassifier.FailedAssertion> failedAssertions,
+                                 List<HistoryPoint> history, HistoryPoint lastOtherVersion) {
+        return new Input(TestResultStatus.FAILED, expected, actual, null, 194L, null, TestCaseAuthOverride.DEFAULT, history,
+                "http://target", null, ExecutionContext.none(), failedAssertions, lastOtherVersion);
+    }
+
+    private static FailureCauseClassifier.FailedAssertion failedAssertion(String path, String op, String expected, String actual) {
+        return new FailureCauseClassifier.FailedAssertion(path, op, expected, actual);
+    }
+
+    /** Đúng ca người dùng gặp: mã trạng thái khớp (404 → 404) nhưng assertion sai - phải nói thẳng fail do assertion. */
+    @Test
+    void statusMatchesButAssertionFails_isAssertionFailedNotUndetermined() {
+        Input in = withAssertions(404, 404, List.of(failedAssertion("1", "EQUALS", "1", null)), history(fail(1, 404)), null);
+
+        Result result = classifier.classify(in);
+
+        assertThat(result.cause()).isEqualTo(FailureCause.ASSERTION_FAILED);
+        assertThat(result.cause().isNotApiFault()).as("không loại khỏi số liệu API").isFalse();
+        assertThat(result.evidence().get(0)).contains("Mã trạng thái đúng kỳ vọng (404)").contains("1 assertion sai")
+                .contains("không phải do mã trạng thái");
+        assertThat(result.evidence()).anyMatch(e -> e.contains("`1` EQUALS") && e.contains("kỳ vọng \"1\"") && e.contains("thực tế \"—\""));
+        assertThat(result.evidence()).anyMatch(e -> e.contains("black-box không phân biệt"));
+    }
+
+    @Test
+    void existsAssertion_isDescribedAsMissingFieldNotAsValueMismatch() {
+        Input in = withAssertions(200, 200, List.of(failedAssertion("data.id", "EXISTS", null, null)), history(fail(1, 200)), null);
+
+        assertThat(classifier.classify(in).evidence()).anyMatch(e -> e.contains("`data.id` EXISTS: không tìm thấy trường này"));
+    }
+
+    @Test
+    void manyFailedAssertions_listedUpToFiveThenSummarised() {
+        List<FailureCauseClassifier.FailedAssertion> eight = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            eight.add(failedAssertion("f" + i, "EQUALS", "a", "b"));
+        }
+
+        Result result = classifier.classify(withAssertions(200, 200, eight, history(fail(1, 200)), null));
+
+        assertThat(result.evidence()).filteredOn(e -> e.startsWith("Assertion `")).hasSize(5);
+        assertThat(result.evidence()).anyMatch(e -> e.contains("và 3 assertion sai khác"));
+    }
+
+    @Test
+    void failedWithMatchingStatusButNoAssertionDetail_stillAssertionFailed() {
+        // JSON assertion hỏng/thiếu: vẫn biết chắc fail do assertion (runner chỉ chấm assertion khi mã đúng).
+        Result result = classifier.classify(withAssertions(200, 200, List.of(), history(fail(1, 200)), null));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.ASSERTION_FAILED);
+        assertThat(result.evidence().get(0)).contains("do assertion về nội dung phản hồi");
+    }
+
+    /** Mã 503 chính là điều test KỲ VỌNG: không phải dấu hiệu lỗi môi trường - đi theo nhánh assertion. */
+    @Test
+    void expectedGatewayStatusThatMatches_isNotEnvironment() {
+        Input in = withAssertions(503, 503, List.of(failedAssertion("msg", "CONTAINS", "x", "y")), history(fail(1, 503)), null);
+
+        assertThat(classifier.classify(in).cause()).isEqualTo(FailureCause.ASSERTION_FAILED);
+    }
+
+    @Test
+    void statusMismatch_isNeverAssertionFailed() {
+        // Mã sai kỳ vọng thì nguyên nhân thuộc nhóm theo mã - dù kèm assertion nào.
+        Input in = withAssertions(200, 404, List.of(failedAssertion("x", "EQUALS", "1", "2")), history(fail(1, 404)), null);
+
+        assertThat(classifier.classify(in).cause()).isNotEqualTo(FailureCause.ASSERTION_FAILED);
+    }
+
+    @Test
+    void assertionFailureAfterEditingTheTest_saysTheTestWasEditedAndWhatHappenedBefore() {
+        HistoryPoint before = new HistoryPoint(TestResultStatus.PASSED, 404, T0, "http://target");
+        Input in = withAssertions(404, 404, List.of(failedAssertion("1", "EQUALS", "1", null)), history(fail(5, 404)), before);
+
+        Result result = classifier.classify(in);
+
+        assertThat(result.evidence()).anyMatch(e -> e.contains("đã được sửa kể từ lần chạy gần nhất ở phiên bản trước")
+                && e.contains("kết quả lúc đó là Pass") && e.contains("có thể do chính thay đổi vừa làm"));
+    }
+
+    @Test
+    void undeterminedAfterEditingTheTest_stillSaysTheTestWasEdited() {
+        HistoryPoint before = new HistoryPoint(TestResultStatus.FAILED, 500, T0, "http://target");
+        Input in = withAssertions(200, 500, List.of(), history(fail(5, 500)), before);
+
+        Result result = classifier.classify(in);
+
+        assertThat(result.cause()).isEqualTo(FailureCause.UNDETERMINED);
+        assertThat(result.evidence()).anyMatch(e -> e.contains("1 lần Fail chưa đủ"))
+                .anyMatch(e -> e.contains("đã được sửa") && e.contains("Fail(500)"));
+    }
+
+    @Test
+    void neverRunAtAnotherVersion_noEditedEvidence() {
+        Result result = classifier.classify(withAssertions(200, 500, List.of(), history(fail(1, 500)), null));
+
+        assertThat(result.evidence()).noneMatch(e -> e.contains("đã được sửa"));
+    }
+
     // ---- Thuộc tính của nhóm ----
 
     @Test

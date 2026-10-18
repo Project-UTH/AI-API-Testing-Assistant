@@ -192,6 +192,63 @@ class ExecutionFailureAnalyzerTest {
         assertThat(down.getFailureEvidence()).contains("http://target → http://new-host");
     }
 
+    /** Đúng ca người dùng gặp: đã Pass, thêm assertion (đổi phiên bản), chạy lại fail do assertion. */
+    @Test
+    void assertionAddedAfterAPass_isAssertionFailedAndMentionsTheEarlierPass() {
+        TestResult current = result(TestResultStatus.FAILED, 404, 404, "fp-with-assertion");
+        current.setAssertionResultsJson("[{\"jsonPath\":\"1\",\"operator\":\"EQUALS\",\"expectedValue\":\"1\","
+                + "\"actualValue\":null,\"passed\":false},"
+                + "{\"jsonPath\":\"code\",\"operator\":\"EXISTS\",\"expectedValue\":null,\"actualValue\":\"X\",\"passed\":true}]");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(current, "fp-no-assertion", TestResultStatus.PASSED, 404, 0),
+                row(current, "fp-with-assertion", TestResultStatus.FAILED, 404, 5)));
+
+        analyzer.analyze(execution, List.of(current));
+
+        assertThat(current.getFailureCause()).isEqualTo(FailureCause.ASSERTION_FAILED);
+        // Chỉ assertion SAI được liệt kê (assertion `code` đã đúng thì không).
+        assertThat(current.getFailureEvidence()).contains("1 assertion sai").contains("`1` EQUALS")
+                .doesNotContain("`code`")
+                .contains("đã được sửa kể từ lần chạy gần nhất ở phiên bản trước").contains("kết quả lúc đó là Pass");
+    }
+
+    @Test
+    void brokenAssertionJson_doesNotBreakAnalysis() {
+        TestResult current = result(TestResultStatus.FAILED, 200, 200, "fp");
+        current.setAssertionResultsJson("{ khong phai json");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(current, "fp", TestResultStatus.FAILED, 200, 1)));
+
+        analyzer.analyze(execution, List.of(current));
+
+        assertThat(current.getFailureCause()).isEqualTo(FailureCause.ASSERTION_FAILED);
+    }
+
+    @Test
+    void lastOtherVersion_isTheMostRecentRunOfADifferentFingerprint_notTheOldestOne() {
+        TestResult current = result(TestResultStatus.FAILED, 200, 500, "fp-v3");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(current, "fp-v1", TestResultStatus.PASSED, 200, 0),
+                row(current, "fp-v2", TestResultStatus.FAILED, 500, 1),
+                row(current, "fp-v3", TestResultStatus.FAILED, 500, 2)));
+
+        analyzer.analyze(execution, List.of(current));
+
+        // Phiên bản liền trước (v2) mới là điều liên quan - kết quả của nó là Fail(500), không phải Pass của v1.
+        assertThat(current.getFailureEvidence()).contains("kết quả lúc đó là Fail(500)").doesNotContain("là Pass");
+    }
+
+    @Test
+    void resultWithoutFingerprint_hasNoEditedEvidence() {
+        TestResult legacy = result(TestResultStatus.FAILED, 200, 500, null);
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(legacy, "fp-old", TestResultStatus.PASSED, 200, 0)));
+
+        analyzer.analyze(execution, List.of(legacy));
+
+        assertThat(legacy.getFailureEvidence()).doesNotContain("đã được sửa");
+    }
+
     @Test
     void analysisFailureNeverBreaksTheExecution_resultsKeepTheirData() {
         TestResult failed = result(TestResultStatus.FAILED, 200, 500, "fp");
