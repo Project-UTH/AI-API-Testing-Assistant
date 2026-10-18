@@ -22,6 +22,10 @@ public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
     // Tổng bug report của 1 user (không lọc status) - dùng ở danh sách/chi tiết user Admin.
     long countByProjectOwner(User owner);
 
+    long countByProject(Project project);
+
+    long countByProjectAndStatusNot(Project project, BugStatus status);
+
     long countByStatusNot(BugStatus status);
 
     @Query("SELECT b.project.owner.id AS ownerId, COUNT(b) AS count FROM BugReport b "

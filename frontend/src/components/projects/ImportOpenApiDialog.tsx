@@ -1,7 +1,9 @@
-import { useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { DataLossWarning, hasDataToLose } from "@/components/shared/DataLossWarning"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -14,7 +16,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
-import { importOpenApi, type TargetAuthType } from "@/lib/endpoints"
+import { getImportImpact, importOpenApi, type TargetAuthType } from "@/lib/endpoints"
 
 interface ImportOpenApiDialogProps {
   open: boolean
@@ -23,6 +25,20 @@ interface ImportOpenApiDialogProps {
 }
 
 type ImportMode = "url" | "file"
+
+// Các màn hình hiển thị dữ liệu mà import sẽ xoá - phải tải lại, không được giữ số liệu cũ trong cache.
+const INVALIDATE_ON_IMPORT = [
+  "test-cases",
+  "bug-reports",
+  "bug-report-run-history",
+  "bug-report-draft",
+  "executions",
+  "history",
+  "history-feed",
+  "generation-plan",
+  "dashboard-trend",
+  "dashboard-recent-activity",
+]
 
 const selectClassName =
   "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
@@ -39,8 +55,27 @@ export function ImportOpenApiDialog({
   const [authType, setAuthType] = useState<TargetAuthType>("NONE")
   const [authValue, setAuthValue] = useState("")
   const [targetBaseUrl, setTargetBaseUrl] = useState("")
+  const [confirmedDataLoss, setConfirmedDataLoss] = useState(false)
+
+  // Số liệu dữ liệu sẽ bị xoá - tải mỗi lần mở dialog (không dùng cache cũ). Lỗi tải = "chưa biết", KHÔNG được coi
+  // là "không có dữ liệu" (fail-open): khi đó vẫn bắt xác nhận với cảnh báo chung.
+  const impactQuery = useQuery({
+    queryKey: ["import-impact", projectId],
+    queryFn: () => getImportImpact(projectId),
+    enabled: open,
+    gcTime: 0,
+    staleTime: 0,
+  })
+  // Đóng dialog từ bên ngoài (không qua onOpenChange) vẫn phải bỏ tick xác nhận, lần mở sau xác nhận lại.
+  useEffect(() => {
+    if (!open) setConfirmedDataLoss(false)
+  }, [open])
+  const impact = impactQuery.data
+  const impactUnknown = impactQuery.isError
+  const needsConfirm = impactUnknown || (impact !== undefined && hasDataToLose(impact))
 
   function resetForm() {
+    setConfirmedDataLoss(false)
     setMode("url")
     setUrl("")
     setFile(null)
@@ -60,6 +95,11 @@ export function ImportOpenApiDialog({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
+      // Import xoá cả test case/kết quả/bug của project - các màn hình đó không được giữ số liệu cũ trong cache.
+      queryClient.invalidateQueries({ queryKey: ["import-impact", projectId] })
+      queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] })
+      INVALIDATE_ON_IMPORT.forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }))
       // Import cũng cập nhật targetBaseUrl/targetAuthType của chính Project (suy ra từ servers[]
       // trong OpenAPI, hoặc auth vừa nhập) - thiếu dòng này khiến khối "Target Base URL"/"Xác thực"
       // ở đầu trang hiện giá trị CŨ (rỗng lúc mới tạo project) cho tới khi người dùng tự tải lại
@@ -75,7 +115,9 @@ export function ImportOpenApiDialog({
     mutation.mutate()
   }
 
-  const canSubmit = mode === "url" ? url.trim().length > 0 : file !== null
+  const formFilled = mode === "url" ? url.trim().length > 0 : file !== null
+  const impactReady = !impactQuery.isPending
+  const canSubmit = formFilled && impactReady && (!needsConfirm || confirmedDataLoss)
 
   return (
     <Dialog
@@ -90,10 +132,22 @@ export function ImportOpenApiDialog({
           <DialogHeader>
             <DialogTitle>Import OpenAPI</DialogTitle>
             <DialogDescription>
-              Nạp định nghĩa API từ URL hoặc file (OpenAPI/Swagger). Endpoint cũ của
-              project sẽ được thay thế bằng danh sách mới.
+              Nạp định nghĩa API từ URL hoặc file (OpenAPI/Swagger).
             </DialogDescription>
           </DialogHeader>
+
+          {impactQuery.isPending && (
+            <p className="text-sm text-muted-foreground">Đang kiểm tra dữ liệu hiện có của project...</p>
+          )}
+          {impactUnknown && (
+            <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              Không kiểm tra được dữ liệu hiện có của project. Import sẽ XOÁ toàn bộ test case, kết quả chạy và bug
+              report của project này (nếu có) và không khôi phục được.
+            </div>
+          )}
+          {impact !== undefined && hasDataToLose(impact) && (
+            <DataLossWarning impact={impact} title="Import sẽ xoá dữ liệu hiện có của project này" />
+          )}
 
           <div className="flex gap-2">
             <Button
@@ -197,9 +251,24 @@ export function ImportOpenApiDialog({
             </p>
           )}
 
-          <DialogFooter>
-            <Button type="submit" disabled={!canSubmit || mutation.isPending}>
-              {mutation.isPending ? "Đang import..." : "Import"}
+          <DialogFooter className="sticky -bottom-4 z-10 bg-muted sm:flex-col sm:items-stretch sm:justify-start">
+            {needsConfirm && (
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={confirmedDataLoss}
+                  onCheckedChange={(checked) => setConfirmedDataLoss(checked === true)}
+                  className="mt-0.5"
+                />
+                <span>Tôi hiểu các dữ liệu nêu ở trên sẽ bị xoá vĩnh viễn</span>
+              </label>
+            )}
+            <Button
+              type="submit"
+              variant={needsConfirm ? "destructive" : "default"}
+              className="sm:self-end"
+              disabled={!canSubmit || mutation.isPending}
+            >
+              {mutation.isPending ? "Đang import..." : needsConfirm ? "Import và xoá dữ liệu cũ" : "Import"}
             </Button>
           </DialogFooter>
         </form>

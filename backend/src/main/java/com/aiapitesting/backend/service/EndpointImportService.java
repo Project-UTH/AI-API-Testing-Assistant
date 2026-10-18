@@ -1,10 +1,15 @@
 package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.response.EndpointResponse;
+import com.aiapitesting.backend.dto.response.ImportImpactResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
+import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
+import com.aiapitesting.backend.entity.TestCaseSource;
+import com.aiapitesting.backend.exception.ExecutionInProgressException;
 import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.BugReportEventRepository;
 import com.aiapitesting.backend.repository.BugReportRepository;
@@ -36,6 +41,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +90,22 @@ public class EndpointImportService {
         return doImport(projectId, content, authType, authValue, targetBaseUrl);
     }
 
+    /** Số liệu của dữ liệu sẽ bị xoá nếu import lại - giao diện dùng để cảnh báo trước khi xác nhận. */
+    @Transactional(readOnly = true)
+    public ImportImpactResponse getImportImpact(UUID projectId) {
+        Project project = projectService.getOwnedProject(projectId);
+        return new ImportImpactResponse(
+                endpointRepository.countByProject(project),
+                testCaseRepository.countByEndpointProject(project),
+                testCaseRepository.countByEndpointProjectAndSource(project, TestCaseSource.MANUAL),
+                testCaseRepository.countByEndpointProjectAndLockedTrue(project),
+                testExecutionRepository.countByProject(project),
+                testResultRepository.countByTestCaseEndpointProject(project),
+                bugReportRepository.countByProject(project),
+                bugReportRepository.countByProjectAndStatusNot(project, BugStatus.CLOSED),
+                testGenerationEventRepository.countByEndpointProject(project));
+    }
+
     public PageResponse<EndpointResponse> list(UUID projectId, Pageable pageable) {
         Project project = projectService.getOwnedProject(projectId);
         Page<Endpoint> page = endpointRepository.findAllByProject(project, pageable);
@@ -102,6 +124,10 @@ public class EndpointImportService {
             UUID projectId, String content, TargetAuthType authType, String authValue, String targetBaseUrl
     ) {
         Project project = projectService.getOwnedProject(projectId);
+        // Import xoá toàn bộ execution/kết quả của project: đang có lần chạy chưa xong thì để lại bản ghi mồ côi/lỗi FK.
+        if (testExecutionRepository.existsByProjectAndStatusIn(project, EnumSet.of(ExecutionStatus.PENDING, ExecutionStatus.RUNNING))) {
+            throw new ExecutionInProgressException("Project đang có lần chạy test chưa xong, vui lòng đợi chạy xong rồi import lại");
+        }
         applyAuthConfig(project, authType, authValue);
 
         ParseOptions options = new ParseOptions();

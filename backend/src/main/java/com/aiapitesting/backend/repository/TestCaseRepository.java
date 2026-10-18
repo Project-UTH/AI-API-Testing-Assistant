@@ -17,6 +17,13 @@ import java.util.UUID;
 public interface TestCaseRepository extends JpaRepository<TestCase, UUID> {
     long countByEndpointProjectOwner(User owner);
 
+    // Đếm dữ liệu sẽ mất khi import lại OpenAPI (import-impact) - theo project.
+    long countByEndpointProject(Project project);
+
+    long countByEndpointProjectAndSource(Project project, TestCaseSource source);
+
+    long countByEndpointProjectAndLockedTrue(Project project);
+
     // JOIN FETCH endpoint - tránh LazyInitializationException sau khi session đóng, và N+1 khi map danh sách.
     @Query("SELECT tc FROM TestCase tc JOIN FETCH tc.endpoint WHERE tc.endpoint.project = :project")
     List<TestCase> findAllByEndpointProject(@Param("project") Project project);

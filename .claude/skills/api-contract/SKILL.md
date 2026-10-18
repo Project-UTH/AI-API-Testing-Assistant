@@ -56,6 +56,7 @@ Ví dụ — tạo project thành công:
 | `TEST_CASE_NOT_FOUND` | 404 | Không tìm thấy test case |
 | `TEST_EXECUTION_NOT_FOUND` | 404 | Không tìm thấy lần thực thi test |
 | `TEST_CASE_HAS_DEPENDENTS` | 409 | Không xoá/sinh lại test case vì đang có test case khác phụ thuộc (Test Data Chaining) |
+| `EXECUTION_IN_PROGRESS` | 409 | Project đang có lần chạy test chưa xong - không import lại OpenAPI lúc này (`POST .../endpoints/import`) |
 | `BUG_REPORT_NOT_FOUND` | 404 | Không tìm thấy bug report |
 | `TEST_RESULT_NOT_FOUND` | 404 | Không tìm thấy lần chạy (TestResult) |
 | `SWAGGER_PARSE_FAILED` | 422 | Không parse được file/URL OpenAPI |
@@ -157,6 +158,12 @@ Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI u
 > **Đã bỏ điểm Risk (2026-10-18):** `riskScore`/`riskLevel`/`riskReasons` và `overallRiskWeightedCoveragePercent` không còn trong response (Risk chỉ để hiển thị, trọng số chưa kiểm chứng) - frontend không được đọc các field này.
 
 `ProjectCoverageResponse { projectId, overallCoveragePercent, overallExecutedPercent, endpoints }` — `overallExecutedPercent` (15j) cùng công thức `executedPercent` trên toàn project.
+
+## 4e-bis. Import lại OpenAPI xoá dữ liệu (cảnh báo trước khi xoá)
+
+`POST /api/v1/projects/{projectId}/endpoints/import` **xoá toàn bộ** dữ liệu của project (endpoint, test case - kể cả đã khoá và thêm tay -, assertion, dependency, execution, kết quả, bug report, lịch sử bug, lịch sử sinh test) rồi tạo lại endpoint từ spec; không hoàn tác được. `409 EXECUTION_IN_PROGRESS` khi project còn lần chạy `PENDING`/`RUNNING`.
+
+`GET /api/v1/projects/{projectId}/endpoints/import-impact` (chỉ đọc) trả `ApiResponse<ImportImpactResponse { endpointCount, testCaseCount, manualTestCaseCount, lockedTestCaseCount, executionCount, testResultCount, bugReportCount, openBugReportCount, generationEventCount }>` - số lượng dữ liệu SẼ BỊ XOÁ, để frontend cảnh báo bằng số cụ thể trước khi người dùng xác nhận. **Frontend phải coi lỗi tải số liệu này là "chưa biết" (chặn/cảnh báo chung), không được mặc định "không có dữ liệu".**
 
 ## 4f. Rationale + Reliability (Tier 1/2/3) trên TestCase (Module 15a/15b/15d/15e)
 

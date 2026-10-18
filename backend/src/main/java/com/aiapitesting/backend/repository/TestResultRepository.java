@@ -37,6 +37,8 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
     // Tổng lượt chạy của owner - mẫu số tỷ lệ pass (mỗi lần chạy tính riêng, kể cả chạy lại).
     long countByTestCaseEndpointProjectOwner(User owner);
 
+    long countByTestCaseEndpointProject(Project project);
+
     long countByTestCaseEndpointProjectOwnerAndStatus(User owner, TestResultStatus status);
 
     // Tổng lượt chạy toàn hệ thống (mọi owner) - dùng cho Dashboard Admin.

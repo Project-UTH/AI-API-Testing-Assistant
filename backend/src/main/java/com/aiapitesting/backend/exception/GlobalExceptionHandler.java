@@ -128,6 +128,12 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("TEST_CASE_HAS_DEPENDENTS", ex.getMessage()));
     }
 
+    @ExceptionHandler(ExecutionInProgressException.class)
+    public ResponseEntity<ApiErrorResponse> handleExecutionInProgress(ExecutionInProgressException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of("EXECUTION_IN_PROGRESS", ex.getMessage()));
+    }
+
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

@@ -35,6 +35,8 @@ public interface TestGenerationEventRepository extends JpaRepository<TestGenerat
 
     void deleteAllByEndpointProject(Project project);
 
+    long countByEndpointProject(Project project);
+
     // Tổng token đã dùng của 1 owner trong [from, to) - gọi trước khi gọi AI để chặn sớm.
     @Query("SELECT COALESCE(SUM(e.totalTokens), 0) FROM TestGenerationEvent e "
             + "WHERE e.endpoint.project.owner = :owner AND e.createdAt >= :from AND e.createdAt < :to")

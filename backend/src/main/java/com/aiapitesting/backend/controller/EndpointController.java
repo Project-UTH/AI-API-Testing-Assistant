@@ -2,6 +2,7 @@ package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.EndpointResponse;
+import com.aiapitesting.backend.dto.response.ImportImpactResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.InvalidRequestException;
@@ -29,6 +30,11 @@ import java.util.UUID;
 public class EndpointController {
 
     private final EndpointImportService endpointImportService;
+
+    @GetMapping("/import-impact")
+    public ResponseEntity<ApiResponse<ImportImpactResponse>> getImportImpact(@PathVariable UUID projectId) {
+        return ResponseEntity.ok(ApiResponse.of(endpointImportService.getImportImpact(projectId)));
+    }
 
     @PostMapping("/import")
     public ResponseEntity<ApiResponse<List<EndpointResponse>>> importOpenApi(

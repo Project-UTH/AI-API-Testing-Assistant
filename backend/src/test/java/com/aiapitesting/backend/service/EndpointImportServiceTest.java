@@ -1,6 +1,11 @@
 package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.response.EndpointResponse;
+import com.aiapitesting.backend.dto.response.ImportImpactResponse;
+import com.aiapitesting.backend.entity.BugStatus;
+import com.aiapitesting.backend.entity.ExecutionStatus;
+import com.aiapitesting.backend.entity.TestCaseSource;
+import com.aiapitesting.backend.exception.ExecutionInProgressException;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
@@ -122,6 +127,38 @@ class EndpointImportServiceTest {
     void setUp() {
         projectId = UUID.randomUUID();
         project = Project.builder().id(projectId).build();
+    }
+
+    @Test
+    void importFromFile_projectHasRunningExecution_isRejectedAndDeletesNothing() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(testExecutionRepository.existsByProjectAndStatusIn(eq(project), any())).thenReturn(true);
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "spec.json", "application/json", SAMPLE_OPENAPI.getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> endpointImportService.importFromFile(projectId, file, null, null, null))
+                .isInstanceOf(ExecutionInProgressException.class);
+
+        verify(endpointRepository, never()).deleteAllByProject(any());
+        verify(testCaseRepository, never()).deleteAllByEndpointProject(any());
+    }
+
+    @Test
+    void getImportImpact_mapsRepositoryCountsOfTheProject() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.countByProject(project)).thenReturn(7L);
+        when(testCaseRepository.countByEndpointProject(project)).thenReturn(74L);
+        when(testCaseRepository.countByEndpointProjectAndSource(project, TestCaseSource.MANUAL)).thenReturn(3L);
+        when(testCaseRepository.countByEndpointProjectAndLockedTrue(project)).thenReturn(2L);
+        when(testExecutionRepository.countByProject(project)).thenReturn(23L);
+        when(testResultRepository.countByTestCaseEndpointProject(project)).thenReturn(90L);
+        when(bugReportRepository.countByProject(project)).thenReturn(5L);
+        when(bugReportRepository.countByProjectAndStatusNot(project, BugStatus.CLOSED)).thenReturn(4L);
+        when(testGenerationEventRepository.countByEndpointProject(project)).thenReturn(9L);
+
+        ImportImpactResponse impact = endpointImportService.getImportImpact(projectId);
+
+        assertThat(impact).isEqualTo(new ImportImpactResponse(7, 74, 3, 2, 23, 90, 5, 4, 9));
     }
 
     @Test

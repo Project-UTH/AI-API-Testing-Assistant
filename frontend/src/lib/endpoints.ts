@@ -20,6 +20,23 @@ export interface ImportOpenApiInput {
   targetBaseUrl?: string
 }
 
+/** Dữ liệu của project sẽ bị xoá khi import lại OpenAPI (GET .../endpoints/import-impact). */
+export interface ImportImpact {
+  endpointCount: number
+  testCaseCount: number
+  manualTestCaseCount: number
+  lockedTestCaseCount: number
+  executionCount: number
+  testResultCount: number
+  bugReportCount: number
+  openBugReportCount: number
+  generationEventCount: number
+}
+
+export function getImportImpact(projectId: string): Promise<ImportImpact> {
+  return apiFetch<ImportImpact>(`/projects/${projectId}/endpoints/import-impact`)
+}
+
 export function listEndpoints(projectId: string): Promise<PagedResult<Endpoint>> {
   return apiFetchPaged<Endpoint>(`/projects/${projectId}/endpoints?page=0&size=100&sort=createdAt,asc`)
 }
