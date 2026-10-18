@@ -576,6 +576,41 @@ class EndpointCoverageServiceTest {
                 .anyMatch(r -> r.contains("Đã loại 2 lượt fail"));
     }
 
+    // ---- Module 16 gđ2 - kết quả của test không ổn định không phải bằng chứng chắc chắn ----
+
+    @Test
+    void getEndpointCoverage_latestPassOfAnUnstableTest_isNoVerdictNotPassed() {
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        stubProject(List.of(endpoint), List.of(positive), List.of());
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.PASSED, null, true)));
+
+        assertThat(dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null).runStatus()).isEqualTo(CoverageRunStatus.NO_VERDICT);
+    }
+
+    @Test
+    void getEndpointCoverage_latestFailOfAnUnstableTest_isNoVerdictNotFailed() {
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        stubProject(List.of(endpoint), List.of(positive), List.of());
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.FAILED, FailureCause.FLAKY, true)));
+
+        assertThat(dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null).runStatus()).isEqualTo(CoverageRunStatus.NO_VERDICT);
+    }
+
+    @Test
+    void getEndpointCoverage_latestPassOfAStableTest_staysPassed() {
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        stubProject(List.of(endpoint), List.of(positive), List.of());
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.PASSED, null, false)));
+
+        assertThat(dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null).runStatus()).isEqualTo(CoverageRunStatus.PASSED);
+    }
+
     // ---- Mã trạng thái ----
 
     @Test
@@ -700,7 +735,16 @@ class EndpointCoverageServiceTest {
     }
 
     private TestResultRepository.TestCaseLatestResult latest(UUID testCaseId, TestResultStatus status, FailureCause cause) {
+        return latest(testCaseId, status, cause, null);
+    }
+
+    private TestResultRepository.TestCaseLatestResult latest(UUID testCaseId, TestResultStatus status, FailureCause cause, Boolean unstable) {
         return new TestResultRepository.TestCaseLatestResult() {
+            @Override
+            public Boolean getUnstable() {
+                return unstable;
+            }
+
             @Override
             public UUID getTestCaseId() {
                 return testCaseId;

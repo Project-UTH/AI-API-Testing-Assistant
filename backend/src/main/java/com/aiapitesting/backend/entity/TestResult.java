@@ -77,6 +77,13 @@ public class TestResult {
     @Column(columnDefinition = "TEXT")
     private String failureEvidence;
 
+    /**
+     * Module 16 giai đoạn 2 - test case này đang KHÔNG ỔN ĐỊNH (FLAKY) tại thời điểm chạy: áp cho cả PASSED lẫn FAILED
+     * (1 lần Pass của test không ổn định cũng không phải bằng chứng chắc chắn). Chấm lúc chạy từ lịch sử cùng phiên bản
+     * test. Null/false = không có dấu hiệu, hoặc dữ liệu cũ.
+     */
+    private Boolean unstable;
+
     /** True nếu test case này không nằm trong lựa chọn ban đầu, được kéo theo qua Test Data Chaining (Module 7). */
     @Column(nullable = false)
     @Builder.Default

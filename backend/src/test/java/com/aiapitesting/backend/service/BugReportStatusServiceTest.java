@@ -118,6 +118,31 @@ class BugReportStatusServiceTest {
         }
     }
 
+    /** Giai đoạn 2 - kết quả của test không ổn định (kể cả Pass) không đủ tin để gợi ý đóng hay mở lại bug. */
+    @Test
+    void onNewTestResult_unstableTest_neitherSuggestsClosingNorReopening() {
+        for (TestResultStatus status : List.of(TestResultStatus.PASSED, TestResultStatus.FAILED)) {
+            TestResult result = TestResult.builder().testCase(testCase).status(status).unstable(true).build();
+
+            bugReportStatusService.onNewTestResult(result);
+        }
+
+        verify(bugReportRepository, never()).findAllByTestCase(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void onNewTestResult_flakyCauseOnFail_doesNotReopenButStableTestStillDoes() {
+        TestResult flaky = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).failureCause(FailureCause.FLAKY).build();
+        bugReportStatusService.onNewTestResult(flaky);
+        verify(bugReportRepository, never()).findAllByTestCase(org.mockito.ArgumentMatchers.any());
+
+        BugReport closed = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.CLOSED).pendingCloseSuggestion(false).build();
+        when(bugReportRepository.findAllByTestCase(testCase)).thenReturn(List.of(closed));
+        bugReportStatusService.onNewTestResult(
+                TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).unstable(false).build());
+        assertThat(closed.getStatus()).isEqualTo(BugStatus.REOPENED);
+    }
+
     @Test
     void onNewTestResult_errorStatus_ignoredEntirely() {
         TestResult result = TestResult.builder().testCase(testCase).status(TestResultStatus.ERROR).build();

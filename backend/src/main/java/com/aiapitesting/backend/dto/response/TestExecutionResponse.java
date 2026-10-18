@@ -28,6 +28,14 @@ public record TestExecutionResponse(
     public static TestExecutionResponse from(
             TestExecution execution, List<TestResult> results, Map<UUID, BugReport> existingBugByResultId
     ) {
+        return from(execution, results, existingBugByResultId, Map.of());
+    }
+
+    /** stabilityByResultId (Module 16 gđ2): chỉ chứa kết quả có độ ổn định đáng chú ý; thiếu thì stability = null. */
+    public static TestExecutionResponse from(
+            TestExecution execution, List<TestResult> results, Map<UUID, BugReport> existingBugByResultId,
+            Map<UUID, StabilityResponse> stabilityByResultId
+    ) {
         List<UUID> autoIncludedTestCaseIds = results.stream()
                 .filter(TestResult::isAutoIncluded)
                 .map(r -> r.getTestCase().getId())
@@ -35,7 +43,7 @@ public record TestExecutionResponse(
         return new TestExecutionResponse(
                 execution.getId(), execution.getStatus(), execution.getStartedAt(), execution.getFinishedAt(),
                 results.stream()
-                        .map(r -> TestResultResponse.from(r, existingBugByResultId.get(r.getId())))
+                        .map(r -> TestResultResponse.from(r, existingBugByResultId.get(r.getId()), stabilityByResultId.get(r.getId())))
                         .toList(),
                 autoIncludedTestCaseIds);
     }

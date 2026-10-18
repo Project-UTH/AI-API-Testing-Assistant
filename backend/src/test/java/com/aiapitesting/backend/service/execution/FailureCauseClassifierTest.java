@@ -224,12 +224,21 @@ class FailureCauseClassifierTest {
         assertThat(result.evidence()).anyMatch(e -> e.contains("từng Pass") && e.contains("chạy lại"));
     }
 
-    /** Pass/Fail xen kẽ là dấu hiệu không ổn định, KHÔNG phải trạng thái đổi 1 lần - không được gắn DATA_STATE. */
+    /**
+     * Pass/Fail xen kẽ là dấu hiệu không ổn định, KHÔNG phải trạng thái đổi 1 lần - không được gắn DATA_STATE. Giai đoạn 1
+     * chỉ ra "chưa đủ dữ liệu"; từ giai đoạn 2, đủ 5 lần xen kẽ thì gắn thẳng nhãn "Không ổn định".
+     */
     @Test
-    void alternatingResults_areNotDataState() {
+    void alternatingResults_areFlakyNotDataState() {
         List<HistoryPoint> history = history(pass(0), fail(1, 500), pass(2), fail(3, 500), fail(4, 500));
 
-        assertThat(classifier.classify(failed(200, 500, history)).cause()).isEqualTo(FailureCause.UNDETERMINED);
+        assertThat(classifier.classify(failed(200, 500, history)).cause()).isEqualTo(FailureCause.FLAKY);
+    }
+
+    @Test
+    void alternatingButFewerThanFiveRuns_stillNotDataStateAndNotYetFlaky() {
+        assertThat(classifier.classify(failed(200, 500, history(pass(0), fail(1, 500), pass(2), fail(3, 500)))).cause())
+                .isEqualTo(FailureCause.UNDETERMINED);
     }
 
     @Test
@@ -393,6 +402,64 @@ class FailureCauseClassifierTest {
         Result result = classifier.classify(withAssertions(200, 500, List.of(), history(fail(1, 500)), null));
 
         assertThat(result.evidence()).noneMatch(e -> e.contains("đã được sửa"));
+    }
+
+    // ---- FLAKY (giai đoạn 2) ----
+
+    @Test
+    void alternatingFiveRuns_failIsFlaky() {
+        // Pass, Fail, Pass, Pass, Fail(lần hiện tại): đổi 3 lần trong 5 lần chạy cùng phiên bản test.
+        List<HistoryPoint> history = history(pass(0), fail(1, 500), pass(2), pass(3), fail(4, 500));
+
+        Result result = classifier.classify(failed(200, 500, history));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.FLAKY);
+        assertThat(result.evidence().get(0)).contains("Pass → Fail(500) → Pass → Pass → Fail(500)")
+                .contains("đổi qua lại 3 lần trong 5 lần chạy").contains("Pass 3/5");
+        assertThat(result.evidence()).anyMatch(e -> e.contains("không tự mở lại hay đóng Bug Report"))
+                .anyMatch(e -> e.contains("black-box không phân biệt"));
+        assertThat(result.cause().isNotApiFault()).isFalse();
+        assertThat(result.cause().suppressesBugAutomation()).isTrue();
+    }
+
+    @Test
+    void fourRunsOnly_isNotYetFlaky() {
+        // Chưa đủ 5 lần: chỉ UNDETERMINED (gợi ý chạy lại nằm ở phần stability của kết quả), không gắn nhãn Không ổn định.
+        List<HistoryPoint> history = history(pass(0), fail(1, 500), pass(2), fail(3, 500));
+
+        assertThat(classifier.classify(failed(200, 500, history)).cause()).isEqualTo(FailureCause.UNDETERMINED);
+    }
+
+    @Test
+    void flakyHistoryButOtherSpecificOriginWins_authEnvironmentAndAssertionStayMoreSpecific() {
+        List<HistoryPoint> flakyHistory = history(pass(0), fail(1, 500), pass(2), pass(3), fail(4, 403));
+
+        assertThat(classifier.classify(failed(200, 403, flakyHistory)).cause()).isEqualTo(FailureCause.AUTH_CONFIG);
+        assertThat(classifier.classify(errored(ErrorKind.CONNECTION, 5L, null, ExecutionContext.none(), flakyHistory)).cause())
+                .isEqualTo(FailureCause.ENVIRONMENT);
+        Input assertion = withAssertions(200, 200, List.of(failedAssertion("a", "EQUALS", "1", "2")), flakyHistory, null);
+        assertThat(classifier.classify(assertion).cause()).isEqualTo(FailureCause.ASSERTION_FAILED);
+    }
+
+    @Test
+    void tokenToggling_isNotFlaky() {
+        // Pass khi có token, Fail do token xen kẽ: các lần Fail do token không tính - còn lại Pass, Pass, Fail(hiện tại).
+        List<HistoryPoint> history = history(
+                pass(0),
+                new HistoryPoint(TestResultStatus.FAILED, 403, T0.plusSeconds(60), "http://target", FailureCause.AUTH_CONFIG),
+                pass(2),
+                new HistoryPoint(TestResultStatus.FAILED, 403, T0.plusSeconds(180), "http://target", FailureCause.AUTH_CONFIG),
+                fail(4, 500));
+
+        assertThat(classifier.classify(failed(200, 500, history)).cause()).isNotEqualTo(FailureCause.FLAKY);
+    }
+
+    @Test
+    void stableFailureAndDataStateNeverOverlapWithFlaky() {
+        assertThat(classifier.classify(failed(200, 404, history(pass(0), pass(1), fail(2, 404), fail(3, 404), fail(4, 404)))).cause())
+                .isEqualTo(FailureCause.DATA_STATE);
+        assertThat(classifier.classify(failed(200, 500, history(fail(0, 500), fail(1, 500), fail(2, 500), fail(3, 500), fail(4, 500)))).cause())
+                .isEqualTo(FailureCause.STABLE_FAILURE);
     }
 
     // ---- Thuộc tính của nhóm ----

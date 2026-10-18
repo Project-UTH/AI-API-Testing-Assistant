@@ -20,6 +20,7 @@ export type FailureCauseCode =
   | "TEST_SETUP"
   | "ENVIRONMENT"
   | "AUTH_CONFIG"
+  | "FLAKY"
   | "ASSERTION_FAILED"
   | "DATA_STATE"
   | "STABLE_FAILURE"
@@ -31,6 +32,27 @@ export interface FailureCause {
   /** Bằng chứng mạnh rằng fail KHÔNG phải do API đang test (môi trường/token/cấu hình test). */
   notApiFault: boolean
   evidence: string[]
+}
+
+/**
+ * Module 16 gđ2 - độ ổn định KẾT QUẢ của test theo lịch sử các lần chạy cùng phiên bản test (tình trạng hiện tại, tính lúc
+ * xem). FLAKY = đổi Pass/Fail xen kẽ đủ nhiều lần; NEEDS_MORE_RUNS = có dấu hiệu nhưng chưa đủ lần chạy để kết luận.
+ * Chỉ là nhận định về tính tất định của kết quả, không khẳng định nguyên nhân (nằm ở test hay API đích).
+ */
+export type StabilityState = "FLAKY" | "NEEDS_MORE_RUNS"
+
+export interface Stability {
+  state: StabilityState
+  runs: number
+  passes: number
+  fails: number
+  /** Số lần kết quả đổi giữa Pass và Fail. */
+  flips: number
+  passRate: number
+  /** Chỉ có khi NEEDS_MORE_RUNS: vì sao nên chạy lại. */
+  rerunReason: string | null
+  /** Method có thể tạo/sửa/xoá dữ liệu thật của hệ thống đích - chạy lại cần xác nhận. */
+  mutatesData: boolean
 }
 
 export interface TestResult {
@@ -52,6 +74,9 @@ export interface TestResult {
   errorKind: ErrorKind | null
   /** null cho PASSED/BLOCKED và kết quả trước Module 16. */
   failureCause: FailureCause | null
+  endpointMethod: string
+  /** null khi không đáng chú ý (ổn định/chưa đủ dữ liệu) hoặc lượt chạy chưa xong. */
+  stability: Stability | null
 }
 
 export interface TestExecution {

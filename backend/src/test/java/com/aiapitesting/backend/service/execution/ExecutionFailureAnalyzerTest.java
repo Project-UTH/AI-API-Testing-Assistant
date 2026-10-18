@@ -57,7 +57,23 @@ class ExecutionFailureAnalyzerTest {
     }
 
     private TestResultRepository.HistoryRow row(TestResult of, String fingerprint, TestResultStatus status, Integer code, int minute) {
+        return row(of, fingerprint, status, code, minute, null, UUID.randomUUID());
+    }
+
+    private TestResultRepository.HistoryRow row(
+            TestResult of, String fingerprint, TestResultStatus status, Integer code, int minute, FailureCause cause, UUID resultId
+    ) {
         return new TestResultRepository.HistoryRow() {
+            @Override
+            public UUID getResultId() {
+                return resultId;
+            }
+
+            @Override
+            public FailureCause getFailureCause() {
+                return cause;
+            }
+
             @Override
             public UUID getTestCaseId() {
                 return of.getTestCase().getId();
@@ -91,14 +107,26 @@ class ExecutionFailureAnalyzerTest {
     }
 
     @Test
-    void noFailures_doesNotQueryHistoryOrSaveAnything() {
+    void noFailuresAndNoUnstableTest_savesNothing() {
         List<TestResult> results = List.of(result(TestResultStatus.PASSED, 200, 200, "fp"),
                 result(TestResultStatus.BLOCKED, 200, null, "fp"));
 
         analyzer.analyze(execution, results);
 
+        verify(testResultRepository, never()).saveAll(any());
+        assertThat(results).allSatisfy(r -> {
+            assertThat(r.getFailureCause()).isNull();
+            assertThat(r.getUnstable()).isNull();
+        });
+    }
+
+    @Test
+    void resultsWithoutFingerprintAndNoFailures_doNotQueryHistoryAtAll() {
+        List<TestResult> results = List.of(result(TestResultStatus.PASSED, 200, 200, null));
+
+        analyzer.analyze(execution, results);
+
         verifyNoInteractions(testResultRepository);
-        assertThat(results).allSatisfy(r -> assertThat(r.getFailureCause()).isNull());
     }
 
     @Test
@@ -247,6 +275,125 @@ class ExecutionFailureAnalyzerTest {
         analyzer.analyze(execution, List.of(legacy));
 
         assertThat(legacy.getFailureEvidence()).doesNotContain("đã được sửa");
+    }
+
+    // ---- Giai đoạn 2: độ ổn định ----
+
+    @Test
+    void flakyHistory_failIsLabelledFlakyAndMarkedUnstable() {
+        TestResult current = result(TestResultStatus.FAILED, 200, 500, "fp");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(current, "fp", TestResultStatus.PASSED, 200, 0),
+                row(current, "fp", TestResultStatus.FAILED, 500, 1),
+                row(current, "fp", TestResultStatus.PASSED, 200, 2),
+                row(current, "fp", TestResultStatus.PASSED, 200, 3),
+                row(current, "fp", TestResultStatus.FAILED, 500, 4, null, current.getId())));
+
+        analyzer.analyze(execution, List.of(current));
+
+        assertThat(current.getFailureCause()).isEqualTo(FailureCause.FLAKY);
+        assertThat(current.getUnstable()).isTrue();
+        verify(testResultRepository).saveAll(List.of(current));
+    }
+
+    /** 1 lần Pass của test không ổn định cũng không phải bằng chứng chắc chắn: đánh dấu unstable, KHÔNG gắn nguyên nhân fail. */
+    @Test
+    void flakyHistory_passIsMarkedUnstableWithoutAFailureCause() {
+        TestResult current = result(TestResultStatus.PASSED, 200, 200, "fp");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(current, "fp", TestResultStatus.PASSED, 200, 0),
+                row(current, "fp", TestResultStatus.FAILED, 500, 1),
+                row(current, "fp", TestResultStatus.PASSED, 200, 2),
+                row(current, "fp", TestResultStatus.FAILED, 500, 3),
+                row(current, "fp", TestResultStatus.PASSED, 200, 4, null, current.getId())));
+
+        analyzer.analyze(execution, List.of(current));
+
+        assertThat(current.getUnstable()).isTrue();
+        assertThat(current.getFailureCause()).isNull();
+        verify(testResultRepository).saveAll(List.of(current));
+    }
+
+    @Test
+    void stableHistory_leavesResultUntouchedAndSavesNothing() {
+        TestResult current = result(TestResultStatus.PASSED, 200, 200, "fp");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(current, "fp", TestResultStatus.PASSED, 200, 0),
+                row(current, "fp", TestResultStatus.PASSED, 200, 1)));
+
+        analyzer.analyze(execution, List.of(current));
+
+        assertThat(current.getUnstable()).isNull();
+        verify(testResultRepository, never()).saveAll(any());
+    }
+
+    /**
+     * Lần chạy hiện tại fail do token và nguyên nhân CHƯA nằm trong DB: phải dùng nguyên nhân vừa chấm trong bộ nhớ, nếu
+     * không lần Fail đó bị đếm là "Fail thật" và test bị gắn nhầm là chập chờn (Pass, Pass, Fail, Pass, Fail-do-token).
+     */
+    @Test
+    void currentFailCausedByToken_usesFreshCauseSoTheTestIsNotMarkedUnstable() {
+        TestResult current = result(TestResultStatus.FAILED, 200, 403, "fp");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(current, "fp", TestResultStatus.PASSED, 200, 0),
+                row(current, "fp", TestResultStatus.PASSED, 200, 1),
+                row(current, "fp", TestResultStatus.FAILED, 500, 2),
+                row(current, "fp", TestResultStatus.PASSED, 200, 3),
+                row(current, "fp", TestResultStatus.FAILED, 403, 4, null, current.getId())));
+
+        analyzer.analyze(execution, List.of(current));
+
+        assertThat(current.getFailureCause()).isEqualTo(FailureCause.AUTH_CONFIG);
+        assertThat(current.getUnstable()).isNull();
+    }
+
+    @Test
+    void persistedCausesInHistory_excludeTokenFailsFromTheStabilityCount() {
+        TestResult current = result(TestResultStatus.PASSED, 200, 200, "fp");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(current, "fp", TestResultStatus.PASSED, 200, 0),
+                row(current, "fp", TestResultStatus.FAILED, 403, 1, FailureCause.AUTH_CONFIG, UUID.randomUUID()),
+                row(current, "fp", TestResultStatus.PASSED, 200, 2),
+                row(current, "fp", TestResultStatus.FAILED, 403, 3, FailureCause.AUTH_CONFIG, UUID.randomUUID()),
+                row(current, "fp", TestResultStatus.PASSED, 200, 4, null, current.getId())));
+
+        analyzer.analyze(execution, List.of(current));
+
+        assertThat(current.getUnstable()).isNull();
+    }
+
+    @Test
+    void stabilityOf_returnsOnlyNoteworthyResultsWithMethodAwareness() {
+        Endpoint post = Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/p").build();
+        TestResult flaky = result(TestResultStatus.PASSED, 201, 201, "fp-flaky");
+        flaky.getTestCase().setEndpoint(post);
+        TestResult suggest = result(TestResultStatus.FAILED, 200, 500, "fp-suggest");
+        TestResult calm = result(TestResultStatus.PASSED, 200, 200, "fp-calm");
+        TestResult legacy = result(TestResultStatus.FAILED, 200, 500, null);
+        List<TestResultRepository.HistoryRow> rows = new ArrayList<>(List.of(
+                row(flaky, "fp-flaky", TestResultStatus.PASSED, 201, 0), row(flaky, "fp-flaky", TestResultStatus.FAILED, 500, 1),
+                row(flaky, "fp-flaky", TestResultStatus.PASSED, 201, 2), row(flaky, "fp-flaky", TestResultStatus.FAILED, 500, 3),
+                row(flaky, "fp-flaky", TestResultStatus.PASSED, 201, 4),
+                row(suggest, "fp-suggest", TestResultStatus.PASSED, 200, 0), row(suggest, "fp-suggest", TestResultStatus.FAILED, 500, 1),
+                row(calm, "fp-calm", TestResultStatus.PASSED, 200, 0), row(calm, "fp-calm", TestResultStatus.PASSED, 200, 1)));
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(rows);
+
+        var stability = analyzer.stabilityOf(List.of(flaky, suggest, calm, legacy));
+
+        assertThat(stability).containsOnlyKeys(flaky.getId(), suggest.getId());
+        assertThat(stability.get(flaky.getId()).state()).isEqualTo(com.aiapitesting.backend.entity.StabilityState.FLAKY);
+        assertThat(stability.get(flaky.getId()).mutatesData()).isTrue();
+        assertThat(stability.get(suggest.getId()).state()).isEqualTo(com.aiapitesting.backend.entity.StabilityState.NEEDS_MORE_RUNS);
+        assertThat(stability.get(suggest.getId()).rerunReason()).contains("Pass → Fail");
+        assertThat(stability.get(suggest.getId()).mutatesData()).as("GET").isFalse();
+    }
+
+    @Test
+    void stabilityOf_queryFailureReturnsEmptyInsteadOfBreakingThePage() {
+        TestResult r = result(TestResultStatus.PASSED, 200, 200, "fp");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenThrow(new RuntimeException("db down"));
+
+        assertThat(analyzer.stabilityOf(List.of(r))).isEmpty();
     }
 
     @Test

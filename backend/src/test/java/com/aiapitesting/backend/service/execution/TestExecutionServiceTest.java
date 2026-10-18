@@ -73,6 +73,9 @@ class TestExecutionServiceTest {
     @Mock
     private BugReportRepository bugReportRepository;
 
+    @Mock
+    private ExecutionFailureAnalyzer executionFailureAnalyzer;
+
     @InjectMocks
     private TestExecutionService testExecutionService;
 
@@ -276,6 +279,47 @@ class TestExecutionServiceTest {
         assertThat(response.id()).isEqualTo(executionId);
         assertThat(response.status()).isEqualTo(ExecutionStatus.COMPLETED);
         assertThat(response.results()).isEmpty();
+    }
+
+    /** Module 16 gđ2 - độ ổn định được tính khi xem lượt chạy ĐÃ XONG, đưa vào đúng kết quả theo id. */
+    @Test
+    void getExecution_finished_attachesStabilityByResultId() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        UUID executionId = UUID.randomUUID();
+        TestExecution execution = TestExecution.builder().id(executionId).project(project)
+                .status(ExecutionStatus.COMPLETED).startedAt(Instant.now()).finishedAt(Instant.now()).build();
+        Endpoint endpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("DELETE").path("/x").build();
+        TestCase testCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).name("n").expectedStatus(204).build();
+        com.aiapitesting.backend.entity.TestResult result = com.aiapitesting.backend.entity.TestResult.builder()
+                .id(UUID.randomUUID()).testCase(testCase).execution(execution)
+                .status(com.aiapitesting.backend.entity.TestResultStatus.PASSED).build();
+        com.aiapitesting.backend.dto.response.StabilityResponse stability = new com.aiapitesting.backend.dto.response.StabilityResponse(
+                com.aiapitesting.backend.entity.StabilityState.FLAKY, 5, 3, 2, 4, 0.6, null, true);
+        when(testExecutionRepository.findByIdAndProject(executionId, project)).thenReturn(Optional.of(execution));
+        when(testResultRepository.findAllByExecutionOrderByTestCaseCreatedAt(execution)).thenReturn(List.of(result));
+        when(executionFailureAnalyzer.stabilityOf(List.of(result))).thenReturn(Map.of(result.getId(), stability));
+
+        TestExecutionResponse response = testExecutionService.getExecution(projectId, executionId);
+
+        assertThat(response.results()).singleElement().satisfies(r -> {
+            assertThat(r.stability()).isEqualTo(stability);
+            assertThat(r.endpointMethod()).isEqualTo("DELETE");
+        });
+    }
+
+    /** Trang poll mỗi 1,5 giây lúc đang chạy - không được thêm truy vấn lịch sử vào mỗi lần poll. */
+    @Test
+    void getExecution_stillRunning_doesNotComputeStability() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        UUID executionId = UUID.randomUUID();
+        TestExecution execution = TestExecution.builder().id(executionId).project(project)
+                .status(ExecutionStatus.RUNNING).startedAt(Instant.now()).build();
+        when(testExecutionRepository.findByIdAndProject(executionId, project)).thenReturn(Optional.of(execution));
+        when(testResultRepository.findAllByExecutionOrderByTestCaseCreatedAt(execution)).thenReturn(List.of());
+
+        testExecutionService.getExecution(projectId, executionId);
+
+        org.mockito.Mockito.verifyNoInteractions(executionFailureAnalyzer);
     }
 
     @SuppressWarnings("unchecked")

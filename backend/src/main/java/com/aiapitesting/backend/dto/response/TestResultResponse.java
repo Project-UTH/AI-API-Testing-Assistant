@@ -31,11 +31,19 @@ public record TestResultResponse(
         /** Module 16 - loại lỗi hạ tầng khi gọi target (chỉ ERROR); null với mọi trường hợp khác. */
         ErrorKind errorKind,
         /** Module 16 - nguyên nhân nghi ngờ kèm bằng chứng cho FAILED/ERROR; null cho PASSED/BLOCKED/kết quả cũ. */
-        FailureCauseResponse failureCause
+        FailureCauseResponse failureCause,
+        /** Module 16 gđ2 - HTTP method của endpoint (frontend dùng để cảnh báo khi chạy lại test có thể ghi dữ liệu). */
+        String endpointMethod,
+        /** Module 16 gđ2 - độ ổn định hiện tại của test case; null khi không đáng chú ý (ổn định/chưa đủ dữ liệu) hoặc lượt chạy chưa xong. */
+        StabilityResponse stability
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public static TestResultResponse from(TestResult result, BugReport existingBug) {
+        return from(result, existingBug, null);
+    }
+
+    public static TestResultResponse from(TestResult result, BugReport existingBug, StabilityResponse stability) {
         return new TestResultResponse(
                 result.getId(),
                 result.getTestCase().getId(),
@@ -52,7 +60,9 @@ public record TestResultResponse(
                 result.getDurationMs(),
                 result.getErrorKind(),
                 result.getFailureCause() == null ? null
-                        : FailureCauseResponse.of(result.getFailureCause(), parseEvidence(result.getFailureEvidence()))
+                        : FailureCauseResponse.of(result.getFailureCause(), parseEvidence(result.getFailureEvidence())),
+                result.getTestCase().getEndpoint().getMethod(),
+                stability
         );
     }
 

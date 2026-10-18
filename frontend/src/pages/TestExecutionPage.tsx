@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { StatusBadge, RESULT_STATUS_STYLES, RESULT_STATUS_LABEL, RESULT_STATUS_ICON } from "@/components/shared/StatusBadge"
 import { BugStatusBadge } from "@/components/shared/BugStatusBadge"
 import { FailureCauseBanner, FailureCauseChip, FailureCauseDetail } from "@/components/shared/FailureCause"
+import { StabilityNote, UnstableBadge } from "@/components/shared/StabilityNote"
 import { CreateBugReportDialog } from "@/components/bugreports/CreateBugReportDialog"
 import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog"
 import { ApiError } from "@/lib/api"
@@ -294,6 +295,7 @@ export function TestExecutionPage() {
                     {result.durationMs !== null && ` · ${result.durationMs} ms`}
                   </span>
                   {result.failureCause && <FailureCauseChip cause={result.failureCause} />}
+                  <UnstableBadge result={result} />
                   {result.errorMessage && (
                     <span className="shrink-0 truncate text-xs text-destructive sm:max-w-64" title={result.errorMessage}>
                       {result.errorMessage}
@@ -317,6 +319,7 @@ export function TestExecutionPage() {
 
               {isExpanded && (
                 <div className="flex flex-col gap-3 border-t border-border p-3">
+                  <StabilityNote result={result} projectId={projectId} />
                   <FailureCauseDetail result={result} />
                   {result.errorMessage && (
                     <div>

@@ -1,6 +1,7 @@
 package com.aiapitesting.backend.service.execution;
 
 import com.aiapitesting.backend.dto.request.TestExecutionRequest;
+import com.aiapitesting.backend.dto.response.StabilityResponse;
 import com.aiapitesting.backend.dto.response.TestExecutionResponse;
 import com.aiapitesting.backend.entity.BugReport;
 import com.aiapitesting.backend.entity.Endpoint;
@@ -59,6 +60,7 @@ public class TestExecutionService {
     private final TestExecutionEndpointRepository testExecutionEndpointRepository;
     private final TestExecutionRunner testExecutionRunner;
     private final BugReportRepository bugReportRepository;
+    private final ExecutionFailureAnalyzer executionFailureAnalyzer;
 
     public TestExecutionResponse trigger(UUID projectId, TestExecutionRequest request) {
         Project project = projectService.getOwnedProject(projectId);
@@ -151,7 +153,11 @@ public class TestExecutionService {
         Map<UUID, BugReport> existingBugByResultId = bugReportRepository.findAllBySourceTestResultIdIn(resultIds).stream()
                 .collect(Collectors.toMap(b -> b.getSourceTestResult().getId(), Function.identity()));
 
-        return TestExecutionResponse.from(execution, results, existingBugByResultId);
+        // Module 16 gđ2 - độ ổn định chỉ có nghĩa khi lượt chạy đã xong (trang poll mỗi 1,5 giây lúc đang chạy: không
+        // thêm truy vấn lịch sử vào mỗi lần poll).
+        boolean finished = execution.getStatus() == ExecutionStatus.COMPLETED || execution.getStatus() == ExecutionStatus.FAILED;
+        Map<UUID, StabilityResponse> stability = finished ? executionFailureAnalyzer.stabilityOf(results) : Map.of();
+        return TestExecutionResponse.from(execution, results, existingBugByResultId, stability);
     }
 
     private List<TestCase> resolveOwnedTestCases(Project project, List<UUID> testCaseIds) {

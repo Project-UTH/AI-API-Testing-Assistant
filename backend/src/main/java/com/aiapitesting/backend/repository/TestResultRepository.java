@@ -115,7 +115,9 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
     // Module 15j - Coverage theo kết quả chạy: lượt chạy MỚI NHẤT của từng test case trong project, CHỈ vài
     // cột (không kéo responseBody/assertionResultsJson TEXT lên). 1 query cho cả project, không N+1.
     // Module 16 - thêm failureCause: FAILED do môi trường/token không được tính là "đã kiểm và thấy API lệch".
-    @Query("SELECT tr.testCase.id AS testCaseId, tr.status AS status, tr.failureCause AS failureCause FROM TestResult tr "
+    // Module 16 gđ2 - thêm unstable: lần chạy mới nhất của test không ổn định (kể cả Pass) không phải bằng chứng chắc chắn.
+    @Query("SELECT tr.testCase.id AS testCaseId, tr.status AS status, tr.failureCause AS failureCause, tr.unstable AS unstable "
+            + "FROM TestResult tr "
             + "WHERE tr.testCase.endpoint.project = :project AND tr.createdAt = "
             + "(SELECT MAX(tr2.createdAt) FROM TestResult tr2 WHERE tr2.testCase = tr.testCase)")
     List<TestCaseLatestResult> findLatestResultsByProject(@Param("project") Project project);
@@ -124,18 +126,22 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
         UUID getTestCaseId();
         TestResultStatus getStatus();
         FailureCause getFailureCause();
+        Boolean getUnstable();
     }
 
     // Module 16 - lịch sử các lần chạy của nhiều test case cho ExecutionFailureAnalyzer: chỉ vài cột nhẹ, KHÔNG
     // kéo responseBody. Chỉ lấy kết quả có fingerprint (dữ liệu trước Module 16 không có - không so được phiên
     // bản). Sắp theo thời gian tăng dần, service tự lọc theo (testCaseId, fingerprint).
-    @Query("SELECT tr.testCase.id AS testCaseId, tr.testCaseFingerprint AS fingerprint, tr.status AS status, "
-            + "tr.responseStatus AS responseStatus, tr.createdAt AS createdAt, tr.execution.targetBaseUrlSnapshot AS baseUrl "
+    @Query("SELECT tr.id AS resultId, tr.testCase.id AS testCaseId, tr.testCaseFingerprint AS fingerprint, tr.status AS status, "
+            + "tr.responseStatus AS responseStatus, tr.createdAt AS createdAt, tr.execution.targetBaseUrlSnapshot AS baseUrl, "
+            + "tr.failureCause AS failureCause "
             + "FROM TestResult tr WHERE tr.testCase.id IN :testCaseIds AND tr.testCaseFingerprint IS NOT NULL "
             + "ORDER BY tr.createdAt ASC")
     List<HistoryRow> findHistoryRowsByTestCaseIds(@Param("testCaseIds") List<UUID> testCaseIds);
 
     interface HistoryRow {
+        UUID getResultId();
+        FailureCause getFailureCause();
         UUID getTestCaseId();
         String getFingerprint();
         TestResultStatus getStatus();

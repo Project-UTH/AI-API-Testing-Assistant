@@ -14,6 +14,12 @@ public enum FailureCause {
     /** Token/xác thực của project: nhận 401/403 trong khi kỳ vọng khác và dùng token mặc định. */
     AUTH_CONFIG("Nghi token/xác thực", true),
     /**
+     * Cùng phiên bản test đổi Pass/Fail xen kẽ từ 2 lần trở lên trong >= 5 lần chạy: kết quả không tất định nên 1 lần
+     * Fail này không phải bằng chứng chắc chắn. KHÔNG thuộc nhóm "không phải do API" (black-box không biết nguyên nhân ở
+     * test hay API đích) nhưng cũng không được tự mở lại/đóng Bug Report dựa trên nó.
+     */
+    FLAKY("Không ổn định", false),
+    /**
      * Mã trạng thái ĐÚNG kỳ vọng nhưng assertion về nội dung phản hồi sai - cho biết rõ lần fail đến từ nội dung
      * phản hồi chứ không phải mã trạng thái. Không thuộc nhóm "không phải do API": có thể assertion viết chưa đúng
      * (jsonPath, giá trị kỳ vọng) hoặc API trả nội dung khác mong đợi - black-box không phân biệt được.
@@ -45,5 +51,13 @@ public enum FailureCause {
      */
     public boolean isNotApiFault() {
         return notApiFault;
+    }
+
+    /**
+     * Kết quả này không đủ tin cậy để tự động mở lại/đóng Bug Report: fail không phải do API (môi trường/token/cấu
+     * hình test) hoặc test không ổn định (lần Fail này có thể chỉ là 1 lần "xui").
+     */
+    public boolean suppressesBugAutomation() {
+        return notApiFault || this == FLAKY;
     }
 }

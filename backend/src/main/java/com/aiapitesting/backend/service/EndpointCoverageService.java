@@ -178,9 +178,14 @@ public class EndpointCoverageService {
         Map<UUID, TestResultStatus> latestResultByTestCaseId = new HashMap<>();
         Set<UUID> latestNotApiFaultIds = new HashSet<>();
         for (TestResultRepository.TestCaseLatestResult row : testResultRepository.findLatestResultsByProject(project)) {
-            if (latestResultByTestCaseId.putIfAbsent(row.getTestCaseId(), row.getStatus()) == null
-                    && row.getStatus() == TestResultStatus.FAILED
-                    && row.getFailureCause() != null && row.getFailureCause().isNotApiFault()) {
+            if (latestResultByTestCaseId.putIfAbsent(row.getTestCaseId(), row.getStatus()) != null) {
+                continue;
+            }
+            // Fail do môi trường/token (không nói gì về API) hoặc kết quả của test KHÔNG ỔN ĐỊNH (kể cả Pass - Module 16
+            // gđ2): đều không phải bằng chứng chắc chắn nên runStatus là NO_VERDICT, không phải PASSED/FAILED.
+            boolean notApiFault = row.getStatus() == TestResultStatus.FAILED
+                    && row.getFailureCause() != null && row.getFailureCause().isNotApiFault();
+            if (notApiFault || Boolean.TRUE.equals(row.getUnstable())) {
                 latestNotApiFaultIds.add(row.getTestCaseId());
             }
         }
@@ -207,7 +212,7 @@ public class EndpointCoverageService {
             Map<String, Endpoint> postEndpointByPath,
             /** Module 16 - số lượt fail đã loại khỏi tỷ lệ fail của từng endpoint (do môi trường/token/cấu hình test). */
             Map<UUID, Long> excludedFailCountsByEndpointId,
-            /** Module 16 - test case có lần chạy mới nhất FAILED nhưng nguyên nhân không phải do API. */
+            /** Module 16 - test case có lần chạy mới nhất KHÔNG phải bằng chứng chắc chắn về API: FAILED do môi trường/token, hoặc test không ổn định (kể cả Pass). */
             Set<UUID> latestNotApiFaultTestCaseIds
     ) {
     }
@@ -411,7 +416,14 @@ public class EndpointCoverageService {
                         return CoverageRunStatus.FAILED;
                     }
                 }
-                case PASSED -> anyPassed = true;
+                // 1 lần Pass của test không ổn định (Module 16 gđ2) cũng không phải bằng chứng chắc chắn.
+                case PASSED -> {
+                    if (context.latestNotApiFaultTestCaseIds().contains(tc.getId())) {
+                        anyNoVerdict = true;
+                    } else {
+                        anyPassed = true;
+                    }
+                }
                 default -> anyNoVerdict = true;
             }
         }

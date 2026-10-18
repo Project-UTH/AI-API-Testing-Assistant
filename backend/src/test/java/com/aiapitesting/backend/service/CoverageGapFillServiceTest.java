@@ -374,6 +374,11 @@ class CoverageGapFillServiceTest {
             public com.aiapitesting.backend.entity.FailureCause getFailureCause() {
                 return null;
             }
+
+            @Override
+            public Boolean getUnstable() {
+                return null;
+            }
         };
     }
 }

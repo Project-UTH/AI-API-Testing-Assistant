@@ -199,6 +199,16 @@ Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI u
 
 Ảnh hưởng tới các API khác (không đổi shape): kết quả `FAILED` có `notApiFault=true` KHÔNG làm `runStatus` của Coverage thành `FAILED` (thành `NO_VERDICT`), KHÔNG tính vào tử/mẫu của "tỷ lệ fail lịch sử" ở Risk (`riskReasons` ghi số lượt đã loại), và KHÔNG tự mở lại Bug Report đã đóng. Tự động hoá Bug Report chạy SAU bước phân loại ở cuối lượt chạy (trước đây chạy ngay lúc lưu từng kết quả). Frontend dùng `components/shared/FailureCause.tsx` (chip, khối bằng chứng, banner), không tự đặt nhãn riêng.
 
+## 4i. Độ ổn định của test (Module 16, giai đoạn 2 - phát hiện test không ổn định)
+
+`TestResultResponse` thêm 2 field nữa (chỉ THÊM): `endpointMethod` (string - HTTP method của endpoint) và `stability` (`{ state, runs, passes, fails, flips, passRate, rerunReason, mutatesData }` | null). `stability` tính LÚC ĐỌC từ toàn bộ lịch sử các lần chạy CÙNG phiên bản test (fingerprint) - phản ánh tình trạng HIỆN TẠI của test (kể cả khi xem 1 lượt chạy cũ), chỉ có khi lượt chạy đã xong và chỉ trả khi đáng chú ý: `state` ∈ `FLAKY` (đổi Pass↔Fail ≥2 lần trong ≥5 lần chạy) / `NEEDS_MORE_RUNS` (có dấu hiệu - đổi qua lại ≥2 lần hoặc lần gần nhất vừa khác lần trước - nhưng chưa đủ 5 lần để kết luận; `rerunReason` giải thích). `STABLE`/`INSUFFICIENT` luôn trả `null`. `mutatesData` = method không phải GET/HEAD/OPTIONS → chạy lại có thể ghi dữ liệu thật vào hệ thống đích, frontend PHẢI hỏi xác nhận trước khi chạy lại.
+
+Chỉ tính các lần Pass/Fail "có nghĩa": bỏ ERROR/BLOCKED và bỏ các lần Fail do môi trường/token/cấu hình test (test Pass khi có token và Fail khi mất token là nhạy cảm với token, KHÔNG phải chập chờn). Ngưỡng 5 lần / 2 lần đổi là tham số thiết kế chưa calibrate. Đây là nhận định về tính TẤT ĐỊNH của kết quả, không khẳng định nguyên nhân (nằm ở test hay API đích - black-box không phân biệt được).
+
+`failureCause.code` thêm `FLAKY` ("Không ổn định"): Fail đúng lúc test đang `FLAKY`, chỉ gắn khi không có nguyên nhân cụ thể hơn (môi trường/token/assertion đứng trước). Không thuộc nhóm `notApiFault` nhưng `suppressesBugAutomation`. `TestResult.unstable` (cột lưu lúc chạy, không lộ ra API) đánh dấu CẢ kết quả PASSED của test đang không ổn định. Hệ quả: tự động hoá Bug Report không gợi ý đóng/không mở lại bug dựa trên kết quả của test không ổn định; Coverage coi kết quả mới nhất của test không ổn định (kể cả Pass) là `NO_VERDICT`.
+
+**Gợi ý chạy lại, KHÔNG tự động chạy lại:** hệ thống chỉ gợi ý (`NEEDS_MORE_RUNS` + nút "Chạy lại test này"); người dùng bấm thì frontend gọi `POST /projects/{id}/executions` với đúng `testCaseId` đó (chức năng chạy test sẵn có - không có endpoint chạy lại riêng, mỗi lần bấm = 1 lần chạy). Frontend dùng `components/shared/StabilityNote.tsx`.
+
 ## 5. Naming convention endpoint
 
 - Danh từ số nhiều, kebab-case nếu nhiều từ: `/api/v1/projects`, `/api/v1/test-cases`

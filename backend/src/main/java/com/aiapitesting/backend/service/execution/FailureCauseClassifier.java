@@ -2,6 +2,7 @@ package com.aiapitesting.backend.service.execution;
 
 import com.aiapitesting.backend.entity.ErrorKind;
 import com.aiapitesting.backend.entity.FailureCause;
+import com.aiapitesting.backend.entity.StabilityState;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import org.springframework.stereotype.Component;
@@ -39,7 +40,14 @@ public class FailureCauseClassifier {
     private static final Set<Integer> STATE_STATUSES = Set.of(404, 409, 410, 412);
 
     /** 1 lần chạy trong lịch sử cùng phiên bản test, theo thứ tự thời gian (lần hiện tại là phần tử cuối). */
-    public record HistoryPoint(TestResultStatus status, Integer responseStatus, Instant at, String baseUrl) {
+    /**
+     * @param cause nguyên nhân đã chấm cho lần chạy đó (null = PASSED/chưa chấm/dữ liệu cũ) - để đánh giá độ ổn định
+     *              bỏ qua các lần Fail do môi trường/token (không nói gì về việc test có ổn định hay không)
+     */
+    public record HistoryPoint(TestResultStatus status, Integer responseStatus, Instant at, String baseUrl, FailureCause cause) {
+        public HistoryPoint(TestResultStatus status, Integer responseStatus, Instant at, String baseUrl) {
+            this(status, responseStatus, at, baseUrl, null);
+        }
     }
 
     /**
@@ -121,11 +129,20 @@ public class FailureCauseClassifier {
             return new Result(FailureCause.AUTH_CONFIG, authEvidence(in, history, ctx));
         }
 
-        // 4-6. Phân loại theo mẫu kết quả qua các lần chạy cùng phiên bản test.
+        // 4-7. Phân loại theo mẫu kết quả qua các lần chạy cùng phiên bản test.
+        // Bỏ các lần Fail do môi trường/token đã chấm trước đó: chúng không nói gì về việc API/test có đổi hay không
+        // (vd Pass, Fail-do-token, Fail-do-token, Fail thật không phải "bậc thang dữ liệu đổi").
         List<HistoryPoint> verdicts = history.stream()
                 .filter(h -> h.status() == TestResultStatus.PASSED || h.status() == TestResultStatus.FAILED)
+                .filter(h -> h.cause() == null || !h.cause().isNotApiFault())
                 .toList();
         if (in.status() == TestResultStatus.FAILED) {
+            // Giai đoạn 2 - đổi Pass/Fail xen kẽ đủ nhiều lần: 1 lần Fail này không phải bằng chứng chắc chắn. Đứng trước
+            // DATA_STATE/STABLE (2 mẫu đó yêu cầu đổi trạng thái tối đa 1 lần nên không bao giờ trùng với xen kẽ).
+            TestStabilityAnalyzer.Assessment stability = TestStabilityAnalyzer.assess(history);
+            if (stability.state() == StabilityState.FLAKY) {
+                return new Result(FailureCause.FLAKY, flakyEvidence(stability, verdicts));
+            }
             Result dataState = dataState(in, verdicts);
             if (dataState != null) {
                 return dataState;
@@ -292,6 +309,16 @@ public class FailureCauseClassifier {
             evidence.add("Mã " + failStatus + " thường gặp khi tài nguyên/trạng thái đổi (tín hiệu phụ, không bắt buộc)");
         }
         return new Result(FailureCause.DATA_STATE, evidence);
+    }
+
+    private List<String> flakyEvidence(TestStabilityAnalyzer.Assessment stability, List<HistoryPoint> verdicts) {
+        return List.of(
+                "Cùng phiên bản test: " + pattern(verdicts) + " - kết quả đổi qua lại " + stability.flips() + " lần trong "
+                        + stability.runs() + " lần chạy (Pass " + stability.passes() + "/" + stability.runs() + ")",
+                "Test cho kết quả không tất định nên 1 lần chạy riêng lẻ (Pass hay Fail) không phải bằng chứng chắc chắn; hệ "
+                        + "thống không tự mở lại hay đóng Bug Report dựa trên test này",
+                "Nguyên nhân có thể nằm ở chính test (phụ thuộc dữ liệu/thời gian) hoặc ở API đích hành xử không ổn định - "
+                        + "kiểm thử black-box không phân biệt được 2 khả năng này");
     }
 
     private Result stableFailure(List<HistoryPoint> verdicts) {
