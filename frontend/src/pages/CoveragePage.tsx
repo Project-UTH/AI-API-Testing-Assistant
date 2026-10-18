@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react"
-import { Link, useParams, useSearchParams } from "react-router-dom"
+import { useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import { cn, METHOD_STYLES } from "@/lib/utils"
 import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
 import { CoverageSummary } from "@/components/shared/CoverageMatrixChart"
@@ -50,12 +49,7 @@ export function CoveragePage() {
 
   return (
     <div>
-      <Button variant="ghost" size="sm" nativeButton={false} render={<Link to={`/projects/${id}`} />}>
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại Project
-      </Button>
-
-      <h1 className="mt-4 text-2xl font-semibold">Coverage Matrix</h1>
+      <h2 className="text-lg font-semibold">Coverage Matrix</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Hệ thống tự lập danh sách mục cần kiểm từ đặc tả OpenAPI (checklist EP/BVA - cùng checklist dùng khi sinh test
         case, cộng mã trạng thái khai báo và quan hệ giữa các endpoint), rồi đọc nội dung từng test case để biết mục nào

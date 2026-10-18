@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Eye, History, Info, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
+import { Eye, History, Info, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -154,13 +154,8 @@ export function TestCasesPage() {
 
   return (
     <div>
-      <Button variant="ghost" size="sm" nativeButton={false} render={<Link to={`/projects/${projectId}`} />}>
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại Project
-      </Button>
-
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-semibold">Test Case</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg font-semibold">Test Case</h2>
         <div className="flex flex-wrap items-center gap-2">
           <select
             className={selectClassName}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Bug, CheckCircle2, ChevronDown, Download, ListChecks, Pencil, Trash2, XCircle } from "lucide-react"
+import { Bug, CheckCircle2, ChevronDown, Download, ListChecks, Pencil, Trash2, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -193,13 +193,8 @@ export function BugReportPage() {
 
   return (
     <div>
-      <Button variant="ghost" size="sm" nativeButton={false} render={<Link to={`/projects/${projectId}`} />}>
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại Project
-      </Button>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Bug Report</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold">Bug Report</h2>
         <div className="flex flex-wrap items-center gap-2">
           {!selectionMode &&
             (generateSelectionMode ? (

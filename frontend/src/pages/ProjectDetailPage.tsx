@@ -1,11 +1,12 @@
 import { useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, Bug, History, KeyRound, ListChecks, PieChart, Upload } from "lucide-react"
+import { KeyRound, Upload } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { EndpointList } from "@/components/projects/EndpointList"
 import { ImportOpenApiDialog } from "@/components/projects/ImportOpenApiDialog"
+import { NextStepBanner } from "@/components/projects/NextStepBanner"
 import { TargetAuthDialog } from "@/components/projects/TargetAuthDialog"
 import { getProject } from "@/lib/projects"
 
@@ -20,7 +21,7 @@ export function ProjectDetailPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [targetAuthOpen, setTargetAuthOpen] = useState(false)
 
-  const { data: project, isLoading, isError } = useQuery({
+  const { data: project } = useQuery({
     queryKey: ["projects", id],
     queryFn: () => getProject(id!),
     enabled: Boolean(id),
@@ -28,33 +29,14 @@ export function ProjectDetailPage() {
 
   return (
     <div>
-      <Button
-        variant="ghost"
-        size="sm"
-        nativeButton={false}
-        render={<Link to="/projects" />}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại danh sách Project
-      </Button>
-
-      {isLoading && <p className="mt-6 text-muted-foreground">Đang tải...</p>}
-
-      {isError && (
-        <p className="mt-6 text-destructive">
-          Không tìm thấy project hoặc bạn không có quyền truy cập.
-        </p>
-      )}
-
       {project && (
-        <div className="mt-4">
-          <h1 className="text-2xl font-semibold">{project.name}</h1>
-          <p className="mt-2 text-muted-foreground">
-            {project.description || "Không có mô tả"}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Tạo ngày {new Date(project.createdAt).toLocaleDateString("vi-VN")}
-          </p>
+        <div>
+          <NextStepBanner
+            projectId={id!}
+            targetAuthType={project.targetAuthType}
+            onOpenImport={() => setImportOpen(true)}
+            onOpenTargetAuth={() => setTargetAuthOpen(true)}
+          />
 
           <div className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-border p-3 text-sm">
             <span className="text-muted-foreground">Target Base URL:</span>
@@ -73,50 +55,11 @@ export function ProjectDetailPage() {
             </Button>
           </div>
 
-          <div className="mt-8 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Endpoint</h2>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                nativeButton={false}
-                render={<Link to={`/projects/${id}/history`} />}
-              >
-                <History className="h-4 w-4" />
-                Lịch sử kiểm thử
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                nativeButton={false}
-                render={<Link to={`/projects/${id}/bug-reports`} />}
-              >
-                <Bug className="h-4 w-4" />
-                Bug Report
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                nativeButton={false}
-                render={<Link to={`/projects/${id}/test-cases`} />}
-              >
-                <ListChecks className="h-4 w-4" />
-                Xem tất cả Test Case
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                nativeButton={false}
-                render={<Link to={`/projects/${id}/coverage`} />}
-              >
-                <PieChart className="h-4 w-4" />
-                Xem Coverage
-              </Button>
-              <Button size="sm" onClick={() => setImportOpen(true)}>
-                <Upload className="h-4 w-4" />
-                Import OpenAPI
-              </Button>
-            </div>
+          <div className="mt-4 flex justify-end">
+            <Button size="sm" onClick={() => setImportOpen(true)}>
+              <Upload className="h-4 w-4" />
+              Import OpenAPI
+            </Button>
           </div>
 
           <EndpointList projectId={id!} />

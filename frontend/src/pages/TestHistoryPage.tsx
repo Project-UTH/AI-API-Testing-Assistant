@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, ChevronDown, Play, Sparkles, X } from "lucide-react"
+import { ChevronDown, Play, Sparkles, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/shared/StatusBadge"
@@ -51,13 +51,8 @@ export function TestHistoryPage() {
 
   return (
     <div>
-      <Button variant="ghost" size="sm" nativeButton={false} render={<Link to={`/projects/${projectId}`} />}>
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại Project
-      </Button>
-
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">Lịch sử kiểm thử</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="text-lg font-semibold">Lịch sử kiểm thử</h2>
         {isFiltered && (
           <Button
             size="xs"

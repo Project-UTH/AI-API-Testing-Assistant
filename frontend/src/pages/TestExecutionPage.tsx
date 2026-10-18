@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Bug, CheckCircle2, ChevronDown, ListChecks, Loader2, Pencil, XCircle } from "lucide-react"
+import { Bug, CheckCircle2, ChevronDown, ListChecks, Loader2, Pencil, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -123,18 +123,8 @@ export function TestExecutionPage() {
 
   return (
     <div>
-      <Button
-        variant="ghost"
-        size="sm"
-        nativeButton={false}
-        render={<Link to={`/projects/${projectId}/test-cases`} />}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại Test Case
-      </Button>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Kết quả thực thi</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">Kết quả thực thi</h2>
         <div className="flex flex-wrap items-center gap-2">
           {execution && (
             <span
