@@ -1,6 +1,7 @@
 package com.aiapitesting.backend.service.execution;
 
 import com.aiapitesting.backend.dto.response.AssertionResultResponse;
+import com.aiapitesting.backend.entity.ErrorKind;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
@@ -47,7 +48,12 @@ public class TestExecutionRunner {
     private final RestAssuredTestRunner restAssuredTestRunner;
     private final TestCasePathValidator testCasePathValidator;
     private final BugReportStatusService bugReportStatusService;
+    private final ExecutionFailureAnalyzer executionFailureAnalyzer;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** Module 16 - dữ liệu phụ thu được quanh 1 lần gọi target, truyền xuống finish() để lưu cùng TestResult. */
+    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint) {
+    }
 
     @Async
     public void runInBackground(
@@ -62,14 +68,20 @@ public class TestExecutionRunner {
         // tuần tự trong phạm vi 1 lần thực thi nên dùng Map thường, không cần ConcurrentHashMap.
         Map<UUID, TestResultStatus> statusByTestCaseId = new HashMap<>();
         Map<UUID, String> responseBodyByTestCaseId = new HashMap<>();
+        List<TestResult> savedResults = new ArrayList<>();
 
         try {
             for (TestCase testCase : testCases) {
                 boolean autoIncluded = autoIncludedIds.contains(testCase.getId());
                 runOne(execution, testCase, project, edgesByConsumerId.getOrDefault(testCase.getId(), List.of()),
                         statusByTestCaseId, responseBodyByTestCaseId, autoIncluded,
-                        assertionsByTestCaseId.getOrDefault(testCase.getId(), List.of()));
+                        assertionsByTestCaseId.getOrDefault(testCase.getId(), List.of()), savedResults);
             }
+            // Module 16 - phân loại nguyên nhân fail SAU KHI cả lượt chạy xong (cần xem "anh em" cùng lượt để biết
+            // N/M test cùng lỗi), RỒI MỚI chạy tự động hoá Bug Report. Trước đây onNewTestResult gọi ngay lúc lưu
+            // từng kết quả - 1 lượt fail hàng loạt vì token hết hạn sẽ tự mở lại các bug đã đóng.
+            executionFailureAnalyzer.analyze(execution, savedResults);
+            savedResults.forEach(bugReportStatusService::onNewTestResult);
             execution.setStatus(ExecutionStatus.COMPLETED);
         } catch (Exception e) {
             log.error("Loi khong mong doi khi thuc thi execution {}", execution.getId(), e);
@@ -83,8 +95,10 @@ public class TestExecutionRunner {
     private void runOne(
             TestExecution execution, TestCase testCase, Project project, List<DependencyEdge> edges,
             Map<UUID, TestResultStatus> statusByTestCaseId, Map<UUID, String> responseBodyByTestCaseId,
-            boolean autoIncluded, List<AssertionSpec> assertionSpecs
+            boolean autoIncluded, List<AssertionSpec> assertionSpecs, List<TestResult> savedResults
     ) {
+        String fingerprint = TestCaseFingerprint.of(testCase, assertionSpecs, edges);
+        Meta noCallMeta = new Meta(null, null, fingerprint);
         Set<String> placeholders = new LinkedHashSet<>();
         placeholders.addAll(testCasePathValidator.extractPlaceholders(testCase.getResolvedPath()));
         placeholders.addAll(testCasePathValidator.extractPlaceholders(testCase.getRequestBody()));
@@ -103,7 +117,7 @@ public class TestExecutionRunner {
                 if (fallback == null) {
                     finish(execution, testCase, TestResultStatus.ERROR, null, null,
                             "Thiếu giá trị cho tham số " + paramName + " - không có dependency cũng không có giá trị dự phòng",
-                            statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null);
+                            statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null, noCallMeta, savedResults);
                     return;
                 }
                 resolvedValues.put(paramName, fallback);
@@ -116,7 +130,7 @@ public class TestExecutionRunner {
             if (sourceStatus != TestResultStatus.PASSED) {
                 finish(execution, testCase, TestResultStatus.BLOCKED, null, null,
                         "Test case nguồn '" + edge.sourceTestCaseName() + "' không PASSED",
-                        statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null);
+                        statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null, noCallMeta, savedResults);
                 return;
             }
             String sourceResponseBody = responseBodyByTestCaseId.get(edge.sourceTestCaseId());
@@ -125,14 +139,16 @@ public class TestExecutionRunner {
                 finish(execution, testCase, TestResultStatus.BLOCKED, null, null,
                         "Không trích được giá trị theo JSONPath '" + edge.jsonPath() + "' từ response của test case nguồn '"
                                 + edge.sourceTestCaseName() + "'",
-                        statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null);
+                        statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null, noCallMeta, savedResults);
                 return;
             }
             resolvedValues.put(paramName, value);
         }
 
+        long startedNanos = System.nanoTime();
         try {
             RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
+            Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint);
             boolean statusMatches = Objects.equals(result.statusCode(), testCase.getExpectedStatus());
 
             // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
@@ -145,21 +161,31 @@ public class TestExecutionRunner {
 
             finish(execution, testCase, status, result.statusCode(), truncate(result.responseBody()), null,
                     statusByTestCaseId, responseBodyByTestCaseId, result.responseBody(), autoIncluded,
-                    writeAssertionResultsAsJson(assertionResults));
+                    writeAssertionResultsAsJson(assertionResults), meta, savedResults);
         } catch (Exception e) {
             log.warn("Loi khi goi target API cho test case {}: {}", testCase.getId(), e.toString());
+            // Module 16 - loại lỗi theo LOẠI exception (timeout/không kết nối/DNS), không đọc chuỗi thông báo.
             finish(execution, testCase, TestResultStatus.ERROR, null, null,
                     "Không gọi được target API: " + e.getMessage(),
-                    statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null);
+                    statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null,
+                    new Meta(elapsedMillis(startedNanos), ErrorKindClassifier.classify(e), fingerprint), savedResults);
         }
     }
 
-    /** Lưu kết quả + cập nhật 2 map trạng thái dùng cho các test case chạy sau (cùng thứ tự tuần tự). */
+    private long elapsedMillis(long startedNanos) {
+        return (System.nanoTime() - startedNanos) / 1_000_000;
+    }
+
+    /**
+     * Lưu kết quả + cập nhật 2 map trạng thái dùng cho các test case chạy sau (cùng thứ tự tuần tự). Bug Report KHÔNG
+     * còn được cập nhật ở đây (xem runInBackground) - phải chờ phân loại nguyên nhân fail xong.
+     */
     private void finish(
             TestExecution execution, TestCase testCase, TestResultStatus status,
             Integer responseStatus, String truncatedResponseBody, String errorMessage,
             Map<UUID, TestResultStatus> statusByTestCaseId, Map<UUID, String> responseBodyByTestCaseId,
-            String rawResponseBodyForDependents, boolean autoIncluded, String assertionResultsJson
+            String rawResponseBodyForDependents, boolean autoIncluded, String assertionResultsJson,
+            Meta meta, List<TestResult> savedResults
     ) {
         TestResult result = TestResult.builder()
                 .execution(execution)
@@ -170,11 +196,12 @@ public class TestExecutionRunner {
                 .errorMessage(errorMessage)
                 .autoIncluded(autoIncluded)
                 .assertionResultsJson(assertionResultsJson)
+                .durationMs(meta.durationMs())
+                .errorKind(meta.errorKind())
+                .testCaseFingerprint(meta.fingerprint())
                 .build();
         testResultRepository.save(result);
-        // Tự động Reopen/gợi ý Đóng bug report - đặt ngay sau save() vì đây là điểm duy nhất mọi
-        // TestResult được lưu.
-        bugReportStatusService.onNewTestResult(result);
+        savedResults.add(result);
 
         statusByTestCaseId.put(testCase.getId(), status);
         if (rawResponseBodyForDependents != null) {

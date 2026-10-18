@@ -2,6 +2,7 @@ package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.entity.BugReport;
 import com.aiapitesting.backend.entity.BugStatus;
+import com.aiapitesting.backend.entity.FailureCause;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
@@ -88,6 +89,58 @@ class BugReportStatusServiceTest {
         assertThat(bug.getStatus()).isEqualTo(BugStatus.PENDING);
         assertThat(bug.isPendingCloseSuggestion()).isFalse();
         verify(bugReportRepository).saveAll(List.of(bug));
+    }
+
+    /** Lỗi thật đã xảy ra: token hết hạn làm cả lượt fail thì bug đã đóng KHÔNG được tự mở lại. */
+    @Test
+    void onNewTestResult_failedBecauseOfEnvironmentOrToken_doesNotReopenClosedBug() {
+        for (FailureCause cause : List.of(FailureCause.AUTH_CONFIG, FailureCause.ENVIRONMENT, FailureCause.TEST_SETUP)) {
+            BugReport bug = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.CLOSED).pendingCloseSuggestion(false).build();
+            TestResult result = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).failureCause(cause).build();
+
+            bugReportStatusService.onNewTestResult(result);
+
+            assertThat(bug.getStatus()).as(cause.name()).isEqualTo(BugStatus.CLOSED);
+        }
+        verify(bugReportRepository, never()).findAllByTestCase(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void onNewTestResult_failedWithApiSideCause_stillReopensClosedBug() {
+        for (FailureCause cause : List.of(FailureCause.STABLE_FAILURE, FailureCause.DATA_STATE, FailureCause.UNDETERMINED)) {
+            BugReport bug = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.CLOSED).pendingCloseSuggestion(false).build();
+            when(bugReportRepository.findAllByTestCase(testCase)).thenReturn(List.of(bug));
+            TestResult result = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).failureCause(cause).build();
+
+            bugReportStatusService.onNewTestResult(result);
+
+            assertThat(bug.getStatus()).as(cause.name()).isEqualTo(BugStatus.REOPENED);
+        }
+    }
+
+    /** Giai đoạn 2 - kết quả của test không ổn định (kể cả Pass) không đủ tin để gợi ý đóng hay mở lại bug. */
+    @Test
+    void onNewTestResult_unstableTest_neitherSuggestsClosingNorReopening() {
+        for (TestResultStatus status : List.of(TestResultStatus.PASSED, TestResultStatus.FAILED)) {
+            TestResult result = TestResult.builder().testCase(testCase).status(status).unstable(true).build();
+
+            bugReportStatusService.onNewTestResult(result);
+        }
+
+        verify(bugReportRepository, never()).findAllByTestCase(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void onNewTestResult_flakyCauseOnFail_doesNotReopenButStableTestStillDoes() {
+        TestResult flaky = TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).failureCause(FailureCause.FLAKY).build();
+        bugReportStatusService.onNewTestResult(flaky);
+        verify(bugReportRepository, never()).findAllByTestCase(org.mockito.ArgumentMatchers.any());
+
+        BugReport closed = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.CLOSED).pendingCloseSuggestion(false).build();
+        when(bugReportRepository.findAllByTestCase(testCase)).thenReturn(List.of(closed));
+        bugReportStatusService.onNewTestResult(
+                TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).unstable(false).build());
+        assertThat(closed.getStatus()).isEqualTo(BugStatus.REOPENED);
     }
 
     @Test

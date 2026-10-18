@@ -27,6 +27,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
@@ -92,6 +93,8 @@ public class ProjectService {
             project.setTargetAuthType(authType);
             project.setTargetAuthValueEncrypted(aesEncryptionService.encrypt(authValue));
         }
+        // Module 16 - chỉ ghi MỐC thời gian đổi token (không lưu token) để phân tích nguyên nhân fail sau này.
+        project.setTargetAuthUpdatedAt(Instant.now());
         return ProjectResponse.from(projectRepository.save(project));
     }
 

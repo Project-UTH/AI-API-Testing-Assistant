@@ -34,6 +34,17 @@ public class BugReportStatusService {
             return;
         }
 
+        // Module 16 - Fail do môi trường/token/cấu hình test không phản ánh API có bug hay đã sửa: token hết hạn
+        // làm cả lượt fail thì KHÔNG được tự mở lại các bug đã đóng (trước đây đúng điều này đã xảy ra).
+        if (result.getStatus() == TestResultStatus.FAILED
+                && result.getFailureCause() != null && result.getFailureCause().suppressesBugAutomation()) {
+            return;
+        }
+        // Giai đoạn 2 - test không ổn định: 1 lần Pass không đủ để gợi ý đóng bug, 1 lần Fail không đủ để mở lại bug.
+        if (Boolean.TRUE.equals(result.getUnstable())) {
+            return;
+        }
+
         List<BugReport> bugs = bugReportRepository.findAllByTestCase(result.getTestCase());
         if (bugs.isEmpty()) {
             return;

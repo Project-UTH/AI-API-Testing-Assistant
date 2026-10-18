@@ -31,7 +31,8 @@ import java.util.TreeMap;
 public class RestAssuredTestRunner {
 
     private static final int CONNECT_TIMEOUT_MS = 10_000;
-    private static final int READ_TIMEOUT_MS = 30_000;
+    /** Package-private: FailureCauseClassifier (Module 16) so thời gian phản hồi với giới hạn này làm bằng chứng "chờ sát timeout". */
+    static final int READ_TIMEOUT_MS = 30_000;
     /** Giá trị cố định, cố tình sai - dùng cho case Security authOverride=INVALID (Module 9a). */
     private static final String INVALID_AUTH_VALUE = "invalid-token-security-test-case";
 

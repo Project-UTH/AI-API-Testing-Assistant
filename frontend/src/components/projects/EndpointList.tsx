@@ -286,6 +286,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
                   projectId={projectId}
                   endpointId={endpoint.id}
                   freshPlan={state.result?.planSummary ?? undefined}
+                  coverage={riskByEndpointId.get(endpoint.id)}
                 />
               )}
             </li>

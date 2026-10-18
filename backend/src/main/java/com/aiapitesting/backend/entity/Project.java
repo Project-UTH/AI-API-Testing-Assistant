@@ -48,6 +48,13 @@ public class Project {
     @Column(name = "target_base_url")
     private String targetBaseUrl;
 
+    /**
+     * Module 16 - thời điểm token đích được đặt/đổi/xoá gần nhất. CHỈ lưu thời điểm (không lưu/hash token - quy tắc
+     * bảo mật CLAUDE.md), dùng làm bằng chứng "token đổi sau lần Pass gần nhất" khi nghi token hết hạn.
+     */
+    @Column(name = "target_auth_updated_at")
+    private Instant targetAuthUpdatedAt;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

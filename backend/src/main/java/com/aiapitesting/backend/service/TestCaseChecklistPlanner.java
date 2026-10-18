@@ -3,8 +3,10 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.response.ChecklistItemType;
 import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.fasterxml.jackson.core.StreamWriteFeature;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -64,9 +66,25 @@ public class TestCaseChecklistPlanner {
     static final String NO_AUTH_REASON =
             "Endpoint không yêu cầu xác thực (spec không khai security) - không có gì để kiểm khi thiếu/sai token";
 
+    /**
+     * Module 15j - lý do không bù được mục (hiện cả ở trang Coverage lẫn kết quả bù): không có case gốc hợp lệ
+     * để mượn dữ liệu của các field/tham số khác, và mục này cần dữ liệu đó nên không tự dựng từ đặc tả được.
+     */
+    public static final String NO_BASELINE_REASON = "Mục này cần dữ liệu hợp lệ của các field/tham số khác, nhưng endpoint "
+            + "chưa có test case hợp lệ nào (kỳ vọng thành công, đủ field bắt buộc, không vi phạm ràng buộc spec) để mượn - "
+            + "hệ thống không tự bịa dữ liệu vì không biết hệ thống đích chấp nhận gì. Hãy sinh test case bằng AI (tick "
+            + "Positive) hoặc tự thêm 1 case hợp lệ, rồi bấm Bổ sung lại";
+
+    /** Module 15j - có case gốc nhưng vẫn không dựng được đúng 1 lỗi từ nó (vd không đối chiếu được vị trí tham số path). */
+    public static final String CANNOT_BUILD_REASON = "Hệ thống không tạo được case đúng 1 lỗi cho mục này từ case gốc hiện "
+            + "có (vd không đối chiếu được vị trí tham số path trong đường dẫn của case gốc)";
+
     private static final String NOT_FORBIDDEN_NOTE = "spec không cấm nên kỳ vọng thành công (2xx)";
 
     private static final int MAX_LITERAL_IN_DESCRIPTION = 20;
+
+    /** Giá trị dài hơn ngưỡng này (vd chuỗi maxLength = 5000 ký tự) ghi vào key dạng "len:N" thay vì nguyên văn. */
+    private static final int MAX_VALUE_IN_KEY = 40;
 
     private final ObjectMapper objectMapper = JsonMapper.builder()
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -473,6 +491,99 @@ public class TestCaseChecklistPlanner {
                         "Endpoint yêu cầu xác thực; gọi với token sai để kiểm tra API không chấp nhận token không hợp lệ.", na));
     }
 
+    /**
+     * Module 15j - checklist ĐẦY ĐỦ cả 4 loại (Positive/Negative/Boundary/Security) của 1 endpoint: đây là
+     * mẫu số của Coverage ("đã kiểm X/Y mục"), cùng bộ tiêu chí với lúc sinh test case nên 2 nơi không
+     * bao giờ hiểu "đủ" khác nhau.
+     */
+    public List<ChecklistItem> planAll(Spec spec, boolean requiresAuth) {
+        List<ChecklistItem> items = new ArrayList<>(plan(spec, true, true, true));
+        items.addAll(planSecurity(requiresAuth));
+        return items;
+    }
+
+    /**
+     * Module 15j - khoá ổn định của 1 mục (cùng spec thì cùng khoá) để frontend chỉ đích danh mục cần bù
+     * ở trang Coverage. Giá trị quá dài (chuỗi đúng maxLength) ghi theo độ dài, tránh khoá dài hàng nghìn ký tự.
+     */
+    public static String key(ChecklistItem item) {
+        String value = item.value() == null ? ""
+                : item.value().length() > MAX_VALUE_IN_KEY ? "len:" + item.value().codePointCount(0, item.value().length())
+                : item.value();
+        return item.type().name() + "|" + (item.location() == null ? "" : item.location().name())
+                + "|" + (item.field() == null ? "" : item.field()) + "|" + value;
+    }
+
+    private static boolean isSecurityItem(ChecklistItem item) {
+        return item.type() == ChecklistItemType.SECURITY_MISSING_TOKEN || item.type() == ChecklistItemType.SECURITY_INVALID_TOKEN;
+    }
+
+    private static boolean overridesAuth(GeneratedTestCase candidate) {
+        return candidate.authOverride() == TestCaseAuthOverride.NONE || candidate.authOverride() == TestCaseAuthOverride.INVALID;
+    }
+
+    /**
+     * Module 15j - kết quả thử bù 1 mục: case tạo được, hoặc lý do không tạo được. fromSpecOnly = true khi case
+     * được dựng thẳng từ đặc tả, không mượn dữ liệu của case nào (endpoint không có đầu vào nào khác ngoài mục này).
+     */
+    public record FillAttempt(GeneratedTestCase filled, boolean fromSpecOnly, String blockedReason) {
+    }
+
+    /** Case gốc dùng được: kỳ vọng thành công, không vi phạm ràng buộc, và (endpoint cần xác thực) không phải case cố ý bỏ/sai token. */
+    public boolean isUsableBaseline(Spec spec, GeneratedTestCase candidate, boolean endpointRequiresAuth) {
+        return !(endpointRequiresAuth && overridesAuth(candidate)) && isValidBaseline(spec, candidate);
+    }
+
+    /**
+     * Module 15j - thử bù 1 mục. Có case gốc thì copy-rồi-sửa-1-chỗ như {@link #fill}; không có (hoặc không dựng
+     * được từ nó) thì thử dựng thẳng từ đặc tả. Dùng CHUNG cho trang Coverage (quyết định nút Bổ sung có bấm được
+     * không) và CoverageGapFillService (bù thật) - 2 nơi không thể nói khác nhau về cùng 1 mục.
+     */
+    public FillAttempt attemptFill(Spec spec, ChecklistItem item, GeneratedTestCase baselineOrNull) {
+        if (baselineOrNull != null) {
+            GeneratedTestCase filled = fill(spec, item, baselineOrNull);
+            if (filled != null) {
+                return new FillAttempt(filled, false, null);
+            }
+        }
+        GeneratedTestCase fromSpec = fillFromSpecOnly(spec, item);
+        if (fromSpec != null) {
+            return new FillAttempt(fromSpec, true, null);
+        }
+        return new FillAttempt(null, false, baselineOrNull != null ? CANNOT_BUILD_REASON : NO_BASELINE_REASON);
+    }
+
+    /**
+     * Dựng case thẳng từ đặc tả khi endpoint KHÔNG có đầu vào nào khác cần dữ liệu hợp lệ: bắt đầu từ 1 case "trống"
+     * (không body/header, đường dẫn gốc) rồi sửa đúng 1 chỗ. Không có chỗ nào để bịa dữ liệu vì tự kiểm tra bằng
+     * chính {@link #satisfies} - nếu endpoint còn field/tham số bắt buộc nào khác (case trống sẽ vi phạm thêm lỗi
+     * thứ 2) hoặc đường dẫn còn tham số {x} chưa có giá trị thì trả null, không tạo case sai. Chỉ cho mục kỳ vọng
+     * LỖI: mục kỳ vọng thành công cần biết API trả mã nào và dữ liệu thật được chấp nhận - đặc tả không cho biết.
+     */
+    private GeneratedTestCase fillFromSpecOnly(Spec spec, ChecklistItem item) {
+        if (item.expectSuccess() || item.notApplicableReason() != null) {
+            return null;
+        }
+        GeneratedTestCase bare = new GeneratedTestCase("(dựng từ đặc tả)", null, Map.of(), null, null,
+                spec.endpointPath(), Map.of(), TestCaseAuthOverride.DEFAULT, null);
+        GeneratedTestCase filled = fill(spec, item, bare);
+        if (filled == null || filled.resolvedPath() == null
+                || filled.resolvedPath().replaceAll("\\{\\{[^}]*}}", "").contains("{")) {
+            return null;
+        }
+        return filled;
+    }
+
+    /**
+     * Module 15j - đổi TestCase đã lưu sang dạng chấm được (cùng shape case AI trả về). Dùng chung cho
+     * Coverage, bù khoảng trống và bước "chấm trước case khoá/MANUAL" lúc sinh test case.
+     */
+    public GeneratedTestCase toCandidate(TestCase testCase) {
+        return new GeneratedTestCase(testCase.getName(), testCase.getDescription(), readStringMap(testCase.getRequestHeaders()),
+                testCase.getRequestBody(), testCase.getExpectedStatus(), testCase.getResolvedPath(),
+                readStringMap(testCase.getPathParamFallbacks()), testCase.getAuthOverride(), testCase.getRationale());
+    }
+
     private ChecklistItem boundary(
             ChecklistItemType type, FieldRule rule, String value, boolean expectSuccess, String notApplicable,
             String what, String shortWhat, String why
@@ -522,25 +633,132 @@ public class TestCaseChecklistPlanner {
         }
         Values values = values(spec, candidate);
         List<Violation> violations = violations(spec, values);
+        ViolationKind target = targetViolation(item.type());
+        return target != null
+                ? onlyViolation(violations, item, target)
+                : violations.isEmpty() && valueMatches(values, item);
+    }
+
+    /**
+     * Module 15j - chấm cho Coverage (đo trên TOÀN BỘ case của endpoint, mọi nguồn): như satisfies() nhưng
+     * áp thêm quy tắc "mỗi case chỉ 1 lỗi" cho cả cách gọi - endpoint yêu cầu xác thực mà case cố ý bỏ/sai
+     * token thì API trả 401 bất kể dữ liệu gửi lên, nên case đó chỉ được tính cho mục Security.
+     */
+    public boolean covers(Spec spec, ChecklistItem item, GeneratedTestCase candidate, boolean endpointRequiresAuth) {
+        if (endpointRequiresAuth && !isSecurityItem(item) && overridesAuth(candidate)) {
+            return false;
+        }
+        return satisfies(spec, item, candidate);
+    }
+
+    /**
+     * Module 15j - bằng chứng cho 1 khoảng trống: case "gần đạt" mục này nhưng không được tính - đúng ý đồ
+     * của mục (đúng giá trị cần thử, hoặc gây đúng vi phạm cần thử) nhưng kỳ vọng ngược chiều hoặc còn vi
+     * phạm thêm ràng buộc khác. Trả câu giải thích; null nếu case đạt mục hoặc không liên quan tới mục.
+     */
+    public String explainNearMiss(Spec spec, ChecklistItem item, GeneratedTestCase candidate, boolean endpointRequiresAuth) {
+        if (item.notApplicableReason() != null || candidate.expectedStatus() == null
+                || covers(spec, item, candidate, endpointRequiresAuth)) {
+            return null;
+        }
+        if (isSecurityItem(item)) {
+            TestCaseAuthOverride wanted = item.type() == ChecklistItemType.SECURITY_MISSING_TOKEN
+                    ? TestCaseAuthOverride.NONE : TestCaseAuthOverride.INVALID;
+            return candidate.authOverride() == wanted
+                    ? "gọi " + (wanted == TestCaseAuthOverride.NONE ? "không kèm token" : "với token sai")
+                            + " nhưng kỳ vọng " + candidate.expectedStatus() + " thay vì 401"
+                    : null;
+        }
+        // Case đang thử thiếu/sai token: lỗi 401 che mất mọi thứ khác - không phải bằng chứng cho mục dữ liệu.
+        if (endpointRequiresAuth && overridesAuth(candidate)) {
+            return null;
+        }
+        boolean expectsSuccess = candidate.expectedStatus() < 400;
+        Values values = values(spec, candidate);
+        List<Violation> violations = violations(spec, values);
+        ViolationKind target = targetViolation(item.type());
+        List<Violation> others;
+        if (target != null) {
+            Violation wanted = new Violation(item.field(), item.location(), target);
+            if (!violations.contains(wanted)) {
+                return null;
+            }
+            others = violations.stream().filter(v -> !v.equals(wanted)).toList();
+        } else {
+            boolean sameIntent = item.type() == ChecklistItemType.POSITIVE_BASELINE ? expectsSuccess : valueMatches(values, item);
+            if (!sameIntent) {
+                return null;
+            }
+            others = violations;
+        }
+        boolean expectationMismatch = expectsSuccess != item.expectSuccess();
+        // Lệch CẢ kỳ vọng lẫn dư lỗi khác = case đang thử 1 tình huống khác, chỉ tình cờ mang giá trị này (vd case
+        // "thiếu email" copy từ case gốc nên vẫn có role=USER) - không phải bằng chứng cho mục này.
+        if (expectationMismatch && !others.isEmpty()) {
+            return null;
+        }
+        if (expectationMismatch) {
+            return "case kỳ vọng " + candidate.expectedStatus() + " nhưng mục này cần "
+                    + (item.expectSuccess() ? "thành công (2xx)" : item.notFoundExpected() ? "lỗi 4xx" : "lỗi 400");
+        }
+        if (!others.isEmpty()) {
+            return item.expectSuccess()
+                    ? "dữ liệu còn vi phạm " + describe(others) + " nên không còn là dữ liệu hợp lệ theo spec"
+                    : "case còn vi phạm thêm " + describe(others) + " (mỗi case chỉ được 1 lỗi) - API trả lỗi cũng không "
+                            + "chứng minh được nó kiểm đúng ràng buộc đang xét";
+        }
+        return null;
+    }
+
+    /** Loại vi phạm DUY NHẤT mà mục dạng "giá trị sai" phải gây ra; null với mục dạng "giá trị hợp lệ cụ thể". */
+    private ViolationKind targetViolation(ChecklistItemType type) {
+        return switch (type) {
+            case NEGATIVE_MISSING_FIELD -> ViolationKind.MISSING_REQUIRED;
+            case NEGATIVE_NULL_FIELD -> ViolationKind.NULL_NOT_ALLOWED;
+            case NEGATIVE_WRONG_TYPE -> ViolationKind.WRONG_TYPE;
+            case NEGATIVE_INVALID_ENUM -> ViolationKind.ENUM;
+            case BOUNDARY_BELOW_MINIMUM -> ViolationKind.BELOW_MINIMUM;
+            case BOUNDARY_ABOVE_MAXIMUM -> ViolationKind.ABOVE_MAXIMUM;
+            case BOUNDARY_ABOVE_TYPE_MAXIMUM -> ViolationKind.ABOVE_TYPE_MAXIMUM;
+            case BOUNDARY_BELOW_TYPE_MINIMUM -> ViolationKind.BELOW_TYPE_MINIMUM;
+            case BOUNDARY_BELOW_MIN_LENGTH -> ViolationKind.BELOW_MIN_LENGTH;
+            case BOUNDARY_ABOVE_MAX_LENGTH -> ViolationKind.ABOVE_MAX_LENGTH;
+            case POSITIVE_BASELINE, POSITIVE_ENUM_VALUE, BOUNDARY_AT_MINIMUM, BOUNDARY_AT_MAXIMUM,
+                 BOUNDARY_AT_MIN_LENGTH, BOUNDARY_AT_MAX_LENGTH, BOUNDARY_AT_TYPE_MAXIMUM, BOUNDARY_AT_TYPE_MINIMUM,
+                 BOUNDARY_ZERO, BOUNDARY_NEGATIVE_NUMBER, BOUNDARY_EMPTY_STRING,
+                 SECURITY_MISSING_TOKEN, SECURITY_INVALID_TOKEN -> null;
+        };
+    }
+
+    /** Mục dạng "giá trị hợp lệ cụ thể": case có gửi đúng giá trị cần thử không (Positive baseline không cần giá trị nào). */
+    private boolean valueMatches(Values values, ChecklistItem item) {
         return switch (item.type()) {
-            case POSITIVE_BASELINE -> violations.isEmpty();
-            case POSITIVE_ENUM_VALUE -> violations.isEmpty() && textEquals(rawValue(values, item), item.value());
-            case NEGATIVE_MISSING_FIELD -> onlyViolation(violations, item, ViolationKind.MISSING_REQUIRED);
-            case NEGATIVE_NULL_FIELD -> onlyViolation(violations, item, ViolationKind.NULL_NOT_ALLOWED);
-            case NEGATIVE_WRONG_TYPE -> onlyViolation(violations, item, ViolationKind.WRONG_TYPE);
-            case NEGATIVE_INVALID_ENUM -> onlyViolation(violations, item, ViolationKind.ENUM);
+            case POSITIVE_BASELINE -> true;
+            case POSITIVE_ENUM_VALUE -> textEquals(rawValue(values, item), item.value());
             case BOUNDARY_AT_MINIMUM, BOUNDARY_AT_MAXIMUM, BOUNDARY_AT_TYPE_MAXIMUM, BOUNDARY_AT_TYPE_MINIMUM,
-                 BOUNDARY_ZERO, BOUNDARY_NEGATIVE_NUMBER ->
-                    violations.isEmpty() && numericEquals(rawValue(values, item), item.value());
-            case BOUNDARY_AT_MIN_LENGTH, BOUNDARY_AT_MAX_LENGTH, BOUNDARY_EMPTY_STRING ->
-                    violations.isEmpty() && lengthEquals(rawValue(values, item), item.value());
-            case BOUNDARY_BELOW_MINIMUM -> onlyViolation(violations, item, ViolationKind.BELOW_MINIMUM);
-            case BOUNDARY_ABOVE_MAXIMUM -> onlyViolation(violations, item, ViolationKind.ABOVE_MAXIMUM);
-            case BOUNDARY_ABOVE_TYPE_MAXIMUM -> onlyViolation(violations, item, ViolationKind.ABOVE_TYPE_MAXIMUM);
-            case BOUNDARY_BELOW_TYPE_MINIMUM -> onlyViolation(violations, item, ViolationKind.BELOW_TYPE_MINIMUM);
-            case BOUNDARY_BELOW_MIN_LENGTH -> onlyViolation(violations, item, ViolationKind.BELOW_MIN_LENGTH);
-            case BOUNDARY_ABOVE_MAX_LENGTH -> onlyViolation(violations, item, ViolationKind.ABOVE_MAX_LENGTH);
-            case SECURITY_MISSING_TOKEN, SECURITY_INVALID_TOKEN -> false; // đã xử lý ở trên
+                 BOUNDARY_ZERO, BOUNDARY_NEGATIVE_NUMBER -> numericEquals(rawValue(values, item), item.value());
+            case BOUNDARY_AT_MIN_LENGTH, BOUNDARY_AT_MAX_LENGTH, BOUNDARY_EMPTY_STRING -> lengthEquals(rawValue(values, item), item.value());
+            default -> false;
+        };
+    }
+
+    private String describe(List<Violation> violations) {
+        return String.join(", ", violations.stream().map(this::describe).toList());
+    }
+
+    private String describe(Violation violation) {
+        String field = "'" + violation.field() + "'";
+        return switch (violation.kind()) {
+            case MISSING_REQUIRED -> "thiếu " + field;
+            case NULL_NOT_ALLOWED -> field + " = null";
+            case WRONG_TYPE -> field + " sai kiểu";
+            case ENUM -> field + " ngoài enum";
+            case BELOW_MINIMUM -> field + " dưới minimum";
+            case ABOVE_MAXIMUM -> field + " trên maximum";
+            case BELOW_MIN_LENGTH -> field + " ngắn hơn minLength";
+            case ABOVE_MAX_LENGTH -> field + " dài hơn maxLength";
+            case BELOW_TYPE_MINIMUM -> field + " dưới giới hạn kiểu";
+            case ABOVE_TYPE_MAXIMUM -> field + " vượt giới hạn kiểu";
         };
     }
 
@@ -850,6 +1068,19 @@ public class TestCaseChecklistPlanner {
     }
 
     // ---- Tiện ích ----
+
+    /** requestHeaders/pathParamFallbacks lưu dạng JSON object phẳng - null/blank/hỏng thì coi như rỗng. */
+    private Map<String, String> readStringMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<String, String>>() {
+            });
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> parseObject(String json) {
