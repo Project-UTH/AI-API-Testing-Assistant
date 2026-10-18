@@ -31,6 +31,8 @@ export interface ImportImpact {
   bugReportCount: number
   openBugReportCount: number
   generationEventCount: number
+  /** Kết quả chạy FAILED - chỉ để giao diện biết project có test fail không (banner "Bước tiếp theo"). */
+  failedResultCount: number
 }
 
 export function getImportImpact(projectId: string): Promise<ImportImpact> {

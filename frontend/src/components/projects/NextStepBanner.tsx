@@ -63,7 +63,7 @@ function resolveStep(impact: ImportImpact, authType: TargetAuthType, authSkipped
     return {
       number: 3,
       title: "Tạo test case",
-      description: "Chọn endpoint bên dưới rồi bấm Sinh Test Case, hoặc thêm thủ công ở tab Test case.",
+      description: "Tick endpoint ở danh sách bên dưới rồi bấm Sinh Test Case.",
     }
   }
   if (impact.testResultCount === 0 && impact.executionCount === 0) {
@@ -73,11 +73,12 @@ function resolveStep(impact: ImportImpact, authType: TargetAuthType, authSkipped
       description: "Xem lại các test case, tick những test muốn chạy rồi bấm Chạy Test.",
     }
   }
-  if (impact.bugReportCount === 0) {
+  // Chỉ gợi ý bug report khi thật sự có test fail (toàn pass thì không có gì để báo).
+  if (impact.failedResultCount > 0 && impact.bugReportCount === 0) {
     return {
       number: 5,
       title: "Tạo Bug Report từ test fail",
-      description: "Nếu có test fail, tạo bug report để theo dõi.",
+      description: `Có ${impact.failedResultCount} kết quả fail. Tạo bug report để theo dõi.`,
       optional: true,
     }
   }
@@ -101,8 +102,8 @@ export function NextStepBanner({ projectId, targetAuthType, onOpenImport, onOpen
 
   if (!impact) return null
   const step = resolveStep(impact, targetAuthType, authSkipped)
-  // Đã ẩn ở bước này hoặc bước sau thì không hiện lại; tiến lên bước MỚI thì hiện lại để người dùng không mất hướng dẫn.
-  if (!step || step.number <= dismissedStep) return null
+  // Chỉ ẩn đúng bước đã bấm ẩn: sang bước khác (tiến hoặc lùi, vd xoá hết test case/import lại) thì hiện lại.
+  if (!step || step.number === dismissedStep) return null
 
   function dismiss(current: Step) {
     writeStorage(dismissedKey, String(current.number))
@@ -139,8 +140,8 @@ export function NextStepBanner({ projectId, targetAuthType, onOpenImport, onOpen
           </>
         )}
         {step.number === 3 && (
-          <Button size="sm" variant="outline" nativeButton={false} render={<Link to={`/projects/${projectId}/test-cases`} />}>
-            Mở tab Test case
+          <Button size="sm" variant="ghost" nativeButton={false} render={<Link to={`/projects/${projectId}/test-cases`} />}>
+            Hoặc thêm thủ công
           </Button>
         )}
         {step.number === 4 && (
@@ -156,7 +157,7 @@ export function NextStepBanner({ projectId, targetAuthType, onOpenImport, onOpen
             <Button size="sm" variant="ghost" onClick={() => dismiss(step)}>Để sau</Button>
           </>
         )}
-        {step.number !== 5 && (
+        {step.number !== 5 && step.number !== 2 && (
           <button
             type="button"
             aria-label="Ẩn gợi ý này"

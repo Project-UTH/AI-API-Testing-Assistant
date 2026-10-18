@@ -247,8 +247,33 @@ export function TestExecutionPage() {
         </p>
       )}
 
+      {execution && !isFinished && (
+        <div className="mt-6 flex items-center gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+          <span>
+            Đang chạy các test case, kết quả sẽ hiện khi chạy xong
+            {execution.results.length > 0 ? ` (đã chạy xong ${execution.results.length} test case)` : ""}.
+          </span>
+        </div>
+      )}
+
       {isFinished && filteredResults.length === 0 && (
-        <p className="mt-6 text-muted-foreground">Không có kết quả nào.</p>
+        <div className="mt-6 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          {endpointFilter && execution.results.length > 0 ? (
+            <p>
+              Lần chạy này không có kết quả nào của endpoint đã chọn
+              ({execution.results.length} kết quả thuộc các endpoint khác).
+            </p>
+          ) : (
+            <p>Lần chạy này không ghi nhận kết quả nào.</p>
+          )}
+          <Link
+            to={`/projects/${projectId}/${endpointFilter && execution.results.length > 0 ? `executions/${executionId}` : "test-cases"}`}
+            className="mt-2 inline-block text-primary underline-offset-4 hover:underline"
+          >
+            {endpointFilter && execution.results.length > 0 ? "Xem tất cả kết quả của lần chạy" : "Về danh sách Test case"}
+          </Link>
+        </div>
       )}
 
       {isFinished && filteredResults.length > 0 && <ExecutionSummaryDashboard results={filteredResults} />}

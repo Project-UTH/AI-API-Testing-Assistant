@@ -163,7 +163,7 @@ Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI u
 
 `POST /api/v1/projects/{projectId}/endpoints/import` **xoá toàn bộ** dữ liệu của project (endpoint, test case - kể cả đã khoá và thêm tay -, assertion, dependency, execution, kết quả, bug report, lịch sử bug, lịch sử sinh test) rồi tạo lại endpoint từ spec; không hoàn tác được. `409 EXECUTION_IN_PROGRESS` khi project còn lần chạy `PENDING`/`RUNNING`.
 
-`GET /api/v1/projects/{projectId}/endpoints/import-impact` (chỉ đọc) trả `ApiResponse<ImportImpactResponse { endpointCount, testCaseCount, manualTestCaseCount, lockedTestCaseCount, executionCount, testResultCount, bugReportCount, openBugReportCount, generationEventCount }>` - số lượng dữ liệu SẼ BỊ XOÁ, để frontend cảnh báo bằng số cụ thể trước khi người dùng xác nhận. **Frontend phải coi lỗi tải số liệu này là "chưa biết" (chặn/cảnh báo chung), không được mặc định "không có dữ liệu".**
+`GET /api/v1/projects/{projectId}/endpoints/import-impact` (chỉ đọc) trả `ApiResponse<ImportImpactResponse { endpointCount, testCaseCount, manualTestCaseCount, lockedTestCaseCount, executionCount, testResultCount, bugReportCount, openBugReportCount, generationEventCount, failedResultCount }>` (`failedResultCount` = kết quả chạy FAILED, dùng cho banner "Bước tiếp theo", không phải dữ liệu "mất thêm") - số lượng dữ liệu SẼ BỊ XOÁ, để frontend cảnh báo bằng số cụ thể trước khi người dùng xác nhận. **Frontend phải coi lỗi tải số liệu này là "chưa biết" (chặn/cảnh báo chung), không được mặc định "không có dữ liệu".**
 
 ## 4f. Rationale + Reliability (Tier 1/2/3) trên TestCase (Module 15a/15b/15d/15e)
 

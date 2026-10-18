@@ -39,6 +39,8 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
 
     long countByTestCaseEndpointProject(Project project);
 
+    long countByTestCaseEndpointProjectAndStatus(Project project, TestResultStatus status);
+
     long countByTestCaseEndpointProjectOwnerAndStatus(User owner, TestResultStatus status);
 
     // Tổng lượt chạy toàn hệ thống (mọi owner) - dùng cho Dashboard Admin.

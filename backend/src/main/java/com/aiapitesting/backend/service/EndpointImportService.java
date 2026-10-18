@@ -9,6 +9,7 @@ import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.entity.TestCaseSource;
+import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.exception.ExecutionInProgressException;
 import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.BugReportEventRepository;
@@ -103,7 +104,8 @@ public class EndpointImportService {
                 testResultRepository.countByTestCaseEndpointProject(project),
                 bugReportRepository.countByProject(project),
                 bugReportRepository.countByProjectAndStatusNot(project, BugStatus.CLOSED),
-                testGenerationEventRepository.countByEndpointProject(project));
+                testGenerationEventRepository.countByEndpointProject(project),
+                testResultRepository.countByTestCaseEndpointProjectAndStatus(project, TestResultStatus.FAILED));
     }
 
     public PageResponse<EndpointResponse> list(UUID projectId, Pageable pageable) {

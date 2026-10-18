@@ -382,6 +382,14 @@ function StatCard({ label, value }: { label: string; value: number }) {
 function BugDashboard({ summary }: { summary: BugDashboardSummary }) {
   const maxPriorityCount = Math.max(1, ...PRIORITY_ORDER.map((p) => summary.countByPriority[p] ?? 0))
 
+  if (summary.totalCount === 0) {
+    return (
+      <div className="mt-4 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+        Chưa có bug report nào. Chạy test, rồi bấm "Sinh Bug Report" (hoặc "Tạo Bug" ở dòng test fail bên dưới) để tạo.
+      </div>
+    )
+  }
+
   return (
     <div className="mt-4 flex flex-col gap-4">
       <div className="grid grid-cols-3 gap-4">

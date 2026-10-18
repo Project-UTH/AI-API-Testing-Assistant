@@ -21,6 +21,7 @@ export function LoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [formError, setFormError] = useState<string | null>(null)
 
   const mutation = useMutation({
     mutationFn: () => loginUser(email, password),
@@ -32,6 +33,16 @@ export function LoginPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    // noValidate + kiểm tra tay: thông báo native của trình duyệt bằng tiếng Anh, lẫn với giao diện tiếng Việt.
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setFormError("Vui lòng nhập email hợp lệ")
+      return
+    }
+    if (password.length === 0) {
+      setFormError("Vui lòng nhập mật khẩu")
+      return
+    }
+    setFormError(null)
     mutation.mutate()
   }
 
@@ -47,7 +58,7 @@ export function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
             <div className="flex flex-col gap-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -76,7 +87,8 @@ export function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            {mutation.isError && (
+            {formError && <p className="text-sm text-destructive">{formError}</p>}
+            {!formError && mutation.isError && (
               <p className="text-sm text-destructive">
                 {mutation.error instanceof ApiError
                   ? mutation.error.message

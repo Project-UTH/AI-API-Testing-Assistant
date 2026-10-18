@@ -155,10 +155,11 @@ class EndpointImportServiceTest {
         when(bugReportRepository.countByProject(project)).thenReturn(5L);
         when(bugReportRepository.countByProjectAndStatusNot(project, BugStatus.CLOSED)).thenReturn(4L);
         when(testGenerationEventRepository.countByEndpointProject(project)).thenReturn(9L);
+        when(testResultRepository.countByTestCaseEndpointProjectAndStatus(project, com.aiapitesting.backend.entity.TestResultStatus.FAILED)).thenReturn(30L);
 
         ImportImpactResponse impact = endpointImportService.getImportImpact(projectId);
 
-        assertThat(impact).isEqualTo(new ImportImpactResponse(7, 74, 3, 2, 23, 90, 5, 4, 9));
+        assertThat(impact).isEqualTo(new ImportImpactResponse(7, 74, 3, 2, 23, 90, 5, 4, 9, 30));
     }
 
     @Test

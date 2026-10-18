@@ -8,6 +8,7 @@ package com.aiapitesting.backend.dto.response;
  * @param lockedTestCaseCount   test case đã khoá - vẫn bị xoá khi import (khoá chỉ chặn việc sinh lại, không chặn import)
  * @param openBugReportCount    bug report chưa Closed
  * @param generationEventCount  lịch sử các lần sinh test case bằng AI
+ * @param failedResultCount     kết quả chạy FAILED - KHÔNG phải dữ liệu "mất thêm" mà để giao diện biết project có test fail không (banner "Bước tiếp theo")
  */
 public record ImportImpactResponse(
         long endpointCount,
@@ -18,6 +19,7 @@ public record ImportImpactResponse(
         long testResultCount,
         long bugReportCount,
         long openBugReportCount,
-        long generationEventCount
+        long generationEventCount,
+        long failedResultCount
 ) {
 }

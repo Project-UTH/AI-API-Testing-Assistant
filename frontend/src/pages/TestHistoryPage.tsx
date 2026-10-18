@@ -188,18 +188,22 @@ function ExecutionEventRow({
           Xem chi tiết
         </Button>
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-        <span>{event.selectedCount}/{currentTestCaseCount} test case</span>
-        <span>·</span>
-        <StatusBadge status="PASSED" compact />
-        <span>{event.passCount}</span>
-        {(event.failCount ?? 0) > 0 && (
-          <>
-            <StatusBadge status="FAILED" compact />
-            <span>{event.failCount}</span>
-          </>
-        )}
-      </div>
+      {event.selectedCount === 0 ? (
+        <p className="mt-1 text-xs text-muted-foreground">Không có test case nào của endpoint này được chạy.</p>
+      ) : (
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span>{event.selectedCount}/{currentTestCaseCount} test case</span>
+          <span>·</span>
+          <StatusBadge status="PASSED" compact />
+          <span>{event.passCount}</span>
+          {(event.failCount ?? 0) > 0 && (
+            <>
+              <StatusBadge status="FAILED" compact />
+              <span>{event.failCount}</span>
+            </>
+          )}
+        </div>
+      )}
       {(event.otherEndpointCount ?? 0) > 0 && (
         <p className="mt-0.5 text-xs text-muted-foreground italic">
           Chạy chung với {event.otherEndpointCount} endpoint khác
