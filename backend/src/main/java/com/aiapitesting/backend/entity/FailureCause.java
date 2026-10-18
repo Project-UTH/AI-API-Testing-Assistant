@@ -29,6 +29,19 @@ public enum FailureCause {
     DATA_STATE("Nghi dữ liệu/trạng thái đổi", false),
     /** Fail lặp lại cùng 1 kết quả nhiều lần, chưa từng Pass - có thể là bug thật hoặc kỳ vọng test sai. */
     STABLE_FAILURE("Lỗi ổn định", false),
+    /**
+     * 404 khi test dùng GIÁ TRỊ DỰ PHÒNG cho tham số đường dẫn ({id}...) và chưa từng Pass: nhiều khả năng id đó không tồn
+     * tại trên hệ thống đích nên test chưa chạm tới logic cần kiểm (Negative/Boundary chưa tới bước validate). Thuộc nhóm
+     * "không phải do API": không tính là đã kiểm thấy lệch ở Coverage, không tự tạo bug.
+     */
+    RESOURCE_NOT_FOUND("Nghi chưa chạm đúng dữ liệu", true),
+    /**
+     * Mã trạng thái thực tế lệch kỳ vọng nhưng CÙNG NHÓM nghĩa (401/403 cùng là từ chối xác thực, 400/422 cùng là từ chối
+     * input, 200/201/204 cùng là thành công): API hành xử nhất quán, nhiều khả năng kỳ vọng của test chưa khớp cách API
+     * chọn mã. Chỉ là nhãn gợi ý, kết quả vẫn FAILED. KHÔNG BAO GIỜ gắn khi API trả 5xx, khi test Security bỏ/sai token mà
+     * API trả 2xx (bỏ qua xác thực), hoặc test kỳ vọng lỗi mà API chấp nhận (4xx → 2xx). Không tự tạo bug.
+     */
+    EXPECTATION_MISMATCH("Nghi kỳ vọng lệch mã", false),
     /** Chưa đủ dữ liệu để kết luận. */
     UNDETERMINED("Chưa đủ dữ liệu", false);
 
@@ -58,6 +71,6 @@ public enum FailureCause {
      * hình test) hoặc test không ổn định (lần Fail này có thể chỉ là 1 lần "xui").
      */
     public boolean suppressesBugAutomation() {
-        return notApiFault || this == FLAKY;
+        return notApiFault || this == FLAKY || this == EXPECTATION_MISMATCH;
     }
 }

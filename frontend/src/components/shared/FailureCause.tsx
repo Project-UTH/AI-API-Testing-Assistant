@@ -12,6 +12,8 @@ const CAUSE_STYLES: Record<FailureCauseCode, string> = {
   ASSERTION_FAILED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   DATA_STATE: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
   STABLE_FAILURE: "bg-destructive/10 text-destructive",
+  RESOURCE_NOT_FOUND: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  EXPECTATION_MISMATCH: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   UNDETERMINED: "bg-muted text-muted-foreground",
 }
 
@@ -24,6 +26,10 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
   ASSERTION_FAILED: "Mã trạng thái đã đúng - mở Sửa test case, kiểm tra assertion (đường dẫn trường, giá trị kỳ vọng) có khớp nội dung phản hồi bên dưới không.",
   DATA_STATE: "Dữ liệu/trạng thái của hệ thống đích có thể đã đổi (tài nguyên bị xoá, dữ liệu trùng) - kiểm tra rồi chạy lại.",
   STABLE_FAILURE: "Fail lặp lại nhiều lần: xem lại kỳ vọng của test hoặc điều tra API - hệ thống không phân biệt được 2 khả năng này.",
+  RESOURCE_NOT_FOUND:
+    "Test gọi bằng id dự phòng nên có thể id này không tồn tại: thêm Test Data Chaining (tạo tài nguyên bằng POST rồi lấy id) hoặc đổi giá trị dự phòng thành id có thật.",
+  EXPECTATION_MISMATCH:
+    "API trả mã khác kỳ vọng nhưng cùng nhóm nghĩa (vd 401/403, 400/422): nếu đồng ý với cách API chọn mã thì sửa kỳ vọng của test. Kết quả vẫn là Fail.",
   UNDETERMINED: "Chạy lại vài lần để có thêm bằng chứng trước khi kết luận.",
 }
 
@@ -73,6 +79,7 @@ const BANNER_TEXT: Partial<Record<FailureCauseCode, string>> = {
   AUTH_CONFIG: "cùng bị từ chối xác thực - nghi token của hệ thống đích sai hoặc hết hạn.",
   ENVIRONMENT: "cùng lỗi khi gọi hệ thống đích - nghi hệ thống đích không sẵn sàng hoặc không tới được.",
   TEST_SETUP: "không chạy được vì cấu hình test chưa đủ.",
+  RESOURCE_NOT_FOUND: "gọi bằng id dự phòng và nhận 404 - test chưa chạm tới logic cần kiểm.",
 }
 
 /**
@@ -111,8 +118,7 @@ export function FailureCauseBanner({ results, projectId }: { results: TestResult
         </p>
       ))}
       <p className="text-xs text-muted-foreground">
-        Các lượt fail này không bị tính là "API lệch kỳ vọng" ở trang Coverage và không làm tăng điểm rủi ro hay tự mở lại
-        Bug Report.
+        Các lượt fail này không bị tính là "API lệch kỳ vọng" ở trang Coverage và không tự tạo hay mở lại Bug Report.
       </p>
     </div>
   )

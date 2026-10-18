@@ -16,6 +16,18 @@ public interface TestCaseDependencyRepository extends JpaRepository<TestCaseDepe
     // Dependency của riêng 1 test case - dùng để biết tham số nào đã có dependency, không gợi ý lại.
     List<TestCaseDependency> findAllByTestCase(TestCase testCase);
 
+    // Chỉ tên placeholder đã có dependency cấp giá trị, theo test case - ExecutionFailureAnalyzer cần để biết tham số đường
+    // dẫn nào phải dùng giá trị dự phòng (không kéo cả entity/proxy lên).
+    @Query("SELECT d.testCase.id AS testCaseId, d.placeholderName AS placeholderName FROM TestCaseDependency d "
+            + "WHERE d.testCase.id IN :testCaseIds")
+    List<PlaceholderRow> findPlaceholderRowsByTestCaseIds(@Param("testCaseIds") List<UUID> testCaseIds);
+
+    interface PlaceholderRow {
+        UUID getTestCaseId();
+
+        String getPlaceholderName();
+    }
+
     /**
      * @Modifying bắt buộc - saveDependencies() xoá rồi insert lại dependency cho cùng 1 placeholder
      * trong cùng transaction; Hibernate flush theo thứ tự cố định (insert trước, delete sau) khiến

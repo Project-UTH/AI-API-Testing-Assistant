@@ -38,13 +38,19 @@ class ExecutionFailureAnalyzerTest {
     @Mock
     private TestResultRepository testResultRepository;
 
+    @Mock
+    private com.aiapitesting.backend.repository.TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.TestCaseAssertionRepository testCaseAssertionRepository;
+
     private ExecutionFailureAnalyzer analyzer;
     private Endpoint endpoint;
     private TestExecution execution;
 
     @BeforeEach
     void setUp() {
-        analyzer = new ExecutionFailureAnalyzer(testResultRepository, new FailureCauseClassifier());
+        analyzer = new ExecutionFailureAnalyzer(testResultRepository, new FailureCauseClassifier(), testCaseDependencyRepository, testCaseAssertionRepository);
         endpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/pets").build();
         execution = TestExecution.builder().id(UUID.randomUUID()).targetBaseUrlSnapshot("http://target").build();
     }
@@ -104,6 +110,76 @@ class ExecutionFailureAnalyzerTest {
                 return "http://target";
             }
         };
+    }
+
+    // ---- 404 do id dự phòng (RESOURCE_NOT_FOUND) ----
+
+    private TestResult notFoundResult(String resolvedPath, String fallbacksJson) {
+        TestCase testCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).expectedStatus(200)
+                .resolvedPath(resolvedPath).pathParamFallbacks(fallbacksJson).authOverride(TestCaseAuthOverride.DEFAULT).build();
+        return TestResult.builder().id(UUID.randomUUID()).testCase(testCase).execution(execution)
+                .status(TestResultStatus.FAILED).responseStatus(404).testCaseFingerprint("fp").build();
+    }
+
+    private com.aiapitesting.backend.repository.TestCaseDependencyRepository.PlaceholderRow dependencyRow(UUID testCaseId, String name) {
+        return new com.aiapitesting.backend.repository.TestCaseDependencyRepository.PlaceholderRow() {
+            @Override
+            public UUID getTestCaseId() {
+                return testCaseId;
+            }
+
+            @Override
+            public String getPlaceholderName() {
+                return name;
+            }
+        };
+    }
+
+    @Test
+    void notFoundOnFallbackIdInPath_isResourceNotFoundAndNamesTheFallbackValue() {
+        TestResult r = notFoundResult("/api/products/{{id}}", "{\"id\":\"1\"}");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(r, "fp", TestResultStatus.FAILED, 404, 0)));
+
+        analyzer.analyze(execution, List.of(r));
+
+        assertThat(r.getFailureCause()).isEqualTo(FailureCause.RESOURCE_NOT_FOUND);
+        assertThat(r.getFailureEvidence()).contains("{id}=1");
+    }
+
+    @Test
+    void fallbackOnlyInQueryString_isNotAPathParam() {
+        TestResult r = notFoundResult("/api/products?minPrice={{minPrice}}", "{\"minPrice\":\"5\"}");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(r, "fp", TestResultStatus.FAILED, 404, 0)));
+
+        analyzer.analyze(execution, List.of(r));
+
+        assertThat(r.getFailureCause()).isNotEqualTo(FailureCause.RESOURCE_NOT_FOUND);
+    }
+
+    @Test
+    void pathParamSuppliedByDependency_isNotAFallback() {
+        TestResult r = notFoundResult("/api/products/{{id}}", "{\"id\":\"1\"}");
+        when(testCaseDependencyRepository.findPlaceholderRowsByTestCaseIds(anyList()))
+                .thenReturn(List.of(dependencyRow(r.getTestCase().getId(), "id")));
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(r, "fp", TestResultStatus.FAILED, 404, 0)));
+
+        analyzer.analyze(execution, List.of(r));
+
+        assertThat(r.getFailureCause()).isNotEqualTo(FailureCause.RESOURCE_NOT_FOUND);
+    }
+
+    @Test
+    void notFoundOnlyChecksDependenciesForResultsThatActuallyGot404() {
+        TestResult r = result(TestResultStatus.FAILED, 200, 500, "fp");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(r, "fp", TestResultStatus.FAILED, 500, 0)));
+
+        analyzer.analyze(execution, List.of(r));
+
+        org.mockito.Mockito.verifyNoInteractions(testCaseDependencyRepository);
     }
 
     @Test

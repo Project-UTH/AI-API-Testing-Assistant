@@ -24,6 +24,8 @@ export type FailureCauseCode =
   | "ASSERTION_FAILED"
   | "DATA_STATE"
   | "STABLE_FAILURE"
+  | "RESOURCE_NOT_FOUND"
+  | "EXPECTATION_MISMATCH"
   | "UNDETERMINED"
 
 export interface FailureCause {

@@ -516,6 +516,7 @@ class FailureCauseClassifierTest {
     @Test
     void onlyStrongEvidenceCausesAreExcludedFromApiMetrics() {
         assertThat(List.of(FailureCause.values())).filteredOn(FailureCause::isNotApiFault)
-                .containsExactlyInAnyOrder(FailureCause.TEST_SETUP, FailureCause.ENVIRONMENT, FailureCause.AUTH_CONFIG);
+                .containsExactlyInAnyOrder(FailureCause.TEST_SETUP, FailureCause.ENVIRONMENT, FailureCause.AUTH_CONFIG,
+                        FailureCause.RESOURCE_NOT_FOUND);
     }
 }

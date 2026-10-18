@@ -15,6 +15,8 @@ public interface TestCaseAssertionRepository extends JpaRepository<TestCaseAsser
     // Assertion của riêng 1 test case (form sửa test case) - hiện lại danh sách đã có để sửa/xoá.
     List<TestCaseAssertion> findAllByTestCase(TestCase testCase);
 
+    boolean existsByTestCase(TestCase testCase);
+
     // @Modifying bắt buộc - saveAssertions() xoá rồi insert lại trong cùng transaction, cần DELETE
     // chạy thật ngay thay vì đợi flush.
     @Modifying

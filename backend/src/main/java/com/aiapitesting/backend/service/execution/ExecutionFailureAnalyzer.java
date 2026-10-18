@@ -9,6 +9,8 @@ import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
+import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
+import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +43,8 @@ public class ExecutionFailureAnalyzer {
 
     private final TestResultRepository testResultRepository;
     private final FailureCauseClassifier failureCauseClassifier;
+    private final TestCaseDependencyRepository testCaseDependencyRepository;
+    private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -72,6 +76,7 @@ public class ExecutionFailureAnalyzer {
                 .findHistoryRowsByTestCaseIds(testCaseIds).stream()
                 .collect(Collectors.groupingBy(TestResultRepository.HistoryRow::getTestCaseId));
         FailureCauseClassifier.ExecutionContext context = buildContext(results);
+        Map<UUID, Map<String, String>> fallbackPathParamsByTestCaseId = fallbackPathParamsOf(failed);
         List<TestResult> changed = new ArrayList<>();
 
         for (TestResult result : failed) {
@@ -83,7 +88,9 @@ public class ExecutionFailureAnalyzer {
                     historyOf(result, rows, Map.of()),
                     execution.getTargetBaseUrlSnapshot(), execution.getTargetAuthUpdatedAtSnapshot(), context,
                     failedAssertionsOf(result), lastOtherVersionOf(result, rows),
-                    result.getTestCase().getEndpoint() == null ? null : result.getTestCase().getEndpoint().isRequiresAuth());
+                    result.getTestCase().getEndpoint() == null ? null : result.getTestCase().getEndpoint().isRequiresAuth(),
+                    fallbackPathParamsByTestCaseId.getOrDefault(result.getTestCase().getId(), Map.of()),
+                    hasAssertions(result));
             FailureCauseClassifier.Result classified = failureCauseClassifier.classify(input);
             if (classified != null) {
                 result.setFailureCause(classified.cause());
@@ -183,6 +190,75 @@ public class ExecutionFailureAnalyzer {
         }
         return last == null ? null : new FailureCauseClassifier.HistoryPoint(
                 last.getStatus(), last.getResponseStatus(), last.getCreatedAt(), last.getBaseUrl());
+    }
+
+    private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile("\\{\\{(\\w+)}}");
+
+    /**
+     * Tham số TRONG ĐƯỜNG DẪN (phần trước dấu ?) mà test dùng giá trị dự phòng: placeholder của resolvedPath không có
+     * dependency cấp giá trị (giống cách TestExecutionRunner chọn nguồn giá trị). Chỉ tính cho kết quả 404 - nơi duy nhất
+     * thông tin này được dùng - để khỏi tốn truy vấn cho các kết quả khác. Lỗi đọc dữ liệu thì bỏ qua (không có nhãn).
+     */
+    private Map<UUID, Map<String, String>> fallbackPathParamsOf(List<TestResult> failed) {
+        List<TestResult> notFound = failed.stream()
+                .filter(r -> Integer.valueOf(404).equals(r.getResponseStatus())).toList();
+        if (notFound.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = notFound.stream().map(r -> r.getTestCase().getId()).distinct().toList();
+        Map<UUID, Set<String>> withDependency = testCaseDependencyRepository.findPlaceholderRowsByTestCaseIds(ids).stream()
+                .collect(Collectors.groupingBy(TestCaseDependencyRepository.PlaceholderRow::getTestCaseId,
+                        Collectors.mapping(TestCaseDependencyRepository.PlaceholderRow::getPlaceholderName, Collectors.toSet())));
+        Map<UUID, Map<String, String>> result = new HashMap<>();
+        for (TestResult r : notFound) {
+            var testCase = r.getTestCase();
+            if (result.containsKey(testCase.getId()) || testCase.getResolvedPath() == null) {
+                continue;
+            }
+            String path = testCase.getResolvedPath();
+            int query = path.indexOf('?');
+            if (query >= 0) {
+                path = path.substring(0, query);
+            }
+            Map<String, String> fallbacks = parseStringMap(testCase.getPathParamFallbacks());
+            Set<String> covered = withDependency.getOrDefault(testCase.getId(), Set.of());
+            Map<String, String> used = new java.util.LinkedHashMap<>();
+            var matcher = PLACEHOLDER.matcher(path);
+            while (matcher.find()) {
+                String name = matcher.group(1);
+                if (!covered.contains(name) && fallbacks.containsKey(name)) {
+                    used.put(name, fallbacks.get(name));
+                }
+            }
+            result.put(testCase.getId(), used);
+        }
+        return result;
+    }
+
+    private Map<String, String> parseStringMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {
+            });
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    /** Test case có assertion nội dung phản hồi không - chỉ tra khi cần (2xx lệch 2xx), lỗi thì coi là có (không gắn nhãn). */
+    private boolean hasAssertions(TestResult result) {
+        Integer expected = result.getTestCase().getExpectedStatus();
+        Integer actual = result.getResponseStatus();
+        if (expected == null || actual == null || expected.equals(actual) || expected < 200 || expected > 299 || actual < 200 || actual > 299) {
+            return false;
+        }
+        try {
+            return testCaseAssertionRepository.existsByTestCase(result.getTestCase());
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     /** Các assertion sai của kết quả (đọc từ JSON đã lưu); JSON thiếu/hỏng thì rỗng - không được làm hỏng bước phân tích. */
