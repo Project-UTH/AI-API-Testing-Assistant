@@ -55,7 +55,7 @@ const RUN_STATUS_DISPLAY: Record<CoverageRunStatus, { label: string; className: 
   NO_VERDICT: {
     label: "Chạy chưa ra kết quả",
     className: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    title: "Lần chạy mới nhất bị lỗi kết nối hoặc bị chặn bởi chuỗi phụ thuộc - chưa biết API đúng hay sai.",
+    title: "Lần chạy mới nhất bị lỗi kết nối, bị chặn bởi chuỗi phụ thuộc, hoặc Fail do nguyên nhân không phải API (token hết hạn, môi trường) - chưa biết API đúng hay sai. Xem nguyên nhân ở trang Kết quả thực thi.",
   },
   NOT_RUN: {
     label: "Chưa chạy",

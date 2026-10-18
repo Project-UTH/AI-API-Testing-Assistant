@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { StatusBadge, RESULT_STATUS_STYLES, RESULT_STATUS_LABEL, RESULT_STATUS_ICON } from "@/components/shared/StatusBadge"
 import { BugStatusBadge } from "@/components/shared/BugStatusBadge"
+import { FailureCauseBanner, FailureCauseChip, FailureCauseDetail } from "@/components/shared/FailureCause"
 import { CreateBugReportDialog } from "@/components/bugreports/CreateBugReportDialog"
 import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog"
 import { ApiError } from "@/lib/api"
@@ -260,6 +261,9 @@ export function TestExecutionPage() {
       )}
 
       {isFinished && filteredResults.length > 0 && <ExecutionSummaryDashboard results={filteredResults} />}
+      {isFinished && filteredResults.length > 0 && (
+        <FailureCauseBanner results={filteredResults} projectId={projectId} />
+      )}
 
       <ul className="mt-4 flex flex-col gap-2">
         {filteredResults.map((result) => {
@@ -287,7 +291,9 @@ export function TestExecutionPage() {
                   <span className="min-w-0 flex-1 truncate text-sm">{result.testCaseName}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     Kỳ vọng {result.expectedStatus} → thực tế {result.responseStatus ?? "—"}
+                    {result.durationMs !== null && ` · ${result.durationMs} ms`}
                   </span>
+                  {result.failureCause && <FailureCauseChip cause={result.failureCause} />}
                   {result.errorMessage && (
                     <span className="shrink-0 truncate text-xs text-destructive sm:max-w-64" title={result.errorMessage}>
                       {result.errorMessage}
@@ -311,6 +317,7 @@ export function TestExecutionPage() {
 
               {isExpanded && (
                 <div className="flex flex-col gap-3 border-t border-border p-3">
+                  <FailureCauseDetail result={result} />
                   {result.errorMessage && (
                     <div>
                       <p className="mb-1 text-xs font-medium text-muted-foreground">Lỗi</p>

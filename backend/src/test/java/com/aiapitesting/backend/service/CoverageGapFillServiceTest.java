@@ -369,6 +369,11 @@ class CoverageGapFillServiceTest {
             public TestResultStatus getStatus() {
                 return status;
             }
+
+            @Override
+            public com.aiapitesting.backend.entity.FailureCause getFailureCause() {
+                return null;
+            }
         };
     }
 }

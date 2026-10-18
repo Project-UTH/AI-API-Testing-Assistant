@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.repository;
 
+import com.aiapitesting.backend.entity.FailureCause;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestExecution;
@@ -11,6 +12,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -96,19 +98,24 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
     // Risk Engine (Module 15c) - tỷ lệ fail lịch sử theo từng endpoint, dùng làm 1 thành phần risk
     // score. 1 query GROUP BY cho cả project (tránh N+1 theo từng endpoint), cùng công thức
     // countByEndpointIds/countGroupedByOwnerIds đã dùng ở TestCaseRepository.
-    @Query("SELECT tr.testCase.endpoint.id AS endpointId, tr.status AS status, COUNT(tr) AS count FROM TestResult tr "
-            + "WHERE tr.testCase.endpoint.project = :project GROUP BY tr.testCase.endpoint.id, tr.status")
+    // Module 16 - thêm failureCause vào GROUP BY để Risk loại được các lượt fail do môi trường/token/cấu hình test
+    // (không nói gì về API đang test) khỏi tỷ lệ fail. failureCause null = PASSED/BLOCKED/dữ liệu cũ.
+    @Query("SELECT tr.testCase.endpoint.id AS endpointId, tr.status AS status, tr.failureCause AS failureCause, COUNT(tr) AS count "
+            + "FROM TestResult tr WHERE tr.testCase.endpoint.project = :project "
+            + "GROUP BY tr.testCase.endpoint.id, tr.status, tr.failureCause")
     List<EndpointStatusCount> countGroupedByEndpointAndStatus(@Param("project") Project project);
 
     interface EndpointStatusCount {
         UUID getEndpointId();
         TestResultStatus getStatus();
+        FailureCause getFailureCause();
         long getCount();
     }
 
-    // Module 15j - Coverage theo kết quả chạy: lượt chạy MỚI NHẤT của từng test case trong project, CHỈ 2
+    // Module 15j - Coverage theo kết quả chạy: lượt chạy MỚI NHẤT của từng test case trong project, CHỈ vài
     // cột (không kéo responseBody/assertionResultsJson TEXT lên). 1 query cho cả project, không N+1.
-    @Query("SELECT tr.testCase.id AS testCaseId, tr.status AS status FROM TestResult tr "
+    // Module 16 - thêm failureCause: FAILED do môi trường/token không được tính là "đã kiểm và thấy API lệch".
+    @Query("SELECT tr.testCase.id AS testCaseId, tr.status AS status, tr.failureCause AS failureCause FROM TestResult tr "
             + "WHERE tr.testCase.endpoint.project = :project AND tr.createdAt = "
             + "(SELECT MAX(tr2.createdAt) FROM TestResult tr2 WHERE tr2.testCase = tr.testCase)")
     List<TestCaseLatestResult> findLatestResultsByProject(@Param("project") Project project);
@@ -116,5 +123,24 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
     interface TestCaseLatestResult {
         UUID getTestCaseId();
         TestResultStatus getStatus();
+        FailureCause getFailureCause();
+    }
+
+    // Module 16 - lịch sử các lần chạy của nhiều test case cho ExecutionFailureAnalyzer: chỉ vài cột nhẹ, KHÔNG
+    // kéo responseBody. Chỉ lấy kết quả có fingerprint (dữ liệu trước Module 16 không có - không so được phiên
+    // bản). Sắp theo thời gian tăng dần, service tự lọc theo (testCaseId, fingerprint).
+    @Query("SELECT tr.testCase.id AS testCaseId, tr.testCaseFingerprint AS fingerprint, tr.status AS status, "
+            + "tr.responseStatus AS responseStatus, tr.createdAt AS createdAt, tr.execution.targetBaseUrlSnapshot AS baseUrl "
+            + "FROM TestResult tr WHERE tr.testCase.id IN :testCaseIds AND tr.testCaseFingerprint IS NOT NULL "
+            + "ORDER BY tr.createdAt ASC")
+    List<HistoryRow> findHistoryRowsByTestCaseIds(@Param("testCaseIds") List<UUID> testCaseIds);
+
+    interface HistoryRow {
+        UUID getTestCaseId();
+        String getFingerprint();
+        TestResultStatus getStatus();
+        Integer getResponseStatus();
+        Instant getCreatedAt();
+        String getBaseUrl();
     }
 }

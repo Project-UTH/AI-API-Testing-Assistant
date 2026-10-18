@@ -52,6 +52,31 @@ public class TestResult {
     @Column(columnDefinition = "TEXT")
     private String assertionResultsJson;
 
+    /** Module 16 - thời gian gọi target API (ms); null cho case không gọi target (ERROR cấu hình, BLOCKED) và dữ liệu cũ. */
+    private Long durationMs;
+
+    /** Module 16 - loại lỗi hạ tầng khi gọi target (chỉ ERROR do gọi target thất bại); null với mọi trường hợp khác. */
+    @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "VARCHAR(20)")
+    private ErrorKind errorKind;
+
+    /**
+     * Module 16 - "dấu vân tay" phiên bản test lúc chạy (hash nội dung gửi đi + kỳ vọng + assertion + liên kết dữ
+     * liệu). Chỉ so lịch sử giữa các lần chạy CÙNG fingerprint - sửa test case giữa 2 lần chạy thì đó là 2 phiên
+     * bản khác nhau, không phải "không ổn định". Null với dữ liệu cũ (không đưa vào phân tích theo lịch sử).
+     */
+    @Column(length = 64)
+    private String testCaseFingerprint;
+
+    /** Module 16 - nguyên nhân nghi ngờ của kết quả FAILED/ERROR, chấm lúc chạy (xem FailureCause). Null = PASSED/BLOCKED/dữ liệu cũ. */
+    @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "VARCHAR(30)")
+    private FailureCause failureCause;
+
+    /** Module 16 - JSON array các câu bằng chứng cho {@link #failureCause}. */
+    @Column(columnDefinition = "TEXT")
+    private String failureEvidence;
+
     /** True nếu test case này không nằm trong lựa chọn ban đầu, được kéo theo qua Test Data Chaining (Module 7). */
     @Column(nullable = false)
     @Builder.Default

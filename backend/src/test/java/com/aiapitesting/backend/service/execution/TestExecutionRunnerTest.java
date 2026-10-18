@@ -52,6 +52,9 @@ class TestExecutionRunnerTest {
     @Mock
     private BugReportStatusService bugReportStatusService;
 
+    @Mock
+    private ExecutionFailureAnalyzer executionFailureAnalyzer;
+
     private TestExecutionRunner runner;
 
     private Project project;
@@ -62,7 +65,7 @@ class TestExecutionRunnerTest {
     void setUp() {
         runner = new TestExecutionRunner(
                 testExecutionRepository, testResultRepository, restAssuredTestRunner,
-                testCasePathValidator, bugReportStatusService);
+                testCasePathValidator, bugReportStatusService, executionFailureAnalyzer);
         project = Project.builder().id(UUID.randomUUID()).targetBaseUrl("https://petstore.example.com").build();
         endpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("GET").path("/pet/{petId}").build();
         execution = TestExecution.builder().id(UUID.randomUUID()).project(project)
@@ -269,6 +272,88 @@ class TestExecutionRunnerTest {
         ArgumentCaptor<TestResult> resultCaptor = ArgumentCaptor.forClass(TestResult.class);
         verify(testResultRepository).save(resultCaptor.capture());
         assertThat(resultCaptor.getValue().getStatus()).isEqualTo(TestResultStatus.FAILED);
+    }
+
+    // ---- Module 16 - dữ liệu thu thập + phân tích nguyên nhân fail + thứ tự tự động hoá Bug Report ----
+
+    private TestCase simpleCase() {
+        Endpoint noParamEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("GET").path("/pets").build();
+        return TestCase.builder().id(UUID.randomUUID()).endpoint(noParamEndpoint)
+                .resolvedPath("/pets").expectedStatus(200).createdAt(Instant.now()).build();
+    }
+
+    @Test
+    void runInBackground_callingTarget_recordsDurationAndFingerprint() {
+        TestCase testCase = simpleCase();
+        when(restAssuredTestRunner.run(any(), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getDurationMs()).isNotNull().isGreaterThanOrEqualTo(0);
+        assertThat(captor.getValue().getErrorKind()).isNull();
+        assertThat(captor.getValue().getTestCaseFingerprint()).hasSize(64);
+    }
+
+    @Test
+    void runInBackground_targetUnreachable_recordsErrorKindByExceptionTypeNotMessage() {
+        TestCase testCase = simpleCase();
+        // Thông báo cố tình KHÔNG chứa chữ "timeout"/"refused" - phải phân loại theo loại exception.
+        when(restAssuredTestRunner.run(any(), any(), any()))
+                .thenThrow(new RuntimeException("wrapper", new java.net.SocketTimeoutException("x")));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.ERROR);
+        assertThat(captor.getValue().getErrorKind()).isEqualTo(com.aiapitesting.backend.entity.ErrorKind.TIMEOUT);
+        assertThat(captor.getValue().getDurationMs()).isNotNull();
+    }
+
+    @Test
+    void runInBackground_missingFallback_errorHasNoErrorKindAndNoDuration() {
+        TestCase testCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint)
+                .resolvedPath("/pet/{{petId}}").pathParamFallbacks(null)
+                .expectedStatus(200).createdAt(Instant.now()).build();
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        // Không gọi target nên không có errorKind (= lỗi cấu hình test, khác lỗi hạ tầng) và không có thời gian.
+        assertThat(captor.getValue().getErrorKind()).isNull();
+        assertThat(captor.getValue().getDurationMs()).isNull();
+        assertThat(captor.getValue().getTestCaseFingerprint()).isNotNull();
+    }
+
+    /** Bug Report tự động hoá phải chạy SAU phân tích nguyên nhân (để biết fail do token/môi trường) - và đúng 1 lần/kết quả. */
+    @Test
+    void runInBackground_analyzesFailuresBeforeNotifyingBugReports() {
+        TestCase first = simpleCase();
+        TestCase second = simpleCase();
+        when(restAssuredTestRunner.run(any(), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(401, "no"));
+
+        runner.runInBackground(execution, List.of(first, second), project, Map.of(), Set.of(), Map.of());
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(executionFailureAnalyzer, bugReportStatusService);
+        order.verify(executionFailureAnalyzer).analyze(eq(execution), any());
+        order.verify(bugReportStatusService, times(2)).onNewTestResult(any(TestResult.class));
+    }
+
+    @Test
+    void runInBackground_analyzerReceivesEveryResultOfTheExecution() {
+        TestCase first = simpleCase();
+        TestCase second = simpleCase();
+        when(restAssuredTestRunner.run(any(), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+
+        runner.runInBackground(execution, List.of(first, second), project, Map.of(), Set.of(), Map.of());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestResult>> captor = ArgumentCaptor.forClass(List.class);
+        verify(executionFailureAnalyzer).analyze(eq(execution), captor.capture());
+        assertThat(captor.getValue()).hasSize(2);
     }
 
     @Test

@@ -36,6 +36,15 @@ public class TestExecution {
 
     private Instant finishedAt;
 
+    /** Module 16 - Target Base URL lúc chạy (project có thể đổi URL giữa 2 lần chạy - bằng chứng cho nguyên nhân môi trường). */
+    private String targetBaseUrlSnapshot;
+
+    /**
+     * Module 16 - thời điểm token đích được đặt/đổi gần nhất lúc chạy (Project.targetAuthUpdatedAt). CHỈ lưu thời
+     * điểm, không lưu hay hash token.
+     */
+    private Instant targetAuthUpdatedAtSnapshot;
+
     @PrePersist
     protected void onCreate() {
         this.startedAt = Instant.now();

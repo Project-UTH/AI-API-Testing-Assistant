@@ -34,6 +34,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -169,6 +170,7 @@ public class EndpointImportService {
         }
         project.setTargetAuthType(authType);
         project.setTargetAuthValueEncrypted(aesEncryptionService.encrypt(authValue));
+        project.setTargetAuthUpdatedAt(Instant.now()); // Module 16 - chỉ mốc thời gian, không lưu token
     }
 
     /** Nếu URL nguồn OpenAPI bị chặn sau login, dùng chính auth đã nhập để gắn header khi tải. */

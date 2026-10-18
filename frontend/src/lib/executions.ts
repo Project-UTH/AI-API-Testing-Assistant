@@ -13,6 +13,25 @@ export interface AssertionResult {
   passed: boolean
 }
 
+export type ErrorKind = "TIMEOUT" | "CONNECTION" | "DNS" | "OTHER"
+
+/** Module 16 - nguyên nhân NGHI NGỜ của kết quả FAILED/ERROR (chấm tất định lúc chạy, không phải AI, không khẳng định). */
+export type FailureCauseCode =
+  | "TEST_SETUP"
+  | "ENVIRONMENT"
+  | "AUTH_CONFIG"
+  | "DATA_STATE"
+  | "STABLE_FAILURE"
+  | "UNDETERMINED"
+
+export interface FailureCause {
+  code: FailureCauseCode
+  label: string
+  /** Bằng chứng mạnh rằng fail KHÔNG phải do API đang test (môi trường/token/cấu hình test). */
+  notApiFault: boolean
+  evidence: string[]
+}
+
 export interface TestResult {
   id: string
   testCaseId: string
@@ -27,6 +46,11 @@ export interface TestResult {
   /** Bug Report đã tồn tại từ lần chạy này (nếu có) - null nếu chưa ai tạo. */
   existingBugReportId: string | null
   existingBugId: string | null
+  /** Module 16 - thời gian gọi target (ms); null khi không gọi target hoặc kết quả cũ. */
+  durationMs: number | null
+  errorKind: ErrorKind | null
+  /** null cho PASSED/BLOCKED và kết quả trước Module 16. */
+  failureCause: FailureCause | null
 }
 
 export interface TestExecution {

@@ -1,6 +1,8 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-10-18 (Ghi kế hoạch tiếp theo của 15j - gộp giao diện báo cáo lần sinh với Coverage, sửa hiển thị mục Positive - và kế hoạch Module 16 (Test Stability & Failure Analysis, chức năng 2), CHƯA CODE; phần đã bàn nhưng chưa chốt (vai trò Risk, gợi ý cho mục chưa phủ) ghi riêng, không làm nếu chưa xác nhận.)
+> Cập nhật lần cuối: 2026-10-18 (✅ Code xong Module 16 giai đoạn 1 - phân tích nguyên nhân fail - trên branch `feature/module-16-test-stability` (tạo từ branch 15j vì 15j chưa merge): mỗi kết quả FAILED/ERROR được gắn nguyên nhân nghi ngờ kèm bằng chứng (tất định, 0 token), fail do môi trường/token không còn bị tính là "API lệch kỳ vọng" ở Coverage, không cộng điểm Risk, và không tự mở lại Bug Report đã đóng (sửa lỗi thật: tự động hoá Bug Report trước đây chạy ngay lúc lưu từng kết quả). 362/362 test pass; chưa verify trên Docker thật; giai đoạn 2 (flaky) chưa làm.)
+>
+> Cập nhật trước đó: 2026-10-18 (Ghi kế hoạch tiếp theo của 15j - gộp giao diện báo cáo lần sinh với Coverage, sửa hiển thị mục Positive - và kế hoạch Module 16 (Test Stability & Failure Analysis, chức năng 2), CHƯA CODE; phần đã bàn nhưng chưa chốt (vai trò Risk, gợi ý cho mục chưa phủ) ghi riêng, không làm nếu chưa xác nhận.)
 >
 > Cập nhật trước đó: 2026-10-17 (✅ Code xong Module 15j - Coverage Gap Analysis trên branch `feature/module-15j-coverage-gap`: trang Coverage chấm bằng CHÍNH checklist EP/BVA 15i (trước đây 15c tự định nghĩa 4 dimension hẹp hơn → "100%" ở trang Coverage và "đủ checklist" lúc sinh là 2 thước đo khác nhau), mỗi mục thiếu có "vì sao cần" + bằng chứng case gần đạt, mỗi mục đã có kèm trạng thái chạy thật, thêm dòng quan hệ endpoint (Test Data Chaining), nút "Bổ sung" tất định 0 token (đã sửa 2026-10-18: bù được cả khi chưa có case gốc nếu endpoint không có đầu vào nào khác, và làm mờ nút + hiện lý do khi chưa bù được). 306/306 test pass, `npx tsc -b --force` sạch, `npm run build` OK; chưa verify trên Docker thật. Xem Module 15j.)
 >
@@ -51,7 +53,7 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 13. Đăng nhập/Đăng ký với Google | ✅ Xong |
 | 14. Hoàn thiện & Demo | 🟡 Đang làm (Docker hoá xong, còn polish/tài liệu/demo) |
 | 15. Explainable & Reliable AI Testing | 🔄 15a-15i đã merge vào `main` (PR #11; 15i còn chờ verify bằng AI thật); 15j (Coverage Gap Analysis) đã code trên `feature/module-15j-coverage-gap`, 306/306 test pass, chờ verify trên Docker thật |
-| 16. Test Stability & Failure Analysis (chức năng 2) | ⬜ Chưa bắt đầu - mới có kế hoạch dự kiến (xem Module 16), làm sau khi chốt xong 15j |
+| 16. Test Stability & Failure Analysis (chức năng 2) | 🔄 Giai đoạn 1 (phân tích nguyên nhân fail) đã code trên `feature/module-16-test-stability`, 362/362 test pass, chờ verify trên Docker thật; giai đoạn 2 (flaky) chưa làm |
 
 ---
 
@@ -1198,7 +1200,7 @@ Kỳ vọng của biên ngầm theo luật "**spec không cấm thì hợp lệ 
 
 ---
 
-## 16. Test Stability & Failure Analysis (chức năng 2) - KẾ HOẠCH DỰ KIẾN, CHƯA CODE
+## 16. Test Stability & Failure Analysis (chức năng 2) - giai đoạn 1 ĐÃ CODE, giai đoạn 2 CHƯA
 
 *Phụ thuộc: Module 6 (thực thi), Module 10 (Bug Report), 15j (Coverage). Làm sau khi chốt xong 15j.*
 
@@ -1210,10 +1212,20 @@ Kỳ vọng của biên ngầm theo luật "**spec không cấm thì hợp lệ 
 - **Chỉ "nghi ngờ kèm bằng chứng", không khẳng định:** kiểm thử black-box không nhìn thấy bên trong hệ thống đích và không biết target có deploy giữa 2 lần chạy; không phân biệt được bug thật với kỳ vọng test sai. Dưới N lần chạy cùng phiên bản test (đề xuất N=5, ngưỡng là tham số thiết kế chưa calibrate) thì ghi "chưa đủ dữ liệu" - 1 lần FAIL không đủ để kết luận flaky.
 
 **Giai đoạn 1 - phân tích nguyên nhân fail (làm trước, dùng được ngay từ lần chạy đầu tiên):**
-- [ ] `TestResult` thêm `durationMs`, `errorKind` (TIMEOUT/CONNECTION/DNS/OTHER), `testCaseFingerprint` (hash method + resolvedPath + headers + body + expectedStatus + authOverride + assertions); `TestExecution` thêm snapshot `targetBaseUrl` + mốc đổi token của project (CHỈ lưu thời điểm, không lưu/hash token - đúng quy tắc bảo mật). Cột nullable; dữ liệu cũ không có fingerprint thì không đưa vào phân tích theo lịch sử.
-- [ ] Phân loại tất định: chưa đủ dữ liệu / môi trường (nhiều test cùng lỗi trong 1 lần chạy, timeout, 502/503/504/429) / cấu hình xác thực (401/403 đồng loạt, hoặc ngay sau khi đổi token) / dữ liệu-trạng thái (pass liên tục rồi fail liên tục không xen kẽ, chạy lại vẫn fail) / lỗi ổn định (cùng mã sai lặp lại).
-- [ ] Coverage (`runStatus`) và Risk (thành phần "tỷ lệ fail lịch sử") chỉ đếm fail do API/lỗi ổn định, không đếm fail do môi trường/token.
-- [ ] Giao diện: nhãn nguyên nhân nghi ngờ + bằng chứng cạnh kết quả fail ở trang Kết quả thực thi và Coverage.
+- [x] `TestResult` thêm `durationMs`, `errorKind` (TIMEOUT/CONNECTION/DNS/OTHER), `testCaseFingerprint` (hash method + resolvedPath + headers + body + expectedStatus + authOverride + assertions); `TestExecution` thêm snapshot `targetBaseUrl` + mốc đổi token của project (CHỈ lưu thời điểm, không lưu/hash token - đúng quy tắc bảo mật). Cột nullable; dữ liệu cũ không có fingerprint thì không đưa vào phân tích theo lịch sử.
+- [x] Phân loại tất định: chưa đủ dữ liệu / môi trường (nhiều test cùng lỗi trong 1 lần chạy, timeout, 502/503/504/429) / cấu hình xác thực (401/403 đồng loạt, hoặc ngay sau khi đổi token) / dữ liệu-trạng thái (pass liên tục rồi fail liên tục không xen kẽ, chạy lại vẫn fail) / lỗi ổn định (cùng mã sai lặp lại).
+- [x] Coverage (`runStatus`) và Risk (thành phần "tỷ lệ fail lịch sử") chỉ đếm fail do API/lỗi ổn định, không đếm fail do môi trường/token.
+- [x] Giao diện: nhãn nguyên nhân nghi ngờ + bằng chứng cạnh kết quả fail ở trang Kết quả thực thi và Coverage.
+
+**Đã làm ở giai đoạn 1 (2026-10-18) - chi tiết triển khai:**
+- Cột mới (nullable, `ddl-auto=update`): `TestResult.durationMs/errorKind/testCaseFingerprint/failureCause/failureEvidence`, `TestExecution.targetBaseUrlSnapshot/targetAuthUpdatedAtSnapshot`, `Project.targetAuthUpdatedAt` (ghi ở `ProjectService.updateTargetAuth` + `EndpointImportService.applyAuthConfig`; CHỈ mốc thời gian, không lưu token). Enum `ErrorKind`, `FailureCause` (`isNotApiFault()` = TEST_SETUP/ENVIRONMENT/AUTH_CONFIG; DATA_STATE cố ý KHÔNG thuộc nhóm này vì bằng chứng yếu).
+- `service/execution/`: `ErrorKindClassifier` (theo LOẠI exception kể cả bị bọc, lớp Apache khớp theo tên đơn giản), `TestCaseFingerprint` (SHA-256, độ dài đứng trước từng trường để không nhập nhằng ranh giới; tên/mô tả KHÔNG tính), `FailureCauseClassifier` (thuần, không DB, luật đầu tiên khớp thắng: TEST_SETUP → ENVIRONMENT → AUTH_CONFIG → DATA_STATE → STABLE_FAILURE → UNDETERMINED), `ExecutionFailureAnalyzer` (1 lần cuối lượt, 1 query lịch sử nhẹ không kéo body, lọc theo fingerprint, không bao giờ làm hỏng lượt chạy - lỗi phân tích chỉ ghi log).
+- `TestExecutionRunner`: đo `durationMs`, phân loại `errorKind`, tính fingerprint, và **đổi thứ tự**: `BugReportStatusService.onNewTestResult` chạy SAU phân loại ở cuối lượt (trước đây ngay lúc lưu từng kết quả → 1 lượt fail hàng loạt vì token hết hạn tự mở lại các bug đã đóng - lỗi thật). `BugReportStatusService` bỏ qua FAILED có `isNotApiFault`.
+- Coverage: FAILED không phải do API → `runStatus=NO_VERDICT`; Risk loại các lượt đó khỏi tử/mẫu tỷ lệ fail + `riskReasons` ghi "Đã loại N lượt fail...". `TestResultResponse` thêm `durationMs`, `errorKind`, `failureCause {code,label,notApiFault,evidence}`. Giao diện: chip + khối bằng chứng + gợi ý ở trang Kết quả thực thi, banner khi ≥3 kết quả cùng nguyên nhân không phải do API (`components/shared/FailureCause.tsx`). Cập nhật `api-contract` mục 4h.
+- **Test:** `DB_PASSWORD= ./mvnw -o clean test` xanh **362/362** (306 → 362, +56: `ErrorKindClassifierTest`, `TestCaseFingerprintTest`, `FailureCauseClassifierTest` 28 test phủ từng luật + thứ tự ưu tiên + ca dễ nhầm, `ExecutionFailureAnalyzerTest`, `TestExecutionRunnerTest` +5, `BugReportStatusServiceTest` +2, `EndpointCoverageServiceTest` +3). `tsc` + `npm run build` sạch.
+- [ ] **Verify trên Docker thật** (chưa làm): token sai → `AUTH_CONFIG` + banner; Target Base URL sai cổng → `ENVIRONMENT/CONNECTION`; chạy lại 1 case Fail 3 lần → `UNDETERMINED` rồi `STABLE_FAILURE`; Bug Report đã đóng không tự mở lại khi fail do token; kết quả cũ hiển thị bình thường.
+
+**Giới hạn đã biết của giai đoạn 1:** nhãn là kết quả chấm lúc chạy (không cập nhật khi có thêm lịch sử); kết quả trước Module 16 không có fingerprint nên không đưa vào phân tích theo lịch sử; ngưỡng chưa calibrate; `Target Base URL` khác lần chạy trước chỉ là bằng chứng bổ sung, không tự quyết loại; chưa phân biệt được bug API thật với kỳ vọng test sai (ghi thẳng trong `STABLE_FAILURE`); chưa có cảnh báo ở hộp tạo Bug Report khi tạo từ kết quả "không phải do API" (mục tuỳ chọn, để sau).
 
 **Giai đoạn 2 - phát hiện test không ổn định (chỉ làm nếu còn thời gian, không thì ghi "hướng phát triển"):**
 - [ ] Flaky: cùng phiên bản test (cùng fingerprint) đổi Pass/Fail xen kẽ từ 2 lần trở lên, kèm tỷ lệ đổi trạng thái.

@@ -116,7 +116,11 @@ public class TestExecutionService {
                         Collectors.toList())));
 
         TestExecution execution = testExecutionRepository.save(
-                TestExecution.builder().project(project).status(ExecutionStatus.PENDING).build());
+                TestExecution.builder().project(project).status(ExecutionStatus.PENDING)
+                        // Module 16 - chụp lại cấu hình lúc chạy (project có thể đổi URL/token giữa 2 lần chạy).
+                        .targetBaseUrlSnapshot(project.getTargetBaseUrl())
+                        .targetAuthUpdatedAtSnapshot(project.getTargetAuthUpdatedAt())
+                        .build());
 
         // Ghi 1 dòng lịch sử cho mọi endpoint có mặt trong tập test case đã chạy (tự chọn lẫn
         // auto-included), không chỉ endpoint được chọn tường minh.

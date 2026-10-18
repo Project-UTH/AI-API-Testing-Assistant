@@ -8,6 +8,7 @@ import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
 import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
 import com.aiapitesting.backend.dto.response.RiskLevel;
 import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.FailureCause;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
@@ -527,6 +528,54 @@ class EndpointCoverageServiceTest {
         assertThat(result.executedPercent()).isZero();
     }
 
+    // ---- Module 16 - fail do môi trường/token không được tính là "API lệch kỳ vọng" ----
+
+    @Test
+    void getEndpointCoverage_latestFailCausedByEnvironment_isNoVerdictNotFailed() {
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        stubProject(List.of(endpoint), List.of(positive), List.of());
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.FAILED, FailureCause.AUTH_CONFIG)));
+
+        CoverageDimensionResponse row = dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null);
+
+        assertThat(row.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+        assertThat(row.runStatus()).isEqualTo(CoverageRunStatus.NO_VERDICT);
+        // Chi tiết kết quả (Fail) vẫn hiện nguyên - chỉ KHÔNG gộp thành "đã kiểm và thấy API lệch".
+        assertThat(row.coveringTestCases()).singleElement()
+                .satisfies(ref -> assertThat(ref.latestResult()).isEqualTo(TestResultStatus.FAILED));
+    }
+
+    @Test
+    void getEndpointCoverage_latestFailCausedByStableFailure_stillFailed() {
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        stubProject(List.of(endpoint), List.of(positive), List.of());
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.FAILED, FailureCause.STABLE_FAILURE)));
+
+        assertThat(dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null).runStatus()).isEqualTo(CoverageRunStatus.FAILED);
+    }
+
+    @Test
+    void getEndpointCoverage_risk_excludesFailsNotCausedByApiAndExplainsIt() {
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+        // 4 lượt: 1 Pass + 1 Fail do API (UNDETERMINED) + 2 Fail do token (loại). Tỷ lệ fail = 1/2, không phải 3/4.
+        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of(
+                endpointStatusCount(endpoint.getId(), TestResultStatus.PASSED, 1),
+                endpointStatusCount(endpoint.getId(), TestResultStatus.FAILED, FailureCause.UNDETERMINED, 1),
+                endpointStatusCount(endpoint.getId(), TestResultStatus.FAILED, FailureCause.AUTH_CONFIG, 2)));
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        // POST (+10) + field nhạy cảm 'email' (+10) + fail 50% (+10) = 30; nếu KHÔNG loại thì fail 75% → +15 = 35.
+        assertThat(result.riskScore()).isEqualTo(30);
+        assertThat(result.riskReasons()).anyMatch(r -> r.contains("50%") && r.contains("1/2"))
+                .anyMatch(r -> r.contains("Đã loại 2 lượt fail"));
+    }
+
     // ---- Mã trạng thái ----
 
     @Test
@@ -647,6 +696,10 @@ class EndpointCoverageServiceTest {
     }
 
     private TestResultRepository.TestCaseLatestResult latest(UUID testCaseId, TestResultStatus status) {
+        return latest(testCaseId, status, null);
+    }
+
+    private TestResultRepository.TestCaseLatestResult latest(UUID testCaseId, TestResultStatus status, FailureCause cause) {
         return new TestResultRepository.TestCaseLatestResult() {
             @Override
             public UUID getTestCaseId() {
@@ -657,10 +710,21 @@ class EndpointCoverageServiceTest {
             public TestResultStatus getStatus() {
                 return status;
             }
+
+            @Override
+            public FailureCause getFailureCause() {
+                return cause;
+            }
         };
     }
 
     private TestResultRepository.EndpointStatusCount endpointStatusCount(UUID endpointId, TestResultStatus status, long count) {
+        return endpointStatusCount(endpointId, status, null, count);
+    }
+
+    private TestResultRepository.EndpointStatusCount endpointStatusCount(
+            UUID endpointId, TestResultStatus status, FailureCause cause, long count
+    ) {
         return new TestResultRepository.EndpointStatusCount() {
             @Override
             public UUID getEndpointId() {
@@ -670,6 +734,11 @@ class EndpointCoverageServiceTest {
             @Override
             public TestResultStatus getStatus() {
                 return status;
+            }
+
+            @Override
+            public FailureCause getFailureCause() {
+                return cause;
             }
 
             @Override

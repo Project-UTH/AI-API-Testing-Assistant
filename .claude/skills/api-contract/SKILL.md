@@ -188,6 +188,17 @@ Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI u
 
 `GET /api/v1/projects/{projectId}/endpoints/{endpointId}/generation-plan` — trả `ApiResponse<GenerationPlanSummary | null>`: báo cáo checklist của lần sinh nhóm Basic gần nhất (lưu ở `TestGenerationEvent.planSummaryJson`), để xem lại sau khi tải lại trang. Đọc dòng `TestGenerationEvent` MỚI NHẤT của endpoint; `data = null` khi chưa sinh lần nào hoặc dòng đó tạo trước khi có tính năng. `checklistCaseCount`/`extraCaseNames` là số liệu chụp lúc sinh — frontend hiển thị từ đây, KHÔNG ghép với bộ test case đang sống (có thể đã bị sửa/xoá sau đó).
 
+## 4h. Nguyên nhân nghi ngờ của kết quả fail (Module 16, giai đoạn 1)
+
+`TestResultResponse` (mục `results[]` của `GET /projects/{id}/executions/{executionId}`) thêm 3 field — chỉ THÊM, không đổi field cũ:
+- `durationMs` (number | null) — thời gian gọi target API; `null` với case không gọi target (ERROR cấu hình, BLOCKED) và kết quả trước Module 16.
+- `errorKind` (`TIMEOUT`/`CONNECTION`/`DNS`/`OTHER` | null) — loại lỗi hạ tầng, chỉ có với `ERROR` do gọi target thất bại, phân loại theo LOẠI exception (không đọc chuỗi `errorMessage`).
+- `failureCause` (`{ code, label, notApiFault, evidence[] }` | null) — nguyên nhân NGHI NGỜ của kết quả `FAILED`/`ERROR`, `null` cho `PASSED`/`BLOCKED` và kết quả cũ. `code` ∈ `TEST_SETUP` (lỗi cấu hình test, không gọi được target) / `ENVIRONMENT` (timeout, không kết nối, 502/503/504/429) / `AUTH_CONFIG` (nhận 401/403 ngoài kỳ vọng khi dùng token mặc định - case Security cố ý bỏ/sai token KHÔNG bao giờ bị gắn) / `DATA_STATE` (từng Pass rồi Fail liên tiếp cùng mã, không xen kẽ) / `STABLE_FAILURE` (≥3 lần Fail cùng mã, chưa từng Pass) / `UNDETERMINED`. `notApiFault=true` cho 3 nhóm đầu: bằng chứng mạnh rằng fail không phải do API đang test. `evidence` là các câu bằng chứng hiển thị trực tiếp.
+
+**Đây là NGHI NGỜ kèm bằng chứng, KHÔNG phải kết luận** — kiểm thử black-box không nhìn thấy bên trong hệ thống đích và không phân biệt được bug thật với kỳ vọng test sai (ghi rõ trong `STABLE_FAILURE`). Chấm TẤT ĐỊNH (không gọi AI, 0 token) bằng `FailureCauseClassifier`; ngưỡng (3 lần chạy, 2 lần Fail liên tiếp, 90% timeout) là tham số thiết kế chưa calibrate. Nhãn là KẾT QUẢ CHẤM LÚC CHẠY, không tự tính lại khi có thêm lịch sử. Lịch sử chỉ so các lần chạy CÙNG phiên bản test (`TestResult.testCaseFingerprint` - hash nội dung gửi đi + kỳ vọng + assertion + liên kết dữ liệu; sửa test thì là phiên bản mới).
+
+Ảnh hưởng tới các API khác (không đổi shape): kết quả `FAILED` có `notApiFault=true` KHÔNG làm `runStatus` của Coverage thành `FAILED` (thành `NO_VERDICT`), KHÔNG tính vào tử/mẫu của "tỷ lệ fail lịch sử" ở Risk (`riskReasons` ghi số lượt đã loại), và KHÔNG tự mở lại Bug Report đã đóng. Tự động hoá Bug Report chạy SAU bước phân loại ở cuối lượt chạy (trước đây chạy ngay lúc lưu từng kết quả). Frontend dùng `components/shared/FailureCause.tsx` (chip, khối bằng chứng, banner), không tự đặt nhãn riêng.
+
 ## 5. Naming convention endpoint
 
 - Danh từ số nhiều, kebab-case nếu nhiều từ: `/api/v1/projects`, `/api/v1/test-cases`

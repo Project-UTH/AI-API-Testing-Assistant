@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -157,7 +158,15 @@ public class EndpointCoverageService {
         }
 
         Map<UUID, long[]> resultCountsByEndpointId = new LinkedHashMap<>(); // [0]=total, [1]=failed
+        Map<UUID, Long> excludedByEndpointId = new HashMap<>();
         for (TestResultRepository.EndpointStatusCount row : testResultRepository.countGroupedByEndpointAndStatus(project)) {
+            // Module 16 - lượt fail do môi trường/token/cấu hình test không nói gì về API đang test: loại khỏi CẢ tử
+            // và mẫu của "tỷ lệ fail lịch sử" (không để token hết hạn làm endpoint trông rủi ro hơn), chỉ ghi lại số
+            // lượt đã loại để giải thích trong riskReasons.
+            if (row.getFailureCause() != null && row.getFailureCause().isNotApiFault()) {
+                excludedByEndpointId.merge(row.getEndpointId(), row.getCount(), Long::sum);
+                continue;
+            }
             long[] counts = resultCountsByEndpointId.computeIfAbsent(row.getEndpointId(), k -> new long[2]);
             counts[0] += row.getCount();
             if (row.getStatus() == TestResultStatus.FAILED) {
@@ -167,8 +176,13 @@ public class EndpointCoverageService {
 
         // Module 15j - lượt chạy MỚI NHẤT của từng test case (trạng thái chạy của dòng coverage).
         Map<UUID, TestResultStatus> latestResultByTestCaseId = new HashMap<>();
+        Set<UUID> latestNotApiFaultIds = new HashSet<>();
         for (TestResultRepository.TestCaseLatestResult row : testResultRepository.findLatestResultsByProject(project)) {
-            latestResultByTestCaseId.putIfAbsent(row.getTestCaseId(), row.getStatus());
+            if (latestResultByTestCaseId.putIfAbsent(row.getTestCaseId(), row.getStatus()) == null
+                    && row.getStatus() == TestResultStatus.FAILED
+                    && row.getFailureCause() != null && row.getFailureCause().isNotApiFault()) {
+                latestNotApiFaultIds.add(row.getTestCaseId());
+            }
         }
 
         // Module 15j - endpoint POST theo path, để dò "POST tạo resource → endpoint dùng {id}" (dòng RELATION).
@@ -180,7 +194,8 @@ public class EndpointCoverageService {
         }
 
         return new CoverageContext(testCasesByEndpointId, dependentEndpointIdsBySourceEndpointId, resultCountsByEndpointId,
-                dependenciesByConsumerEndpointId, latestResultByTestCaseId, postEndpointByPath);
+                dependenciesByConsumerEndpointId, latestResultByTestCaseId, postEndpointByPath,
+                excludedByEndpointId, latestNotApiFaultIds);
     }
 
     private record CoverageContext(
@@ -189,7 +204,11 @@ public class EndpointCoverageService {
             Map<UUID, long[]> resultCountsByEndpointId,
             Map<UUID, List<TestCaseDependency>> dependenciesByConsumerEndpointId,
             Map<UUID, TestResultStatus> latestResultByTestCaseId,
-            Map<String, Endpoint> postEndpointByPath
+            Map<String, Endpoint> postEndpointByPath,
+            /** Module 16 - số lượt fail đã loại khỏi tỷ lệ fail của từng endpoint (do môi trường/token/cấu hình test). */
+            Map<UUID, Long> excludedFailCountsByEndpointId,
+            /** Module 16 - test case có lần chạy mới nhất FAILED nhưng nguyên nhân không phải do API. */
+            Set<UUID> latestNotApiFaultTestCaseIds
     ) {
     }
 
@@ -384,7 +403,13 @@ public class EndpointCoverageService {
             }
             switch (latest) {
                 case FAILED -> {
-                    return CoverageRunStatus.FAILED;
+                    // Module 16 - Fail do môi trường/token/cấu hình test = "chạy chưa ra kết luận về API", không phải
+                    // "đã kiểm và thấy API lệch kỳ vọng".
+                    if (context.latestNotApiFaultTestCaseIds().contains(tc.getId())) {
+                        anyNoVerdict = true;
+                    } else {
+                        return CoverageRunStatus.FAILED;
+                    }
                 }
                 case PASSED -> anyPassed = true;
                 default -> anyNoVerdict = true;
@@ -451,6 +476,11 @@ public class EndpointCoverageService {
             }
         }
         score += historyPoints;
+        long excluded = context.excludedFailCountsByEndpointId().getOrDefault(endpoint.getId(), 0L);
+        if (excluded > 0) {
+            reasons.add("Đã loại " + excluded + " lượt fail do môi trường/token/cấu hình test khỏi tỷ lệ fail lịch sử "
+                    + "(không phản ánh API đang test)");
+        }
 
         RiskLevel level = score >= 75 ? RiskLevel.CRITICAL : score >= 50 ? RiskLevel.HIGH : score >= 25 ? RiskLevel.MEDIUM : RiskLevel.LOW;
         return new RiskResult(score, level, reasons);
