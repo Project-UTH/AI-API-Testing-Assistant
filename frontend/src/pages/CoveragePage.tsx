@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react"
 
@@ -17,13 +17,24 @@ import { CoverageGapReport } from "@/components/coverage/CoverageGapReport"
  */
 export function CoveragePage() {
   const { id } = useParams<{ id: string }>()
-  const [expandedEndpointIds, setExpandedEndpointIds] = useState<Set<string>>(new Set())
+  // ?endpoint=<id> (link từ trang Project) - mở sẵn đúng endpoint đó và cuộn tới.
+  const focusEndpointId = useSearchParams()[0].get("endpoint")
+  const [expandedEndpointIds, setExpandedEndpointIds] = useState<Set<string>>(
+    new Set(focusEndpointId ? [focusEndpointId] : [])
+  )
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["project-coverage", id],
     queryFn: () => getProjectCoverage(id!),
     enabled: Boolean(id),
   })
+
+  const dataLoaded = Boolean(data)
+  useEffect(() => {
+    if (focusEndpointId && dataLoaded) {
+      document.getElementById(`coverage-endpoint-${focusEndpointId}`)?.scrollIntoView({ block: "start" })
+    }
+  }, [focusEndpointId, dataLoaded])
 
   function toggleExpanded(endpointId: string) {
     setExpandedEndpointIds((prev) => {
@@ -73,7 +84,11 @@ export function CoveragePage() {
               const isExpanded = expandedEndpointIds.has(endpoint.endpointId)
               const counts = coverageCounts(endpoint)
               return (
-                <div key={endpoint.endpointId} className="rounded-lg border border-border bg-card">
+                <div
+                  key={endpoint.endpointId}
+                  id={`coverage-endpoint-${endpoint.endpointId}`}
+                  className="scroll-mt-4 rounded-lg border border-border bg-card"
+                >
                   <button
                     type="button"
                     className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 p-4 text-left"
