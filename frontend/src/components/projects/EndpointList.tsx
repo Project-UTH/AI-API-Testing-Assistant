@@ -10,6 +10,7 @@ import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
 import { generateTestCases, type GenerateTestCasesResponse } from "@/lib/testcases"
 import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
+import { AuthHintBanner } from "@/components/projects/AuthHintBanner"
 import { getDashboardSummary } from "@/lib/dashboard"
 import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
 
@@ -161,6 +162,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
 
   return (
     <div className="mt-4 flex flex-col gap-3">
+      <AuthHintBanner projectId={projectId} />
       {summary && showTokenUsage && (
         <div
           className={cn(

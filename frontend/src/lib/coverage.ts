@@ -193,3 +193,25 @@ export function fillCoverageGaps(projectId: string, endpointId: string, itemKeys
     body: JSON.stringify({ itemKeys: itemKeys ?? null }),
   })
 }
+
+/** Module 17 (S4) - gợi ý endpoint nào nhiều khả năng cần xác thực khi spec không khai báo xác thực nào (chỉ gợi ý, không tự áp dụng). */
+export interface AuthSuggestionGroup {
+  pathPrefix: string
+  suggestedRequiresAuth: boolean
+  count: number
+  samplePaths: string[]
+  endpointIds: string[]
+}
+
+export interface AuthSuggestion {
+  hint: boolean
+  total: number
+  alreadyManual: number
+  suggestedProtected: number
+  suggestedPublic: number
+  groups: AuthSuggestionGroup[]
+}
+
+export function getAuthSuggestion(projectId: string): Promise<AuthSuggestion> {
+  return apiFetch<AuthSuggestion>(`/projects/${projectId}/endpoints/auth-suggestion`)
+}
