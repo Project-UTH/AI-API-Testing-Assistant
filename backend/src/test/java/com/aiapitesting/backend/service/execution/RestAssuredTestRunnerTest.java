@@ -283,6 +283,90 @@ class RestAssuredTestRunnerTest {
         assertThat(handler.headers).isNull(); // không có request nào tới target
     }
 
+    // ---- Tổng quát hoá: không chỉ JSON, không chỉ Bearer ----
+
+    private TestCase writeCase(String contentTypeFromSpec, String body, String headersJson) {
+        Endpoint endpoint = Endpoint.builder().method("POST").path("/submit").requestContentType(contentTypeFromSpec).build();
+        return TestCase.builder().endpoint(endpoint).resolvedPath("/submit").requestBody(body).requestHeaders(headersJson).expectedStatus(200).build();
+    }
+
+    @Test
+    void run_specSaysFormUrlEncoded_sendsFormFieldsInsteadOfJson() {
+        server.start();
+
+        runner.run(project, writeCase("application/x-www-form-urlencoded", "{\"name\":\"An Binh\",\"qty\":3,\"tags\":[1,2]}", null), Map.of());
+
+        assertThat(handler.headers.getFirst("Content-Type")).startsWith("application/x-www-form-urlencoded");
+        assertThat(handler.body).contains("name=An%20Binh").contains("qty=3").contains("tags=");
+        assertThat(handler.body).doesNotContain("{");
+    }
+
+    @Test
+    void run_specSaysMultipart_sendsTextPartsAsMultipartFormData() {
+        server.start();
+
+        runner.run(project, writeCase("multipart/form-data", "{\"title\":\"hello\"}", null), Map.of());
+
+        assertThat(handler.headers.getFirst("Content-Type")).startsWith("multipart/form-data");
+        assertThat(handler.body).contains("name=\"title\"").contains("hello");
+    }
+
+    @Test
+    void run_specSaysXmlOrText_sendsBodyVerbatimWithThatContentType() {
+        server.start();
+
+        runner.run(project, writeCase("application/xml", "<order><id>7</id></order>", null), Map.of());
+
+        assertThat(handler.headers.getFirst("Content-Type")).startsWith("application/xml");
+        assertThat(handler.body).isEqualTo("<order><id>7</id></order>");
+    }
+
+    @Test
+    void run_contentTypeHeaderOfTheTestCaseBeatsTheSpec_andIsSentExactlyOnce() {
+        server.start();
+
+        runner.run(project, writeCase("application/json", "a=1&b=2", "{\"Content-Type\":\"application/x-www-form-urlencoded\"}"), Map.of());
+
+        assertThat(handler.headers.get("Content-Type")).hasSize(1);
+        assertThat(handler.headers.getFirst("Content-Type")).startsWith("application/x-www-form-urlencoded");
+        assertThat(handler.body).isEqualTo("a=1&b=2");
+    }
+
+    @Test
+    void run_noSpecContentType_defaultsToJsonAsBefore() {
+        server.start();
+
+        runner.run(project, writeCase(null, "{\"a\":1}", null), Map.of());
+
+        assertThat(handler.headers.getFirst("Content-Type")).startsWith("application/json");
+        assertThat(handler.body).isEqualTo("{\"a\":1}");
+    }
+
+    @Test
+    void run_basicAndCustomHeaderAuth_sendTheRightHeaders_andInvalidKeepsTheHeaderName() {
+        server.start();
+        AesEncryptionService aes = new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aes, new TestCasePathValidator(), authProfileRepository);
+        Endpoint endpoint = Endpoint.builder().method("GET").path("/pets").build();
+        TestCase real = TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(200).build();
+
+        project = Project.builder().targetBaseUrl("http://localhost:" + server.getAddress().getPort())
+                .targetAuthType(TargetAuthType.BASIC_AUTH).targetAuthValueEncrypted(aes.encrypt("admin:s3cret")).build();
+        runner.run(project, real, Map.of());
+        assertThat(handler.headers.getFirst("Authorization")).isEqualTo("Basic YWRtaW46czNjcmV0");
+
+        project = Project.builder().targetBaseUrl("http://localhost:" + server.getAddress().getPort())
+                .targetAuthType(TargetAuthType.CUSTOM_HEADER).targetAuthValueEncrypted(aes.encrypt("X-Auth-Token: tok-123")).build();
+        runner.run(project, real, Map.of());
+        assertThat(handler.headers.getFirst("X-Auth-Token")).isEqualTo("tok-123");
+        assertThat(handler.headers.getFirst("Authorization")).isNull();
+
+        TestCase invalid = TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(401)
+                .authOverride(com.aiapitesting.backend.entity.TestCaseAuthOverride.INVALID).build();
+        runner.run(project, invalid, Map.of());
+        assertThat(handler.headers.getFirst("X-Auth-Token")).isNotEqualTo("tok-123").isNotNull();
+    }
+
     private static class CapturingHandler implements HttpHandler {
         volatile String method;
         volatile String path;

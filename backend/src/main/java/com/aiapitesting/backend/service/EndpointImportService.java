@@ -346,6 +346,7 @@ public class EndpointImportService {
             e.setSchema(n.getSchema());
             e.setResponseSchemas(n.getResponseSchemas());
             e.setRequiresAuth(n.isRequiresAuth());
+            e.setRequestContentType(n.getRequestContentType());
             e.setSummary(n.getSummary());
             e.setSpecHash(n.getSpecHash());
             e.setSchemaChangedAt(now);
@@ -434,7 +435,20 @@ public class EndpointImportService {
                 .schema(buildSchemaJson(operation))
                 .responseSchemas(buildResponseSchemasJson(operation))
                 .requiresAuth(resolveRequiresAuth(operation, hasGlobalSecurity))
+                .requestContentType(preferredRequestContentType(operation))
                 .build();
+    }
+
+    /** Ưu tiên JSON (kể cả +json); nếu spec chỉ khai loại khác thì lấy loại đầu tiên; không có body thì null. */
+    static String preferredRequestContentType(Operation operation) {
+        if (operation.getRequestBody() == null || operation.getRequestBody().getContent() == null
+                || operation.getRequestBody().getContent().isEmpty()) {
+            return null;
+        }
+        java.util.Set<String> types = operation.getRequestBody().getContent().keySet();
+        String chosen = types.stream().filter(t -> t.toLowerCase(java.util.Locale.ROOT).contains("json")).findFirst()
+                .orElse(types.iterator().next());
+        return chosen.length() > 100 ? chosen.substring(0, 100) : chosen;
     }
 
     /**

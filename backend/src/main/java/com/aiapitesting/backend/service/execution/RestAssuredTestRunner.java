@@ -71,13 +71,28 @@ public class RestAssuredTestRunner {
         if (authHeader != null) {
             headers.put(authHeader.name(), authHeader.value());
         }
+        // Content-Type do RestAssured gắn theo cách mã hoá body (json/form/multipart/raw): bỏ khỏi map để không gửi trùng 2 header.
+        String headerContentType = headers.remove("Content-Type");
         if (!headers.isEmpty()) {
             request = request.headers(headers);
         }
 
         String body = testCasePathValidator.substitute(testCase.getRequestBody(), resolvedValues);
         if (body != null && !body.isBlank()) {
-            request = request.contentType(ContentType.JSON).body(body);
+            RequestBodyEncoder.Plan plan = RequestBodyEncoder.plan(headerContentType, testCase.getEndpoint().getRequestContentType(), body);
+            request = switch (plan.kind()) {
+                case FORM -> request.contentType(plan.mediaType()).formParams(plan.fields());
+                case MULTIPART -> {
+                    RequestSpecification multipart = request.contentType(plan.mediaType());
+                    for (Map.Entry<String, String> field : plan.fields().entrySet()) {
+                        multipart = multipart.multiPart(field.getKey(), field.getValue());
+                    }
+                    yield multipart;
+                }
+                case JSON, RAW -> request.contentType(plan.mediaType()).body(body);
+            };
+        } else if (headerContentType != null) {
+            request = request.contentType(headerContentType);
         }
 
         Response response = request.request(Method.valueOf(testCase.getEndpoint().getMethod()), path);

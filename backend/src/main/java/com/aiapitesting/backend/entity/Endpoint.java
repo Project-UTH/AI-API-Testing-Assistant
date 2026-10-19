@@ -84,6 +84,13 @@ public class Endpoint {
     @Column
     private Boolean requiresAuthManual;
 
+    /**
+     * Generalization - Content-Type của request body theo spec (requestBody.content): ưu tiên application/json, không có thì loại đầu tiên
+     * (application/x-www-form-urlencoded, multipart/form-data, text/plain, application/xml...). Null = dữ liệu cũ/không có body -> JSON.
+     */
+    @Column(length = 100)
+    private String requestContentType;
+
     /** Giá trị dùng cho mọi tính toán (checklist Security, phân loại Fail...): khai báo thủ công nếu có, không thì theo spec. */
     public boolean effectiveRequiresAuth() {
         return requiresAuthManual != null ? requiresAuthManual : requiresAuth;
