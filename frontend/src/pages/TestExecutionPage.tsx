@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Bug, CheckCircle2, ChevronDown, ListChecks, Loader2, Pencil, XCircle } from "lucide-react"
+import { Bug, CheckCircle2, ChevronDown, GitCompare, ListChecks, Loader2, Pencil, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -138,6 +138,12 @@ export function TestExecutionPage() {
               )}
               {EXECUTION_STATUS_LABEL[execution.status]}
             </span>
+          )}
+          {isFinished && (
+            <Button variant="outline" size="sm" render={<Link to={`/projects/${projectId}/executions/${executionId}/compare`} />}>
+              <GitCompare className="h-4 w-4" />
+              So sánh với lượt trước
+            </Button>
           )}
           {isFinished && generatedBugs.length > 0 && (
             <DropdownMenu open={bugPanelOpen} onOpenChange={setBugPanelOpen}>

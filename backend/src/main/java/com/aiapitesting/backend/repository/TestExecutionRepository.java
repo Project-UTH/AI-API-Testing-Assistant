@@ -12,6 +12,7 @@ import java.time.Instant;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,4 +30,7 @@ public interface TestExecutionRepository extends JpaRepository<TestExecution, UU
     int markUnfinishedAsFailed(@Param("statuses") Collection<ExecutionStatus> statuses, @Param("now") Instant now);
 
     Optional<TestExecution> findByIdAndProject(UUID id, Project project);
+
+    // Module 17 (17c) - các lượt chạy gần nhất của project (chọn lượt để so sánh).
+    List<TestExecution> findTop50ByProjectOrderByStartedAtDesc(Project project);
 }

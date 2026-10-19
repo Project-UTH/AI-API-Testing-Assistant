@@ -126,6 +126,37 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
             + "ORDER BY tr.createdAt ASC")
     List<HistoryRow> findHistoryRowsByTestCaseIds(@Param("testCaseIds") List<UUID> testCaseIds);
 
+    // Module 17 (17c) - so sánh 2 lượt chạy: chỉ vài cột nhẹ (KHÔNG kéo responseBody), 1 query cho cả lượt, không N+1.
+    @Query("SELECT tr.testCase.id AS testCaseId, tr.testCase.name AS testCaseName, tr.testCase.endpoint.id AS endpointId, "
+            + "tr.testCase.endpoint.method AS endpointMethod, tr.testCase.endpoint.path AS endpointPath, tr.status AS status, "
+            + "tr.responseStatus AS responseStatus, tr.failureCause AS failureCause, tr.unstable AS unstable, "
+            + "tr.testCaseFingerprint AS fingerprint FROM TestResult tr WHERE tr.execution = :execution")
+    List<DiffRow> findDiffRowsByExecution(@Param("execution") TestExecution execution);
+
+    interface DiffRow {
+        UUID getTestCaseId();
+        String getTestCaseName();
+        UUID getEndpointId();
+        String getEndpointMethod();
+        String getEndpointPath();
+        TestResultStatus getStatus();
+        Integer getResponseStatus();
+        FailureCause getFailureCause();
+        Boolean getUnstable();
+        String getFingerprint();
+    }
+
+    // Module 17 (17c) - đếm kết quả theo (lượt chạy, trạng thái) cho nhiều lượt cùng lúc, 1 query.
+    @Query("SELECT tr.execution.id AS executionId, tr.status AS status, COUNT(tr) AS count FROM TestResult tr "
+            + "WHERE tr.execution IN :executions GROUP BY tr.execution.id, tr.status")
+    List<ExecutionStatusCount> countByExecutionsGroupedByStatus(@Param("executions") List<TestExecution> executions);
+
+    interface ExecutionStatusCount {
+        UUID getExecutionId();
+        TestResultStatus getStatus();
+        long getCount();
+    }
+
     interface HistoryRow {
         UUID getResultId();
         FailureCause getFailureCause();
