@@ -284,6 +284,35 @@ class FailureCauseClassifierTest {
         assertThat(classifier.classify(failed(200, 404, history)).cause()).isEqualTo(FailureCause.DATA_STATE);
     }
 
+    // ---- STATE_CONFLICT (Module 17 - 1.5) ----
+
+    @Test
+    void conflict409_whenExpectingOther_isStateConflictEvenOnFirstRun() {
+        // Ca thật: POST tạo công ty (mỗi HR chỉ 1) - 20/30 test Negative nhận 409 ở lần chạy đầu, trước đây UNDETERMINED.
+        Result result = classifier.classify(failed(400, 409, history(fail(0, 409))));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.STATE_CONFLICT);
+        assertThat(result.evidence().get(0)).contains("409");
+        assertThat(FailureCause.STATE_CONFLICT.isNotApiFault()).isFalse();
+        assertThat(FailureCause.STATE_CONFLICT.suppressesBugAutomation()).isTrue();
+    }
+
+    @Test
+    void conflict409_whenExpecting409_isNotStateConflict() {
+        // Kỳ vọng 409 mà nhận 409 là PASS (không tới được classifier); nhận 200 khi kỳ vọng 409 là nhãn khác.
+        Result result = classifier.classify(failed(409, 200, history(fail(0, 200))));
+
+        assertThat(result.cause()).isNotEqualTo(FailureCause.STATE_CONFLICT);
+    }
+
+    @Test
+    void conflict409_afterPassing_isDataStateNotStateConflict() {
+        // Từng Pass rồi mới 409 liên tiếp là bằng chứng "dữ liệu đổi" mạnh hơn - giữ DATA_STATE như trước.
+        Result result = classifier.classify(failed(200, 409, history(pass(0), pass(1), fail(2, 409), fail(3, 409))));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.DATA_STATE);
+    }
+
     // ---- STABLE_FAILURE ----
 
     @Test

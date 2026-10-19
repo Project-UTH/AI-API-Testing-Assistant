@@ -27,6 +27,7 @@ export type FailureCauseCode =
   | "RESOURCE_NOT_FOUND"
   | "EXPECTATION_MISMATCH"
   | "UNDETERMINED"
+  | "STATE_CONFLICT"
 
 export interface FailureCause {
   code: FailureCauseCode

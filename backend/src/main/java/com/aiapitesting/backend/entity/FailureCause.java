@@ -43,7 +43,14 @@ public enum FailureCause {
      */
     EXPECTATION_MISMATCH("Kỳ vọng có thể quá chặt", false),
     /** Chưa đủ dữ liệu để kết luận. */
-    UNDETERMINED("Chưa đủ dữ liệu", false);
+    UNDETERMINED("Chưa đủ dữ liệu", false),
+    /**
+     * Module 17 (1.5) - API trả 409 (xung đột trạng thái: trùng dữ liệu, tài nguyên đã tồn tại, mỗi tài khoản chỉ 1...) trong khi
+     * kỳ vọng mã khác. Là hành vi có chủ đích của API, không phải lỗi môi trường - nhưng test chưa chạm tới logic cần kiểm vì
+     * trạng thái dữ liệu hiện tại chặn lại. KHÔNG thuộc nhóm "không phải do API" (có thể là lỗi thật), không tự tạo bug lặp.
+     * Thêm vào CUỐI enum (cột lưu là VARCHAR, không đổi tên/thứ tự các hằng cũ).
+     */
+    STATE_CONFLICT("Xung đột trạng thái dữ liệu", false);
 
     private final String label;
     private final boolean notApiFault;
@@ -71,6 +78,6 @@ public enum FailureCause {
      * hình test) hoặc test không ổn định (lần Fail này có thể chỉ là 1 lần "xui").
      */
     public boolean suppressesBugAutomation() {
-        return notApiFault || this == FLAKY || this == EXPECTATION_MISMATCH;
+        return notApiFault || this == FLAKY || this == EXPECTATION_MISMATCH || this == STATE_CONFLICT;
     }
 }

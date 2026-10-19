@@ -15,6 +15,7 @@ const CAUSE_STYLES: Record<FailureCauseCode, string> = {
   RESOURCE_NOT_FOUND: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   EXPECTATION_MISMATCH: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   UNDETERMINED: "bg-muted text-muted-foreground",
+  STATE_CONFLICT: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
 }
 
 /** Gợi ý việc nên làm cho từng nguyên nhân - chỉ là gợi ý cho nghi ngờ, không phải kết luận. */
@@ -31,6 +32,8 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
   EXPECTATION_MISMATCH:
     "Kết quả vẫn là Fail. API trả mã khác kỳ vọng nhưng cùng nhóm nghĩa (vd 401/403, 400/422): nếu đồng ý với cách API chọn mã thì sửa kỳ vọng của test.",
   UNDETERMINED: "Chạy lại vài lần để có thêm bằng chứng trước khi kết luận.",
+  STATE_CONFLICT:
+    "API từ chối vì trạng thái dữ liệu (409: trùng/đã tồn tại). Xoá hoặc đổi dữ liệu trên hệ thống đích rồi chạy lại, hoặc đặt test tạo ở đầu chuỗi để mỗi test dùng dữ liệu riêng.",
 }
 
 /** Nhãn ngắn cạnh badge Fail/Lỗi - tooltip là bằng chứng đầy đủ. */

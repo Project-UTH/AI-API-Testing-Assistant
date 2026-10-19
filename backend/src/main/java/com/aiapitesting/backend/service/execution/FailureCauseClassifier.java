@@ -196,6 +196,10 @@ public class FailureCauseClassifier {
             if (dataState != null) {
                 return dataState;
             }
+            Result stateConflict = stateConflict(in);
+            if (stateConflict != null) {
+                return stateConflict;
+            }
             Result stable = stableFailure(verdicts);
             if (stable != null) {
                 return stable;
@@ -442,6 +446,22 @@ public class FailureCauseClassifier {
                         + "thống không tự mở lại hay đóng Bug Report dựa trên test này",
                 "Nguyên nhân có thể nằm ở chính test (phụ thuộc dữ liệu/thời gian) hoặc ở API đích hành xử không ổn định - "
                         + "kiểm thử black-box không phân biệt được 2 khả năng này");
+    }
+
+    /**
+     * 409 khi kỳ vọng mã khác: API từ chối vì trạng thái dữ liệu (vd "mỗi HR chỉ 1 công ty", "email đã tồn tại"), nên các test
+     * Negative/Boundary chạy sau test tạo đầu tiên đều nhận 409 mà chưa chạm tới ràng buộc cần kiểm. Đứng sau DATA_STATE
+     * (từng Pass rồi mới Fail là bằng chứng "dữ liệu đổi" mạnh hơn) và trước STABLE_FAILURE.
+     */
+    private Result stateConflict(Input in) {
+        if (!Objects.equals(in.responseStatus(), 409) || Objects.equals(in.expectedStatus(), 409)) {
+            return null;
+        }
+        return new Result(FailureCause.STATE_CONFLICT, List.of(
+                "API trả 409 (xung đột trạng thái) trong khi kỳ vọng " + in.expectedStatus() + " - trạng thái dữ liệu hiện tại "
+                        + "chặn request trước khi tới ràng buộc test này muốn kiểm",
+                "Thường gặp khi tài nguyên đã tồn tại hoặc mỗi tài khoản chỉ được tạo 1 lần: xoá/đổi dữ liệu rồi chạy lại, hoặc "
+                        + "đặt test tạo ở đầu chuỗi (Test Data Chaining) để mỗi test dùng dữ liệu riêng"));
     }
 
     private Result stableFailure(List<HistoryPoint> verdicts) {
