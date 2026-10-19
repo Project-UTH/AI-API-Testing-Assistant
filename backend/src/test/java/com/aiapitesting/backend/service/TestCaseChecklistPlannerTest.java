@@ -113,12 +113,23 @@ class TestCaseChecklistPlannerTest {
     void plan_nonJsonBody_bodyItemsNotApplicable_paramItemsStillApplicable() {
         Spec s = planner.readSpec(endpoint("""
                 {"parameters":[{"name":"page","in":"query","schema":{"type":"integer","minimum":1}}],
-                 "requestBody":{"content":{"multipart/form-data":{"schema":{"type":"object","required":["file"],
+                 "requestBody":{"content":{"application/xml":{"schema":{"type":"object","required":["file"],
                    "properties":{"file":{"type":"string"}}}}}}}"""));
 
         List<ChecklistItem> items = planner.plan(s, false, true, true);
         assertThat(item(items, ChecklistItemType.NEGATIVE_MISSING_FIELD, "file").notApplicableReason()).isNotNull();
         assertThat(item(items, ChecklistItemType.BOUNDARY_AT_MINIMUM, "page").notApplicableReason()).isNull();
+    }
+
+    @Test
+    void plan_formUrlEncodedBody_isFieldBased_soNegativeAndBoundaryItemsApply() {
+        Spec s = planner.readSpec(endpoint("""
+                {"requestBody":{"content":{"application/x-www-form-urlencoded":{"schema":{"type":"object","required":["title"],
+                  "properties":{"title":{"type":"string","maxLength":50}}}}}}}"""));
+
+        List<ChecklistItem> items = planner.plan(s, false, true, true);
+        assertThat(item(items, ChecklistItemType.NEGATIVE_MISSING_FIELD, "title").notApplicableReason()).isNull();
+        assertThat(items).anyMatch(i -> i.type() == ChecklistItemType.BOUNDARY_ABOVE_MAX_LENGTH);
     }
 
     @Test

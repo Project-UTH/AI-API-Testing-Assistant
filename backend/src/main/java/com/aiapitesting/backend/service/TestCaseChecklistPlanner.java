@@ -181,7 +181,11 @@ public class TestCaseChecklistPlanner {
             hasBody = true;
             Schema<?> bodySchema = null;
             for (Map.Entry<String, MediaType> entry : stored.requestBody.getContent().entrySet()) {
-                boolean json = entry.getKey() != null && entry.getKey().toLowerCase(Locale.ROOT).contains("json");
+                // Body "dạng field": JSON, form-urlencoded, multipart - test case luôn là JSON object phẳng và RequestBodyEncoder
+                // chuyển thành form/multipart lúc gửi, nên checklist Negative/Boundary áp dụng được như JSON. XML/text thì không.
+                String mediaType = entry.getKey() == null ? "" : entry.getKey().toLowerCase(Locale.ROOT);
+                boolean json = mediaType.contains("json") || mediaType.startsWith("application/x-www-form-urlencoded")
+                        || mediaType.startsWith("multipart/");
                 if (json && !bodyIsJson) {
                     bodyIsJson = true;
                     bodySchema = entry.getValue() == null ? null : entry.getValue().getSchema();

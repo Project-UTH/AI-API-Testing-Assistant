@@ -27,6 +27,7 @@ class RequestBodyEncoderTest {
         assertThat(RequestBodyEncoder.plan(null, "application/x-www-form-urlencoded", "a=1&b=2").kind()).isEqualTo(Kind.RAW);
         assertThat(RequestBodyEncoder.plan(null, "application/xml", "<a/>").kind()).isEqualTo(Kind.RAW);
         assertThat(RequestBodyEncoder.plan(null, "text/plain", "hi").mediaType()).isEqualTo("text/plain");
+        assertThat(RequestBodyEncoder.flatFields("{\"a\":null,\"b\":\"x\"}")).containsOnlyKeys("b"); // form: null = bỏ field
         assertThat(RequestBodyEncoder.flatFields("[1,2]")).isNull();
         assertThat(RequestBodyEncoder.flatFields("{broken")).isNull();
     }

@@ -61,7 +61,12 @@ final class RequestBodyEncoder {
                 return null;
             }
             Map<String, String> fields = new LinkedHashMap<>();
-            root.properties().forEach(e -> fields.put(e.getKey(), e.getValue().isValueNode() ? e.getValue().asText() : e.getValue().toString()));
+            // Form không có khái niệm null: JSON null = bỏ field (nếu không sẽ gửi chuỗi "null" và tạo kết quả sai).
+            root.properties().forEach(e -> {
+                if (!e.getValue().isNull()) {
+                    fields.put(e.getKey(), e.getValue().isValueNode() ? e.getValue().asText() : e.getValue().toString());
+                }
+            });
             return fields;
         } catch (Exception e) {
             return null;
