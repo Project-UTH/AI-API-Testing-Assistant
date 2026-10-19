@@ -152,19 +152,23 @@ public class TestExecutionRunner {
         try {
             RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
             boolean statusMatches = Objects.equals(result.statusCode(), testCase.getExpectedStatus());
+            // Quét 1 lần trên body THÔ; body lưu/hiển thị là bản đã che. Assertion + dependency vẫn dùng body thô (bên dưới).
+            SensitiveDataScanner.Scan scan = scanSensitive(testCase, result.responseBody());
             Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
                     statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null,
-                    securityFindingsJsonOf(testCase, result.statusCode(), result.responseBody()));
+                    securityFindingsJsonOf(result.statusCode(), scan));
 
             // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
             // status code đã sai.
             List<AssertionResultResponse> assertionResults = statusMatches
-                    ? evaluateAssertions(result.responseBody(), assertionSpecs)
+                    ? maskAssertionValues(evaluateAssertions(result.responseBody(), assertionSpecs), scan)
                     : List.of();
             boolean allAssertionsPassed = assertionResults.stream().allMatch(AssertionResultResponse::passed);
             TestResultStatus status = (statusMatches && allAssertionsPassed) ? TestResultStatus.PASSED : TestResultStatus.FAILED;
 
-            finish(execution, testCase, status, result.statusCode(), truncate(result.responseBody()), null,
+            // Che TRƯỚC khi cắt ngắn: cắt trước sẽ làm JSON hỏng và bí mật nằm lại trong text.
+            finish(execution, testCase, status, result.statusCode(),
+                    truncate(scan.maskedBody() != null ? scan.maskedBody() : result.responseBody()), null,
                     statusByTestCaseId, responseBodyByTestCaseId, result.responseBody(), autoIncluded,
                     writeAssertionResultsAsJson(assertionResults), meta, savedResults);
         } catch (Exception e) {
@@ -182,22 +186,43 @@ public class TestExecutionRunner {
      * (schema hỏng, endpoint không đọc được) chỉ bỏ qua: tính năng cảnh báo không được làm hỏng lượt chạy.
      */
     /**
-     * Module 17 (17b) - quét dữ liệu nhạy cảm trong response 2xx (kể cả khi mã không khớp kỳ vọng: dữ liệu lộ vẫn là dữ liệu lộ). CHỈ lưu
-     * đường dẫn/quy tắc/mô tả, không lưu giá trị. Mọi lỗi chỉ bỏ qua - tính năng cảnh báo không được làm hỏng lượt chạy.
+     * Module 17 (17b) - quét dữ liệu nhạy cảm trong response (mọi mã trạng thái, để che body lưu lại). Mọi lỗi chỉ bỏ qua (ghi log): tính
+     * năng cảnh báo không được làm hỏng lượt chạy.
      */
-    private String securityFindingsJsonOf(TestCase testCase, Integer statusCode, String responseBody) {
+    private SensitiveDataScanner.Scan scanSensitive(TestCase testCase, String responseBody) {
         try {
-            if (statusCode == null || statusCode < 200 || statusCode > 299 || testCase.getEndpoint() == null) {
-                return null;
+            if (testCase.getEndpoint() == null) {
+                return SensitiveDataScanner.Scan.EMPTY;
             }
             var endpoint = testCase.getEndpoint();
-            var findings = SensitiveDataScanner.scan(endpoint.getPath(), endpoint.getMethod(), endpoint.effectiveRequiresAuth(),
+            return SensitiveDataScanner.scanAndMask(endpoint.getPath(), endpoint.getMethod(), endpoint.effectiveRequiresAuth(),
                     testCase.getRequestBody(), responseBody);
-            return findings.isEmpty() ? null : objectMapper.writeValueAsString(findings);
         } catch (Exception e) {
             log.warn("Khong quet duoc du lieu nhay cam cho test case {}: {}", testCase.getId(), e.toString());
+            return SensitiveDataScanner.Scan.EMPTY;
+        }
+    }
+
+    /** Cảnh báo chỉ lưu cho response 2xx. CHỈ có đường dẫn/quy tắc/mô tả, không có giá trị. */
+    private String securityFindingsJsonOf(Integer statusCode, SensitiveDataScanner.Scan scan) {
+        try {
+            if (statusCode == null || statusCode < 200 || statusCode > 299 || scan.findings().isEmpty()) {
+                return null;
+            }
+            return objectMapper.writeValueAsString(scan.findings());
+        } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Kết quả assertion lưu "giá trị thực tế": nếu đúng là giá trị nhạy cảm đã che thì thay bằng dấu che. */
+    private List<AssertionResultResponse> maskAssertionValues(List<AssertionResultResponse> results, SensitiveDataScanner.Scan scan) {
+        if (scan.sensitiveValues().isEmpty()) {
+            return results;
+        }
+        return results.stream().map(r -> r.actualValue() != null && scan.sensitiveValues().contains(r.actualValue())
+                ? new AssertionResultResponse(r.jsonPath(), r.operator(), r.expectedValue(), SensitiveDataScanner.MASK_MARKER, r.passed())
+                : r).toList();
     }
 
     private String schemaViolationsJsonOf(TestCase testCase, Integer statusCode, String responseBody) {

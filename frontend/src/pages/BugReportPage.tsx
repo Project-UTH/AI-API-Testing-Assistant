@@ -11,7 +11,8 @@ import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog
 import { CreateBugReportDialog } from "@/components/bugreports/CreateBugReportDialog"
 import { DeleteBugReportDialog } from "@/components/bugreports/DeleteBugReportDialog"
 import { ApiError } from "@/lib/api"
-import { cn, formatDateTime, formatResponseBody, METHOD_STYLES } from "@/lib/utils"
+import { cn, formatDateTime, METHOD_STYLES } from "@/lib/utils"
+import { ResponseBodyView } from "@/components/shared/ResponseBodyView"
 import {
   confirmCloseBugReport,
   dismissCloseSuggestion,
@@ -798,13 +799,7 @@ function RunHistoryList({
                 {run.errorMessage && <p className="text-destructive">{run.errorMessage}</p>}
                 <div>
                   <p className="mb-1 font-medium text-muted-foreground">Nội dung phản hồi</p>
-                  {formatResponseBody(run.responseBody) ? (
-                    <pre className="max-h-80 overflow-auto rounded-md bg-muted p-2 whitespace-pre-wrap break-all">
-                      {formatResponseBody(run.responseBody)}
-                    </pre>
-                  ) : (
-                    <p className="text-muted-foreground">Không có nội dung phản hồi.</p>
-                  )}
+                  <ResponseBodyView body={run.responseBody} />
                 </div>
                 {run.assertionResults.length > 0 && (
                   <div>

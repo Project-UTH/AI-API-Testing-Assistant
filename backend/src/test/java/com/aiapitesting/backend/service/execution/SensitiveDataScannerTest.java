@@ -119,4 +119,52 @@ class SensitiveDataScannerTest {
         many.append("}");
         assertThat(get(many.toString())).hasSize(SensitiveDataScanner.MAX_FINDINGS);
     }
+
+    // ---- che giá trị trong body lưu lại ----
+
+    private static SensitiveDataScanner.Scan mask(String response) {
+        return SensitiveDataScanner.scanAndMask("/api/users/{id}", "GET", true, null, response);
+    }
+
+    @Test
+    void mask_replacesOnlySensitiveValues_keepsValidJsonAndOtherFields() {
+        SensitiveDataScanner.Scan scan = mask("{\"id\":1,\"name\":\"An \\\"Binh\\\" Đ\",\"passwordHash\":\"$2a$10$abcdefghijklmnopqrstuv\",\"profile\":{\"ssn\":\"123-45-6789\"}}");
+
+        assertThat(scan.maskedBody()).doesNotContain("$2a$").doesNotContain("123-45-6789")
+                .contains("\"id\":1").contains("\"passwordHash\":\"" + SensitiveDataScanner.MASK_MARKER + "\"")
+                .contains("Đ"); // unicode + dấu nháy escape giữ nguyên, vẫn là JSON hợp lệ
+        assertThat(scan.sensitiveValues()).contains("123-45-6789");
+        assertThat(scan.toString()).doesNotContain("123-45");
+    }
+
+    @Test
+    void mask_coversEveryArrayElement_andMoreThanMaxFindings() {
+        SensitiveDataScanner.Scan scan = mask("{\"items\":[{\"password\":\"secret-one\"},{\"password\":\"secret-two\"},{\"password\":\"secret-3333\"}]}");
+        assertThat(scan.findings()).hasSize(1); // báo 1 lần cho items[].password
+        assertThat(scan.maskedBody()).doesNotContain("secret-");
+
+        StringBuilder many = new StringBuilder("{");
+        for (int i = 0; i < 60; i++) {
+            many.append(i > 0 ? "," : "").append("\"password").append(i).append("\":\"abcdefgh").append(i).append("\"");
+        }
+        SensitiveDataScanner.Scan big = mask(many.append("}").toString());
+        assertThat(big.findings()).hasSize(SensitiveDataScanner.MAX_FINDINGS);
+        assertThat(big.maskedBody()).doesNotContain("abcdefgh"); // giới hạn cảnh báo KHÔNG làm sót giá trị
+    }
+
+    @Test
+    void mask_nothingToMask_orNotScannable_returnsNullBody() {
+        assertThat(mask("{\"id\":1}").maskedBody()).isNull();
+        assertThat(mask("plain text password=abc").maskedBody()).isNull();
+        assertThat(mask("{broken").maskedBody()).isNull();
+        assertThat(mask(null).maskedBody()).isNull();
+    }
+
+    @Test
+    void mask_authEndpointKeepsLoginToken_stringArraysAndRootArrayAreMasked() {
+        String jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123";
+        assertThat(SensitiveDataScanner.scanAndMask("/api/auth/login", "POST", false, null, "{\"token\":\"" + jwt + "\"}").maskedBody()).isNull();
+        SensitiveDataScanner.Scan arr = mask("[\"" + jwt + "\",{\"apiKey\":\"key-1234567\"}]");
+        assertThat(arr.maskedBody()).doesNotContain("eyJ").doesNotContain("key-1234567").startsWith("[");
+    }
 }

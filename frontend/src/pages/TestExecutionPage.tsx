@@ -11,11 +11,12 @@ import { BugStatusBadge } from "@/components/shared/BugStatusBadge"
 import { FailureCauseBanner, FailureCauseChip, FailureCauseDetail } from "@/components/shared/FailureCause"
 import { StabilityNote, UnstableBadge } from "@/components/shared/StabilityNote"
 import { SecurityBadge, SecurityDetail } from "@/components/shared/SecurityWarnings"
+import { ResponseBodyView } from "@/components/shared/ResponseBodyView"
 import { CreateBugReportDialog } from "@/components/bugreports/CreateBugReportDialog"
 import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog"
 import { ApiError } from "@/lib/api"
 import { generateBugReports, getBugReports, type BugReport, type GenerateBugReportsResult } from "@/lib/bugReports"
-import { cn, formatResponseBody } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { exportExecution, getExecution, type ExecutionReportFormat, type ExecutionStatus, type TestResult, type TestResultStatus } from "@/lib/executions"
 
 // Thứ tự cố định (khớp RESULT_STATUS_LABEL bên dưới) - dùng để vẽ donut theo 1 thứ tự nhất quán,
@@ -318,7 +319,6 @@ export function TestExecutionPage() {
       <ul className="mt-4 flex flex-col gap-2">
         {filteredResults.map((result) => {
           const isExpanded = expandedId === result.testCaseId
-          const formattedBody = formatResponseBody(result.responseBody)
           return (
             <li key={result.id} className="rounded-md border border-border">
               <div className="flex w-full items-start gap-2 p-3 sm:items-center">
@@ -403,13 +403,7 @@ export function TestExecutionPage() {
                   )}
                   <div>
                     <p className="mb-1 text-xs font-medium text-muted-foreground">Nội dung phản hồi</p>
-                    {formattedBody ? (
-                      <pre className="max-h-80 overflow-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap break-all">
-                        {formattedBody}
-                      </pre>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Không có nội dung phản hồi.</p>
-                    )}
+                    <ResponseBodyView body={result.responseBody} />
                   </div>
                   {result.assertionResults.length > 0 && (
                     <div>

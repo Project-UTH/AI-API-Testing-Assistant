@@ -2,6 +2,9 @@ package com.aiapitesting.backend.service.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -31,7 +34,9 @@ public final class SensitiveDataScanner {
     }
 
     static final int MAX_FINDINGS = 20;
-    static final int MAX_DEPTH = 8;
+    static final int MAX_DEPTH = 32;
+    /** Giá trị nhạy cảm bị thay bằng chuỗi này trong body lưu lại. */
+    public static final String MASK_MARKER = "***ĐÃ CHE***";
     static final int MAX_BODY_CHARS = 200_000;
     private static final int MIN_VALUE_LENGTH = 6;
 
@@ -58,61 +63,109 @@ public final class SensitiveDataScanner {
     }
 
     /**
+     * Kết quả quét + che.
+     *
+     * @param maskedBody      body JSON đã thay giá trị nhạy cảm bằng {@link #MASK_MARKER}; null = không có gì để che (hoặc không quét được)
+     * @param sensitiveValues giá trị thật đã bị che - CHỈ để dùng trong bộ nhớ (che nốt chỗ khác như kết quả assertion), không được lưu/log
+     */
+    public record Scan(List<Finding> findings, String maskedBody, Set<String> sensitiveValues) {
+        static final Scan EMPTY = new Scan(List.of(), null, Set.of());
+
+        @Override
+        public String toString() {
+            return "Scan[findings=" + findings.size() + "]";
+        }
+    }
+
+    /** Mỗi vị trí cần che + giá trị thật tại đó. */
+    private record Ctx(boolean authEndpoint, Set<String> echoed, Map<String, Finding> found, List<Runnable> maskers, Set<String> values) {
+    }
+
+    /**
      * @param endpointPath    đường dẫn spec của endpoint (nhận diện endpoint xác thực)
      * @param requiresAuth    endpoint có yêu cầu xác thực không (POST công khai thường là đăng ký/đăng nhập)
      * @param requestBodyJson body đã gửi (để bỏ qua giá trị chỉ phản chiếu lại input), có thể null
      */
     public static List<Finding> scan(String endpointPath, String method, boolean requiresAuth, String requestBodyJson, String responseBody) {
+        return scanAndMask(endpointPath, method, requiresAuth, requestBodyJson, responseBody).findings();
+    }
+
+    /** Quét như {@link #scan} và đồng thời dựng body đã che MỌI vị trí nhạy cảm (không bị giới hạn bởi MAX_FINDINGS). */
+    public static Scan scanAndMask(String endpointPath, String method, boolean requiresAuth, String requestBodyJson, String responseBody) {
         if (responseBody == null || responseBody.isBlank() || responseBody.length() > MAX_BODY_CHARS) {
-            return List.of();
+            return Scan.EMPTY;
         }
         String trimmed = responseBody.trim();
         if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
-            return List.of();
+            return Scan.EMPTY;
         }
         JsonNode root;
         try {
             root = MAPPER.readTree(trimmed);
         } catch (Exception e) {
-            return List.of();
+            return Scan.EMPTY;
         }
         boolean authEndpoint = (endpointPath != null && AUTH_PATH.matcher(endpointPath).find())
                 || ("POST".equalsIgnoreCase(method) && !requiresAuth);
         Set<String> echoed = valuesOf(requestBodyJson);
 
-        Map<String, Finding> found = new LinkedHashMap<>(); // khoá (path|rule): mảng nhiều phần tử chỉ báo 1 lần
-        walk(root, "", 0, authEndpoint, echoed, found);
-        return List.copyOf(found.values());
+        Ctx ctx = new Ctx(authEndpoint, echoed, new LinkedHashMap<>(), new ArrayList<>(), new java.util.HashSet<>()); // khoá (path|rule): mảng nhiều phần tử chỉ báo 1 lần
+        walk(root, "", 0, ctx);
+        if (ctx.maskers().isEmpty()) {
+            return new Scan(List.copyOf(ctx.found().values()), null, Set.of());
+        }
+        ctx.maskers().forEach(Runnable::run);
+        String masked;
+        try {
+            masked = MAPPER.writeValueAsString(root);
+        } catch (Exception e) {
+            masked = null;
+        }
+        return new Scan(List.copyOf(ctx.found().values()), masked, Set.copyOf(ctx.values()));
     }
 
-    private static void walk(JsonNode node, String path, int depth, boolean authEndpoint, Set<String> echoed, Map<String, Finding> found) {
-        if (depth > MAX_DEPTH || found.size() >= MAX_FINDINGS) {
+    private static void walk(JsonNode node, String path, int depth, Ctx ctx) {
+        if (depth > MAX_DEPTH) {
             return;
         }
         if (node.isObject()) {
-            node.properties().forEach(entry -> {
-                String childPath = path.isEmpty() ? entry.getKey() : path + "." + entry.getKey();
+            ObjectNode object = (ObjectNode) node;
+            object.properties().forEach(entry -> {
+                String key = entry.getKey();
+                String childPath = path.isEmpty() ? key : path + "." + key;
                 JsonNode value = entry.getValue();
                 if (value.isTextual()) {
-                    inspect(entry.getKey(), childPath, value.asText(), authEndpoint, echoed, found);
+                    if (inspect(key, childPath, value.asText(), ctx)) {
+                        ctx.values().add(value.asText());
+                        ctx.maskers().add(() -> object.set(key, TextNode.valueOf(MASK_MARKER)));
+                    }
                 } else {
-                    walk(value, childPath, depth + 1, authEndpoint, echoed, found);
+                    walk(value, childPath, depth + 1, ctx);
                 }
             });
         } else if (node.isArray()) {
-            for (JsonNode element : node) {
+            ArrayNode array = (ArrayNode) node;
+            for (int i = 0; i < array.size(); i++) {
+                JsonNode element = array.get(i);
+                int index = i;
                 if (element.isTextual()) {
-                    inspect("", path + "[]", element.asText(), authEndpoint, echoed, found);
+                    if (inspect("", path + "[]", element.asText(), ctx)) {
+                        ctx.values().add(element.asText());
+                        ctx.maskers().add(() -> array.set(index, TextNode.valueOf(MASK_MARKER)));
+                    }
                 } else {
-                    walk(element, path + "[]", depth + 1, authEndpoint, echoed, found);
+                    walk(element, path + "[]", depth + 1, ctx);
                 }
             }
         }
     }
 
-    private static void inspect(String fieldName, String path, String value, boolean authEndpoint, Set<String> echoed, Map<String, Finding> found) {
-        if (found.size() >= MAX_FINDINGS || value == null || echoed.contains(value)) {
-            return;
+    /** @return true nếu giá trị này nhạy cảm (cần che); finding chỉ được ghi khi chưa vượt MAX_FINDINGS. */
+    private static boolean inspect(String fieldName, String path, String value, Ctx ctx) {
+        boolean authEndpoint = ctx.authEndpoint();
+        Map<String, Finding> found = ctx.found();
+        if (value == null || ctx.echoed().contains(value)) {
+            return false;
         }
         String name = fieldName.toLowerCase(Locale.ROOT).replace("_", "").replace("-", "");
 
@@ -122,21 +175,24 @@ public final class SensitiveDataScanner {
             boolean tokenLike = "JWT".equals(valueRule);
             if (!(tokenLike && authEndpoint)) {
                 add(found, path, "VALUE_" + valueRule, severityOfValue(valueRule), "Giá trị có dạng " + describe(valueRule) + " (dài " + value.length() + " ký tự)");
-                return;
+                return true;
             }
         }
         // 2) Theo TÊN field (chỉ khi giá trị là chuỗi đủ dài, không phải ký hiệu che).
         if (name.isEmpty() || value.length() < MIN_VALUE_LENGTH || MASKS.contains(value.trim().toLowerCase(Locale.ROOT))) {
-            return;
+            return false;
         }
         boolean contains = NAME_CONTAINS.stream().anyMatch(name::contains);
         if (contains || NAME_EXACT.contains(name)) {
             add(found, path, "FIELD_" + (name.contains("password") || name.contains("passwd") || name.equals("pwd") ? "PASSWORD"
                     : name.contains("key") || name.equals("apikey") || name.equals("accesskey") ? "KEY" : "SECRET"),
                     Severity.HIGH, "Tên field gợi ý dữ liệu nhạy cảm (kiểu chuỗi, dài " + value.length() + " ký tự)");
+            return true;
         } else if (TOKEN_NAMES.contains(name) && !authEndpoint) {
             add(found, path, "FIELD_TOKEN", Severity.MEDIUM, "Tên field là token (kiểu chuỗi, dài " + value.length() + " ký tự) ở endpoint không phải đăng nhập");
+            return true;
         }
+        return false;
     }
 
     private static String valueRule(String value) {
@@ -173,6 +229,9 @@ public final class SensitiveDataScanner {
     }
 
     private static void add(Map<String, Finding> found, String path, String rule, Severity severity, String detail) {
+        if (found.size() >= MAX_FINDINGS) {
+            return; // vượt giới hạn cảnh báo: vẫn che giá trị (caller), chỉ không ghi thêm finding
+        }
         found.putIfAbsent(path + "|" + rule, new Finding(path, rule, severity, detail));
     }
 

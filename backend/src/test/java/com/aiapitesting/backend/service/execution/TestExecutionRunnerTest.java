@@ -310,6 +310,9 @@ class TestExecutionRunnerTest {
         verify(testResultRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.PASSED); // chỉ là cảnh báo, không Fail
         assertThat(captor.getValue().getSecurityFindingsJson()).contains("passwordHash").doesNotContain("REAL-HASH-VALUE");
+        // body lưu/hiển thị đã che giá trị, các field khác còn nguyên
+        assertThat(captor.getValue().getResponseBody()).doesNotContain("REAL-HASH-VALUE").contains("\"id\":1")
+                .contains(SensitiveDataScanner.MASK_MARKER);
     }
 
     @Test
