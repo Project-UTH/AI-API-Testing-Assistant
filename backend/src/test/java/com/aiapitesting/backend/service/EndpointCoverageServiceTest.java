@@ -204,6 +204,65 @@ class EndpointCoverageServiceTest {
         assertThat(result.coveragePercent()).isZero();
     }
 
+    // ---- Phạm vi đo (loại test case người dùng chọn) ----
+
+    @Test
+    void getEndpointCoverage_scopeOnlyPositive_dropsOtherCategoriesAndSpecRowsDoNotCountTowardPercent() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201", "400")));
+        endpoint.setScopePositive(true);
+        endpoint.setScopeNegative(false);
+        endpoint.setScopeBoundary(false);
+        endpoint.setScopeSecurity(false);
+        TestCase positive = testCase(endpoint, "Tạo user hợp lệ", 201, "{\"email\":\"a@b.co\"}");
+        stubProject(List.of(endpoint), List.of(positive), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(result.scope().custom()).isTrue();
+        assertThat(result.dimensions()).noneMatch(d -> List.of("NEGATIVE", "BOUNDARY", "SECURITY").contains(d.category()));
+        assertThat(result.dimensions()).anyMatch(d -> d.category().equals("POSITIVE"));
+        // Mã 400 của spec chưa có test nhưng không thuộc loại nào nên không kéo % xuống.
+        assertThat(result.dimensions()).anyMatch(d -> d.category().equals("STATUS_CODE") && d.status() == CoverageDimensionStatus.MISSING);
+        assertThat(result.coveragePercent()).isEqualTo(100.0);
+    }
+
+    @Test
+    void getEndpointCoverage_neverChoseScope_treatedAsAllFourCategories() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(result.scope()).isEqualTo(com.aiapitesting.backend.dto.response.CoverageScope.FULL);
+        assertThat(result.dimensions()).extracting(CoverageDimensionResponse::category)
+                .contains("POSITIVE", "NEGATIVE", "SECURITY");
+    }
+
+    @Test
+    void updateScope_noCategoryChosen_rejected() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(Optional.of(endpoint));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> endpointCoverageService.updateScope(projectId, endpoint.getId(),
+                        new com.aiapitesting.backend.dto.request.UpdateCoverageScopeRequest(false, false, false, false)))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+    }
+
+    @Test
+    void updateScope_saved_andCoverageRecomputedWithNewScope() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(Optional.of(endpoint));
+
+        EndpointCoverageResponse result = endpointCoverageService.updateScope(projectId, endpoint.getId(),
+                new com.aiapitesting.backend.dto.request.UpdateCoverageScopeRequest(true, true, false, false));
+
+        assertThat(endpoint.getScopeNegative()).isTrue();
+        assertThat(endpoint.getScopeSecurity()).isFalse();
+        assertThat(result.dimensions()).noneMatch(d -> d.category().equals("SECURITY") || d.category().equals("BOUNDARY"));
+        assertThat(result.dimensions()).anyMatch(d -> d.category().equals("NEGATIVE"));
+    }
+
     // ---- Chấm mục checklist ----
 
     @Test

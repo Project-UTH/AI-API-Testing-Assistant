@@ -58,6 +58,23 @@ public class Endpoint {
     @Builder.Default
     private boolean requiresAuth = false;
 
+    /**
+     * Phạm vi đo coverage: loại test case người dùng chọn kiểm cho endpoint này (ghi lại mỗi lần sinh test case,
+     * hoặc chỉnh ở trang Coverage). Cả 4 cột null = chưa từng chọn (endpoint cũ) → coi như đủ 4 loại. Dùng
+     * Boolean nullable (không DEFAULT) để {@code ddl-auto=update} thêm cột được lên bảng đã có dữ liệu.
+     */
+    @Column
+    private Boolean scopePositive;
+
+    @Column
+    private Boolean scopeNegative;
+
+    @Column
+    private Boolean scopeBoundary;
+
+    @Column
+    private Boolean scopeSecurity;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

@@ -116,6 +116,14 @@ public class TestCaseGenerationService {
                     "Phải chọn ít nhất 1 loại test case để sinh (Positive/Negative/Boundary/Security)");
         }
 
+        // Ghi lại loại test case vừa chọn làm phạm vi đo coverage của endpoint: trang Coverage chỉ tính các loại
+        // này (cột null = chưa từng chọn → đủ 4 loại).
+        endpoint.setScopePositive(includePositive);
+        endpoint.setScopeNegative(includeNegative);
+        endpoint.setScopeBoundary(includeBoundary);
+        endpoint.setScopeSecurity(includeSecurity);
+        endpointRepository.save(endpoint);
+
         // Mỗi lần bấm "Sinh Test Case" khai báo lại toàn bộ tập test case AI-quản-lý cho endpoint
         // này = đúng những gì đang được tick. Nhóm có tick -> gọi AI sinh lại (xoá-và-thay). Nhóm
         // KHÔNG tick -> không gọi AI, chỉ xoá sạch case cũ (chưa khoá) còn sót từ lần sinh trước, để

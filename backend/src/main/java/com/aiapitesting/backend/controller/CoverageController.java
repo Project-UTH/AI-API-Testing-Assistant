@@ -1,6 +1,7 @@
 package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.request.CoverageFillRequest;
+import com.aiapitesting.backend.dto.request.UpdateCoverageScopeRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.CoverageFillResponse;
 import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
@@ -13,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,6 +43,15 @@ public class CoverageController {
             @PathVariable UUID projectId, @PathVariable UUID endpointId
     ) {
         return ResponseEntity.ok(ApiResponse.of(endpointCoverageService.getEndpointCoverage(projectId, endpointId)));
+    }
+
+    /** Chỉnh loại test case được đo coverage của endpoint (phải bật ít nhất 1 loại). */
+    @PutMapping("/endpoints/{endpointId}/coverage/scope")
+    public ResponseEntity<ApiResponse<EndpointCoverageResponse>> updateCoverageScope(
+            @PathVariable UUID projectId, @PathVariable UUID endpointId,
+            @RequestBody UpdateCoverageScopeRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(endpointCoverageService.updateScope(projectId, endpointId, request)));
     }
 
     /** itemKeys null/rỗng = bù tất cả mục còn thiếu, có truyền = chỉ bù đúng các mục đó. */

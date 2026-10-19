@@ -7,13 +7,27 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { cn } from "@/lib/utils"
 import {
+  CHECKLIST_CATEGORIES,
   coverageCounts,
   fillCoverageGaps,
+  isChecklistCategory,
+  scopeIncludes,
+  scopeLabel,
+  updateCoverageScope,
+  type ChecklistCategory,
   type CoverageDimension,
   type CoverageFillResult,
   type CoverageRunStatus,
+  type CoverageScope,
   type EndpointCoverage,
 } from "@/lib/coverage"
+
+const SCOPE_NAMES: Record<ChecklistCategory, string> = {
+  POSITIVE: "Positive",
+  NEGATIVE: "Negative",
+  BOUNDARY: "Boundary",
+  SECURITY: "Security",
+}
 
 /** Thứ tự nhóm = thứ tự đọc tự nhiên: 4 loại checklist trước, rồi mã trạng thái, quan hệ endpoint, phân quyền. */
 const GROUPS = [
@@ -79,6 +93,32 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
   const [showCovered, setShowCovered] = useState(false)
   const [fillResult, setFillResult] = useState<CoverageFillResult | null>(null)
   const counts = coverageCounts(endpoint)
+  // Nhóm theo spec (mã trạng thái/quan hệ/phân quyền) không thuộc loại test nào nên không tính vào % - ghi chú 1 lần
+  // ở nhóm đầu tiên để không bị đọc nhầm là phần của "Cần kiểm".
+  const firstSpecCategory = GROUPS.find(
+    (g) => !isChecklistCategory(g.category) && endpoint.dimensions.some((d) => d.category === g.category)
+  )?.category
+
+  const scopeMutation = useMutation({
+    mutationFn: (scope: Pick<CoverageScope, "positive" | "negative" | "boundary" | "security">) =>
+      updateCoverageScope(projectId, endpoint.endpointId, scope),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
+      queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
+    },
+  })
+
+  function toggleScope(category: ChecklistCategory) {
+    const next = {
+      positive: endpoint.scope.positive,
+      negative: endpoint.scope.negative,
+      boundary: endpoint.scope.boundary,
+      security: endpoint.scope.security,
+    }
+    const key = category.toLowerCase() as keyof typeof next
+    next[key] = !next[key]
+    scopeMutation.mutate(next)
+  }
 
   const mutation = useMutation({
     mutationFn: (itemKeys: string[]) => fillCoverageGaps(projectId, endpoint.endpointId, itemKeys),
@@ -97,9 +137,47 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
 
   return (
     <div className="flex flex-col gap-3 text-sm">
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Loại test case được đo độ bao phủ">
+        <span className="text-xs text-muted-foreground">Đo độ bao phủ cho:</span>
+        {CHECKLIST_CATEGORIES.map((category) => {
+          const on = scopeIncludes(endpoint.scope, category)
+          const onlyOne = on && CHECKLIST_CATEGORIES.filter((c) => scopeIncludes(endpoint.scope, c)).length === 1
+          return (
+            <button
+              key={category}
+              type="button"
+              aria-pressed={on}
+              disabled={scopeMutation.isPending || onlyOne}
+              onClick={() => toggleScope(category)}
+              title={
+                onlyOne
+                  ? "Phải giữ ít nhất 1 loại"
+                  : on
+                    ? "Bấm để bỏ loại này khỏi phạm vi đo (không xoá test case nào)"
+                    : "Bấm để đưa loại này vào phạm vi đo - các mục của loại này sẽ hiện là còn thiếu nếu chưa có test"
+              }
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                on
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-muted-foreground hover:bg-muted"
+              )}
+            >
+              {SCOPE_NAMES[category]}
+            </button>
+          )
+        })}
+        {scopeMutation.isError && (
+          <span className="text-xs text-destructive">
+            {scopeMutation.error instanceof Error ? scopeMutation.error.message : "Không đổi được phạm vi."}
+          </span>
+        )}
+      </div>
+
       <div>
         <p>
-          Cần kiểm <span className="font-semibold">{counts.relevant}</span> mục · đã có test{" "}
+          Cần kiểm <span className="font-semibold">{counts.relevant}</span> mục
+          {scopeLabel(endpoint.scope) && " trong phạm vi"} · đã có test{" "}
           <span className="font-semibold">{counts.covered}</span> · đã chạy ra kết quả{" "}
           <span className="font-semibold">{counts.executed}</span> ·{" "}
           <span className={cn("font-semibold", counts.missing > 0 && "text-amber-600 dark:text-amber-400")}>
@@ -165,16 +243,22 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
         const rows = endpoint.dimensions.filter((d) => d.category === group.category)
         if (rows.length === 0) return null
         return (
-          <GroupSection
-            key={group.category}
-            title={group.title}
-            rule={group.rule}
-            rows={rows}
-            showCovered={showCovered}
-            isFilling={isFilling}
-            onFill={(itemKey) => mutation.mutate([itemKey])}
-            fillDisabled={mutation.isPending}
-          />
+          <div key={group.category} className="flex flex-col gap-3">
+            {group.category === firstSpecCategory && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Đối chiếu theo spec · không tính vào số mục cần kiểm ở trên
+              </p>
+            )}
+            <GroupSection
+              title={group.title}
+              rule={group.rule}
+              rows={rows}
+              showCovered={showCovered}
+              isFilling={isFilling}
+              onFill={(itemKey) => mutation.mutate([itemKey])}
+              fillDisabled={mutation.isPending}
+            />
+          </div>
         )
       })}
     </div>

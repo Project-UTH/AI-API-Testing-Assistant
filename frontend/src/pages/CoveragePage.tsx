@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, ChevronRight } from "lucide-react"
 
 import { cn, METHOD_STYLES } from "@/lib/utils"
-import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
+import { coverageCounts, getProjectCoverage, scopeLabel } from "@/lib/coverage"
 import { CoverageSummary } from "@/components/shared/CoverageMatrixChart"
 import { CoverageGapReport } from "@/components/coverage/CoverageGapReport"
 
@@ -103,6 +103,14 @@ export function CoveragePage() {
                     {endpoint.testCaseCount === 0 && (
                       <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
                         Chưa có test case nào
+                      </span>
+                    )}
+                    {scopeLabel(endpoint.scope) && (
+                      <span
+                        className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                        title="Chỉ các loại này được tính vào số mục cần kiểm. Mở endpoint để đổi phạm vi."
+                      >
+                        Phạm vi: {scopeLabel(endpoint.scope)}
                       </span>
                     )}
                     <span className="shrink-0 text-xs text-muted-foreground">

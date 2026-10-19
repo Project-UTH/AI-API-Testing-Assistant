@@ -2,6 +2,7 @@ package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.response.ChecklistItemType;
+import com.aiapitesting.backend.dto.response.CoverageScope;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
@@ -503,8 +504,18 @@ public class TestCaseChecklistPlanner {
      * bao giờ hiểu "đủ" khác nhau.
      */
     public List<ChecklistItem> planAll(Spec spec, boolean requiresAuth) {
-        List<ChecklistItem> items = new ArrayList<>(plan(spec, true, true, true));
-        items.addAll(planSecurity(requiresAuth));
+        return planScoped(spec, requiresAuth, CoverageScope.FULL);
+    }
+
+    /**
+     * Checklist chỉ gồm các loại nằm trong phạm vi đo của endpoint. Coverage và nút Bổ sung cùng dùng hàm này nên
+     * mẫu số "Cần kiểm" và thứ được bù không bao giờ lệch nhau.
+     */
+    public List<ChecklistItem> planScoped(Spec spec, boolean requiresAuth, CoverageScope scope) {
+        List<ChecklistItem> items = new ArrayList<>(plan(spec, scope.positive(), scope.negative(), scope.boundary()));
+        if (scope.security()) {
+            items.addAll(planSecurity(requiresAuth));
+        }
         return items;
     }
 

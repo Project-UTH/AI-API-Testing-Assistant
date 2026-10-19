@@ -40,6 +40,40 @@ export interface CoverageDimension {
   fillBlockedReason: string | null
 }
 
+/** Loại test case được đo coverage của endpoint. custom=false: chưa từng chọn (endpoint cũ) nên coi như đủ 4 loại. */
+export interface CoverageScope {
+  positive: boolean
+  negative: boolean
+  boundary: boolean
+  security: boolean
+  custom: boolean
+}
+
+/** 4 loại checklist EP/BVA - chỉ các dòng thuộc 4 loại này (đã lọc theo phạm vi) tính vào "Cần kiểm"/%. */
+export const CHECKLIST_CATEGORIES = ["POSITIVE", "NEGATIVE", "BOUNDARY", "SECURITY"] as const
+export type ChecklistCategory = (typeof CHECKLIST_CATEGORIES)[number]
+
+export function isChecklistCategory(category: string): category is ChecklistCategory {
+  return (CHECKLIST_CATEGORIES as readonly string[]).includes(category)
+}
+
+export function scopeIncludes(scope: CoverageScope, category: ChecklistCategory): boolean {
+  return scope[category.toLowerCase() as "positive" | "negative" | "boundary" | "security"]
+}
+
+const SCOPE_SHORT_NAMES: Record<ChecklistCategory, string> = {
+  POSITIVE: "Positive",
+  NEGATIVE: "Negative",
+  BOUNDARY: "Boundary",
+  SECURITY: "Security",
+}
+
+/** "Positive · Negative" khi phạm vi KHÔNG đủ 4 loại; null khi đủ 4 loại (không cần ghi chú). */
+export function scopeLabel(scope: CoverageScope): string | null {
+  const included = CHECKLIST_CATEGORIES.filter((c) => scopeIncludes(scope, c))
+  return included.length === CHECKLIST_CATEGORIES.length ? null : included.map((c) => SCOPE_SHORT_NAMES[c]).join(" · ")
+}
+
 export interface EndpointCoverage {
   endpointId: string
   path: string
@@ -49,6 +83,7 @@ export interface EndpointCoverage {
   /** % dòng vừa có test vừa đã chạy ra kết quả thật (PASSED/FAILED) - luôn nhỏ hơn hoặc bằng coveragePercent. */
   executedPercent: number
   schemaReadable: boolean
+  scope: CoverageScope
   dimensions: CoverageDimension[]
 }
 
@@ -68,9 +103,12 @@ export interface CoverageFillResult {
   fromSpecCount: number
 }
 
-/** Module 15j - đếm theo đúng cách backend tính % (bỏ NOT_APPLICABLE khỏi mẫu số) - dùng chung cho mọi nơi hiển thị "X/Y mục". */
+/**
+ * Module 15j - đếm theo đúng cách backend tính % (bỏ NOT_APPLICABLE khỏi mẫu số; chỉ 4 loại checklist trong phạm vi,
+ * không gồm mã trạng thái/quan hệ endpoint) - dùng chung cho mọi nơi hiển thị "X/Y mục".
+ */
 export function coverageCounts(endpoint: EndpointCoverage) {
-  const relevant = endpoint.dimensions.filter((d) => d.status !== "NOT_APPLICABLE")
+  const relevant = endpoint.dimensions.filter((d) => isChecklistCategory(d.category) && d.status !== "NOT_APPLICABLE")
   const covered = relevant.filter((d) => d.status === "COVERED")
   const fillableRows = relevant.filter((d) => d.status === "MISSING" && d.itemKey && d.fillable)
   const blockedRows = relevant.filter((d) => d.status === "MISSING" && d.itemKey && !d.fillable)
@@ -100,6 +138,18 @@ export function getProjectCoverage(projectId: string): Promise<ProjectCoverage> 
 
 export function getEndpointCoverage(projectId: string, endpointId: string): Promise<EndpointCoverage> {
   return apiFetch<EndpointCoverage>(`/projects/${projectId}/endpoints/${endpointId}/coverage`)
+}
+
+/** Chỉnh loại test case được đo coverage của endpoint (phải bật ít nhất 1 loại). Không xoá test case nào. */
+export function updateCoverageScope(
+  projectId: string,
+  endpointId: string,
+  scope: Pick<CoverageScope, "positive" | "negative" | "boundary" | "security">
+): Promise<EndpointCoverage> {
+  return apiFetch<EndpointCoverage>(`/projects/${projectId}/endpoints/${endpointId}/coverage/scope`, {
+    method: "PUT",
+    body: JSON.stringify(scope),
+  })
 }
 
 /** Module 15j - bù khoảng trống (tất định, 0 token). Không truyền itemKeys = bù tất cả mục còn thiếu. */

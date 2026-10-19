@@ -1,7 +1,9 @@
 package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
+import com.aiapitesting.backend.dto.request.UpdateCoverageScopeRequest;
 import com.aiapitesting.backend.dto.response.ChecklistItemType;
+import com.aiapitesting.backend.dto.response.CoverageScope;
 import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
 import com.aiapitesting.backend.dto.response.CoverageRunStatus;
@@ -13,6 +15,7 @@ import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseDependency;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
+import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
@@ -103,15 +106,25 @@ public class EndpointCoverageService {
         long coveredTotal = 0;
         long executedTotal = 0;
         long dimensionTotal = 0;
+        // Gộp theo MỤC (không trung bình % từng endpoint) và mỗi endpoint chỉ góp các mục trong phạm vi của nó.
         for (EndpointCoverageResponse e : endpoints) {
-            coveredTotal += e.dimensions().stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
-            executedTotal += e.dimensions().stream().filter(this::isExecuted).count();
-            dimensionTotal += e.dimensions().stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
+            List<CoverageDimensionResponse> counted = e.dimensions().stream().filter(this::countsTowardPercent).toList();
+            coveredTotal += counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
+            executedTotal += counted.stream().filter(this::isExecuted).count();
+            dimensionTotal += counted.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
         }
         double overallCoveragePercent = dimensionTotal == 0 ? 100.0 : (coveredTotal * 100.0) / dimensionTotal;
         double overallExecutedPercent = dimensionTotal == 0 ? 100.0 : (executedTotal * 100.0) / dimensionTotal;
         return new ProjectCoverageResponse(projectId, round1(overallCoveragePercent), round1(overallExecutedPercent),
                 endpoints);
+    }
+
+    /**
+     * Chỉ 4 loại checklist EP/BVA (đã lọc theo phạm vi) tính vào %. STATUS_CODE/RELATION là độ phủ theo spec/luồng
+     * dữ liệu, không thuộc loại test nào - tính chung sẽ khiến người chỉ chọn Positive luôn "thiếu" mã 4xx/401/404.
+     */
+    private boolean countsTowardPercent(CoverageDimensionResponse d) {
+        return CoverageScope.isChecklistCategory(d.category());
     }
 
     /** Dòng đã có test VÀ test đó đã chạy ra kết luận thật (PASSED hoặc FAILED). */
@@ -194,8 +207,9 @@ public class EndpointCoverageService {
         GeneratedTestCase securityBaseline = baseline != null ? baseline
                 : candidates.isEmpty() ? null : candidates.get(0).generated();
 
+        CoverageScope scope = CoverageScope.of(endpoint);
         List<CoverageDimensionResponse> dimensions = new ArrayList<>();
-        for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planAll(spec, endpoint.isRequiresAuth())) {
+        for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planScoped(spec, endpoint.isRequiresAuth(), scope)) {
             GeneratedTestCase base = item.type().name().startsWith("SECURITY_") ? securityBaseline : baseline;
             dimensions.add(checklistDimension(spec, item, candidates, endpoint.isRequiresAuth(), context, base));
         }
@@ -209,15 +223,35 @@ public class EndpointCoverageService {
                         + "'có đăng nhập nhưng không đủ quyền'",
                 List.of(), null, null, null, null, List.of()));
 
-        long covered = dimensions.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
-        long executed = dimensions.stream().filter(this::isExecuted).count();
-        long relevant = dimensions.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
+        List<CoverageDimensionResponse> counted = dimensions.stream().filter(this::countsTowardPercent).toList();
+        long covered = counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
+        long executed = counted.stream().filter(this::isExecuted).count();
+        long relevant = counted.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
         double coveragePercent = relevant == 0 ? 100.0 : (covered * 100.0) / relevant;
         double executedPercent = relevant == 0 ? 100.0 : (executed * 100.0) / relevant;
 
         return new EndpointCoverageResponse(
                 endpoint.getId(), endpoint.getPath(), endpoint.getMethod(), testCases.size(),
-                round1(coveragePercent), round1(executedPercent), facts.parsed(), dimensions);
+                round1(coveragePercent), round1(executedPercent), facts.parsed(), scope, dimensions);
+    }
+
+    /**
+     * Chỉnh phạm vi đo của 1 endpoint ở trang Coverage. Không xoá test case nào: thu hẹp thì case ngoài phạm vi
+     * vẫn còn (chỉ không được tính), mở rộng thì các mục mới hiện là còn thiếu.
+     */
+    public EndpointCoverageResponse updateScope(UUID projectId, UUID endpointId, UpdateCoverageScopeRequest request) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        if (request == null || !(request.positive() || request.negative() || request.boundary() || request.security())) {
+            throw new InvalidRequestException("Phải chọn ít nhất 1 loại test case để đo độ bao phủ");
+        }
+        endpoint.setScopePositive(request.positive());
+        endpoint.setScopeNegative(request.negative());
+        endpoint.setScopeBoundary(request.boundary());
+        endpoint.setScopeSecurity(request.security());
+        endpointRepository.save(endpoint);
+        return getEndpointCoverage(projectId, endpointId);
     }
 
     /**
