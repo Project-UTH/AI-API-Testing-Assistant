@@ -1364,6 +1364,21 @@ Kết luận đo được:
 - AI không biết id thật (path `{{id}}` = UUID mẫu): phải gán id thật trước khi chạy (AI-2). Hạn nộp dùng `{{today-1d}}` (UTC) đúng; lưu ý khi tự thử tay phải tính múi giờ (UTC+7 làm ca 'hôm qua' của tôi trả 200 sai lệch).
 - **Định vị đề xuất:** checklist tất định = nền tảng (miễn phí, đo được); AI = lớp nghiệp vụ chọn lọc có nhãn 'GIẢ ĐỊNH'; người dùng duyệt.
 
+#### 17j. Hướng đi chốt sau tham vấn 2 chuyên gia (QA/kiến trúc + người hướng dẫn đồ án), 2026-10-20
+
+**Định vị:** 'Kiểm thử API dựa trên đặc tả OpenAPI: sinh test tất định (checklist EP/BVA/bảo mật + bổ sung từ 1 test đúng) kết hợp LLM có kiểm chứng (AI-as-assistant-with-verification)'. Hai chuyên gia cùng kết luận hướng hybrid là hướng chuẩn và dễ bảo vệ; kết quả 'LLM không thắng checklist ở phần EP/BVA' là phát hiện thực nghiệm hợp lệ. (Lưu ý: cả hai chuyên gia chỉ dựa vào mô tả số liệu, chưa đọc code; tên công cụ/bài báo họ nêu - Schemathesis, RESTler, EvoMaster, RESTGPT, LlamaRestTest, AutoRestTest - là từ trí nhớ, CẦN xác minh trước khi trích dẫn.)
+
+**AI nên làm:** đề xuất luật nghiệp vụ dạng giả thuyết có nhãn GIẢ ĐỊNH, sinh giá trị miền hợp lệ có ngữ nghĩa, viết bug report/tóm tắt lỗi, gợi ý phụ thuộc giữa endpoint khi spec thiếu, review độ tin cậy. **AI không nên làm:** sinh lại checklist EP/BVA/bảo mật; điền id thật (phải lấy từ response); là oracle pass/fail duy nhất (2/4 Fail nghiệp vụ là đoán sai mã); tự kết luận 'bug thật' không có bằng chứng.
+
+**Mâu thuẫn giữa 2 chuyên gia và quyết định:** chuyên gia QA muốn thêm tính năng (chuỗi create→read→delete suy luận phụ thuộc từ response kiểu RESTler, validate response schema, báo cáo coverage), chuyên gia hướng dẫn muốn DỪNG thêm tính năng và tập trung ĐÁNH GIÁ thực nghiệm. Đã có sẵn: kiểm response schema (kiểu/trường bắt buộc, cảnh báo 'Lệch schema'), Coverage Matrix theo endpoint/mã trạng thái/nhóm checklist, phân loại nguyên nhân Fail. => **Ưu tiên 1 là đánh giá; chỉ làm thêm 1 tính năng nhỏ phục vụ đánh giá/độ tin cậy (chuỗi POST→GET/DELETE theo tên trường id, mục P1-2).**
+
+- [ ] **E1. Giao thức đánh giá (1-2 tuần):** (a) 1 demo API tự viết 8-10 endpoint, **gieo 20-30 mutant có phân loại** (bỏ validate, sai biên off-by-one, sai status code, thiếu phân quyền, mass-assignment, lộ dữ liệu nhạy cảm, vi phạm luật nghiệp vụ); (b) 3 cấu hình: checklist-only, LLM-only, hybrid (checklist + AI nghiệp vụ); LLM chạy lặp 3 lần (không tất định), ghi phiên bản model/prompt; (c) metric: **fault detection rate theo loại mutant, false-failure rate, token, thời gian, chi phí/lỗi phát hiện, trung bình ± độ lệch**; (d) thêm 3-4 API thật đã có để đo false-failure và chi phí (chấm thủ công trên mẫu); (e) so sánh ít nhất 1 công cụ có sẵn (Schemathesis) hoặc nêu rõ vì sao không; (f) script chạy lại được + file kết quả + mục 'threats to validity' (tự gieo mutant, cỡ mẫu nhỏ, phụ thuộc model, API demo đơn giản, không blind).
+- [ ] **E2. Đo 'human review':** thời gian duyệt và tỉ lệ chấp nhận test AI nghiệp vụ (nếu không đo thì chỉ là khẳng định).
+- [ ] **E3. Tài liệu khớp thực tế:** cập nhật CLAUDE.md/mô tả đề tài ('AI hỗ trợ, hệ thống tất định đảm bảo chất lượng'), gọn lại roadmap (đánh dấu rõ cái đã làm/ngoài phạm vi), ghi giới hạn đã biết; tránh tuyên bố 'AI thông minh' / 'verified on 4 APIs' rộng hơn bằng chứng (hiện 1-2 endpoint mỗi API).
+- [ ] **E4. Demo 8-10 phút một kịch bản:** import → checklist tất định + chạy → bật AI nghiệp vụ cho 1 endpoint, duyệt/sửa, chạy → phân loại nguyên nhân Fail → bug report từ lỗi thật → bảng kết quả mutant (hybrid bắt X/Y so với baseline) → xuất báo cáo/CI. Có bản ghi hình dự phòng + cache kết quả LLM.
+- **Giảm nhấn mạnh/không làm thêm:** role matrix, diff import, so sánh run, CI token, export (chỉ nhắc ngắn mục 'engineering'); contract testing kiểu Pact; UI mới; tối ưu prompt vô hạn; loại test mới.
+- **Rủi ro chấm điểm cần chủ động nêu:** 670 test backend chứng minh chất lượng code, không chứng minh hiệu quả bắt lỗi; mẫu nhỏ nên các con số '5/5', '2/4' chỉ minh hoạ, không phải kết luận thống kê; checklist phụ thuộc spec (spec sai thì checklist sai); gap-fill phụ thuộc chất lượng test đúng do người dùng cấp.
+
 #### 17g. Phần còn thiếu theo rà soát 2 chuyên gia (backend/QA + frontend/UX), 2026-10-20
 
 Đối chiếu code thật; mục nào đã làm thì không liệt kê lại. Kích thước S/M/L. **Thứ tự đề xuất: P0 trước.**
