@@ -115,12 +115,13 @@ class CoverageGapFillServiceTest {
 
         CoverageFillResponse response = coverageGapFillService.fill(projectId, endpoint.getId(), null);
 
-        // Thiếu email + email null + email sai kiểu (Security không áp dụng vì endpoint không yêu cầu xác thực).
-        assertThat(response.createdCount()).isEqualTo(3);
+        // Thiếu email + email null (Security không áp dụng vì endpoint không yêu cầu xác thực; không còn mục "sai kiểu" cho
+        // trường chuỗi - Module 17 1.2).
+        assertThat(response.createdCount()).isEqualTo(2);
         assertThat(response.notFilled()).isEmpty();
         assertThat(response.baselineTestCaseName()).isEqualTo("Positive - hop le");
         List<TestCase> saved = savedCases();
-        assertThat(saved).hasSize(3).allSatisfy(tc -> {
+        assertThat(saved).hasSize(2).allSatisfy(tc -> {
             assertThat(tc.getGenerationOrigin()).isEqualTo(TestCaseGenerationOrigin.SYSTEM_FILLED);
             assertThat(tc.getSource()).isEqualTo(TestCaseSource.AI_GENERATED);
             assertThat(tc.getExpectedStatus()).isEqualTo(400);
@@ -130,7 +131,7 @@ class CoverageGapFillServiceTest {
             assertThat(tc.getReliabilityStatus()).isEqualTo(TestCaseReliability.RELIABLE);
         });
         assertThat(saved).extracting(TestCase::getRequestBody)
-                .containsExactlyInAnyOrder("{}", "{\"email\":null}", "{\"email\":12345}");
+                .containsExactlyInAnyOrder("{}", "{\"email\":null}");
     }
 
     @Test
@@ -227,10 +228,10 @@ class CoverageGapFillServiceTest {
 
         CoverageFillResponse response = coverageGapFillService.fill(projectId, endpoint.getId(), null);
 
-        assertThat(response.createdCount()).isEqualTo(3);
+        assertThat(response.createdCount()).isEqualTo(2);
         assertThat(response.notFilled()).singleElement().satisfies(nf -> assertThat(nf.itemKey()).isEqualTo("POSITIVE_BASELINE|||"));
         assertThat(savedCases()).extracting(TestCase::getRequestBody)
-                .containsExactlyInAnyOrder("{}", "{\"email\":null}", "{\"email\":12345}");
+                .containsExactlyInAnyOrder("{}", "{\"email\":null}");
         assertThat(savedCases()).allSatisfy(tc -> assertThat(tc.getExpectedStatus()).isEqualTo(400));
     }
 

@@ -586,12 +586,13 @@ class TestCaseGenerationServiceTest {
                 .contains("Checklist Boundary (bắt buộc)").contains("Thiếu field bắt buộc 'email'")
                 .contains("'age' trong requestBody = 61, lớn hơn maximum = 60");
         var summary = response.planSummary();
-        // 15i: P1 + Negative 6 (thiếu/null/sai kiểu x email, age) + Boundary 5 (age min/max x2 + email rỗng).
-        assertThat(summary.checklistTotal()).isEqualTo(12);
-        assertThat(summary.aiAskedCount()).isEqualTo(12);
+        // 15i: P1 + Negative 5 (thiếu/null x email, age + sai kiểu age; email là chuỗi nên không có mục sai kiểu - Module 17 1.2)
+        // + Boundary 5 (age min/max x2 + email rỗng).
+        assertThat(summary.checklistTotal()).isEqualTo(11);
+        assertThat(summary.aiAskedCount()).isEqualTo(11);
         // Case "age là chữ" trước 15i là đề xuất thêm, giờ đạt mục checklist "sai kiểu".
         assertThat(summary.aiSatisfiedCount()).isEqualTo(6);
-        assertThat(summary.systemFilledCount()).isEqualTo(6);
+        assertThat(summary.systemFilledCount()).isEqualTo(5);
         assertThat(summary.aiExtraCount()).isEqualTo(1); // chỉ còn case "thiếu email" nói dối
         assertThat(summary.items()).filteredOn(i -> i.status() == ChecklistItemStatus.SYSTEM_FILLED)
                 .extracting(i -> i.description())
@@ -606,7 +607,7 @@ class TestCaseGenerationServiceTest {
                         && i.type() == com.aiapitesting.backend.dto.response.ChecklistItemType.NEGATIVE_MISSING_FIELD)
                 .singleElement().satisfies(i -> assertThat(i.coveredBy()).containsExactly("Negative - Thiếu field bắt buộc 'email'"));
 
-        assertThat(response.testCases()).hasSize(13);
+        assertThat(response.testCases()).hasSize(12);
         TestCaseResponse filledEmail = response.testCases().stream()
                 .filter(tc -> tc.generationOrigin() == TestCaseGenerationOrigin.SYSTEM_FILLED
                         && tc.name().equals("Negative - Thiếu field bắt buộc 'email'"))
@@ -619,14 +620,14 @@ class TestCaseGenerationServiceTest {
         assertThat(response.testCases()).filteredOn(tc -> tc.name().equals("Boundary - age 18"))
                 .singleElement().satisfies(tc -> assertThat(tc.checklistItem()).contains("minimum = 18"));
 
-        // Snapshot lịch sử chứa cả case bù - trang Lịch sử hiện đúng 13 case thực tế.
+        // Snapshot lịch sử chứa cả case bù - trang Lịch sử hiện đúng 12 case thực tế.
         ArgumentCaptor<TestGenerationEvent> eventCaptor = ArgumentCaptor.forClass(TestGenerationEvent.class);
         verify(testGenerationEventRepository).save(eventCaptor.capture());
-        assertThat(eventCaptor.getValue().getTestCaseCount()).isEqualTo(13);
+        assertThat(eventCaptor.getValue().getTestCaseCount()).isEqualTo(12);
         assertThat(eventCaptor.getValue().getSnapshotJson()).contains("Thiếu field bắt buộc 'email'");
 
         // Báo cáo tự đủ (không cần bộ test case sống) và được lưu vào event để xem lại sau khi tải lại trang.
-        assertThat(summary.checklistCaseCount()).isEqualTo(12);
+        assertThat(summary.checklistCaseCount()).isEqualTo(11);
         assertThat(summary.extraCaseNames()).containsExactly("Negative - Thieu email");
         GenerationPlanSummary persisted = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readValue(eventCaptor.getValue().getPlanSummaryJson(), GenerationPlanSummary.class);
@@ -704,7 +705,7 @@ class TestCaseGenerationServiceTest {
         assertThat(response.planSummary().alreadyCoveredCount()).isEqualTo(1);
         assertThat(response.planSummary().items()).filteredOn(i -> i.status() == ChecklistItemStatus.ALREADY_COVERED)
                 .singleElement().satisfies(i -> assertThat(i.coveredBy()).containsExactly("Boundary - age 61 (khoa)"));
-        assertThat(response.planSummary().aiAskedCount()).isEqualTo(11);
+        assertThat(response.planSummary().aiAskedCount()).isEqualTo(10);
         assertThat(response.testCases()).noneMatch(tc -> tc.requestBody() != null && tc.requestBody().contains("61"));
     }
 
@@ -716,11 +717,11 @@ class TestCaseGenerationServiceTest {
         GenerateTestCasesResponse response = testCaseGenerationService.generate(projectId, endpointId,
                 new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, false, true, false)).get();
 
-        // Chỉ tick Negative: 6 mục (thiếu/null/sai kiểu x email, age), đều do hệ thống bù từ case gốc; case gốc không lưu.
-        assertThat(response.testCases()).hasSize(6)
+        // Chỉ tick Negative: 5 mục (thiếu/null x email, age + sai kiểu age), đều do hệ thống bù từ case gốc; case gốc không lưu.
+        assertThat(response.testCases()).hasSize(5)
                 .allMatch(tc -> tc.generationOrigin() == TestCaseGenerationOrigin.SYSTEM_FILLED)
                 .allMatch(tc -> tc.expectedStatus() == 400);
-        assertThat(response.planSummary().systemFilledCount()).isEqualTo(6);
+        assertThat(response.planSummary().systemFilledCount()).isEqualTo(5);
         // Prompt chỉ ghép phần của loại đã tick (15i).
         assertThat(sentPrompt()).contains("Checklist Negative (bắt buộc)")
                 .doesNotContain("Checklist Positive").doesNotContain("Checklist Boundary").doesNotContain("Checklist Security");
@@ -735,7 +736,7 @@ class TestCaseGenerationServiceTest {
 
         assertThat(response.testCases()).hasSize(1);
         assertThat(response.planSummary().aiSatisfiedCount()).isEqualTo(1);
-        assertThat(response.planSummary().notFillableCount()).isEqualTo(11);
+        assertThat(response.planSummary().notFillableCount()).isEqualTo(10);
         assertThat(response.planSummary().items()).filteredOn(i -> i.status() == ChecklistItemStatus.NOT_FILLABLE)
                 .allMatch(i -> i.reason() != null && i.reason().contains("làm gốc"));
     }

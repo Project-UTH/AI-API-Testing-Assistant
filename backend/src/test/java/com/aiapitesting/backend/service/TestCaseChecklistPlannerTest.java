@@ -63,10 +63,10 @@ class TestCaseChecklistPlannerTest {
         List<ChecklistItem> items = all();
 
         // Positive=3: dữ liệu hợp lệ + 2 giá trị enum của role (USER, ADMIN - mỗi giá trị enum 1 lớp tương đương);
-        // Negative=10: thiếu (email, age) + null (email, age) + sai kiểu (email, age, name, role, minPrice)
-        // + ngoài enum (role); Boundary=11: age min/max x2, name minLength/maxLength x2, minPrice min x2
+        // Negative=7: thiếu (email, age) + null (email, age) + sai kiểu (chỉ age, minPrice - số; KHÔNG có trường chuỗi vì
+        // Jackson ép số thành chuỗi, Module 17 1.2) + ngoài enum (role); Boundary=11: age min/max x2, name minLength/maxLength x2, minPrice min x2
         // + chuỗi rỗng cho email (string không khai minLength/format - biên ngầm 15i).
-        assertThat(items).hasSize(24);
+        assertThat(items).hasSize(21);
         assertThat(items).filteredOn(i -> i.type() == ChecklistItemType.POSITIVE_ENUM_VALUE)
                 .extracting(ChecklistItem::value).containsExactly("USER", "ADMIN");
         assertThat(items.get(0).type()).isEqualTo(ChecklistItemType.POSITIVE_BASELINE);
@@ -75,7 +75,7 @@ class TestCaseChecklistPlannerTest {
         assertThat(items).filteredOn(i -> i.type() == ChecklistItemType.NEGATIVE_NULL_FIELD)
                 .extracting(ChecklistItem::field).containsExactly("email", "age");
         assertThat(items).filteredOn(i -> i.type() == ChecklistItemType.NEGATIVE_WRONG_TYPE)
-                .extracting(ChecklistItem::field).containsExactlyInAnyOrder("email", "age", "name", "role", "minPrice");
+                .extracting(ChecklistItem::field).containsExactlyInAnyOrder("age", "minPrice");
         assertThat(item(items, ChecklistItemType.BOUNDARY_BELOW_MINIMUM, "age").value()).isEqualTo("17");
         assertThat(item(items, ChecklistItemType.BOUNDARY_ABOVE_MAXIMUM, "age").value()).isEqualTo("61");
         assertThat(item(items, ChecklistItemType.BOUNDARY_ABOVE_MAX_LENGTH, "name").value()).isEqualTo("aaaaaa");
@@ -94,7 +94,7 @@ class TestCaseChecklistPlannerTest {
 
     @Test
     void plan_onlyTickedGroups() {
-        assertThat(planner.plan(spec, false, true, false)).hasSize(10)
+        assertThat(planner.plan(spec, false, true, false)).hasSize(7)
                 .allMatch(i -> i.type().name().startsWith("NEGATIVE_"));
         assertThat(planner.plan(spec, true, false, false)).hasSize(3); // dữ liệu hợp lệ + 2 giá trị enum
     }

@@ -478,8 +478,10 @@ public class TestCaseChecklistPlanner {
         }
         return switch (rule.type()) {
             case "integer", "number", "boolean" -> WRONG_TYPE_TEXT;
-            // Tham số path/query/header luôn là chuỗi - không có giá trị nào "sai kiểu chuỗi".
-            case "string" -> rule.location() == ParamLocation.BODY ? WRONG_TYPE_NUMBER : null;
+            // Module 17 (1.2) - KHÔNG kiểm "sai kiểu" cho trường chuỗi: tham số path/query/header luôn là chuỗi, còn ở body JSON
+            // thì Jackson (Spring) ép số 12345 thành "12345" nên API nhận hợp lệ (đo thật: POST /register fullName=12345 trả 201)
+            // - kỳ vọng 400 là kỳ vọng sai, sinh ra test Fail oan. Chỉ giữ cho số/boolean, nơi gửi chữ thật sự bị từ chối.
+            case "string" -> null;
             default -> null;
         };
     }
