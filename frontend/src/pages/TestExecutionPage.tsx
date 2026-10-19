@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Bug, CheckCircle2, ChevronDown, GitCompare, ListChecks, Loader2, Pencil, XCircle } from "lucide-react"
+import { Bug, CheckCircle2, ChevronDown, Download, GitCompare, ListChecks, Loader2, Pencil, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { StatusBadge, RESULT_STATUS_STYLES, RESULT_STATUS_LABEL, RESULT_STATUS_ICON } from "@/components/shared/StatusBadge"
 import { BugStatusBadge } from "@/components/shared/BugStatusBadge"
 import { FailureCauseBanner, FailureCauseChip, FailureCauseDetail } from "@/components/shared/FailureCause"
@@ -15,7 +15,7 @@ import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog
 import { ApiError } from "@/lib/api"
 import { generateBugReports, getBugReports, type BugReport, type GenerateBugReportsResult } from "@/lib/bugReports"
 import { cn, formatResponseBody } from "@/lib/utils"
-import { getExecution, type ExecutionStatus, type TestResult, type TestResultStatus } from "@/lib/executions"
+import { exportExecution, getExecution, type ExecutionReportFormat, type ExecutionStatus, type TestResult, type TestResultStatus } from "@/lib/executions"
 
 // Thứ tự cố định (khớp RESULT_STATUS_LABEL bên dưới) - dùng để vẽ donut theo 1 thứ tự nhất quán,
 // không lệ thuộc thứ tự dữ liệu trả về.
@@ -75,6 +75,11 @@ export function TestExecutionPage() {
       .flatMap((e) => e.testCases.flatMap((tc) => tc.bugs))
       .filter((bug) => resultIds.has(bug.sourceTestResultId))
   }, [bugReportsPage, execution])
+
+  // Module 17 (17d) - xuất báo cáo lượt chạy (JUnit XML cho CI / HTML để mở-in).
+  const exportMutation = useMutation({
+    mutationFn: (format: ExecutionReportFormat) => exportExecution(projectId, executionId!, format),
+  })
 
   const [lastGenerateResult, setLastGenerateResult] = useState<GenerateBugReportsResult | null>(null)
 
@@ -138,6 +143,23 @@ export function TestExecutionPage() {
               )}
               {EXECUTION_STATUS_LABEL[execution.status]}
             </span>
+          )}
+          {isFinished && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="outline" size="sm" disabled={exportMutation.isPending}>
+                    {exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                    Xuất báo cáo
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => exportMutation.mutate("junit")}>JUnit XML (.xml) - cho CI</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportMutation.mutate("html")}>Báo cáo HTML (.html) - để mở/in</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {isFinished && (
             <Button variant="outline" size="sm" render={<Link to={`/projects/${projectId}/executions/${executionId}/compare`} />}>
@@ -221,6 +243,11 @@ export function TestExecutionPage() {
             : generateSelectedMutation.error instanceof ApiError
               ? generateSelectedMutation.error.message
               : "Không sinh được Bug Report, vui lòng thử lại"}
+        </p>
+      )}
+      {exportMutation.isError && (
+        <p className="mt-2 text-sm text-destructive" role="alert">
+          {exportMutation.error instanceof ApiError ? exportMutation.error.message : "Không xuất được báo cáo, vui lòng thử lại"}
         </p>
       )}
       {lastGenerateResult && (

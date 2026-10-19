@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api"
+import { apiFetch, downloadFile } from "@/lib/api"
 
 export type ExecutionStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
 export type TestResultStatus = "PASSED" | "FAILED" | "ERROR" | "BLOCKED" | "SKIPPED"
@@ -98,6 +98,20 @@ export function triggerExecution(projectId: string, testCaseIds: string[]): Prom
     method: "POST",
     body: JSON.stringify({ testCaseIds }),
   })
+}
+
+export type ExecutionReportFormat = "junit" | "html"
+
+/**
+ * Module 17 (17d) - tải báo cáo 1 lượt chạy (JUnit XML cho CI / HTML để mở-in). Tải bằng fetch + blob để gắn JWT qua header
+ * (thẻ <a download> không gắn được header, và không đưa token lên URL). Báo cáo chỉ gồm dữ liệu đã làm sạch ở backend.
+ */
+export function exportExecution(projectId: string, executionId: string, format: ExecutionReportFormat): Promise<void> {
+  const extension = format === "junit" ? "xml" : "html"
+  return downloadFile(
+    `/projects/${projectId}/executions/${executionId}/report?format=${format}`,
+    `execution-${executionId.slice(0, 8)}.${extension}`
+  )
 }
 
 export function getExecution(projectId: string, executionId: string): Promise<TestExecution> {
