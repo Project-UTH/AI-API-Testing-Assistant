@@ -523,6 +523,26 @@ class TestCaseChecklistPlannerTest {
         assertThat(TestCaseChecklistPlanner.key(above)).isEqualTo("BOUNDARY_ABOVE_MAX_LENGTH|BODY|bio|len:501");
     }
 
+    /**
+     * Lỗi thật gặp khi import spec của 1 API Spring bên thứ ba: {@code @Size(min = 8)} không khai max được springdoc
+     * ghi thành {@code maxLength: 2147483647} → trước đây {@code "a".repeat(2147483647)} gây OutOfMemoryError (và
+     * {@code n + 1} tràn số), làm sập cả trang Coverage của project. Giờ ghi mục không áp dụng kèm lý do.
+     */
+    @Test
+    void plan_frameworkDefaultMaxLengthIntMax_noOutOfMemory_markedNotApplicable() {
+        Spec huge = planner.readSpec(endpoint("""
+                {"requestBody":{"content":{"application/json":{"schema":{"type":"object",
+                  "properties":{"password":{"type":"string","minLength":8,"maxLength":2147483647}}}}}}}"""));
+
+        List<ChecklistItem> items = planner.plan(huge, false, false, true);
+
+        ChecklistItem max = item(items, ChecklistItemType.BOUNDARY_AT_MAX_LENGTH, "password");
+        assertThat(max.notApplicableReason()).contains("2147483647").contains("không giới hạn");
+        assertThat(items).noneMatch(i -> i.type() == ChecklistItemType.BOUNDARY_ABOVE_MAX_LENGTH);
+        // minLength = 8 hợp lệ vẫn được kiểm bình thường.
+        assertThat(item(items, ChecklistItemType.BOUNDARY_AT_MIN_LENGTH, "password").notApplicableReason()).isNull();
+    }
+
     @Test
     void explainNearMiss_extraViolation_reportedWithFieldNames() {
         ChecklistItem missingEmail = item(all(), ChecklistItemType.NEGATIVE_MISSING_FIELD, "email");

@@ -85,6 +85,8 @@ public class TestCaseChecklistPlanner {
 
     /** Giá trị dài hơn ngưỡng này (vd chuỗi maxLength = 5000 ký tự) ghi vào key dạng "len:N" thay vì nguyên văn. */
     private static final int MAX_VALUE_IN_KEY = 40;
+    /** Chuỗi dài hơn mức này không dựng thật (RAM + body request) - mục biên độ dài tương ứng ghi là không áp dụng. */
+    private static final int MAX_GENERATABLE_LENGTH = 100_000;
 
     private final ObjectMapper objectMapper = JsonMapper.builder()
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -316,7 +318,9 @@ public class TestCaseChecklistPlanner {
             for (FieldRule rule : spec.rules()) {
                 String na = rule.location() == ParamLocation.BODY ? bodyNotApplicable : null;
                 addDeclaredNumericBounds(rule, na, items);
-                if (rule.minLength() != null) {
+                if (rule.minLength() != null && rule.minLength() > MAX_GENERATABLE_LENGTH) {
+                    items.add(lengthTooLarge(ChecklistItemType.BOUNDARY_AT_MIN_LENGTH, rule, "minLength", rule.minLength()));
+                } else if (rule.minLength() != null) {
                     int n = rule.minLength();
                     items.add(boundary(ChecklistItemType.BOUNDARY_AT_MIN_LENGTH, rule, "a".repeat(n), true, na,
                             "dài đúng minLength = " + n + " ký tự" + literalHint(n), "dài " + n + " ký tự (đúng minLength)",
@@ -328,7 +332,9 @@ public class TestCaseChecklistPlanner {
                                 "có minLength=" + n + " trong spec; dùng chuỗi " + (n - 1) + " ký tự ngay dưới biên để kiểm tra API chặn."));
                     }
                 }
-                if (rule.maxLength() != null) {
+                if (rule.maxLength() != null && rule.maxLength() > MAX_GENERATABLE_LENGTH) {
+                    items.add(lengthTooLarge(ChecklistItemType.BOUNDARY_AT_MAX_LENGTH, rule, "maxLength", rule.maxLength()));
+                } else if (rule.maxLength() != null) {
                     int n = rule.maxLength();
                     items.add(boundary(ChecklistItemType.BOUNDARY_AT_MAX_LENGTH, rule, "a".repeat(n), true, na,
                             "dài đúng maxLength = " + n + " ký tự" + literalHint(n), "dài " + n + " ký tự (đúng maxLength)",
@@ -582,6 +588,20 @@ public class TestCaseChecklistPlanner {
         return new GeneratedTestCase(testCase.getName(), testCase.getDescription(), readStringMap(testCase.getRequestHeaders()),
                 testCase.getRequestBody(), testCase.getExpectedStatus(), testCase.getResolvedPath(),
                 readStringMap(testCase.getPathParamFallbacks()), testCase.getAuthOverride(), testCase.getRationale());
+    }
+
+    /**
+     * minLength/maxLength quá lớn để gửi chuỗi thật (vd Spring/Jakarta ghi {@code maxLength: 2147483647} cho
+     * {@code @Size(min = 8)} không khai max = "không giới hạn"): không dựng chuỗi, ghi 1 mục không áp dụng kèm lý do.
+     * Trước đây {@code "a".repeat(2147483647)} làm OutOfMemoryError và sập cả trang Coverage của project.
+     */
+    private ChecklistItem lengthTooLarge(ChecklistItemType type, FieldRule rule, String keyword, int limit) {
+        return new ChecklistItem(type, rule.name(), rule.location(), "", true,
+                "'" + rule.name() + "' " + where(rule.location()) + " có " + keyword + " = " + limit,
+                "'" + rule.name() + "' có " + keyword + " = " + limit,
+                "Trường '" + rule.name() + "' " + where(rule.location()) + " khai " + keyword + " = " + limit + " trong spec.",
+                keyword + " = " + limit + " vượt " + MAX_GENERATABLE_LENGTH + " ký tự nên không gửi chuỗi dài như vậy được - "
+                        + "thường là giá trị mặc định 'không giới hạn' của framework (vd @Size(min = 8) không khai max), không phải biên thật.");
     }
 
     private ChecklistItem boundary(
