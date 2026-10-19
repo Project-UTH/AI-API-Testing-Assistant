@@ -59,6 +59,13 @@ public class TestResult {
     @Column(columnDefinition = "TEXT")
     private String schemaViolationsJson;
 
+    /**
+     * Module 17 (17b) - cảnh báo dữ liệu nhạy cảm trong response (JSON array các {path, rule, severity, detail}). KHÔNG chứa giá trị thật.
+     * Null = không có phát hiện/không quét/kết quả cũ. Chỉ là cảnh báo đi kèm, không đổi Pass/Fail.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String securityFindingsJson;
+
     /** Module 16 - thời gian gọi target API (ms); null cho case không gọi target (ERROR cấu hình, BLOCKED) và dữ liệu cũ. */
     private Long durationMs;
 

@@ -76,6 +76,12 @@ public final class JUnitXmlReportBuilder {
             attr(xml, "name", c.name());
             attr(xml, "time", seconds(c.durationMs() == null ? 0 : c.durationMs()));
             writeOutcome(xml, c);
+            if (!c.securityFindings().isEmpty()) {
+                // Cảnh báo bảo mật đi kèm (không đổi pass/fail): đưa vào system-out để CI hiển thị mà không đỏ pipeline.
+                xml.writeStartElement("system-out");
+                xml.writeCharacters(xmlSafe("Cảnh báo bảo mật (không ảnh hưởng Pass/Fail):\n- " + String.join("\n- ", c.securityFindings())));
+                xml.writeEndElement();
+            }
             xml.writeEndElement();
         }
         xml.writeCharacters("\n  ");

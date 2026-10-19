@@ -82,6 +82,15 @@ export interface TestResult {
   stability: Stability | null
   /** Cảnh báo phản hồi thật lệch schema response của spec (kiểu/trường bắt buộc); rỗng = khớp hoặc không kiểm. Không đổi Pass/Fail. */
   schemaViolations: string[]
+  /** Module 17 (17b) - cảnh báo dữ liệu nhạy cảm trong response (chỉ đường dẫn + quy tắc, không có giá trị). Không đổi Pass/Fail. */
+  securityFindings?: SecurityFinding[]
+}
+
+export interface SecurityFinding {
+  path: string
+  rule: string
+  severity: "HIGH" | "MEDIUM" | "LOW"
+  detail: string
 }
 
 export interface TestExecution {

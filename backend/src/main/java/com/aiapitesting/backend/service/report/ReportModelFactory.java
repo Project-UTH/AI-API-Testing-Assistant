@@ -59,7 +59,7 @@ public class ReportModelFactory {
                 cause == null ? null : cause.name(), cause == null ? null : cause.label(),
                 cause != null && cause.isNotApiFault(),
                 Boolean.TRUE.equals(result.getUnstable()) || cause == FailureCause.FLAKY,
-                messageOf(result, testCase), evidenceOf(result));
+                messageOf(result, testCase), evidenceOf(result), findingsOf(result));
     }
 
     private String messageOf(TestResult result, TestCase testCase) {
@@ -69,6 +69,22 @@ public class ReportModelFactory {
                     + ", kỳ vọng " + testCase.getExpectedStatus();
             default -> SecretMasker.mask(result.getErrorMessage(), MAX_MESSAGE_LENGTH);
         };
+    }
+
+    /** Chỉ lấy đường dẫn + quy tắc + mô tả (không bao giờ có giá trị), vẫn qua SecretMasker và giới hạn số dòng. */
+    private List<String> findingsOf(TestResult result) {
+        if (result.getSecurityFindingsJson() == null || result.getSecurityFindingsJson().isBlank()) {
+            return List.of();
+        }
+        try {
+            List<Map<String, String>> raw = objectMapper.readValue(result.getSecurityFindingsJson(), new TypeReference<List<Map<String, String>>>() {
+            });
+            return raw.stream().limit(MAX_EVIDENCE_LINES)
+                    .map(f -> SecretMasker.mask(f.get("path") + " [" + f.get("rule") + "] - " + f.get("detail"), MAX_EVIDENCE_LENGTH))
+                    .toList();
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     private List<String> evidenceOf(TestResult result) {

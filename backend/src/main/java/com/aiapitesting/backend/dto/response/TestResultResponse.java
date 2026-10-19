@@ -37,7 +37,9 @@ public record TestResultResponse(
         /** Module 16 gđ2 - độ ổn định hiện tại của test case; null khi không đáng chú ý (ổn định/chưa đủ dữ liệu) hoặc lượt chạy chưa xong. */
         StabilityResponse stability,
         /** Cảnh báo phản hồi thật lệch schema response của spec (kiểu/trường bắt buộc); rỗng = khớp hoặc không kiểm. Không đổi Pass/Fail. */
-        List<String> schemaViolations
+        List<String> schemaViolations,
+        /** Module 17 (17b) - cảnh báo dữ liệu nhạy cảm trong response (không chứa giá trị); rỗng = không có. Không đổi Pass/Fail. */
+        List<SecurityFindingResponse> securityFindings
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -65,8 +67,21 @@ public record TestResultResponse(
                         : FailureCauseResponse.of(result.getFailureCause(), parseEvidence(result.getFailureEvidence())),
                 result.getTestCase().getEndpoint().getMethod(),
                 stability,
-                parseEvidence(result.getSchemaViolationsJson())
+                parseEvidence(result.getSchemaViolationsJson()),
+                parseFindings(result.getSecurityFindingsJson())
         );
+    }
+
+    private static List<SecurityFindingResponse> parseFindings(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return OBJECT_MAPPER.readValue(json, new TypeReference<List<SecurityFindingResponse>>() {
+            });
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     private static List<String> parseEvidence(String json) {

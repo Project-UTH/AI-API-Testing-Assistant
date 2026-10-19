@@ -52,9 +52,9 @@ public class TestExecutionRunner {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Module 16 - dữ liệu phụ thu được quanh 1 lần gọi target, truyền xuống finish() để lưu cùng TestResult. */
-    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint, String schemaViolationsJson) {
+    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint, String schemaViolationsJson, String securityFindingsJson) {
         Meta(Long durationMs, ErrorKind errorKind, String fingerprint) {
-            this(durationMs, errorKind, fingerprint, null);
+            this(durationMs, errorKind, fingerprint, null, null);
         }
     }
 
@@ -153,7 +153,8 @@ public class TestExecutionRunner {
             RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
             boolean statusMatches = Objects.equals(result.statusCode(), testCase.getExpectedStatus());
             Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
-                    statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null);
+                    statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null,
+                    securityFindingsJsonOf(testCase, result.statusCode(), result.responseBody()));
 
             // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
             // status code đã sai.
@@ -180,6 +181,25 @@ public class TestExecutionRunner {
      * Cảnh báo phản hồi lệch schema của spec - CHỈ khi mã trạng thái đúng kỳ vọng và là 2xx có schema. Mọi lỗi ở bước này
      * (schema hỏng, endpoint không đọc được) chỉ bỏ qua: tính năng cảnh báo không được làm hỏng lượt chạy.
      */
+    /**
+     * Module 17 (17b) - quét dữ liệu nhạy cảm trong response 2xx (kể cả khi mã không khớp kỳ vọng: dữ liệu lộ vẫn là dữ liệu lộ). CHỈ lưu
+     * đường dẫn/quy tắc/mô tả, không lưu giá trị. Mọi lỗi chỉ bỏ qua - tính năng cảnh báo không được làm hỏng lượt chạy.
+     */
+    private String securityFindingsJsonOf(TestCase testCase, Integer statusCode, String responseBody) {
+        try {
+            if (statusCode == null || statusCode < 200 || statusCode > 299 || testCase.getEndpoint() == null) {
+                return null;
+            }
+            var endpoint = testCase.getEndpoint();
+            var findings = SensitiveDataScanner.scan(endpoint.getPath(), endpoint.getMethod(), endpoint.effectiveRequiresAuth(),
+                    testCase.getRequestBody(), responseBody);
+            return findings.isEmpty() ? null : objectMapper.writeValueAsString(findings);
+        } catch (Exception e) {
+            log.warn("Khong quet duoc du lieu nhay cam cho test case {}: {}", testCase.getId(), e.toString());
+            return null;
+        }
+    }
+
     private String schemaViolationsJsonOf(TestCase testCase, Integer statusCode, String responseBody) {
         try {
             if (statusCode == null || statusCode < 200 || statusCode > 299 || testCase.getEndpoint() == null) {
@@ -229,6 +249,7 @@ public class TestExecutionRunner {
                 .errorKind(meta.errorKind())
                 .testCaseFingerprint(meta.fingerprint())
                 .schemaViolationsJson(meta.schemaViolationsJson())
+                .securityFindingsJson(meta.securityFindingsJson())
                 .build();
         testResultRepository.save(result);
         savedResults.add(result);

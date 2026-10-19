@@ -68,6 +68,22 @@ class ReportBuildersTest {
     }
 
     @Test
+    void securityFindings_appearInBothReportsAsWarningsOnly_neverWithValues() {
+        TestResult withFinding = ReportTestSupport.result("GET", "/users/1", "Lấy user", TestResultStatus.PASSED, 200, 200, null, null);
+        withFinding.setSecurityFindingsJson("[{\"path\":\"user.passwordHash\",\"rule\":\"FIELD_PASSWORD\",\"severity\":\"HIGH\","
+                + "\"detail\":\"Tên field gợi ý dữ liệu nhạy cảm (kiểu chuỗi, dài 60 ký tự)\"}]");
+        ReportModel model = factory.build(ReportTestSupport.project("P"), ReportTestSupport.execution(ExecutionStatus.COMPLETED),
+                List.of(withFinding), FailOn.API_FAIL);
+
+        String xml = JUnitXmlReportBuilder.build(model);
+        String html = HtmlReportBuilder.build(model);
+
+        assertThat(xml).contains("<system-out>").contains("user.passwordHash [FIELD_PASSWORD]").doesNotContain("<failure");
+        assertThat(html).contains("Cảnh báo bảo mật").contains("user.passwordHash [FIELD_PASSWORD]");
+        assertThat(model.summary().failed()).isZero(); // không đổi kết quả
+    }
+
+    @Test
     void junit_marksNonApiFailuresSoCiCanTellThemApart() {
         String xml = JUnitXmlReportBuilder.build(model());
 

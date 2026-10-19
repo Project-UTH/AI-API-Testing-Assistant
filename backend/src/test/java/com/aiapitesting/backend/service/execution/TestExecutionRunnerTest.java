@@ -296,6 +296,36 @@ class TestExecutionRunnerTest {
         assertThat(captor.getValue().getTestCaseFingerprint()).hasSize(64);
     }
 
+    // ---- Module 17 (17b) - quét dữ liệu nhạy cảm trong response ----
+
+    @Test
+    void runInBackground_responseWithSensitiveField_savesFindingWithoutTheRealValue_andDoesNotChangeStatus() {
+        TestCase testCase = simpleCase();
+        when(restAssuredTestRunner.run(any(), any(), any()))
+                .thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"id\":1,\"passwordHash\":\"$2a$10$REAL-HASH-VALUE-abcdefghijk\"}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.PASSED); // chỉ là cảnh báo, không Fail
+        assertThat(captor.getValue().getSecurityFindingsJson()).contains("passwordHash").doesNotContain("REAL-HASH-VALUE");
+    }
+
+    @Test
+    void runInBackground_cleanResponseOrNon2xx_hasNoFindings() {
+        TestCase ok = simpleCase();
+        TestCase notFound = simpleCase();
+        when(restAssuredTestRunner.run(any(), eq(ok), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"name\":\"x\"}"));
+        when(restAssuredTestRunner.run(any(), eq(notFound), any())).thenReturn(new RestAssuredTestRunner.RunResult(404, "{\"password\":\"abcdefgh\"}"));
+
+        runner.runInBackground(execution, List.of(ok, notFound), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(r -> assertThat(r.getSecurityFindingsJson()).isNull());
+    }
+
     @Test
     void runInBackground_targetUnreachable_recordsErrorKindByExceptionTypeNotMessage() {
         TestCase testCase = simpleCase();

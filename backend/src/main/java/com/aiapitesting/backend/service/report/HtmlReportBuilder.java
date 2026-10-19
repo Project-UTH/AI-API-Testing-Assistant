@@ -80,6 +80,9 @@ public final class HtmlReportBuilder {
                 for (String line : c.evidence()) {
                     h.append("<div class=\"muted\">• ").append(esc(line)).append("</div>");
                 }
+                for (String line : c.securityFindings()) {
+                    h.append("<div class=\"muted\">🛡 Cảnh báo bảo mật (không ảnh hưởng Pass/Fail): ").append(esc(line)).append("</div>");
+                }
                 h.append("</td></tr>");
             }
             h.append("</table>");

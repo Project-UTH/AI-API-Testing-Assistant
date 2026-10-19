@@ -10,6 +10,7 @@ import { StatusBadge, RESULT_STATUS_STYLES, RESULT_STATUS_LABEL, RESULT_STATUS_I
 import { BugStatusBadge } from "@/components/shared/BugStatusBadge"
 import { FailureCauseBanner, FailureCauseChip, FailureCauseDetail } from "@/components/shared/FailureCause"
 import { StabilityNote, UnstableBadge } from "@/components/shared/StabilityNote"
+import { SecurityBadge, SecurityDetail } from "@/components/shared/SecurityWarnings"
 import { CreateBugReportDialog } from "@/components/bugreports/CreateBugReportDialog"
 import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog"
 import { ApiError } from "@/lib/api"
@@ -352,6 +353,7 @@ export function TestExecutionPage() {
                       Lệch schema (cảnh báo)
                     </span>
                   )}
+                  <SecurityBadge findings={result.securityFindings} />
                   {result.errorMessage && (
                     <span className="shrink-0 truncate text-xs text-destructive sm:max-w-64" title={result.errorMessage}>
                       {result.errorMessage}
@@ -392,6 +394,7 @@ export function TestExecutionPage() {
                       </p>
                     </div>
                   )}
+                  <SecurityDetail findings={result.securityFindings} />
                   {result.errorMessage && (
                     <div>
                       <p className="mb-1 text-xs font-medium text-muted-foreground">Lỗi</p>
