@@ -13,6 +13,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -187,6 +188,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
                 .body(ApiErrorResponse.of("UNSUPPORTED_MEDIA_TYPE", "Định dạng nội dung (Content-Type) không được hỗ trợ"));
+    }
+
+    /** Module 17 (2.1) - file upload vượt giới hạn: trước đây rơi vào handler chung và trả 500 không có thông báo rõ. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleUploadTooLarge(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ApiErrorResponse.of("PAYLOAD_TOO_LARGE", "File vượt quá giới hạn 20MB - hãy tách spec hoặc loại bớt phần không cần"));
     }
 
     @ExceptionHandler(Exception.class)

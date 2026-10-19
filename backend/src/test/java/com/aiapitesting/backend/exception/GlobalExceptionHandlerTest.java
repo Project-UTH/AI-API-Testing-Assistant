@@ -18,6 +18,16 @@ class GlobalExceptionHandlerTest {
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
     @Test
+    void uploadTooLarge_is413WithClearMessageNotInternalError() {
+        ResponseEntity<ApiErrorResponse> response = handler.handleUploadTooLarge(
+                new org.springframework.web.multipart.MaxUploadSizeExceededException(20L * 1024 * 1024));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE);
+        assertThat(response.getBody().code()).isEqualTo("PAYLOAD_TOO_LARGE");
+        assertThat(response.getBody().message()).contains("20MB");
+    }
+
+    @Test
     void unknownRoute_is404NotFoundNotInternalError() {
         ResponseEntity<ApiErrorResponse> response = handler.handleNoResource(
                 new NoResourceFoundException(HttpMethod.GET, "/api/v1/khong-ton-tai", "khong-ton-tai"));
