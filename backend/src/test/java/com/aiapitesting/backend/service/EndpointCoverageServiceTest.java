@@ -281,6 +281,20 @@ class EndpointCoverageServiceTest {
                 .isNotEmpty().allMatch(d -> d.status() == CoverageDimensionStatus.MISSING);
     }
 
+    @Test
+    void getEndpointCoverage_declaredSuccess200_coveredByAnyTwoXxExpectation() {
+        // Spec khai 200 nhưng POST tạo thật trả 201: test đúng kỳ vọng 201 phải phủ được dòng "Mã trạng thái: 200".
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("200", "404")));
+        TestCase created = testCase(endpoint, "Tạo user", 201, "{\"email\":\"a@b.co\"}");
+        stubProject(List.of(endpoint), List.of(created), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(dimensionByCategory(result, "STATUS_CODE", "200").status()).isEqualTo(CoverageDimensionStatus.COVERED);
+        // Mã lỗi vẫn phải đúng mã: kỳ vọng 201 không phủ được 404.
+        assertThat(dimensionByCategory(result, "STATUS_CODE", "404").status()).isEqualTo(CoverageDimensionStatus.MISSING);
+    }
+
     // ---- Chấm mục checklist ----
 
     @Test

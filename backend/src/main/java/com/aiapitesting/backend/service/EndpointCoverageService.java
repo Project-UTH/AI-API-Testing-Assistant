@@ -319,8 +319,14 @@ public class EndpointCoverageService {
         }
         String why = "Spec khai báo endpoint có thể trả mã " + statusCode + "; cần ít nhất 1 test case kỳ vọng đúng mã "
                 + "này để biết API thật sự trả về như đặc tả.";
+        // Module 17 (1.4) - mã THÀNH CÔNG (2xx) so theo NHÓM 2xx: spec thường chỉ khai 200 trong khi API thật trả 201 (POST tạo)
+        // hoặc 204 (DELETE) - đo thật: 110 dòng "200" không dòng nào thoả được bằng test đúng. Mã lỗi (4xx/5xx) vẫn so đúng mã
+        // vì mỗi mã lỗi là 1 hành vi khác nhau. Lệch mã trong cùng nhóm 2xx vẫn được báo ở kết quả chạy (EXPECTATION_MISMATCH).
+        boolean successGroup = exact && statusCode.startsWith("2");
         List<TestCase> matches = testCases.stream()
-                .filter(tc -> tc.getExpectedStatus() != null && (exact
+                .filter(tc -> tc.getExpectedStatus() != null && (successGroup
+                        ? tc.getExpectedStatus() / 100 == 2
+                        : exact
                         ? tc.getExpectedStatus().toString().equals(statusCode)
                         : tc.getExpectedStatus() / 100 == Integer.parseInt(range.group(1))))
                 .toList();
