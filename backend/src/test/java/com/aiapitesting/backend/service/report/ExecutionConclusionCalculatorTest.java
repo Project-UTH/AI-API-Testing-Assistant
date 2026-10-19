@@ -72,4 +72,41 @@ class ExecutionConclusionCalculatorTest {
         assertThat(conclusion(ExecutionStatus.PENDING, FailOn.ANY_FAIL)).isEqualTo(Conclusion.PENDING);
         assertThat(conclusion(ExecutionStatus.FAILED, FailOn.API_FAIL, r(TestResultStatus.PASSED, null, null))).isEqualTo(Conclusion.ERROR);
     }
+
+    // ---- Module 17 (S3) - Fail "cần xem xét" tách khỏi Fail do API ----
+
+    private static TestResult failedWith(FailureCause cause, Integer actual) {
+        return ReportTestSupport.result("GET", "/a", "t", TestResultStatus.FAILED, actual, 200, cause, null);
+    }
+
+    @Test
+    void undeterminedWith4xx_andTestDataSuspect_goToNeedsReview_andDoNotFailPipelineByDefault() {
+        List<TestResult> results = List.of(failedWith(FailureCause.UNDETERMINED, 403), failedWith(FailureCause.TEST_DATA_SUSPECT, 400));
+
+        ExecutionConclusionCalculator.Result byDefault = ExecutionConclusionCalculator.calculate(ExecutionStatus.COMPLETED, results, FailOn.API_FAIL);
+        assertThat(byDefault.conclusion()).isEqualTo(Conclusion.PASSED);
+        assertThat(byDefault.summary().needsReview()).isEqualTo(2);
+        assertThat(byDefault.summary().apiFailed()).isZero();
+        assertThat(byDefault.summary().failed()).isEqualTo(2);
+        assertThat(byDefault.warnings()).anyMatch(w -> w.contains("2 kết quả Fail cần xem lại"));
+
+        assertThat(ExecutionConclusionCalculator.calculate(ExecutionStatus.COMPLETED, results, FailOn.ANY_FAIL).conclusion())
+                .isEqualTo(Conclusion.FAILED); // chế độ nghiêm ngặt giữ nguyên
+    }
+
+    @Test
+    void undeterminedWith5xxOrNoResponse_stillCountsAsApiFailure_soServerErrorsNeverSlipThrough() {
+        assertThat(conclusion(ExecutionStatus.COMPLETED, FailOn.API_FAIL, failedWith(FailureCause.UNDETERMINED, 500))).isEqualTo(Conclusion.FAILED);
+        assertThat(conclusion(ExecutionStatus.COMPLETED, FailOn.API_FAIL, failedWith(FailureCause.UNDETERMINED, null))).isEqualTo(Conclusion.FAILED);
+        assertThat(conclusion(ExecutionStatus.COMPLETED, FailOn.API_FAIL, failedWith(null, 404))).isEqualTo(Conclusion.FAILED);
+    }
+
+    @Test
+    void mixOfNeedsReviewAndRealApiFailure_isStillRed_andCountsAreSeparate() {
+        ExecutionConclusionCalculator.Result result = ExecutionConclusionCalculator.calculate(ExecutionStatus.COMPLETED,
+                List.of(failedWith(FailureCause.TEST_DATA_SUSPECT, 400), failedWith(FailureCause.STABLE_FAILURE, 400)), FailOn.API_FAIL);
+        assertThat(result.conclusion()).isEqualTo(Conclusion.FAILED);
+        assertThat(result.summary().apiFailed()).isEqualTo(1);
+        assertThat(result.summary().needsReview()).isEqualTo(1);
+    }
 }

@@ -86,7 +86,7 @@ export function CiSnippets({ projectId }: { projectId: string }) {
       ))}
       <p className="text-xs text-muted-foreground">
         Mã trả về của <code>conclusion</code>: <code>PASSED</code> / <code>FAILED</code> / <code>ERROR</code> / <code>PENDING</code>. Mặc định
-        <code> failOn=API_FAIL</code>: Fail do môi trường/token/cấu hình test KHÔNG làm pipeline đỏ (có cảnh báo); dùng <code>ANY_FAIL</code> để nghiêm ngặt.
+        <code> failOn=API_FAIL</code>: Fail do môi trường/token/cấu hình test KHÔNG làm pipeline đỏ (có cảnh báo); dùng <code>ANY_FAIL</code> để nghiêm ngặt. Fail nghi dữ liệu test hoặc chưa đủ bằng chứng (4xx) được đếm riêng ở <code>summary.needsReview</code>, tách khỏi <code>apiFailed</code> và không làm đỏ pipeline ở <code>API_FAIL</code> (cần xem lại thủ công).
       </p>
     </div>
   )

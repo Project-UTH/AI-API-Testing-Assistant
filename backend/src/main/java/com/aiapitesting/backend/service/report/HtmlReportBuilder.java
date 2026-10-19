@@ -49,10 +49,10 @@ public final class HtmlReportBuilder {
                 .append(esc(model.conclusion().name())).append("</span></p>");
 
         ExecutionConclusionCalculator.Summary s = model.summary();
-        h.append("<table class=\"sum\"><tr><th>Tổng</th><th>Pass</th><th>Fail</th><th>Fail do API</th><th>Fail không do API</th>")
+        h.append("<table class=\"sum\"><tr><th>Tổng</th><th>Pass</th><th>Fail</th><th>Fail do API</th><th>Fail không do API</th><th>Cần xem xét</th>")
                 .append("<th>Lỗi</th><th>Bị chặn</th><th>Không ổn định</th></tr><tr>")
                 .append(cell(s.total())).append(cell(s.passed())).append(cell(s.failed())).append(cell(s.apiFailed()))
-                .append(cell(s.notApiFault())).append(cell(s.error())).append(cell(s.blocked() + s.skipped())).append(cell(s.flaky()))
+                .append(cell(s.notApiFault())).append(cell(s.needsReview())).append(cell(s.error())).append(cell(s.blocked() + s.skipped())).append(cell(s.flaky()))
                 .append("</tr></table>");
 
         for (ReportModel.EndpointGroup group : model.endpoints()) {

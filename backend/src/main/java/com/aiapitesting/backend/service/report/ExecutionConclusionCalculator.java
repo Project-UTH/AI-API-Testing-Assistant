@@ -32,15 +32,29 @@ public final class ExecutionConclusionCalculator {
      * @param apiFailed   Fail mà nguyên nhân KHÔNG phải môi trường/token/cấu hình test và test không "không ổn định"
      * @param notApiFault Fail do môi trường/token/cấu hình test/id không tồn tại
      * @param flaky       kết quả của test đang không ổn định (không tính vào apiFailed)
+     * @param needsReview Fail cần xem lại bằng tay, KHÔNG đủ bằng chứng là lỗi API: nghi dữ liệu test sai, hoặc "chưa đủ dữ liệu" mà API
+     *                    trả 4xx (vd test gọi nhầm token vai trò). Không làm đỏ pipeline ở API_FAIL, nhưng luôn có cảnh báo. Fail "chưa
+     *                    đủ dữ liệu" với 5xx/không có phản hồi vẫn tính là apiFailed (không để lỗi server lọt qua lần chạy đầu).
      */
-    public record Summary(int total, int passed, int failed, int apiFailed, int notApiFault, int error, int blocked, int skipped, int flaky) {
+    public record Summary(int total, int passed, int failed, int apiFailed, int notApiFault, int error, int blocked, int skipped, int flaky,
+                          int needsReview) {
     }
 
     public record Result(Summary summary, Conclusion conclusion, List<String> warnings) {
     }
 
+    /** Fail chưa đủ bằng chứng để gọi là lỗi API: nghi dữ liệu test, hoặc "chưa đủ dữ liệu" với phản hồi 4xx. 5xx/không phản hồi thì không. */
+    private static boolean needsReview(TestResult r) {
+        FailureCause cause = r.getFailureCause();
+        if (cause == FailureCause.TEST_DATA_SUSPECT) {
+            return true;
+        }
+        Integer status = r.getResponseStatus();
+        return cause == FailureCause.UNDETERMINED && status != null && status >= 400 && status < 500;
+    }
+
     public static Result calculate(ExecutionStatus executionStatus, List<TestResult> results, FailOn failOn) {
-        int passed = 0, failed = 0, apiFailed = 0, notApiFault = 0, error = 0, blocked = 0, skipped = 0, flaky = 0;
+        int passed = 0, failed = 0, apiFailed = 0, notApiFault = 0, error = 0, blocked = 0, skipped = 0, flaky = 0, needsReview = 0;
         for (TestResult r : results) {
             boolean unstable = Boolean.TRUE.equals(r.getUnstable()) || r.getFailureCause() == FailureCause.FLAKY;
             if (unstable) {
@@ -53,7 +67,11 @@ public final class ExecutionConclusionCalculator {
                     if (r.getFailureCause() != null && r.getFailureCause().isNotApiFault()) {
                         notApiFault++;
                     } else if (!unstable) {
-                        apiFailed++;
+                        if (needsReview(r)) {
+                            needsReview++;
+                        } else {
+                            apiFailed++;
+                        }
                     }
                 }
                 case ERROR -> error++;
@@ -61,11 +79,15 @@ public final class ExecutionConclusionCalculator {
                 case SKIPPED -> skipped++;
             }
         }
-        Summary summary = new Summary(results.size(), passed, failed, apiFailed, notApiFault, error, blocked, skipped, flaky);
+        Summary summary = new Summary(results.size(), passed, failed, apiFailed, notApiFault, error, blocked, skipped, flaky, needsReview);
 
         List<String> warnings = new ArrayList<>();
         if (notApiFault > 0) {
             warnings.add(notApiFault + " kết quả Fail do môi trường/token/cấu hình test (không tính là lỗi API)");
+        }
+        if (needsReview > 0) {
+            warnings.add(needsReview + " kết quả Fail cần xem lại (nghi dữ liệu test sai / chưa đủ dữ liệu để kết luận) - không làm đỏ pipeline "
+                    + "ở chế độ API_FAIL, hãy kiểm tra thủ công");
         }
         if (error > 0) {
             warnings.add(error + " test lỗi khi gọi hệ thống đích (kết nối/timeout)");
