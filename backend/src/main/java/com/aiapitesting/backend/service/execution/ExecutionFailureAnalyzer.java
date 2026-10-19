@@ -286,6 +286,11 @@ public class ExecutionFailureAnalyzer {
         int defaultAuthCalled = 0;
         int defaultAuthUnauthorized = 0;
         int defaultAuthAccepted = 0;
+        // Module 17 (1.1) - dự phòng cho API mà spec KHÔNG khai xác thực ở endpoint nào (vd springdoc mặc định): requiresAuth
+        // luôn false nên điều kiện "endpoint yêu cầu xác thực" không bao giờ thoả, token không bao giờ được coi là còn dùng
+        // và mọi 401 của API (vd 401 cho id sai kiểu) đều bị gán nhầm "nghi token", che mất lỗi thật.
+        boolean anyEndpointRequiresAuth = false;
+        int defaultAuthSuccess2xx = 0;
         for (TestResult r : results) {
             boolean calledTarget = r.getResponseStatus() != null || r.getErrorKind() != null;
             if (!calledTarget) {
@@ -301,8 +306,12 @@ public class ExecutionFailureAnalyzer {
                 // Chỉ endpoint spec khai YÊU CẦU xác thực mới chứng minh được token còn dùng: endpoint công khai nhận 200 dù
                 // token hỏng.
                 boolean authRequired = r.getTestCase().getEndpoint() != null && r.getTestCase().getEndpoint().isRequiresAuth();
+                anyEndpointRequiresAuth |= authRequired;
                 if (authRequired && r.getResponseStatus() != null && !AUTH_STATUSES.contains(r.getResponseStatus())) {
                     defaultAuthAccepted++;
+                }
+                if (r.getResponseStatus() != null && r.getResponseStatus() >= 200 && r.getResponseStatus() < 300) {
+                    defaultAuthSuccess2xx++;
                 }
                 Integer expected = r.getTestCase().getExpectedStatus();
                 if (r.getStatus() == TestResultStatus.FAILED && r.getResponseStatus() != null
@@ -310,6 +319,13 @@ public class ExecutionFailureAnalyzer {
                     defaultAuthUnauthorized++;
                 }
             }
+        }
+        // Dự phòng chỉ khi spec không khai xác thực ở endpoint nào trong lượt này, và chỉ khi 401/403 là THIỂU SỐ: token hết hạn
+        // làm hỏng gần như mọi test cần xác thực, nên đa số bị từ chối vẫn là AUTH_CONFIG; thiểu số bị từ chối trong khi các test
+        // khác nhận 2xx là hành vi của chính API.
+        if (defaultAuthAccepted == 0 && !anyEndpointRequiresAuth && defaultAuthSuccess2xx > 0
+                && defaultAuthUnauthorized * 2 < defaultAuthCalled) {
+            defaultAuthAccepted = defaultAuthSuccess2xx;
         }
         return new FailureCauseClassifier.ExecutionContext(connectionErrors, called, defaultAuthUnauthorized, defaultAuthCalled,
                 defaultAuthAccepted);

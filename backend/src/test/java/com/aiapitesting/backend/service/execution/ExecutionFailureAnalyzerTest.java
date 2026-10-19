@@ -252,6 +252,39 @@ class ExecutionFailureAnalyzerTest {
     }
 
     @Test
+    void specWithoutAnySecurity_minority401WhileOthersSucceed_isNotBlamedOnTheToken() {
+        // Ca thật (ai-recruitment-agent): spec không khai security nên requiresAuth=false ở mọi endpoint; API trả 401 cho id sai kiểu
+        // trong khi các test khác cùng token nhận 200 - đó là hành vi của API, không phải token hỏng.
+        endpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/api/hr/jobs/{id}").requiresAuth(false).build();
+        TestResult wrongType401 = result(TestResultStatus.FAILED, 400, 401, "fp-a");
+        List<TestResult> results = new ArrayList<>(List.of(wrongType401));
+        for (int i = 0; i < 3; i++) {
+            results.add(result(TestResultStatus.PASSED, 200, 200, "fp-ok" + i));
+        }
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, results);
+
+        assertThat(wrongType401.getFailureCause()).isNotEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
+    void specWithoutAnySecurity_majority401_stillBlamedOnTheToken() {
+        // Token hết hạn thật: hầu hết test bị từ chối, chỉ 1 endpoint công khai vẫn 200 - không được coi là bằng chứng token tốt.
+        endpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/api/hr/jobs").requiresAuth(false).build();
+        List<TestResult> results = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            results.add(result(TestResultStatus.FAILED, 200, 401, "fp" + i));
+        }
+        results.add(result(TestResultStatus.PASSED, 200, 200, "fp-public"));
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, results);
+
+        assertThat(results.subList(0, 3)).allSatisfy(r -> assertThat(r.getFailureCause()).isEqualTo(FailureCause.AUTH_CONFIG));
+    }
+
+    @Test
     void endpointRequiresAuthFlagFromSpec_decidesWhetherCredentialsCaveatIsAdded() {
         Endpoint login = Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/auth/login").requiresAuth(false).build();
         Endpoint protectedEndpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/me").requiresAuth(true).build();
