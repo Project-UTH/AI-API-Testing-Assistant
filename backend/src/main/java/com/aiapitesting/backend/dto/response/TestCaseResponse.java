@@ -37,7 +37,10 @@ public record TestCaseResponse(
         boolean locked,
         Instant createdAt,
         List<TestCaseDependencyResponse> dependencies,
-        List<TestCaseAssertionResponse> assertions
+        List<TestCaseAssertionResponse> assertions,
+        /** Module 17 (17b-2) - loại test bảo mật tự sinh ("MASS_ASSIGNMENT") hoặc null; probeFields = tên field đã tiêm (chỉ đọc). */
+        String probeKind,
+        List<String> probeFields
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -77,8 +80,23 @@ public record TestCaseResponse(
                 testCase.isLocked(),
                 testCase.getCreatedAt(),
                 dependencies,
-                assertions
+                assertions,
+                testCase.getProbeKind(),
+                parseProbeFieldNames(testCase.getProbeFieldsJson())
         );
+    }
+
+    private static List<String> parseProbeFieldNames(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<java.util.Map<String, Object>> fields = OBJECT_MAPPER.readValue(json, new TypeReference<List<java.util.Map<String, Object>>>() {
+            });
+            return fields.stream().map(f -> String.valueOf(f.get("name"))).toList();
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     private static List<String> parseReliabilityNotes(String json) {

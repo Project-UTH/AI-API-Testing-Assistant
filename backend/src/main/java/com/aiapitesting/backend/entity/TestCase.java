@@ -79,6 +79,14 @@ public class TestCase {
     @Column(nullable = false)
     private Integer expectedStatus;
 
+    /** Module 17 (17b-2) - loại test bảo mật tự sinh (hiện chỉ "MASS_ASSIGNMENT"); null = test thường. VARCHAR (không enum) để thêm loại mới về sau. */
+    @Column(length = 30)
+    private String probeKind;
+
+    /** Module 17 (17b-2) - JSON array các field đã tiêm {name,type,sentinel}; chỉ có khi {@link #probeKind} != null. */
+    @Column(columnDefinition = "TEXT")
+    private String probeFieldsJson;
+
     /**
      * Path đã thay tham số OpenAPI dạng {tenThamSo} bằng token {{tenThamSo}}, vd "/pet/{{petId}}".
      * Tham số query gắn thẳng vào cuối path cùng cú pháp, vd "/pet/{{petId}}?name={{name}}". Giá

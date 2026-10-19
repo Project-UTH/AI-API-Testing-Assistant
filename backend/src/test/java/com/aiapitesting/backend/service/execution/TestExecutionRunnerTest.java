@@ -329,6 +329,46 @@ class TestExecutionRunnerTest {
         assertThat(captor.getAllValues()).allSatisfy(r -> assertThat(r.getSecurityFindingsJson()).isNull());
     }
 
+    // ---- Module 17 (17b-2) - probe mass-assignment ----
+
+    private TestCase probeCase() {
+        TestCase testCase = simpleCase();
+        testCase.setProbeKind(MassAssignmentProbe.KIND);
+        testCase.setProbeFieldsJson("[{\"name\":\"role\",\"type\":\"STRING\",\"sentinel\":\"zz_probe_abcd1234\"}]");
+        return testCase;
+    }
+
+    @Test
+    void runInBackground_probeWhoseSentinelIsEchoed_failsWithFindingEvenThoughStatusMatches() {
+        TestCase testCase = probeCase();
+        when(restAssuredTestRunner.run(any(), any(), any()))
+                .thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"id\":1,\"role\":\"zz_probe_abcd1234\"}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.FAILED);
+        assertThat(captor.getValue().getSecurityFindingsJson()).contains(MassAssignmentProbe.RULE_ACCEPTED).contains("role");
+    }
+
+    @Test
+    void runInBackground_probeRejectedWith400_orIgnored_passesEvenThoughStatusDiffersFromExpected() {
+        TestCase rejected = probeCase();
+        TestCase ignored = probeCase();
+        when(restAssuredTestRunner.run(any(), eq(rejected), any())).thenReturn(new RestAssuredTestRunner.RunResult(400, "{\"error\":\"unknown field\"}"));
+        when(restAssuredTestRunner.run(any(), eq(ignored), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"id\":1,\"role\":\"member\"}"));
+
+        runner.runInBackground(execution, List.of(rejected, ignored), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(r -> {
+            assertThat(r.getStatus()).isEqualTo(TestResultStatus.PASSED);
+            assertThat(r.getSecurityFindingsJson()).isNull();
+        });
+    }
+
     @Test
     void runInBackground_targetUnreachable_recordsErrorKindByExceptionTypeNotMessage() {
         TestCase testCase = simpleCase();

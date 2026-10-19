@@ -145,6 +145,9 @@ export interface TestCase {
   createdAt: string
   dependencies: TestCaseDependency[]
   assertions: TestCaseAssertion[]
+  /** Module 17 (17b-2) - "MASS_ASSIGNMENT" cho test probe bảo mật tự sinh; probeFields = tên field đã tiêm. */
+  probeKind?: string | null
+  probeFields?: string[]
 }
 
 export interface ReliabilityDisplay {

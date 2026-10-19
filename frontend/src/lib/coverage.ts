@@ -47,6 +47,8 @@ export interface CoverageScope {
   boundary: boolean
   security: boolean
   custom: boolean
+  /** Module 17 (17b-2) - bật probe bảo mật mass-assignment (gửi request GHI thật). Mặc định TẮT. */
+  owasp?: boolean
 }
 
 /** 4 loại checklist EP/BVA - chỉ các dòng thuộc 4 loại này (đã lọc theo phạm vi) tính vào "Cần kiểm"/%. */
@@ -155,7 +157,7 @@ export function getEndpointCoverage(projectId: string, endpointId: string): Prom
 export function updateCoverageScope(
   projectId: string,
   endpointId: string,
-  scope: Pick<CoverageScope, "positive" | "negative" | "boundary" | "security">
+  scope: Pick<CoverageScope, "positive" | "negative" | "boundary" | "security"> & { owasp?: boolean }
 ): Promise<EndpointCoverage> {
   return apiFetch<EndpointCoverage>(`/projects/${projectId}/endpoints/${endpointId}/coverage/scope`, {
     method: "PUT",

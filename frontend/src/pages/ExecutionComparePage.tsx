@@ -65,6 +65,7 @@ const CAUSE_LABEL: Record<string, string> = {
   STATE_CONFLICT: "Xung đột trạng thái dữ liệu",
   AUTHZ_VIOLATION: "Sai lệch phân quyền",
   TEST_DATA_SUSPECT: "Nghi dữ liệu test không hợp lệ",
+  MASS_ASSIGNMENT: "Nhận field không khai báo (mass assignment)",
 }
 
 const SHOWN_ORDER: ExecutionDiffCategory[] = [

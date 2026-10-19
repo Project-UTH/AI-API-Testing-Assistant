@@ -62,7 +62,12 @@ public enum FailureCause {
      * khứ, mã không có trong danh mục...): nhiều khả năng DỮ LIỆU TEST sai/cũ chứ không phải bug API. Không thuộc nhóm "không phải do
      * API" (black-box không loại trừ được việc API validate sai) nhưng không tự tạo/đóng Bug Report dựa trên nó. Thêm vào CUỐI enum.
      */
-    TEST_DATA_SUSPECT("Nghi dữ liệu test không hợp lệ", false);
+    TEST_DATA_SUSPECT("Nghi dữ liệu test không hợp lệ", false),
+    /**
+     * Module 17 (17b-2) - test mass-assignment: API NHẬN field đặc quyền không khai báo (phản chiếu lại giá trị đánh dấu) hoặc lỗi 5xx khi
+     * nhận chúng. Là PHÁT HIỆN bảo mật thật (không phải lỗi môi trường/dữ liệu test) nên không bị loại khỏi Bug Report. Thêm vào CUỐI enum.
+     */
+    MASS_ASSIGNMENT("Nhận field không khai báo (mass assignment)", false);
 
     private final String label;
     private final boolean notApiFault;

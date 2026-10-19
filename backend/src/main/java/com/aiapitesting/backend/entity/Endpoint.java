@@ -76,6 +76,12 @@ public class Endpoint {
     private Boolean scopeSecurity;
 
     /**
+     * Module 17 (17b-2) - bật kiểm thử bảo mật mass-assignment cho endpoint ghi này. KHÁC các cờ scope khác: null/false = TẮT (opt-in), vì
+     * probe gửi request GHI thật tới hệ thống đích và có thể tạo/sửa dữ liệu.
+     */
+    private Boolean scopeOwasp;
+
+    /**
      * Module 17 (1.3) - người dùng tự khai endpoint có yêu cầu xác thực hay không, GHI ĐÈ giá trị suy từ spec. Null = theo spec
      * ({@link #requiresAuth}). Cần vì nhiều API (springdoc mặc định) không khai {@code security} dù thực tế chặn 401 - lúc đó
      * mọi mục Security bị "không áp dụng" mà không có cách sửa. Cột riêng (không sửa {@code requiresAuth}) để import lại spec

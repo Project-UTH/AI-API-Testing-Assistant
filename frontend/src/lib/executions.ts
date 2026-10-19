@@ -30,6 +30,7 @@ export type FailureCauseCode =
   | "STATE_CONFLICT"
   | "AUTHZ_VIOLATION"
   | "TEST_DATA_SUSPECT"
+  | "MASS_ASSIGNMENT"
 
 export interface FailureCause {
   code: FailureCauseCode

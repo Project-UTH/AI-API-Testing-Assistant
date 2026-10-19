@@ -1,7 +1,17 @@
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { CheckCircle2, CircleAlert, Loader2, MinusCircle, Wand2, X } from "lucide-react"
+import { CheckCircle2, CircleAlert, Loader2, MinusCircle, ShieldAlert, Wand2, X } from "lucide-react"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { StatusBadge } from "@/components/shared/StatusBadge"
@@ -48,6 +58,11 @@ const GROUPS = [
     category: "AUTHZ",
     title: "Phân quyền theo vai trò",
     rule: "Mỗi ô (endpoint × vai trò) đã khai trong Ma trận phân quyền cần 1 test: vai trò được phép → 2xx, bị cấm → 403/401.",
+  },
+  {
+    category: "OWASP",
+    title: "Bảo mật OWASP: mass assignment",
+    rule: "Gửi thêm field đặc quyền không khai báo (role, isAdmin, status, price...). API phải bỏ qua hoặc từ chối; Fail nếu nhận và trả lại. Chỉ chạy khi bật, vì gửi request GHI thật.",
   },
   { category: "STATUS_CODE", title: "Mã trạng thái spec khai báo", rule: "Mỗi mã cần ít nhất 1 test case kỳ vọng đúng mã đó." },
   {
@@ -106,7 +121,7 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
   )?.category
 
   const scopeMutation = useMutation({
-    mutationFn: (scope: Pick<CoverageScope, "positive" | "negative" | "boundary" | "security">) =>
+    mutationFn: (scope: Pick<CoverageScope, "positive" | "negative" | "boundary" | "security"> & { owasp?: boolean }) =>
       updateCoverageScope(projectId, endpoint.endpointId, scope),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
@@ -121,6 +136,18 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
       queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
     },
   })
+
+  const [owaspConfirm, setOwaspConfirm] = useState(false)
+
+  function setOwasp(value: boolean) {
+    scopeMutation.mutate({
+      positive: endpoint.scope.positive,
+      negative: endpoint.scope.negative,
+      boundary: endpoint.scope.boundary,
+      security: endpoint.scope.security,
+      owasp: value,
+    })
+  }
 
   function toggleScope(category: ChecklistCategory) {
     const next = {
@@ -187,6 +214,54 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
           </span>
         )}
       </div>
+
+      {["POST", "PUT", "PATCH"].includes(endpoint.method.toUpperCase()) && (
+        <div className="flex flex-col gap-1.5" role="group" aria-label="Probe bảo mật mass assignment">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Probe bảo mật:</span>
+            <button
+              type="button"
+              aria-pressed={endpoint.scope.owasp === true}
+              disabled={scopeMutation.isPending}
+              aria-label={`Bật probe bảo mật cho ${endpoint.method} ${endpoint.path}`}
+              onClick={() => (endpoint.scope.owasp === true ? setOwasp(false) : setOwaspConfirm(true))}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                endpoint.scope.owasp === true
+                  ? "border-destructive bg-destructive text-white"
+                  : "border-border bg-background text-muted-foreground hover:bg-muted"
+              )}
+            >
+              <ShieldAlert className="size-3" aria-hidden />
+              Mass assignment {endpoint.scope.owasp === true ? "(đang bật)" : "(tắt)"}
+            </button>
+            <span className="text-xs text-muted-foreground">Gửi request GHI thật tới hệ thống đích.</span>
+          </div>
+        </div>
+      )}
+      <AlertDialog open={owaspConfirm} onOpenChange={setOwaspConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bật probe bảo mật cho {endpoint.method} {endpoint.path}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Probe gửi request GHI thật ({endpoint.method}) kèm các field không khai báo như role, isAdmin, status, price. Dữ liệu trên hệ thống
+              đích có thể bị tạo hoặc sửa. Chỉ bật với môi trường test/staging, không bật với production.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel autoFocus>Huỷ</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                setOwaspConfirm(false)
+                setOwasp(true)
+              }}
+            >
+              Tôi hiểu, bật probe
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Endpoint có yêu cầu xác thực không">
         <span className="text-xs text-muted-foreground">Yêu cầu xác thực:</span>

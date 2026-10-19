@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Eye, History, Info, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
+import { Eye, History, Info, Loader2, Lock, Pencil, Play, Plus, ShieldAlert, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -254,6 +254,15 @@ export function TestCasesPage() {
                       >
                         {testCase.generationOrigin === "SYSTEM_FILLED" ? "Hệ thống" : SOURCE_LABEL[testCase.source]}
                       </span>
+                      {testCase.probeKind === "MASS_ASSIGNMENT" && (
+                        <span
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/40 px-2 py-0.5 text-xs font-medium text-destructive"
+                          title="Test bảo mật tự sinh: thêm field không khai báo vào body. Gửi request ghi thật."
+                        >
+                          <ShieldAlert className="size-3" aria-hidden />
+                          Probe bảo mật
+                        </span>
+                      )}
                       {reliability && (
                         <span
                           title={reliability.title}

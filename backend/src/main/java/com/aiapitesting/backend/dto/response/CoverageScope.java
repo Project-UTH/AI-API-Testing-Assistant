@@ -8,21 +8,22 @@ import com.aiapitesting.backend.entity.Endpoint;
  *
  * @param custom false khi endpoint chưa từng chọn phạm vi (dữ liệu cũ) - lúc đó coi như đủ 4 loại.
  */
-public record CoverageScope(boolean positive, boolean negative, boolean boundary, boolean security, boolean custom) {
+public record CoverageScope(boolean positive, boolean negative, boolean boundary, boolean security, boolean custom, boolean owasp) {
 
-    public static final CoverageScope FULL = new CoverageScope(true, true, true, true, false);
+    public static final CoverageScope FULL = new CoverageScope(true, true, true, true, false, false);
 
     /** Cột null (endpoint tạo trước khi có phạm vi) = đủ 4 loại, giữ hành vi cũ. */
     public static CoverageScope of(Endpoint endpoint) {
+        boolean owasp = Boolean.TRUE.equals(endpoint.getScopeOwasp()); // opt-in: mặc định TẮT kể cả khi chưa chọn phạm vi
         if (endpoint.getScopePositive() == null) {
-            return FULL;
+            return owasp ? new CoverageScope(true, true, true, true, false, true) : FULL;
         }
         return new CoverageScope(
                 !Boolean.FALSE.equals(endpoint.getScopePositive()),
                 !Boolean.FALSE.equals(endpoint.getScopeNegative()),
                 !Boolean.FALSE.equals(endpoint.getScopeBoundary()),
                 !Boolean.FALSE.equals(endpoint.getScopeSecurity()),
-                true);
+                true, owasp);
     }
 
     public boolean includes(String category) {

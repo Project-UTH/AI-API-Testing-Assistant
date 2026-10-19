@@ -151,12 +151,17 @@ public class TestExecutionRunner {
         long startedNanos = System.nanoTime();
         try {
             RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
-            boolean statusMatches = Objects.equals(result.statusCode(), testCase.getExpectedStatus());
+            // Test probe mass-assignment (17b-2) tự chấm theo phản hồi (400/422 = từ chối = đạt; phản chiếu field lạ = Fail); các mã khác
+            // (401/403/404...) không kết luận được nên rơi về luật mã trạng thái thường.
+            MassAssignmentProbe.Outcome probe = probeOutcomeOf(testCase, result);
+            boolean statusMatches = probe != null && probe.verdict() != MassAssignmentProbe.Verdict.INCONCLUSIVE
+                    ? probe.verdict() == MassAssignmentProbe.Verdict.PASS
+                    : Objects.equals(result.statusCode(), testCase.getExpectedStatus());
             // Quét 1 lần trên body THÔ; body lưu/hiển thị là bản đã che. Assertion + dependency vẫn dùng body thô (bên dưới).
             SensitiveDataScanner.Scan scan = scanSensitive(testCase, result.responseBody());
             Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
                     statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null,
-                    securityFindingsJsonOf(result.statusCode(), scan));
+                    securityFindingsJsonOf(result.statusCode(), scan, probeFindingsOf(probe)));
 
             // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
             // status code đã sai.
@@ -203,16 +208,47 @@ public class TestExecutionRunner {
         }
     }
 
-    /** Cảnh báo chỉ lưu cho response 2xx. CHỈ có đường dẫn/quy tắc/mô tả, không có giá trị. */
-    private String securityFindingsJsonOf(Integer statusCode, SensitiveDataScanner.Scan scan) {
+    /** Cảnh báo quét dữ liệu nhạy cảm chỉ lấy từ response 2xx; phát hiện của probe (17b-2) luôn được ghi. CHỈ có đường dẫn/quy tắc/mô tả, không có giá trị. */
+    private String securityFindingsJsonOf(Integer statusCode, SensitiveDataScanner.Scan scan, List<SensitiveDataScanner.Finding> probeFindings) {
         try {
-            if (statusCode == null || statusCode < 200 || statusCode > 299 || scan.findings().isEmpty()) {
-                return null;
+            List<SensitiveDataScanner.Finding> all = new ArrayList<>(probeFindings);
+            if (statusCode != null && statusCode >= 200 && statusCode <= 299) {
+                all.addAll(scan.findings());
             }
-            return objectMapper.writeValueAsString(scan.findings());
+            return all.isEmpty() ? null : objectMapper.writeValueAsString(all);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Chấm probe mass-assignment; null nếu test case không phải probe hoặc không đọc được danh sách field đã tiêm. */
+    private MassAssignmentProbe.Outcome probeOutcomeOf(TestCase testCase, RestAssuredTestRunner.RunResult result) {
+        if (!MassAssignmentProbe.KIND.equals(testCase.getProbeKind()) || testCase.getProbeFieldsJson() == null) {
+            return null;
+        }
+        try {
+            List<MassAssignmentProbe.Field> fields = objectMapper.readValue(testCase.getProbeFieldsJson(),
+                    new com.fasterxml.jackson.core.type.TypeReference<List<MassAssignmentProbe.Field>>() {
+                    });
+            return MassAssignmentProbe.evaluate(result.statusCode(), result.responseBody(), fields);
+        } catch (Exception e) {
+            log.warn("Khong doc duoc field probe cua test case {}: {}", testCase.getId(), e.toString());
+            return null;
+        }
+    }
+
+    private List<SensitiveDataScanner.Finding> probeFindingsOf(MassAssignmentProbe.Outcome probe) {
+        if (probe == null || probe.verdict() != MassAssignmentProbe.Verdict.FAIL) {
+            return List.of();
+        }
+        if (probe.reflected().isEmpty()) {
+            return List.of(new SensitiveDataScanner.Finding("(request)", MassAssignmentProbe.RULE_SERVER_ERROR,
+                    SensitiveDataScanner.Severity.HIGH, probe.detail()));
+        }
+        return probe.reflected().stream()
+                .map(f -> new SensitiveDataScanner.Finding(f.name(), MassAssignmentProbe.RULE_ACCEPTED, SensitiveDataScanner.Severity.HIGH,
+                        "API nhận field '" + f.name() + "' không khai báo trong schema (giá trị đánh dấu xuất hiện lại trong phản hồi)"))
+                .toList();
     }
 
     /** Kết quả assertion lưu "giá trị thực tế": nếu đúng là giá trị nhạy cảm đã che thì thay bằng dấu che. */

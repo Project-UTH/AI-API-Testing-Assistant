@@ -118,10 +118,24 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
+          {testCase.probeKind === "MASS_ASSIGNMENT" && (
+            <div role="note" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs">
+              <p className="font-medium text-destructive">Probe bảo mật - mass assignment</p>
+              <p className="mt-1">
+                Field được tiêm (hệ thống sinh, không nên sửa): {(testCase.probeFields ?? []).map((f) => <code key={f} className="mr-1">{f}</code>)}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                Đạt = API bỏ qua hoặc từ chối (400/422). Fail = API nhận và trả lại field, hoặc lỗi 5xx. Test này gửi request GHI thật.
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full bg-muted px-2 py-0.5 font-medium">
               {SOURCE_LABEL[testCase.source]}
             </span>
+            {testCase.probeKind === "MASS_ASSIGNMENT" && (
+              <span className="rounded-full border border-destructive/40 px-2 py-0.5 font-medium text-destructive">Probe bảo mật</span>
+            )}
             <span className="rounded-full bg-muted px-2 py-0.5 font-medium">
               Kỳ vọng {testCase.expectedStatus}
             </span>

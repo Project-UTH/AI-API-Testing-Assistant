@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, ShieldAlert } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import type { FailureCause, FailureCauseCode, TestResult } from "@/lib/executions"
@@ -18,6 +18,7 @@ const CAUSE_STYLES: Record<FailureCauseCode, string> = {
   STATE_CONFLICT: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
   AUTHZ_VIOLATION: "bg-destructive/10 text-destructive",
   TEST_DATA_SUSPECT: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  MASS_ASSIGNMENT: "bg-destructive/10 text-destructive",
 }
 
 /** Gợi ý việc nên làm cho từng nguyên nhân - chỉ là gợi ý cho nghi ngờ, không phải kết luận. */
@@ -40,6 +41,8 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
     "Kết quả lệch ma trận phân quyền: vai trò được khai là bị cấm nhưng gọi được (thiếu kiểm quyền), hoặc được phép nhưng bị từ chối. Kiểm tra API, hoặc sửa ô tương ứng trong ma trận nếu khai sai.",
   TEST_DATA_SUSPECT:
     "API từ chối đầu vào (400/422) và phản hồi nói dữ liệu không hợp lệ (vd ngày quá khứ, giá trị không có trong danh mục). Ưu tiên Sửa test case: đổi dữ liệu thành giá trị hợp lệ rồi chạy lại. Chỉ tạo Bug Report nếu đã chắc dữ liệu hợp lệ mà API vẫn từ chối.",
+  MASS_ASSIGNMENT:
+    "Phát hiện bảo mật: API nhận field không khai báo trong schema (giá trị đánh dấu xuất hiện lại trong phản hồi) hoặc lỗi 5xx khi nhận chúng. Kiểm tra whitelist/DTO ở backend, rồi xoá dữ liệu probe đã ghi trên hệ thống đích. Đây là lỗ hổng, không phải lỗi test.",
 }
 
 /** Nhãn ngắn cạnh badge Fail/Lỗi - tooltip là bằng chứng đầy đủ. */
@@ -49,6 +52,7 @@ export function FailureCauseChip({ cause, className }: { cause: FailureCause; cl
       className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", CAUSE_STYLES[cause.code], className)}
       title={cause.evidence.join("\n")}
     >
+      {cause.code === "MASS_ASSIGNMENT" && <ShieldAlert className="mr-1 inline size-3 align-[-1px]" aria-hidden />}
       {cause.label}
     </span>
   )

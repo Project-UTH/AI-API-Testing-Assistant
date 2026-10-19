@@ -2,6 +2,7 @@ package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.request.UpdateCoverageScopeRequest;
+import com.aiapitesting.backend.service.execution.MassAssignmentProbe;
 import com.aiapitesting.backend.dto.response.ChecklistItemType;
 import com.aiapitesting.backend.dto.response.CoverageScope;
 import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
@@ -247,6 +248,12 @@ public class EndpointCoverageService {
                     List.of(), null, null, null, null, List.of()));
         }
 
+        // Module 17 (17b-2) - mục OWASP mass-assignment (chỉ khi người dùng bật cho endpoint ghi). Không tính vào % coverage EP/BVA.
+        CoverageDimensionResponse owasp = owaspDimension(endpoint, spec, testCases, context, baseline != null);
+        if (owasp != null) {
+            dimensions.add(owasp);
+        }
+
         List<CoverageDimensionResponse> counted = dimensions.stream().filter(this::countsTowardPercent).toList();
         long covered = counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
         long executed = counted.stream().filter(this::isExecuted).count();
@@ -275,6 +282,9 @@ public class EndpointCoverageService {
         endpoint.setScopeNegative(request.negative());
         endpoint.setScopeBoundary(request.boundary());
         endpoint.setScopeSecurity(request.security());
+        if (request.owasp() != null) {
+            endpoint.setScopeOwasp(request.owasp()); // opt-in có chủ đích: chỉ đổi khi client gửi rõ
+        }
         endpointRepository.save(endpoint);
         return getEndpointCoverage(projectId, endpointId);
     }
@@ -332,6 +342,33 @@ public class EndpointCoverageService {
      * không cố ý bỏ/sai token, kỳ vọng đúng chiều (ALLOW → 2xx, DENY → 403/401). Thiếu thì kèm cờ {@code fillable} (có case gốc để
      * mượn dữ liệu không) để nút Bổ sung chỉ sáng khi bù được.
      */
+    static final String OWASP_CATEGORY = "OWASP";
+    static final String OWASP_KEY = "OWASP_MASS_ASSIGNMENT";
+
+    /** Chỉ endpoint ghi (POST/PUT/PATCH) có body dạng field đã bật cờ OWASP mới có mục này. */
+    private CoverageDimensionResponse owaspDimension(
+            Endpoint endpoint, TestCaseChecklistPlanner.Spec spec, List<TestCase> testCases, CoverageContext context, boolean usableBaseline
+    ) {
+        if (!Boolean.TRUE.equals(endpoint.getScopeOwasp()) || !MassAssignmentFields.isWriteMethod(endpoint.getMethod())) {
+            return null;
+        }
+        String label = "Mass assignment: gửi field đặc quyền không khai báo (role, isAdmin, status, price...) - API phải bỏ qua hoặc từ chối";
+        String why = "Phát hiện lỗi OWASP API3/API6: API tự gán field người dùng không được phép đặt (leo quyền, đổi giá/chủ sở hữu). "
+                + "Probe gửi request GHI thật tới hệ thống đích - chỉ dùng với môi trường test.";
+        List<TestCase> covering = testCases.stream().filter(tc -> MassAssignmentProbe.KIND.equals(tc.getProbeKind())).toList();
+        if (!covering.isEmpty()) {
+            return new CoverageDimensionResponse(OWASP_CATEGORY, label, CoverageDimensionStatus.COVERED, null,
+                    toRefs(covering, context), MassAssignmentProbe.KIND, OWASP_KEY, why, runStatus(covering, context), List.of());
+        }
+        boolean hasFields = spec.hasBody() && spec.bodyIsJson();
+        boolean fillable = usableBaseline && hasFields;
+        return new CoverageDimensionResponse(OWASP_CATEGORY, label, CoverageDimensionStatus.MISSING,
+                "Chưa có test probe mass-assignment cho endpoint này", List.of(), MassAssignmentProbe.KIND, OWASP_KEY, why, null,
+                List.of(), fillable,
+                fillable ? null : hasFields ? "Cần ít nhất 1 test case hợp lệ (kỳ vọng thành công) làm gốc để mượn body"
+                        : "Endpoint không có body dạng field (JSON/form) để tiêm field lạ");
+    }
+
     private List<CoverageDimensionResponse> authzDimensions(
             Endpoint endpoint, List<TestCase> testCases, CoverageContext context, boolean usableBaseline, boolean anyBaseline
     ) {

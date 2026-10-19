@@ -80,6 +80,14 @@ public class ExecutionFailureAnalyzer {
         List<TestResult> changed = new ArrayList<>();
 
         for (TestResult result : failed) {
+            // Probe mass-assignment đã bị phát hiện (17b-2): đây là phát hiện bảo mật thật, bỏ qua luật phân loại theo mã trạng thái.
+            List<String> probeEvidence = massAssignmentEvidence(result);
+            if (!probeEvidence.isEmpty()) {
+                result.setFailureCause(FailureCause.MASS_ASSIGNMENT);
+                result.setFailureEvidence(writeEvidence(probeEvidence));
+                changed.add(result);
+                continue;
+            }
             List<TestResultRepository.HistoryRow> rows = historyByTestCaseId.getOrDefault(result.getTestCase().getId(), List.of());
             FailureCauseClassifier.Input input = new FailureCauseClassifier.Input(
                     result.getStatus(), result.getTestCase().getExpectedStatus(), result.getResponseStatus(),
@@ -283,6 +291,23 @@ public class ExecutionFailureAnalyzer {
     }
 
     /** Số test CÙNG profile vai trò trong lượt chạy nhận phản hồi không phải 401/403 - bằng chứng token của vai trò còn dùng được. */
+    /** Bằng chứng từ securityFindingsJson của probe mass-assignment (chỉ tên field/mô tả, không giá trị); rỗng nếu không phải probe bị phát hiện. */
+    private List<String> massAssignmentEvidence(TestResult result) {
+        String json = result.getSecurityFindingsJson();
+        if (json == null || !MassAssignmentProbe.KIND.equals(result.getTestCase().getProbeKind()) || !json.contains(MassAssignmentProbe.KIND)) {
+            return List.of();
+        }
+        try {
+            List<Map<String, String>> findings = new com.fasterxml.jackson.databind.ObjectMapper().readValue(json,
+                    new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {
+                    });
+            return findings.stream().filter(f -> f.getOrDefault("rule", "").startsWith(MassAssignmentProbe.KIND))
+                    .map(f -> f.get("detail")).toList();
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
     private int profileAcceptedCount(TestResult result, List<TestResult> results) {
         UUID profileId = result.getTestCase().getAuthProfileId();
         if (profileId == null) {

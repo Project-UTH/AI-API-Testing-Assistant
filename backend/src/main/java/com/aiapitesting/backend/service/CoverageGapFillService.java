@@ -5,6 +5,7 @@ import com.aiapitesting.backend.dto.request.CoverageFillRequest;
 import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageFillResponse;
 import com.aiapitesting.backend.dto.response.CoverageScope;
+import com.aiapitesting.backend.service.execution.MassAssignmentProbe;
 import com.aiapitesting.backend.entity.AuthProfile;
 import com.aiapitesting.backend.entity.AuthzExpectation;
 import com.aiapitesting.backend.entity.Endpoint;
@@ -106,7 +107,11 @@ public class CoverageGapFillService {
                         || requested.contains(AuthzMatrix.key(rule.getExpectation(), profilesById.get(rule.getAuthProfileId()).getRoleKey())))
                 .filter(rule -> candidates.stream().noneMatch(c -> AuthzMatrix.covers(rule.getExpectation(), rule.getAuthProfileId(), c.entity())))
                 .toList();
-        if (missing.isEmpty() && missingAuthz.isEmpty()) {
+        boolean needProbe = Boolean.TRUE.equals(endpoint.getScopeOwasp()) && MassAssignmentFields.isWriteMethod(endpoint.getMethod())
+                && spec.hasBody() && spec.bodyIsJson()
+                && (requested == null || requested.contains(EndpointCoverageService.OWASP_KEY))
+                && candidates.stream().noneMatch(c -> MassAssignmentProbe.KIND.equals(c.entity().getProbeKind()));
+        if (missing.isEmpty() && missingAuthz.isEmpty() && !needProbe) {
             return new CoverageFillResponse(0, List.of(), List.of(), null, 0);
         }
 
@@ -158,6 +163,21 @@ public class CoverageGapFillService {
                 continue;
             }
             pending.add(new Pending(toAuthzEntity(endpoint, base.entity(), profile, rule.getExpectation(), label), base.entity()));
+        }
+
+        if (needProbe) {
+            if (baseline == null) {
+                notFilled.add(new CoverageFillResponse.NotFilled(EndpointCoverageService.OWASP_KEY, "Mass assignment",
+                        "Cần ít nhất 1 test case hợp lệ (kỳ vọng thành công) làm gốc để mượn body"));
+            } else {
+                TestCase probe = toMassAssignmentEntity(endpoint, spec, baseline.entity());
+                if (probe == null) {
+                    notFilled.add(new CoverageFillResponse.NotFilled(EndpointCoverageService.OWASP_KEY, "Mass assignment",
+                            "Body của test case gốc không phải JSON object nên không tiêm được field"));
+                } else {
+                    pending.add(new Pending(probe, baseline.entity()));
+                }
+            }
         }
 
         List<TestCase> saved = pending.isEmpty()
@@ -292,6 +312,41 @@ public class CoverageGapFillService {
                 .checklistItem(truncate(label))
                 .authOverride(TestCaseAuthOverride.DEFAULT)
                 .authProfileId(profile.getId())
+                .build();
+    }
+
+    /**
+     * Probe mass-assignment (17b-2): copy case gốc hợp lệ, thêm field đặc quyền không khai báo vào body. Kỳ vọng giữ mã thành công của
+     * case gốc (API bỏ qua field lạ); runner chấm riêng theo {@code probeKind}: 400/422 cũng được coi là đạt (từ chối field lạ).
+     */
+    private TestCase toMassAssignmentEntity(Endpoint endpoint, TestCaseChecklistPlanner.Spec spec, TestCase base) {
+        java.util.Set<String> declared = spec.rules().stream()
+                .filter(r -> r.location() == TestCaseChecklistPlanner.ParamLocation.BODY).map(TestCaseChecklistPlanner.FieldRule::name)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.List<MassAssignmentProbe.Field> fields = MassAssignmentProbe.chooseFields(declared, endpoint.getId());
+        String body = MassAssignmentProbe.inject(base.getRequestBody(), fields);
+        if (body == null) {
+            return null;
+        }
+        return TestCase.builder()
+                .endpoint(endpoint)
+                .name("Probe bảo mật - field không khai báo (mass assignment)")
+                .description("Hệ thống tự bổ sung (copy case gốc '" + base.getName() + "', thêm field: "
+                        + fields.stream().map(MassAssignmentProbe.Field::name).collect(java.util.stream.Collectors.joining(", "))
+                        + "). Đạt = API bỏ qua hoặc từ chối; Fail = API nhận và trả lại field.")
+                .requestHeaders(base.getRequestHeaders())
+                .requestBody(body)
+                .rationale("OWASP API3/API6: API không được tự gán field không khai báo trong schema.")
+                .expectedStatus(base.getExpectedStatus())
+                .resolvedPath(base.getResolvedPath())
+                .pathParamFallbacks(base.getPathParamFallbacks())
+                .source(TestCaseSource.MANUAL)
+                .generationOrigin(TestCaseGenerationOrigin.SYSTEM_FILLED)
+                .checklistItem(truncate("Mass assignment"))
+                .authOverride(base.getAuthOverride() == null ? TestCaseAuthOverride.DEFAULT : base.getAuthOverride())
+                .authProfileId(base.getAuthProfileId())
+                .probeKind(MassAssignmentProbe.KIND)
+                .probeFieldsJson(writeJson(fields))
                 .build();
     }
 
