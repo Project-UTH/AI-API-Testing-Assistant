@@ -10,12 +10,9 @@ import { NextStepBanner } from "@/components/projects/NextStepBanner"
 import { TargetAuthDialog } from "@/components/projects/TargetAuthDialog"
 import { AuthProfilesDialog } from "@/components/projects/AuthProfilesDialog"
 import { getProject } from "@/lib/projects"
+import { AUTH_TYPE_LABEL } from "@/lib/authTypes"
 
-const TARGET_AUTH_LABEL: Record<string, string> = {
-  NONE: "Không",
-  API_KEY: "API Key",
-  BEARER_TOKEN: "Bearer Token",
-}
+const TARGET_AUTH_LABEL: Record<string, string> = AUTH_TYPE_LABEL
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()

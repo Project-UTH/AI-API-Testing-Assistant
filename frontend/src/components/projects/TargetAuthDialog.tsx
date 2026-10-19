@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { updateTargetAuth } from "@/lib/projects"
 import type { TargetAuthType } from "@/lib/endpoints"
+import { AUTH_TYPE_OPTIONS, authValueHint, authValueLabel } from "@/lib/authTypes"
 
 interface TargetAuthDialogProps {
   open: boolean
@@ -79,17 +80,20 @@ export function TargetAuthDialog({
               value={authType}
               onChange={(e) => setAuthType(e.target.value as TargetAuthType)}
             >
-              <option value="NONE">Không</option>
-              <option value="API_KEY">API Key</option>
-              <option value="BEARER_TOKEN">Bearer Token</option>
+              {AUTH_TYPE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
           </div>
 
           {authType !== "NONE" && (
             <div className="flex flex-col gap-2">
               <Label htmlFor="target-auth-value">
-                {authType === "API_KEY" ? "Giá trị API Key" : "Giá trị Bearer Token"}
+                {authValueLabel(authType)}
               </Label>
+              {authValueHint(authType) && <p className="text-xs text-muted-foreground">{authValueHint(authType)}</p>}
               <p className="text-xs text-muted-foreground">
                 Bắt buộc nhập lại mỗi lần lưu, kể cả khi chỉ muốn giữ nguyên loại xác thực đang dùng
                 (giá trị cũ không hiện lại vì đã mã hoá, không đọc ngược được).

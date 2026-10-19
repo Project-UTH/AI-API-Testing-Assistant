@@ -32,7 +32,7 @@ export interface ImportDiff {
   removedEndpoints: string[]
 }
 
-export type TargetAuthType = "NONE" | "API_KEY" | "BEARER_TOKEN"
+export type TargetAuthType = "NONE" | "API_KEY" | "BEARER_TOKEN" | "BASIC_AUTH" | "CUSTOM_HEADER"
 
 export interface ImportOpenApiInput {
   url?: string

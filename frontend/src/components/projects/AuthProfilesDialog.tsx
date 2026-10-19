@@ -15,11 +15,12 @@ import {
   type AuthProfile,
 } from "@/lib/authProfiles"
 import type { TargetAuthType } from "@/lib/endpoints"
+import { AUTH_TYPE_LABEL, authValueHint, authValueLabel } from "@/lib/authTypes"
 
 const selectClassName =
   "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
 
-const TYPE_LABEL: Record<TargetAuthType, string> = { NONE: "Không token (ẩn danh)", API_KEY: "API Key", BEARER_TOKEN: "Bearer Token" }
+const TYPE_LABEL: Record<TargetAuthType, string> = { ...AUTH_TYPE_LABEL, NONE: "Không token (ẩn danh)" }
 
 interface Props {
   open: boolean
@@ -165,7 +166,8 @@ export function AuthProfilesDialog({ open, onOpenChange, projectId }: Props) {
             </div>
             {authType !== "NONE" && (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="profile-value">{editing ? "Token mới (bỏ trống = giữ token cũ)" : "Token"}</Label>
+                <Label htmlFor="profile-value">{editing ? "Giá trị mới (bỏ trống = giữ giá trị cũ)" : authValueLabel(authType)}</Label>
+                {authValueHint(authType) && <p className="text-xs text-muted-foreground">{authValueHint(authType)}</p>}
                 <Input
                   id="profile-value"
                   type="password"

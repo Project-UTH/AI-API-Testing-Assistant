@@ -108,7 +108,8 @@ public class RestAssuredTestRunner {
             return null;
         }
         if (authOverride == TestCaseAuthOverride.INVALID) {
-            return targetAuthHeaderResolver.resolve(authType, INVALID_AUTH_VALUE);
+            String real = authType == TargetAuthType.CUSTOM_HEADER ? aesEncryptionService.decrypt(encryptedValue) : null;
+            return targetAuthHeaderResolver.resolveInvalid(authType, real, INVALID_AUTH_VALUE);
         }
         String decrypted = aesEncryptionService.decrypt(encryptedValue);
         return targetAuthHeaderResolver.resolve(authType, decrypted);

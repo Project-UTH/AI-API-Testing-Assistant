@@ -8,6 +8,7 @@ import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
 import com.aiapitesting.backend.repository.ApiTokenRepository;
 import com.aiapitesting.backend.repository.AuthProfileRepository;
@@ -108,6 +109,12 @@ public class ProjectService {
     public void validateTargetAuthValue(TargetAuthType authType, String authValue) {
         if (authType != null && authType != TargetAuthType.NONE && (authValue == null || authValue.isBlank())) {
             throw new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn");
+        }
+        if (authType == TargetAuthType.BASIC_AUTH && (authValue == null || authValue.indexOf(':') <= 0)) {
+            throw new InvalidRequestException("Basic Auth cần giá trị dạng tên:mật khẩu");
+        }
+        if (authType == TargetAuthType.CUSTOM_HEADER && !TargetAuthHeaderResolver.isValidCustomHeaderValue(authValue)) {
+            throw new InvalidRequestException("Header tuỳ ý cần giá trị dạng Tên-Header: giá trị (vd X-Auth-Token: abc123)");
         }
     }
 

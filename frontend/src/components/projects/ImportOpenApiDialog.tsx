@@ -25,6 +25,7 @@ import {
   type ImportDiff,
   type TargetAuthType,
 } from "@/lib/endpoints"
+import { AUTH_TYPE_OPTIONS, authValueHint, authValueLabel } from "@/lib/authTypes"
 
 interface ImportOpenApiDialogProps {
   open: boolean
@@ -278,16 +279,19 @@ export function ImportOpenApiDialog({
                 value={authType}
                 onChange={(e) => setAuthType(e.target.value as TargetAuthType)}
               >
-                <option value="NONE">Không</option>
-                <option value="API_KEY">API Key</option>
-                <option value="BEARER_TOKEN">Bearer Token</option>
+                {AUTH_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
               </select>
 
               {authType !== "NONE" && (
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="auth-value">
-                    {authType === "API_KEY" ? "Giá trị API Key" : "Giá trị Bearer Token"}
+                    {authValueLabel(authType)}
                   </Label>
+                  {authValueHint(authType) && <p className="text-xs text-muted-foreground">{authValueHint(authType)}</p>}
                   <Input
                     id="auth-value"
                     type="password"
