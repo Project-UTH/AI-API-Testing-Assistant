@@ -1344,6 +1344,26 @@ Rà soát chuyên gia tìm các chỗ gắn với 1 ứng dụng cụ thể, x�
 
 - [ ] **S7. Chưa làm (kế hoạch cũ):** `specStale` cho test case, xoá endpoint đã gỡ khỏi spec, `expectedStatusBasis`, webhook có guard SSRF. (17b-2 mass-assignment đã xong 2026-10-20.)
 
+#### 17i. Đo test NGHIỆP VỤ do AI đoán vs checklist hệ thống (2026-10-20, `PUT /api/hr/jobs/{id}`, 11 field, API tuyển dụng)
+
+Để AI có cơ hội công bằng, thêm nhóm **Nghiệp vụ** (`includeBusiness`, nguồn `BUSINESS`, prompt `generate/business.st`: AI suy luận luật nghiệp vụ spec KHÔNG khai, mỗi test vi phạm đúng 1 luật, rationale luôn 'GIẢ ĐỊNH', tối đa 12 test, không tính vào coverage EP/BVA). Giới hạn AI đã nâng (xem 17h). 'Sự thật' nghiệp vụ lấy bằng cách gọi thẳng API.
+
+| | AI nghiệp vụ | Checklist hệ thống (1 test đúng + Bổ sung) |
+|---|---|---|
+| Chi phí | 40 giây, **17.472 token**, 10 test | 0,1 giây, **0 token**, 25 test |
+| Chạy | 6 Pass / 4 Fail | 17 Pass / 8 Fail |
+| Luật nghiệp vụ chạm tới (min>max, hạn nộp quá khứ, mã danh mục, mã vùng, tiền tệ) | **5/5** có test riêng, gọi đúng tên luật | 0 test riêng |
+| Fail là tín hiệu thật | **2/4**: `salaryMin>salaryMax` trả **401 UNAUTHENTICATED** (luật có nhưng API xử lý sai mã - lỗi API); `salaryCurrency` 'ZZZ' được chấp nhận (thiếu validate) | **3 triệu chứng của cùng lỗi 401** (kiểu sai ở salaryMin/Max, `salaryMax=0` làm min>max) gắn `UNDETERMINED` - không nêu tên luật; 5 lệch spec (`minLength 0` nhưng API từ chối chuỗi rỗng/mã danh mục) gắn `TEST_DATA_SUSPECT` |
+| Fail là AI đoán sai | **2/4**: mã danh mục/vùng không tồn tại AI kỳ vọng 404, API trả 400 | không có |
+| Test Pass xác nhận luật có thật | hạn nộp quá khứ bị chặn, title/description toàn khoảng trắng bị chặn, biên min=max và hạn đúng hôm nay chấp nhận | các biên theo schema |
+
+Kết luận đo được:
+- **AI nghiệp vụ và checklist bổ sung nhau, không thay nhau.** Checklist thấy *triệu chứng* (3 Fail 401 mơ hồ), AI *gọi tên luật* và tìm thêm lỗ hổng mà checklist không thể (tiền tệ không validate). Cả hai cùng chạm lỗi 401 của API.
+- AI đoán đúng *luật* khá tốt (5/5) nhưng đoán *mã trạng thái* kém (2/4 sai 404 vs 400): nên coi test nghiệp vụ là 'giả định cần người duyệt', không tự coi Fail là lỗi API; cân nhắc nhóm `EXPECTATION_MISMATCH` rộng hơn cho 400/404 khi body nói 'không tồn tại/không hợp lệ'.
+- Chi phí AI nghiệp vụ ~17k token/endpoint (so với 0 của checklist): hợp lý khi dùng chọn lọc cho endpoint quan trọng, không cho cả 110 endpoint.
+- AI không biết id thật (path `{{id}}` = UUID mẫu): phải gán id thật trước khi chạy (AI-2). Hạn nộp dùng `{{today-1d}}` (UTC) đúng; lưu ý khi tự thử tay phải tính múi giờ (UTC+7 làm ca 'hôm qua' của tôi trả 200 sai lệch).
+- **Định vị đề xuất:** checklist tất định = nền tảng (miễn phí, đo được); AI = lớp nghiệp vụ chọn lọc có nhãn 'GIẢ ĐỊNH'; người dùng duyệt.
+
 #### 17g. Phần còn thiếu theo rà soát 2 chuyên gia (backend/QA + frontend/UX), 2026-10-20
 
 Đối chiếu code thật; mục nào đã làm thì không liệt kê lại. Kích thước S/M/L. **Thứ tự đề xuất: P0 trước.**
@@ -1356,12 +1376,14 @@ Cùng API, cùng token HR, cùng phạm vi Positive+Negative+Boundary (Security 
 |---|---|---|
 | **Endpoint vừa** `PUT /jobs/{jobId}/interview-template` (5 field) | 121 giây, **20.907 token**, 25 test (có 3 cặp trùng) | **0,1 giây, 0 token**, 19 test (1 tay + 18 hệ thống) |
 | Kết quả chạy | 10 Pass / 15 Fail, trong đó **13 Fail giả** (`RESOURCE_NOT_FOUND`: AI dùng UUID mẫu của Swagger làm `jobId`) | 17 Pass / 2 Fail, **cả 2 là tín hiệu thật** |
-| **Endpoint nhiều ràng buộc** `PUT /companies/{id}` (8 field, 6 có ràng buộc) | **THẤT BẠI**: đủ 4 nhóm và P+N+B đều quá 180 giây (500, `AnthropicIoException`); tách nhóm: Positive 8s/12.307 token, Negative 13s/13.395 token, **Boundary vượt 180s** | 0,1 giây, 0 token, 23 test, 21 Pass, 2 Fail thật |
+| **Endpoint nhiều ràng buộc** `PUT /companies/{id}` (8 field, 6 có ràng buộc) | ĐÃ SỬA KẾT LUẬN (xem ghi chú): lần đầu thất bại vì timeout; sau khi chỉnh timeout: **97 giây, 38.883 token, 34 test**, 10 Pass / 24 Fail, **20 Fail giả** `RESOURCE_NOT_FOUND` (UUID mẫu) | 0,1 giây, 0 token, 23 test, 21 Pass / 2 Fail thật |
+
+> **Đính chính (2026-10-20):** kết luận ban đầu 'AI không hoàn thành được endpoint nhiều field' là SAI - nguyên nhân là timeout của client Anthropic (`spring.ai.anthropic.timeout`, mặc định ~180s; `spring.http.client.read-timeout` KHÔNG áp dụng cho SDK này). Đã nâng giới hạn (commit `8b0628e`: max-tokens 32000, timeout 600s, quota 500000, chỉnh bằng biến môi trường `AI_MAX_TOKENS`/`AI_TIMEOUT`/`AI_DAILY_TOKEN_LIMIT`). Khi đủ giới hạn AI chạy được, nhưng vẫn tốn ~39k token cho 1 endpoint và sinh nhiều Fail giả do không biết id thật.
 
 Phát hiện:
 - **AI không biết id thật** nên đường dẫn `{{id}}`/`{{jobId}}` dùng UUID mẫu: mọi test cần tài nguyên tồn tại đều 404 (Fail giả, gây nhiễu). Hệ thống mượn đường dẫn thật từ test đúng của người dùng nên không bị.
-- **Endpoint nhiều field: AI không hoàn thành được** (output quá dài > ngưỡng đọc 150s / request 180s) - xác nhận rủi ro S6/P0-4 bằng số đo.
-- **Sinh theo từng nhóm KHÔNG cộng dồn:** gọi Negative sau Positive thay thế test Positive (còn 2 test Negative, mất Positive). Cần sinh cộng dồn hoặc tự chia lô theo nhóm rồi gộp.
+- **Endpoint nhiều field:** với giới hạn mặc định cũ AI thất bại (timeout client ~180s); sau khi nâng giới hạn thì chạy được (97s). Vẫn xác nhận rủi ro S6/P0-4: request đồng bộ dài, nên làm job nền.
+- **Sinh theo từng nhóm KHÔNG cộng dồn (đúng thiết kế 'mỗi lần bấm khai báo lại toàn bộ tập AI'):** gọi Negative sau Positive xoá Positive. Người dùng dễ mất test; cần cảnh báo rõ hoặc cho sinh cộng dồn.
 - AI sinh **trùng** boundary với mục checklist (3 cặp 'đúng maxLength' lặp).
 - Cả 2 cách cùng bắt được 2 chỗ spec lệch API (spec `minLength: 0` nhưng API từ chối chuỗi rỗng cho `subject`/`name`/`senderName`); hệ thống gắn `TEST_DATA_SUSPECT` đúng.
 - Kết luận: với checklist EP/BVA, hệ thống tất định **nhanh hơn, rẻ hơn, ít nhiễu hơn** và chạy được ở endpoint lớn; AI chỉ nên dùng cho phần ngoài checklist (logic nghiệp vụ). Quy trình khuyến nghị: tự thêm 1 test đúng -> bấm Bổ sung -> (tuỳ chọn) AI sinh phần 'extra'.
