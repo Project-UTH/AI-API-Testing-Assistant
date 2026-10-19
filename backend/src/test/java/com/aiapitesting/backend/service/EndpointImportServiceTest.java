@@ -369,7 +369,21 @@ class EndpointImportServiceTest {
 
         endpointImportService.importFromFile(projectId, file, null, null, "https://user-chosen.example.com");
 
-        assertThat(project.getTargetBaseUrl()).isEqualTo("https://user-chosen.example.com");
+        // Host do người dùng chọn thắng host của spec, nhưng tiền tố /v2 của servers[] vẫn là tiền tố của mọi path nên được nối thêm
+        assertThat(project.getTargetBaseUrl()).isEqualTo("https://user-chosen.example.com/v2");
+    }
+
+    @Test
+    void importFromFile_targetBaseUrlWithItsOwnPath_isKeptExactlyAsGiven() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "spec.json", "application/json", SAMPLE_OPENAPI_WITH_SERVERS.getBytes(StandardCharsets.UTF_8));
+
+        endpointImportService.importFromFile(projectId, file, null, null, "https://user-chosen.example.com/custom");
+
+        assertThat(project.getTargetBaseUrl()).isEqualTo("https://user-chosen.example.com/custom");
     }
 
     @Test

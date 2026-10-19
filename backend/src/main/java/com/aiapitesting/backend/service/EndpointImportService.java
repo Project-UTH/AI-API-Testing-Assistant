@@ -31,7 +31,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.servers.Server;
-import io.swagger.v3.parser.OpenAPIV3Parser;
+import io.swagger.parser.OpenAPIParser; // tự nhận Swagger 2.0 (chuyển sang OpenAPI 3) lẫn OpenAPI 3.0/3.1
 import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import lombok.RequiredArgsConstructor;
@@ -172,7 +172,7 @@ public class EndpointImportService {
         // {"$ref": "..."} khi serialize, khiến AI không thấy field/required của requestBody.
         // setResolveFully(true) inline hẳn properties/required/type vào Operation trước khi serialize.
         options.setResolveFully(true);
-        SwaggerParseResult result = new OpenAPIV3Parser().readContents(content, null, options);
+        SwaggerParseResult result = new OpenAPIParser().readContents(content, null, options);
         OpenAPI openApi = result.getOpenAPI();
 
         if (openApi == null || openApi.getPaths() == null || openApi.getPaths().isEmpty()) {
@@ -389,19 +389,52 @@ public class EndpointImportService {
     }
 
     private String resolveTargetBaseUrl(String targetBaseUrl, OpenAPI openApi) {
+        return resolveTargetBaseUrl(targetBaseUrl, openApi.getServers());
+    }
+
+    /**
+     * Theo chuẩn OpenAPI, đường dẫn trong {@code servers[0].url} (hoặc {@code basePath} của Swagger 2.0, được parser đổi thành servers) là TIỀN TỐ của
+     * mọi path. Người dùng thường chỉ nhập host ("http://host:8080") nên nếu không nối tiền tố này mọi lời gọi sẽ sai đường dẫn (404). Quy tắc:
+     * URL người dùng nhập không có path (hoặc chỉ "/") thì nối thêm tiền tố của spec; đã có path riêng thì giữ nguyên (họ tự quyết định).
+     * Để trống thì lấy nguyên URL tuyệt đối của spec (URL tương đối như "/" không dùng được).
+     */
+    static String resolveTargetBaseUrl(String targetBaseUrl, List<Server> servers) {
+        String serverUrl = servers == null || servers.isEmpty() ? null : servers.get(0).getUrl();
         if (targetBaseUrl != null && !targetBaseUrl.isBlank()) {
-            return targetBaseUrl;
-        }
-        // Spec không khai báo `servers` thì swagger-parser tự điền server mặc định url "/"
-        // (relative) - không dùng được, chỉ nhận URL tuyệt đối làm gợi ý.
-        List<Server> servers = openApi.getServers();
-        if (servers != null && !servers.isEmpty()) {
-            String url = servers.get(0).getUrl();
-            if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
-                return url;
+            String basePath = pathOf(serverUrl);
+            String given = targetBaseUrl.trim();
+            if (basePath != null && pathOf(given) == null) {
+                return (given.endsWith("/") ? given.substring(0, given.length() - 1) : given) + basePath;
             }
+            return given;
+        }
+        if (serverUrl != null && (serverUrl.startsWith("http://") || serverUrl.startsWith("https://"))) {
+            return serverUrl;
         }
         return null;
+    }
+
+    /** Path của URL (tuyệt đối hoặc tương đối) không có dấu "/" cuối; null nếu không có path hoặc chỉ là "/". */
+    static String pathOf(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        String path;
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            try {
+                path = java.net.URI.create(url.trim()).getRawPath();
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+        } else if (url.startsWith("/")) {
+            path = url.trim();
+        } else {
+            return null;
+        }
+        if (path == null || path.isBlank() || path.equals("/")) {
+            return null;
+        }
+        return path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
     }
 
     /** authType NONE nghĩa là "giữ nguyên auth hiện có" ở đây (khác updateTargetAuth - nơi NONE là xoá thật). */
