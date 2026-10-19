@@ -1342,7 +1342,35 @@ Rà soát chuyên gia tìm các chỗ gắn với 1 ứng dụng cụ thể, x�
 - [~] **G4 (hoãn có chủ đích):** cấu hình ngưỡng nhóm mã trạng thái theo project - chưa gặp ca phân loại sai nào trên 4 API đã thử (kể cả quy ước 401→403 và 400→403 của Spring), nên chưa làm giao diện cấu hình (tránh thêm phức tạp không có bằng chứng). Làm khi có API thật bị phân loại sai.
 - [ ] **G5 (gốc). Kiểm chứng trên API thứ 2/3 khác miền** (ngoài tuyển dụng): shop-api-target (8081) + API giả lập form/Basic/header tuỳ ý.
 
-- [ ] **S7. Chưa làm (kế hoạch cũ):** 17b-2 mass-assignment probe, `specStale` cho test case, xoá endpoint đã gỡ khỏi spec, `expectedStatusBasis`, webhook có guard SSRF.
+- [ ] **S7. Chưa làm (kế hoạch cũ):** `specStale` cho test case, xoá endpoint đã gỡ khỏi spec, `expectedStatusBasis`, webhook có guard SSRF. (17b-2 mass-assignment đã xong 2026-10-20.)
+
+#### 17g. Phần còn thiếu theo rà soát 2 chuyên gia (backend/QA + frontend/UX), 2026-10-20
+
+Đối chiếu code thật; mục nào đã làm thì không liệt kê lại. Kích thước S/M/L. **Thứ tự đề xuất: P0 trước.**
+
+**P0 - hỏng hoặc rủi ro khi dùng cho dự án 100+ endpoint**
+- [ ] **P0-1. Frontend cắt dữ liệu ở 100 endpoint (S) - ĐÃ XÁC MINH:** `lib/endpoints.ts:68` và `lib/admin.ts:109` gọi `size=100` cố định; API 110 endpoint mất 10 endpoint ở trang Endpoint/Test case/Lịch sử, không có cảnh báo 'hiển thị 100/110'. Sửa: lặp các trang hoặc 'Tải thêm'.
+- [ ] **P0-2. SSRF guard cho import URL và URL đích (S):** chưa chặn IP nội bộ/loopback/link-local (169.254.169.254), redirect sang IP nội bộ, DNS rebinding; cho phép localhost bằng cờ cấu hình vì demo. Gộp với webhook (S7) và allowlist host đích theo project.
+- [ ] **P0-3. Tìm kiếm/lọc/sắp xếp + phân trang/danh sách ảo ở Endpoint, Test case, Coverage (M):** hiện render mọi dòng (3.000 case ~80.000 nút DOM, ~5,8s); cần ô tìm theo path, lọc method/tag, lọc 'chỉ thiếu coverage / đang fail'. Đi cùng **phân trang backend** `GET /test-cases`, kết quả execution, coverage (hiện size=20 vẫn trả 3.000 case, coverage ~14,8MB) - mục 2.2/2.3/2.4 cũ.
+- [ ] **P0-4. Job nền có tiến độ (M, S6):** sinh AI và chạy test giữ request HTTP tới 180s; cần 202 + jobId + polling/ETA, nút huỷ, giới hạn đồng thời theo project, phục hồi job treo khi restart (trạng thái job nằm DB).
+- [ ] **P0-5. Throttle/retry tới API đích (S-M):** chạy hàng nghìn case dồn dập có thể bị 429 hoặc làm sập server khách: delay/concurrency theo project, backoff khi 429/503 (tôn trọng `Retry-After`), nút dừng giữa chừng.
+- [ ] **P0-6. Retention + dọn dữ liệu (M):** không có `@Scheduled`; kết quả/body response/coverage tăng vô hạn: giữ N lượt hoặc X ngày, cắt body, job dọn định kỳ.
+- [ ] **P0-7. Index DB + migration (M):** chỉ 1 `@Index`; `ddl-auto=update` không Flyway đã gây bug ENUM (đã vá bằng `EnumColumnUpgrade`): index `project_id/execution_id/endpoint_id`, đặt baseline Flyway trước khi có thêm người dùng.
+
+**P1 - chất lượng test**
+- [ ] **P1-1. Mã danh mục/enum từ endpoint khác (M, S1b):** AI bịa `categoryCode:"IT"`; khai báo 'giá trị hợp lệ' theo field ở mức project hoặc gợi ý dependency tới endpoint catalog.
+- [ ] **P1-2. Chuỗi tài nguyên create→get→delete + dữ liệu duy nhất (M-L):** gợi ý dependency còn cứng `$.id`; chưa có placeholder `{{random}}`/`{{uuid}}` (xung đột unique email/username), chưa có teardown xoá dữ liệu đã tạo, chưa có kịch bản nhiều bước.
+- [ ] **P1-3. Body lồng nhau, `oneOf/anyOf/allOf` sâu, `$ref` đệ quy (L):** planner chỉ đọc cấp 1 (15/39 body của API tuyển dụng có field lồng); mass-assignment chỉ tiêm ở gốc.
+- [ ] **P1-4. Đăng nhập→token→refresh (M-L):** AuthProfile hiện chỉ token tĩnh; token hết hạn giữa lượt làm Fail hàng loạt (đã có phân loại `AUTH_CONFIG`). Cần profile 'gọi login lấy token' + refresh khi 401.
+- [ ] **P1-5. Upload file multipart (M), idempotency PUT/DELETE + `Idempotency-Key` (S-M).**
+
+**P2 - tính năng nhóm dev mong đợi**
+- [ ] **P2-1. Môi trường dev/staging + biến theo project (M)** (gắn `servers[]` nhiều server, G4). **P2-2. Chạy theo lịch (M, cần job bền vững P0-4). P2-3. Webhook/Slack/email khi Fail (M, cần P0-2). P2-4. Suite/tag (smoke/security) (M). P2-5. Xu hướng pass-rate theo ngày/tuần + test flaky nhiều nhất (M). P2-6. Link chia sẻ báo cáo read-only có hạn, che dữ liệu nhạy cảm (M). P2-7. OpenAPI 3.1 kiểm thử riêng (`type:[string,"null"]`, `$ref` kèm siblings) (S-M). P2-8. Import/xuất Postman/HAR/curl (M).**
+- Ngoài phạm vi (ghi rõ giới hạn): GraphQL/gRPC (L), mobile < 1024px, i18n (chuỗi tiếng Việt viết thẳng).
+
+**Chất lượng/vận hành của chính công cụ**
+- [ ] **Q-1. Không có test frontend (L):** thêm vitest cho `lib/*` + 3 luồng playwright (đăng nhập→import→chạy→xem kết quả). **Q-2. ErrorBoundary/`errorElement` (S):** lỗi render làm trắng app. **Q-3. Bundle 679KB 1 chunk (S):** `React.lazy` theo route + `manualChunks`. **Q-4. Quản lý secret (S):** kiểm tra khoá AES/JWT/API key đọc từ biến môi trường, kiểm tra lúc khởi động. **Q-5. Quota thực thi (S):** giới hạn số lần chạy/ngày, request/lượt, kích thước spec; audit log phủ hành động chạy test/dùng token. **Q-6. Kiểm thử tải chính công cụ (M):** heap với 50.000+ case, chạy lại toàn bộ trên API 110 endpoint. **Q-7. Xác nhận/hoàn tác xoá hàng loạt, thao tác hàng loạt khác (xoá/khoá/chạy lại test đang fail) (S-M). Q-8. Phím tắt/command palette (S-M).**
+
 
 - *Làm nếu còn thời gian (chưa chốt):* môi trường (dev/staging) + biến dữ liệu động + lập lịch chạy; import Postman/curl, xuất Postman/Rest Assured; ngưỡng hiệu năng nhẹ (p95); chia sẻ project theo thành viên.
 
