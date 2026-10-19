@@ -284,7 +284,7 @@ class CoverageGapFillServiceTest {
         });
         List<TestCase> saved = savedCases();
         assertThat(saved).extracting(TestCase::getResolvedPath).containsExactlyInAnyOrder(
-                "/products/khong-phai-so", "/products/9223372036854775807", "/products/9223372036854775808",
+                "/products/not-a-number", "/products/9223372036854775807", "/products/9223372036854775808",
                 "/products/-9223372036854775809", "/products/0", "/products/-1");
         assertThat(saved).allSatisfy(tc -> {
             assertThat(tc.getGenerationOrigin()).isEqualTo(TestCaseGenerationOrigin.SYSTEM_FILLED);

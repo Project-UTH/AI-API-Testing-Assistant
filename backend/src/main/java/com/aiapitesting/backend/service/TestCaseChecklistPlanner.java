@@ -58,7 +58,7 @@ public class TestCaseChecklistPlanner {
     public static final String INVALID_ENUM_VALUE = "__INVALID_ENUM__";
 
     /** Giá trị sai kiểu cho field số/boolean (gửi chuỗi chữ) và cho field chuỗi (gửi số). */
-    static final String WRONG_TYPE_TEXT = "khong-phai-so";
+    static final String WRONG_TYPE_TEXT = "not-a-number";
     static final String WRONG_TYPE_NUMBER = "12345";
 
     static final String NOT_JSON_REASON =

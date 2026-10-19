@@ -30,7 +30,10 @@ public class AuthSuggestionService {
     /** Đoạn đường dẫn (chữ thường) thường là công khai: đăng nhập/đăng ký/danh mục/tài liệu/health. */
     static final Set<String> PUBLIC_SEGMENTS = Set.of(
             "public", "auth", "login", "logout", "register", "signup", "signin", "health", "healthz", "catalog", "catalogs",
-            "swagger", "swagger-ui", "docs", "api-docs", "actuator", "oauth", "token", "refresh", "forgot-password", "reset-password");
+            "swagger", "swagger-ui", "docs", "api-docs", "actuator", "oauth", "token", "refresh", "forgot-password", "reset-password",
+            "anonymous", "guest", "openapi", "version", "dang-nhap", "dang-ky", "dangnhap", "dangky");
+    /** Đoạn gốc chung (không phải nhóm tài nguyên): bỏ qua khi lấy tiền tố nhóm, vd /api/v2/users -> /api/v2/users. */
+    private static final java.util.regex.Pattern ROOT_SEGMENT = java.util.regex.Pattern.compile("(?i)api|rest|v\\d+(\\.\\d+)?");
 
     private final ProjectService projectService;
     private final EndpointRepository endpointRepository;
@@ -84,19 +87,20 @@ public class AuthSuggestionService {
         return new AuthSuggestionResponse.Group(prefix, requiresAuth, endpoints.size(), samples, endpoints.stream().map(Endpoint::getId).toList());
     }
 
-    /** 2 đoạn đầu không phải tham số, vd "/api/hr/jobs/{id}" -> "/api/hr". */
+    /** Bỏ các đoạn gốc chung (api, v1, rest) rồi lấy 1 đoạn nhóm đầu tiên không phải tham số: "/api/v1/users/{id}" -> "/api/v1/users". */
     static String prefixOf(String path) {
         StringBuilder sb = new StringBuilder();
-        int taken = 0;
         for (String segment : path.split("/")) {
             if (segment.isEmpty()) {
                 continue;
             }
-            if (segment.startsWith("{") || taken == 2) {
+            if (segment.startsWith("{")) {
                 break;
             }
             sb.append('/').append(segment);
-            taken++;
+            if (!ROOT_SEGMENT.matcher(segment).matches()) {
+                break;
+            }
         }
         return sb.length() == 0 ? "/" : sb.toString();
     }

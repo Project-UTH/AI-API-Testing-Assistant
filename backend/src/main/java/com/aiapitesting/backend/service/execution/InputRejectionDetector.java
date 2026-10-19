@@ -16,9 +16,16 @@ final class InputRejectionDetector {
 
     static final int MAX_SCAN_CHARS = 2000;
     private static final int EXCERPT_CHARS = 160;
+    /** Từ khoá (không dấu, chữ thường) cho thấy API từ chối ĐẦU VÀO: tiếng Anh phổ biến + tiếng Việt. */
     private static final List<String> KEYWORDS = List.of(
-            "invalid", "not valid", "validation", "in the past", "khong hop le", "khong co trong danh muc", "trong qua khu", "qua khu");
-    private static final List<String> FIELDS = List.of("error", "message", "errors", "code", "detail", "title");
+            "invalid", "not valid", "validation", "in the past", "must be", "must not", "should be", "is required", "required field",
+            "malformed", "not allowed", "too long", "too short", "out of range", "unprocessable", "does not exist in", "not in the list",
+            "khong hop le", "khong co trong danh muc", "trong qua khu", "qua khu", "bat buoc", "khong duoc de trong", "dinh dang",
+            "khong dung", "vuot qua", "khong ton tai trong");
+    /** Field lỗi thường gặp (Spring, RFC 7807, Laravel/Django/Express...); nếu không có field nào thì quét cả body JSON. */
+    private static final List<String> FIELDS = List.of(
+            "error", "message", "errors", "code", "detail", "title", "violations", "fielderrors", "errormessage", "error_description",
+            "msg", "reason", "description", "details");
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private InputRejectionDetector() {
@@ -51,13 +58,13 @@ final class InputRejectionDetector {
             try {
                 JsonNode root = MAPPER.readTree(trimmed);
                 StringBuilder sb = new StringBuilder();
-                for (String field : FIELDS) {
-                    JsonNode node = root.get(field);
-                    if (node != null && !node.isNull()) {
+                root.properties().forEach(entry -> {
+                    if (FIELDS.contains(entry.getKey().toLowerCase(Locale.ROOT)) && !entry.getValue().isNull()) {
+                        JsonNode node = entry.getValue();
                         sb.append(node.isValueNode() ? node.asText() : node.toString()).append(' ');
                     }
-                }
-                return sb.toString();
+                });
+                return sb.length() == 0 ? trimmed : sb.toString(); // không có field lỗi quen thuộc: quét cả body
             } catch (Exception ignored) {
                 // không phải JSON hợp lệ: dùng chuỗi thô
             }

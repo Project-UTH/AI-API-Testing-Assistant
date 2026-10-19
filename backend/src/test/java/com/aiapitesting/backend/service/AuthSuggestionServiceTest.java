@@ -94,6 +94,10 @@ class AuthSuggestionServiceTest {
         assertThat(AuthSuggestionService.prefixOf("/api/hr/jobs/{jobId}/x")).isEqualTo("/api/hr");
         assertThat(AuthSuggestionService.prefixOf("/{id}/x")).isEqualTo("/");
         assertThat(AuthSuggestionService.prefixOf("/ping")).isEqualTo("/ping");
+        // đoạn gốc chung (api, v1, rest) không được gom mọi thứ vào 1 nhóm
+        assertThat(AuthSuggestionService.prefixOf("/api/v1/users/{id}")).isEqualTo("/api/v1/users");
+        assertThat(AuthSuggestionService.prefixOf("/rest/v2.1/orders")).isEqualTo("/rest/v2.1/orders");
+        assertThat(AuthSuggestionService.isPublicPath("/api/v1/dang-nhap")).isTrue();
         assertThat(AuthSuggestionService.isPublicPath("/API/Auth/LOGIN")).isTrue();
         assertThat(AuthSuggestionService.isPublicPath("/api/hr/jobs")).isFalse();
     }

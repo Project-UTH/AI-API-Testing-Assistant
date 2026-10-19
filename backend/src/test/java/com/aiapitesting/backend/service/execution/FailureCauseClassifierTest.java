@@ -655,6 +655,11 @@ class FailureCauseClassifierTest {
         assertThat(InputRejectionDetector.excerptIfRejected("deadline must not be in the past")).isNotNull();
         assertThat(InputRejectionDetector.excerptIfRejected("{\"message\":\"" + "invalid ".repeat(100) + "\"}").length()).isLessThan(200);
         assertThat(InputRejectionDetector.excerptIfRejected(null)).isNull();
+        // định dạng lỗi khác (RFC 7807 / Spring / không có field quen thuộc) vẫn nhận ra
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"violations\":[{\"field\":\"email\",\"message\":\"must be a well-formed address\"}]}")).isNotNull();
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"errors\":[{\"defaultMessage\":\"must not be blank\"}]}")).isNotNull();
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"outcome\":\"Field price is required\"}")).isNotNull(); // quét cả body
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"error\":\"Internal failure\"}")).isNull();
         assertThat(InputRejectionDetector.excerptIfRejected("{\"id\":1}")).isNull();
     }
 }
