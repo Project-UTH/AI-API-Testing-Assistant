@@ -64,6 +64,7 @@ const CAUSE_LABEL: Record<string, string> = {
   UNDETERMINED: "Chưa đủ dữ liệu",
   STATE_CONFLICT: "Xung đột trạng thái dữ liệu",
   AUTHZ_VIOLATION: "Sai lệch phân quyền",
+  TEST_DATA_SUSPECT: "Nghi dữ liệu test không hợp lệ",
 }
 
 const SHOWN_ORDER: ExecutionDiffCategory[] = [

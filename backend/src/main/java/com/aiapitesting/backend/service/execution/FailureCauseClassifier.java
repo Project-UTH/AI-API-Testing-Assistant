@@ -88,8 +88,22 @@ public class FailureCauseClassifier {
             Instant authUpdatedAt, ExecutionContext context,
             List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion, Boolean endpointRequiresAuth,
             Map<String, String> fallbackPathParams, boolean hasAssertions, boolean usesAuthProfile,
-            int profileAcceptedCount
+            int profileAcceptedCount, String inputRejectionExcerpt
     ) {
+        /** Dạng 18 tham số (chưa có đoạn trích phản hồi từ chối đầu vào) - giữ cho các nơi/test chưa cần. */
+        public Input(
+                TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
+                String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
+                Instant authUpdatedAt, ExecutionContext context,
+                List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion, Boolean endpointRequiresAuth,
+                Map<String, String> fallbackPathParams, boolean hasAssertions, boolean usesAuthProfile,
+                int profileAcceptedCount
+        ) {
+            this(status, expectedStatus, responseStatus, errorKind, durationMs, errorMessage, authOverride, history,
+                    currentBaseUrl, authUpdatedAt, context, failedAssertions, lastOtherVersion, endpointRequiresAuth,
+                    fallbackPathParams, hasAssertions, usesAuthProfile, profileAcceptedCount, null);
+        }
+
         /** Dạng không có thông tin về tham số đường dẫn dự phòng/assertion - giữ cho các nơi chưa cần. */
         public Input(
                 TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
@@ -177,6 +191,12 @@ public class FailureCauseClassifier {
         Result expectationMismatch = expectationMismatch(in);
         if (expectationMismatch != null) {
             return expectationMismatch;
+        }
+        // 2e. Kỳ vọng 2xx nhưng API từ chối đầu vào (400/422) và nói rõ dữ liệu không hợp lệ: nghi DỮ LIỆU TEST sai/cũ (Module 17 - S2).
+        //     Đặt trước luật lịch sử để 3 lần Fail cùng mã không bị kết luận oan là "lỗi ổn định của API".
+        Result testData = testDataSuspect(in);
+        if (testData != null) {
+            return testData;
         }
 
         // 3. Xác thực: nhận 401/403 ngoài kỳ vọng khi test dùng token mặc định của project. Case Security cố ý
@@ -494,6 +514,19 @@ public class FailureCauseClassifier {
      * Negative/Boundary chạy sau test tạo đầu tiên đều nhận 409 mà chưa chạm tới ràng buộc cần kiểm. Đứng sau DATA_STATE
      * (từng Pass rồi mới Fail là bằng chứng "dữ liệu đổi" mạnh hơn) và trước STABLE_FAILURE.
      */
+    private Result testDataSuspect(Input in) {
+        Integer expected = in.expectedStatus();
+        Integer actual = in.responseStatus();
+        if (in.status() != TestResultStatus.FAILED || expected == null || expected < 200 || expected > 299
+                || actual == null || (actual != 400 && actual != 422) || in.inputRejectionExcerpt() == null) {
+            return null;
+        }
+        return new Result(FailureCause.TEST_DATA_SUSPECT, List.of(
+                "API trả " + actual + " từ chối dữ liệu đầu vào trong khi test kỳ vọng " + expected + ". Phản hồi: \"" + in.inputRejectionExcerpt() + "\"",
+                "Nhiều khả năng dữ liệu test không hợp lệ (ngày cũ, mã không tồn tại...): sửa giá trị trong request rồi chạy lại. "
+                        + "Cũng có thể API validate sai (bug thật) - kiểm thử black-box không phân biệt được 2 trường hợp"));
+    }
+
     private Result stateConflict(Input in) {
         if (!Objects.equals(in.responseStatus(), 409) || Objects.equals(in.expectedStatus(), 409)) {
             return null;

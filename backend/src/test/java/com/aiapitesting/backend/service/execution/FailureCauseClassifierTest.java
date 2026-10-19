@@ -609,4 +609,52 @@ class FailureCauseClassifierTest {
                 .containsExactlyInAnyOrder(FailureCause.TEST_SETUP, FailureCause.ENVIRONMENT, FailureCause.AUTH_CONFIG,
                         FailureCause.RESOURCE_NOT_FOUND);
     }
+
+    // ---- Module 17 (S2) - nghi dữ liệu test không hợp lệ ----
+
+    private Input rejected(Integer expected, Integer actual, String responseBody, List<HistoryPoint> history) {
+        return new Input(TestResultStatus.FAILED, expected, actual, null, 120L, null, TestCaseAuthOverride.DEFAULT,
+                history, "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, false, 0,
+                InputRejectionDetector.excerptIfRejected(responseBody));
+    }
+
+    @Test
+    void positiveRejectedWithInvalidInputMessage_isTestDataSuspect_evenAfterThreeSameFails() {
+        String past = "{\"error\":\"INVALID_JOB_DEADLINE\",\"message\":\"Hạn nộp không được ở trong quá khứ. Vui lòng chọn từ hôm nay trở đi.\"}";
+        String catalog = "{\"error\":\"INVALID_CATALOG_CODE\",\"message\":\"Ngành nghề không có trong danh mục.\"}";
+        for (String body : List.of(past, catalog)) {
+            Result result = classifier.classify(rejected(200, 400, body, history(fail(1, 400), fail(2, 400), fail(3, 400))));
+            assertThat(result.cause()).isEqualTo(FailureCause.TEST_DATA_SUSPECT);
+            assertThat(result.evidence()).anyMatch(line -> line.contains("400") && line.contains("kỳ vọng 200"));
+            assertThat(FailureCause.TEST_DATA_SUSPECT.isNotApiFault()).isFalse();
+            assertThat(FailureCause.TEST_DATA_SUSPECT.suppressesBugAutomation()).isTrue();
+        }
+        assertThat(classifier.classify(rejected(201, 422, "{\"message\":\"Validation failed\"}", history(fail(1, 422)))).cause())
+                .isEqualTo(FailureCause.TEST_DATA_SUSPECT);
+    }
+
+    @Test
+    void testDataSuspect_doesNotFireWhenBodyIsUnrelatedMaskedOrStatusDiffers() {
+        // 400 nhưng nội dung không nói về dữ liệu không hợp lệ: vẫn là lỗi ổn định như trước
+        assertThat(classifier.classify(rejected(200, 400, "{\"error\":\"BAD\"}", history(fail(1, 400), fail(2, 400), fail(3, 400)))).cause())
+                .isEqualTo(FailureCause.STABLE_FAILURE);
+        // body chỉ còn dấu che -> không khớp
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"message\":\"***ĐÃ CHE***\"}")).isNull();
+        // 500, 404 hoặc test kỳ vọng lỗi: không bao giờ
+        assertThat(classifier.classify(rejected(200, 500, "{\"message\":\"invalid\"}", history(fail(1, 500)))).cause())
+                .isNotEqualTo(FailureCause.TEST_DATA_SUSPECT);
+        assertThat(classifier.classify(rejected(400, 200, "{\"message\":\"invalid\"}", history(fail(1, 200)))).cause())
+                .isNotEqualTo(FailureCause.TEST_DATA_SUSPECT);
+        // không có đoạn trích -> dạng cũ không đổi hành vi
+        assertThat(classifier.classify(failed(200, 400, history(fail(1, 400)))).cause()).isNotEqualTo(FailureCause.TEST_DATA_SUSPECT);
+    }
+
+    @Test
+    void inputRejectionDetector_isDiacriticTolerantAndQuotesOnlyAShortExcerpt() {
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"message\":\"Giá trị KHÔNG HỢP LỆ\"}")).contains("KHÔNG HỢP LỆ");
+        assertThat(InputRejectionDetector.excerptIfRejected("deadline must not be in the past")).isNotNull();
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"message\":\"" + "invalid ".repeat(100) + "\"}").length()).isLessThan(200);
+        assertThat(InputRejectionDetector.excerptIfRejected(null)).isNull();
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"id\":1}")).isNull();
+    }
 }

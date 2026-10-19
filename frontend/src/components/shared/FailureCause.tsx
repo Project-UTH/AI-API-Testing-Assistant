@@ -16,6 +16,8 @@ const CAUSE_STYLES: Record<FailureCauseCode, string> = {
   EXPECTATION_MISMATCH: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   UNDETERMINED: "bg-muted text-muted-foreground",
   STATE_CONFLICT: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  AUTHZ_VIOLATION: "bg-destructive/10 text-destructive",
+  TEST_DATA_SUSPECT: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
 }
 
 /** Gợi ý việc nên làm cho từng nguyên nhân - chỉ là gợi ý cho nghi ngờ, không phải kết luận. */
@@ -34,6 +36,10 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
   UNDETERMINED: "Chạy lại vài lần để có thêm bằng chứng trước khi kết luận.",
   STATE_CONFLICT:
     "API từ chối vì trạng thái dữ liệu (409: trùng/đã tồn tại). Xoá hoặc đổi dữ liệu trên hệ thống đích rồi chạy lại, hoặc đặt test tạo ở đầu chuỗi để mỗi test dùng dữ liệu riêng.",
+  AUTHZ_VIOLATION:
+    "Kết quả lệch ma trận phân quyền: vai trò được khai là bị cấm nhưng gọi được (thiếu kiểm quyền), hoặc được phép nhưng bị từ chối. Kiểm tra API, hoặc sửa ô tương ứng trong ma trận nếu khai sai.",
+  TEST_DATA_SUSPECT:
+    "API từ chối đầu vào (400/422) và phản hồi nói dữ liệu không hợp lệ (vd ngày quá khứ, giá trị không có trong danh mục). Ưu tiên Sửa test case: đổi dữ liệu thành giá trị hợp lệ rồi chạy lại. Chỉ tạo Bug Report nếu đã chắc dữ liệu hợp lệ mà API vẫn từ chối.",
 }
 
 /** Nhãn ngắn cạnh badge Fail/Lỗi - tooltip là bằng chứng đầy đủ. */

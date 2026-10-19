@@ -91,7 +91,8 @@ public class ExecutionFailureAnalyzer {
                     result.getTestCase().getEndpoint() == null ? null : result.getTestCase().getEndpoint().effectiveRequiresAuth(),
                     fallbackPathParamsByTestCaseId.getOrDefault(result.getTestCase().getId(), Map.of()),
                     hasAssertions(result), result.getTestCase().getAuthProfileId() != null,
-                    profileAcceptedCount(result, results));
+                    profileAcceptedCount(result, results),
+                    InputRejectionDetector.excerptIfRejected(result.getResponseBody()));
             FailureCauseClassifier.Result classified = failureCauseClassifier.classify(input);
             if (classified != null) {
                 result.setFailureCause(classified.cause());

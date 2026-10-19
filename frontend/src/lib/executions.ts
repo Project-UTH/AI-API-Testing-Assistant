@@ -28,6 +28,8 @@ export type FailureCauseCode =
   | "EXPECTATION_MISMATCH"
   | "UNDETERMINED"
   | "STATE_CONFLICT"
+  | "AUTHZ_VIOLATION"
+  | "TEST_DATA_SUSPECT"
 
 export interface FailureCause {
   code: FailureCauseCode

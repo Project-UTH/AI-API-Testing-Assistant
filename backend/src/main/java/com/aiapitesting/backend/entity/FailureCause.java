@@ -56,7 +56,13 @@ public enum FailureCause {
      * thiếu kiểm quyền/leo quyền) hoặc vai trò khai là được phép nhưng bị 403. Đây là phát hiện thật (hoặc ma trận khai sai), KHÔNG
      * phải lỗi môi trường - không nằm trong nhóm bị loại khỏi Bug Report.
      */
-    AUTHZ_VIOLATION("Sai lệch phân quyền", false);
+    AUTHZ_VIOLATION("Sai lệch phân quyền", false),
+    /**
+     * Module 17 (S2) - test kỳ vọng thành công (2xx) nhưng API trả 400/422 và phản hồi NÓI RÕ dữ liệu đầu vào không hợp lệ (ngày quá
+     * khứ, mã không có trong danh mục...): nhiều khả năng DỮ LIỆU TEST sai/cũ chứ không phải bug API. Không thuộc nhóm "không phải do
+     * API" (black-box không loại trừ được việc API validate sai) nhưng không tự tạo/đóng Bug Report dựa trên nó. Thêm vào CUỐI enum.
+     */
+    TEST_DATA_SUSPECT("Nghi dữ liệu test không hợp lệ", false);
 
     private final String label;
     private final boolean notApiFault;
@@ -84,6 +90,7 @@ public enum FailureCause {
      * hình test) hoặc test không ổn định (lần Fail này có thể chỉ là 1 lần "xui").
      */
     public boolean suppressesBugAutomation() {
-        return notApiFault || this == FLAKY || this == EXPECTATION_MISMATCH || this == STATE_CONFLICT;
+        return notApiFault || this == FLAKY || this == EXPECTATION_MISMATCH || this == STATE_CONFLICT
+                || this == TEST_DATA_SUSPECT;
     }
 }
