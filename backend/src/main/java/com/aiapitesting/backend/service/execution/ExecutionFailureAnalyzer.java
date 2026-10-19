@@ -90,7 +90,8 @@ public class ExecutionFailureAnalyzer {
                     failedAssertionsOf(result), lastOtherVersionOf(result, rows),
                     result.getTestCase().getEndpoint() == null ? null : result.getTestCase().getEndpoint().effectiveRequiresAuth(),
                     fallbackPathParamsByTestCaseId.getOrDefault(result.getTestCase().getId(), Map.of()),
-                    hasAssertions(result), result.getTestCase().getAuthProfileId() != null);
+                    hasAssertions(result), result.getTestCase().getAuthProfileId() != null,
+                    profileAcceptedCount(result, results));
             FailureCauseClassifier.Result classified = failureCauseClassifier.classify(input);
             if (classified != null) {
                 result.setFailureCause(classified.cause());
@@ -278,6 +279,18 @@ public class ExecutionFailureAnalyzer {
         } catch (Exception e) {
             return List.of();
         }
+    }
+
+    /** Số test CÙNG profile vai trò trong lượt chạy nhận phản hồi không phải 401/403 - bằng chứng token của vai trò còn dùng được. */
+    private int profileAcceptedCount(TestResult result, List<TestResult> results) {
+        UUID profileId = result.getTestCase().getAuthProfileId();
+        if (profileId == null) {
+            return 0;
+        }
+        return (int) results.stream()
+                .filter(r -> profileId.equals(r.getTestCase().getAuthProfileId()))
+                .filter(r -> r.getResponseStatus() != null && !AUTH_STATUSES.contains(r.getResponseStatus()))
+                .count();
     }
 
     private FailureCauseClassifier.ExecutionContext buildContext(List<TestResult> results) {

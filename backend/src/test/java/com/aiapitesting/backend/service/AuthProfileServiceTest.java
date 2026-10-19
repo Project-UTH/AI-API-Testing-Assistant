@@ -41,6 +41,9 @@ class AuthProfileServiceTest {
     @Mock
     private TestCaseRepository testCaseRepository;
 
+    @Mock
+    private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
+
     private final AesEncryptionService aes = new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
     private AuthProfileService service;
     private UUID projectId;
@@ -48,7 +51,7 @@ class AuthProfileServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AuthProfileService(projectService, authProfileRepository, testCaseRepository, aes);
+        service = new AuthProfileService(projectService, authProfileRepository, testCaseRepository, endpointRoleRepository, aes);
         projectId = UUID.randomUUID();
         project = Project.builder().id(projectId).build();
         lenient().when(projectService.getOwnedProject(projectId)).thenReturn(project);

@@ -50,7 +50,13 @@ public enum FailureCause {
      * trạng thái dữ liệu hiện tại chặn lại. KHÔNG thuộc nhóm "không phải do API" (có thể là lỗi thật), không tự tạo bug lặp.
      * Thêm vào CUỐI enum (cột lưu là VARCHAR, không đổi tên/thứ tự các hằng cũ).
      */
-    STATE_CONFLICT("Xung đột trạng thái dữ liệu", false);
+    STATE_CONFLICT("Xung đột trạng thái dữ liệu", false),
+    /**
+     * Module 17 (17a) - kết quả phân quyền của test dùng profile vai trò LỆCH ma trận: vai trò khai là bị cấm nhưng gọi được (2xx -
+     * thiếu kiểm quyền/leo quyền) hoặc vai trò khai là được phép nhưng bị 403. Đây là phát hiện thật (hoặc ma trận khai sai), KHÔNG
+     * phải lỗi môi trường - không nằm trong nhóm bị loại khỏi Bug Report.
+     */
+    AUTHZ_VIOLATION("Sai lệch phân quyền", false);
 
     private final String label;
     private final boolean notApiFault;

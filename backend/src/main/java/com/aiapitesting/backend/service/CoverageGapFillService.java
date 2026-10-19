@@ -5,7 +5,10 @@ import com.aiapitesting.backend.dto.request.CoverageFillRequest;
 import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageFillResponse;
 import com.aiapitesting.backend.dto.response.CoverageScope;
+import com.aiapitesting.backend.entity.AuthProfile;
+import com.aiapitesting.backend.entity.AuthzExpectation;
 import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.EndpointRole;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
@@ -16,7 +19,9 @@ import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.EndpointRoleRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
@@ -58,6 +63,8 @@ public class CoverageGapFillService {
     private final TestCaseRepository testCaseRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestResultRepository testResultRepository;
+    private final AuthProfileRepository authProfileRepository;
+    private final EndpointRoleRepository endpointRoleRepository;
     private final TestCaseChecklistPlanner testCaseChecklistPlanner;
     private final TestCaseReliabilityValidator testCaseReliabilityValidator;
     private final TestCasePathValidator testCasePathValidator;
@@ -90,7 +97,16 @@ public class CoverageGapFillService {
                 .filter(item -> requested == null || requested.contains(TestCaseChecklistPlanner.key(item)))
                 .filter(item -> candidates.stream().noneMatch(c -> testCaseChecklistPlanner.covers(spec, item, c.generated(), requiresAuth)))
                 .toList();
-        if (missing.isEmpty()) {
+        // Module 17 (17a) - ô ma trận phân quyền chưa có test (chấm lại lúc bù, cùng lý do như trên).
+        Map<UUID, AuthProfile> profilesById = new HashMap<>();
+        authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project).forEach(p -> profilesById.put(p.getId(), p));
+        List<EndpointRole> missingAuthz = endpointRoleRepository.findAllByEndpoint(endpoint).stream()
+                .filter(rule -> profilesById.containsKey(rule.getAuthProfileId()))
+                .filter(rule -> requested == null
+                        || requested.contains(AuthzMatrix.key(rule.getExpectation(), profilesById.get(rule.getAuthProfileId()).getRoleKey())))
+                .filter(rule -> candidates.stream().noneMatch(c -> AuthzMatrix.covers(rule.getExpectation(), rule.getAuthProfileId(), c.entity())))
+                .toList();
+        if (missing.isEmpty() && missingAuthz.isEmpty()) {
             return new CoverageFillResponse(0, List.of(), List.of(), null, 0);
         }
 
@@ -127,6 +143,21 @@ public class CoverageGapFillService {
             fromSpecCount += attempt.fromSpecOnly() ? 1 : 0;
             pending.add(new Pending(toEntity(endpoint, item, filled, fallbacksJson, source == null ? null : source.getName(),
                     security), source));
+        }
+
+        for (EndpointRole rule : missingAuthz) {
+            AuthProfile profile = profilesById.get(rule.getAuthProfileId());
+            boolean allow = rule.getExpectation() == AuthzExpectation.ALLOW;
+            String key = AuthzMatrix.key(rule.getExpectation(), profile.getRoleKey());
+            String label = AuthzMatrix.label(rule.getExpectation(), profile.getName());
+            // ALLOW cần dữ liệu hợp lệ thật; DENY chỉ đổi người gọi nên case gốc đầu tiên cũng được (như Security).
+            Candidate base = allow ? baseline : securityBaseline;
+            if (base == null) {
+                notFilled.add(new CoverageFillResponse.NotFilled(key, label,
+                        "Cần ít nhất 1 test case làm gốc (kỳ vọng thành công) để mượn dữ liệu gọi endpoint này"));
+                continue;
+            }
+            pending.add(new Pending(toAuthzEntity(endpoint, base.entity(), profile, rule.getExpectation(), label), base.entity()));
         }
 
         List<TestCase> saved = pending.isEmpty()
@@ -236,6 +267,32 @@ public class CoverageGapFillService {
         if (!copies.isEmpty()) {
             testCaseDependencyRepository.saveAll(copies);
         }
+    }
+
+    /**
+     * Case bù cho ô ma trận phân quyền: copy case gốc (dữ liệu, đường dẫn, liên kết dữ liệu), chỉ đổi NGƯỜI GỌI (profile vai trò) và
+     * kỳ vọng (ALLOW giữ mã thành công của case gốc, DENY = 403). Nguồn MANUAL + nguồn gốc SYSTEM_FILLED để lần "Sinh Test Case"
+     * sau không xoá mất (nó chỉ xoá nhóm AI/Security chưa khoá).
+     */
+    private TestCase toAuthzEntity(Endpoint endpoint, TestCase base, AuthProfile profile, AuthzExpectation expectation, String label) {
+        boolean allow = expectation == AuthzExpectation.ALLOW;
+        return TestCase.builder()
+                .endpoint(endpoint)
+                .name("Phân quyền - " + profile.getName() + (allow ? " được phép" : " bị cấm"))
+                .description("Hệ thống tự bổ sung từ ma trận phân quyền (copy case gốc '" + base.getName() + "', đổi người gọi sang vai trò '"
+                        + profile.getName() + "'): " + label)
+                .requestHeaders(base.getRequestHeaders())
+                .requestBody(base.getRequestBody())
+                .rationale(AuthzMatrix.why(expectation, profile.getName()))
+                .expectedStatus(allow ? base.getExpectedStatus() : AuthzMatrix.DENIED_STATUS)
+                .resolvedPath(base.getResolvedPath())
+                .pathParamFallbacks(base.getPathParamFallbacks())
+                .source(TestCaseSource.MANUAL)
+                .generationOrigin(TestCaseGenerationOrigin.SYSTEM_FILLED)
+                .checklistItem(truncate(label))
+                .authOverride(TestCaseAuthOverride.DEFAULT)
+                .authProfileId(profile.getId())
+                .build();
     }
 
     private boolean isSecurity(TestCaseChecklistPlanner.ChecklistItem item) {

@@ -290,7 +290,7 @@ class FailureCauseClassifierTest {
     void forbiddenOnTestUsingAnAuthProfile_isNeverBlamedOnTheProjectToken() {
         // 403 của vai trò Candidate khi gọi endpoint của HR: có thể là phân quyền đúng/sai, không nói gì về token của project.
         Input in = new Input(TestResultStatus.FAILED, 200, 403, null, 50L, null, TestCaseAuthOverride.DEFAULT, history(fail(0, 403)),
-                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, true);
+                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, true, 0);
 
         assertThat(classifier.classify(in).cause()).isNotEqualTo(FailureCause.AUTH_CONFIG);
     }
@@ -298,9 +298,51 @@ class FailureCauseClassifierTest {
     @Test
     void sameForbiddenOnProjectDefaultToken_stillBlamedOnTheToken() {
         Input in = new Input(TestResultStatus.FAILED, 200, 403, null, 50L, null, TestCaseAuthOverride.DEFAULT, history(fail(0, 403)),
-                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, false);
+                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, false, 0);
 
         assertThat(classifier.classify(in).cause()).isEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    // ---- AUTHZ_VIOLATION (Module 17 - 17a) ----
+
+    private Input profileCall(Integer expected, Integer actual, int profileAcceptedCount) {
+        return new Input(TestResultStatus.FAILED, expected, actual, null, 50L, null, TestCaseAuthOverride.DEFAULT, history(fail(0, actual)),
+                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, true, profileAcceptedCount);
+    }
+
+    @Test
+    void profileExpectedDeniedButCallSucceeds_isAuthzViolationEscalation() {
+        Result result = classifier.classify(profileCall(403, 200, 5));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.AUTHZ_VIOLATION);
+        assertThat(result.evidence().get(0)).contains("bị cấm").contains("200");
+        // Phát hiện thật: không bị loại khỏi tự động hoá Bug Report như lỗi môi trường/token.
+        assertThat(FailureCause.AUTHZ_VIOLATION.isNotApiFault()).isFalse();
+        assertThat(FailureCause.AUTHZ_VIOLATION.suppressesBugAutomation()).isFalse();
+    }
+
+    @Test
+    void profileExpectedAllowedButForbidden_isAuthzViolation() {
+        assertThat(classifier.classify(profileCall(200, 403, 5)).cause()).isEqualTo(FailureCause.AUTHZ_VIOLATION);
+    }
+
+    @Test
+    void profile401WithNoAcceptedTestForThatProfile_isAuthConfigOfTheProfile() {
+        Result result = classifier.classify(profileCall(200, 401, 0));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.AUTH_CONFIG);
+        assertThat(result.evidence()).anyMatch(e -> e.contains("vai trò"));
+    }
+
+    @Test
+    void profile401WhileOtherTestsOfThatProfileAreAccepted_isNotBlamedOnToken() {
+        assertThat(classifier.classify(profileCall(200, 401, 3)).cause()).isNotEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
+    void deniedExpectedAnd401Received_staysAnExpectationMismatchNotAViolation() {
+        // Kỳ vọng 403 mà API trả 401: cùng nhóm "từ chối" - API vẫn chặn đúng, chỉ khác mã.
+        assertThat(classifier.classify(profileCall(403, 401, 2)).cause()).isEqualTo(FailureCause.EXPECTATION_MISMATCH);
     }
 
     // ---- STATE_CONFLICT (Module 17 - 1.5) ----

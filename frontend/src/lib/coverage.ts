@@ -57,6 +57,14 @@ export function isChecklistCategory(category: string): category is ChecklistCate
   return (CHECKLIST_CATEGORIES as readonly string[]).includes(category)
 }
 
+/**
+ * Dòng nào tính vào "Cần kiểm"/%: 4 loại EP/BVA (đã lọc theo phạm vi) + AUTHZ (Module 17 - 17a, mục phân quyền theo ma trận
+ * người dùng khai). Mã trạng thái/quan hệ endpoint không tính (độ phủ theo spec).
+ */
+export function isCountedCategory(category: string): boolean {
+  return isChecklistCategory(category) || category === "AUTHZ"
+}
+
 export function scopeIncludes(scope: CoverageScope, category: ChecklistCategory): boolean {
   return scope[category.toLowerCase() as "positive" | "negative" | "boundary" | "security"]
 }
@@ -111,7 +119,7 @@ export interface CoverageFillResult {
  * không gồm mã trạng thái/quan hệ endpoint) - dùng chung cho mọi nơi hiển thị "X/Y mục".
  */
 export function coverageCounts(endpoint: EndpointCoverage) {
-  const relevant = endpoint.dimensions.filter((d) => isChecklistCategory(d.category) && d.status !== "NOT_APPLICABLE")
+  const relevant = endpoint.dimensions.filter((d) => isCountedCategory(d.category) && d.status !== "NOT_APPLICABLE")
   const covered = relevant.filter((d) => d.status === "COVERED")
   const fillableRows = relevant.filter((d) => d.status === "MISSING" && d.itemKey && d.fillable)
   const blockedRows = relevant.filter((d) => d.status === "MISSING" && d.itemKey && !d.fillable)

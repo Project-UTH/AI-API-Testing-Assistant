@@ -30,7 +30,7 @@ class FailureCauseExpectationRulesTest {
     private Input input(Integer expected, Integer actual, TestCaseAuthOverride auth, Boolean requiresAuth,
                         List<HistoryPoint> history, Map<String, String> fallbacks, boolean hasAssertions) {
         return new Input(TestResultStatus.FAILED, expected, actual, null, 50L, null, auth, history, "http://target", null,
-                ExecutionContext.none(), List.of(), null, requiresAuth, fallbacks, hasAssertions, false);
+                ExecutionContext.none(), List.of(), null, requiresAuth, fallbacks, hasAssertions, false, 0);
     }
 
     private FailureCause causeOf(Input in) {

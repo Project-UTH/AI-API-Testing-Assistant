@@ -87,7 +87,8 @@ public class FailureCauseClassifier {
             String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
             Instant authUpdatedAt, ExecutionContext context,
             List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion, Boolean endpointRequiresAuth,
-            Map<String, String> fallbackPathParams, boolean hasAssertions, boolean usesAuthProfile
+            Map<String, String> fallbackPathParams, boolean hasAssertions, boolean usesAuthProfile,
+            int profileAcceptedCount
     ) {
         /** Dạng không có thông tin về tham số đường dẫn dự phòng/assertion - giữ cho các nơi chưa cần. */
         public Input(
@@ -98,7 +99,7 @@ public class FailureCauseClassifier {
         ) {
             this(status, expectedStatus, responseStatus, errorKind, durationMs, errorMessage, authOverride, history,
                     currentBaseUrl, authUpdatedAt, context, failedAssertions, lastOtherVersion, endpointRequiresAuth,
-                    Map.of(), false, false);
+                    Map.of(), false, false, 0);
         }
 
         /** Dạng không có thông tin về spec xác thực - giữ cho các nơi chưa cần. */
@@ -165,6 +166,12 @@ public class FailureCauseClassifier {
         Result resourceNotFound = resourceNotFound(in, history);
         if (resourceNotFound != null) {
             return resourceNotFound;
+        }
+        // 2c'. Test dùng profile vai trò: sai lệch phân quyền là phát hiện thật; 401 mà vai trò không có test nào được chấp nhận là
+        //      token của vai trò hỏng (Module 17 - 17a).
+        Result authz = authzOutcome(in);
+        if (authz != null) {
+            return authz;
         }
         // 2d. Mã lệch kỳ vọng nhưng cùng nhóm nghĩa (401/403, 400/422, 200/201/204): chỉ nhãn gợi ý, vẫn FAILED.
         Result expectationMismatch = expectationMismatch(in);
@@ -341,7 +348,9 @@ public class FailureCauseClassifier {
         String why = null;
         // Security bỏ/sai token: 401 và 403 cùng là từ chối xác thực. Chỉ khi spec khai endpoint yêu cầu xác thực - endpoint
         // công khai trả 403 có thể là CSRF/WAF/quyền, không cùng nhóm. 2xx thì tuyệt đối không (bỏ qua xác thực) - không khớp.
-        if (securityWithoutValidToken && Boolean.TRUE.equals(in.endpointRequiresAuth())
+        // Test vai trò (Module 17 - 17a) kỳ vọng bị từ chối: 401 hay 403 đều là API chặn - cùng nhóm, không phụ thuộc spec khai xác thực.
+        boolean roleDenyCheck = in.usesAuthProfile() && !securityWithoutValidToken;
+        if (((securityWithoutValidToken && Boolean.TRUE.equals(in.endpointRequiresAuth())) || roleDenyCheck)
                 && AUTH_STATUSES.contains(expected) && AUTH_STATUSES.contains(actual)) {
             why = "401 và 403 cùng là từ chối xác thực - API vẫn chặn truy cập, chỉ chọn mã khác kỳ vọng";
         } else if ((expected == 400 && actual == 422) || (expected == 422 && actual == 400)) {
@@ -358,6 +367,36 @@ public class FailureCauseClassifier {
         evidence.add("Đây chỉ là nhãn gợi ý, kết quả vẫn FAILED. Nếu đồng ý với cách API chọn mã thì sửa kỳ vọng của test; nếu "
                 + "spec mới đúng thì đây là lệch hợp đồng của API");
         return new Result(FailureCause.EXPECTATION_MISMATCH, evidence);
+    }
+
+    // ---- Phân quyền theo vai trò (Module 17 - 17a) ----
+
+    private Result authzOutcome(Input in) {
+        boolean profileCall = in.usesAuthProfile()
+                && (in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT);
+        if (!profileCall || in.status() != TestResultStatus.FAILED || in.expectedStatus() == null || in.responseStatus() == null) {
+            return null;
+        }
+        int expected = in.expectedStatus();
+        int actual = in.responseStatus();
+        boolean expectedDenied = AUTH_STATUSES.contains(expected);
+        boolean expectedSuccess = expected >= 200 && expected < 300;
+        if (expectedDenied && actual >= 200 && actual < 300) {
+            return new Result(FailureCause.AUTHZ_VIOLATION, List.of(
+                    "Ma trận khai vai trò này bị cấm (kỳ vọng " + expected + ") nhưng API trả " + actual + " - vai trò vẫn gọi được",
+                    "Nghi thiếu kiểm quyền hoặc leo quyền (vd gọi endpoint của vai trò khác); nếu thực tế vai trò này được phép thì sửa ma trận"));
+        }
+        if (expectedSuccess && actual == 403) {
+            return new Result(FailureCause.AUTHZ_VIOLATION, List.of(
+                    "Ma trận khai vai trò này được phép (kỳ vọng " + expected + ") nhưng API trả 403 - vai trò bị từ chối",
+                    "Nghi vai trò thiếu quyền trên API, hoặc ma trận khai sai - đối chiếu với tài liệu phân quyền của hệ thống"));
+        }
+        if (actual == 401 && !expectedDenied && in.profileAcceptedCount() == 0) {
+            return new Result(FailureCause.AUTH_CONFIG, List.of(
+                    "Nhận 401 khi gọi bằng token của vai trò này và chưa có test nào của vai trò đó được API chấp nhận trong lượt chạy",
+                    "Token của vai trò có thể sai/hết hạn - cập nhật ở nút \"Vai trò\" của project rồi chạy lại"));
+        }
+        return null;
     }
 
     // ---- Xác thực ----

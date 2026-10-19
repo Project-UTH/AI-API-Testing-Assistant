@@ -9,14 +9,19 @@ import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
 import com.aiapitesting.backend.dto.response.CoverageRunStatus;
 import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
 import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
+import com.aiapitesting.backend.entity.AuthProfile;
+import com.aiapitesting.backend.entity.AuthzExpectation;
 import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.EndpointRole;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseDependency;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.EndpointRoleRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
@@ -70,6 +75,8 @@ public class EndpointCoverageService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestResultRepository testResultRepository;
     private final TestCaseChecklistPlanner testCaseChecklistPlanner;
+    private final AuthProfileRepository authProfileRepository;
+    private final EndpointRoleRepository endpointRoleRepository;
     // FAIL_ON_UNKNOWN_PROPERTIES tắt vì StoredSchema chỉ khai báo đúng field cần dùng (parameters/
     // requestBody/responseStatusCodes) - buildSchemaJson() (EndpointImportService) còn ghi thêm
     // "summary" mà parser này không cần đọc lại. Thiếu dòng này gây UnrecognizedPropertyException
@@ -169,8 +176,16 @@ public class EndpointCoverageService {
             }
         }
 
+        // Module 17 (17a) - ma trận phân quyền: kỳ vọng theo (endpoint, vai trò) + thông tin vai trò.
+        Map<UUID, List<EndpointRole>> rolesByEndpointId = new HashMap<>();
+        for (EndpointRole role : endpointRoleRepository.findAllByEndpointProject(project)) {
+            rolesByEndpointId.computeIfAbsent(role.getEndpoint().getId(), k -> new ArrayList<>()).add(role);
+        }
+        Map<UUID, AuthProfile> profilesById = new HashMap<>();
+        authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project).forEach(p -> profilesById.put(p.getId(), p));
+
         return new CoverageContext(testCasesByEndpointId, dependenciesByConsumerEndpointId, latestResultByTestCaseId,
-                postEndpointByPath, latestNotApiFaultIds);
+                postEndpointByPath, latestNotApiFaultIds, rolesByEndpointId, profilesById);
     }
 
     private record CoverageContext(
@@ -179,7 +194,10 @@ public class EndpointCoverageService {
             Map<UUID, TestResultStatus> latestResultByTestCaseId,
             Map<String, Endpoint> postEndpointByPath,
             /** Module 16 - test case có lần chạy mới nhất KHÔNG phải bằng chứng chắc chắn về API: FAILED do môi trường/token, hoặc test không ổn định (kể cả Pass). */
-            Set<UUID> latestNotApiFaultTestCaseIds
+            Set<UUID> latestNotApiFaultTestCaseIds,
+            /** Module 17 (17a) - ma trận phân quyền đã khai, theo endpoint. */
+            Map<UUID, List<EndpointRole>> rolesByEndpointId,
+            Map<UUID, AuthProfile> profilesById
     ) {
     }
 
@@ -217,11 +235,17 @@ public class EndpointCoverageService {
             dimensions.add(statusCodeDimension(statusCode, testCases, context));
         }
         dimensions.addAll(relationDimensions(endpoint, context));
-        dimensions.add(new CoverageDimensionResponse(
-                "AUTH", "Phân quyền (403 Forbidden)", CoverageDimensionStatus.NOT_APPLICABLE,
-                "Không áp dụng - hệ thống chưa có mô hình vai trò/scope của target API để giả lập "
-                        + "'có đăng nhập nhưng không đủ quyền'",
-                List.of(), null, null, null, null, List.of()));
+        // Module 17 (17a) - mục phân quyền theo vai trò từ ma trận người dùng khai; chưa khai thì giữ dòng AUTH "không áp dụng"
+        // kèm hướng dẫn. DENY cần 1 test gọi bằng vai trò đó (không phụ thuộc dữ liệu hợp lệ) nên dùng case gốc lỏng như Security.
+        List<CoverageDimensionResponse> authz = authzDimensions(endpoint, testCases, context, baseline != null, securityBaseline != null);
+        dimensions.addAll(authz);
+        if (authz.isEmpty()) {
+            dimensions.add(new CoverageDimensionResponse(
+                    "AUTH", "Phân quyền theo vai trò (403 Forbidden)", CoverageDimensionStatus.NOT_APPLICABLE,
+                    "Chưa khai ma trận phân quyền cho endpoint này - thêm vai trò ở nút \"Vai trò\" của project rồi khai vai trò nào "
+                            + "được phép/bị cấm trong \"Ma trận phân quyền\"",
+                    List.of(), null, null, null, null, List.of()));
+        }
 
         List<CoverageDimensionResponse> counted = dimensions.stream().filter(this::countsTowardPercent).toList();
         long covered = counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
@@ -301,6 +325,42 @@ public class EndpointCoverageService {
     private String categoryOf(ChecklistItemType type) {
         String name = type.name();
         return name.substring(0, name.indexOf('_'));
+    }
+
+    /**
+     * Module 17 (17a) - mỗi ô (endpoint, vai trò) trong ma trận là 1 mục: COVERED khi có test case gọi bằng đúng profile của vai trò,
+     * không cố ý bỏ/sai token, kỳ vọng đúng chiều (ALLOW → 2xx, DENY → 403/401). Thiếu thì kèm cờ {@code fillable} (có case gốc để
+     * mượn dữ liệu không) để nút Bổ sung chỉ sáng khi bù được.
+     */
+    private List<CoverageDimensionResponse> authzDimensions(
+            Endpoint endpoint, List<TestCase> testCases, CoverageContext context, boolean usableBaseline, boolean anyBaseline
+    ) {
+        List<CoverageDimensionResponse> result = new ArrayList<>();
+        for (EndpointRole rule : context.rolesByEndpointId().getOrDefault(endpoint.getId(), List.of())) {
+            AuthProfile profile = context.profilesById().get(rule.getAuthProfileId());
+            if (profile == null) {
+                continue; // vai trò đã bị xoá
+            }
+            AuthzExpectation expectation = rule.getExpectation();
+            String label = AuthzMatrix.label(expectation, profile.getName());
+            String key = AuthzMatrix.key(expectation, profile.getRoleKey());
+            String why = AuthzMatrix.why(expectation, profile.getName());
+            List<TestCase> covering = testCases.stream()
+                    .filter(tc -> AuthzMatrix.covers(expectation, profile.getId(), tc))
+                    .toList();
+            if (!covering.isEmpty()) {
+                result.add(new CoverageDimensionResponse(AuthzMatrix.CATEGORY, label, CoverageDimensionStatus.COVERED, null,
+                        toRefs(covering, context), AuthzMatrix.type(expectation), key, why, runStatus(covering, context), List.of()));
+                continue;
+            }
+            boolean fillable = expectation == AuthzExpectation.ALLOW ? usableBaseline : anyBaseline;
+            result.add(new CoverageDimensionResponse(AuthzMatrix.CATEGORY, label, CoverageDimensionStatus.MISSING,
+                    "Chưa có test case nào gọi bằng vai trò '" + profile.getName() + "' với kỳ vọng "
+                            + (expectation == AuthzExpectation.ALLOW ? "2xx" : "403/401"),
+                    List.of(), AuthzMatrix.type(expectation), key, why, null, List.of(), fillable,
+                    fillable ? null : "Cần ít nhất 1 test case làm gốc (kỳ vọng thành công) để mượn dữ liệu gọi endpoint này"));
+        }
+        return result;
     }
 
     /**

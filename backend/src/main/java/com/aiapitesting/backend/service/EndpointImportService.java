@@ -15,6 +15,7 @@ import com.aiapitesting.backend.exception.SwaggerParseException;
 import com.aiapitesting.backend.repository.BugReportEventRepository;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.EndpointRoleRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
@@ -55,6 +56,7 @@ public class EndpointImportService {
 
     private final ProjectService projectService;
     private final EndpointRepository endpointRepository;
+    private final EndpointRoleRepository endpointRoleRepository;
     private final TestCaseRepository testCaseRepository;
     private final TestResultRepository testResultRepository;
     private final TestExecutionRepository testExecutionRepository;
@@ -172,6 +174,7 @@ public class EndpointImportService {
         testCaseAssertionRepository.deleteAllByTestCaseEndpointProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
         testGenerationEventRepository.deleteAllByEndpointProject(project);
+        endpointRoleRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         List<Endpoint> saved = endpointRepository.saveAll(endpoints);
         return saved.stream().map(EndpointResponse::from).toList();

@@ -10,7 +10,7 @@ import {
   CHECKLIST_CATEGORIES,
   coverageCounts,
   fillCoverageGaps,
-  isChecklistCategory,
+  isCountedCategory,
   scopeIncludes,
   scopeLabel,
   updateCoverageScope,
@@ -44,6 +44,11 @@ const GROUPS = [
     rule: "Biên khai rõ trong spec (đúng biên + ngay ngoài biên) · giới hạn int32/int64 · biên ngầm (0, số âm, chuỗi rỗng) · id không tồn tại.",
   },
   { category: "SECURITY", title: "Security", rule: "Gọi thiếu token · gọi với token sai." },
+  {
+    category: "AUTHZ",
+    title: "Phân quyền theo vai trò",
+    rule: "Mỗi ô (endpoint × vai trò) đã khai trong Ma trận phân quyền cần 1 test: vai trò được phép → 2xx, bị cấm → 403/401.",
+  },
   { category: "STATUS_CODE", title: "Mã trạng thái spec khai báo", rule: "Mỗi mã cần ít nhất 1 test case kỳ vọng đúng mã đó." },
   {
     category: "RELATION",
@@ -97,7 +102,7 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
   // Nhóm theo spec (mã trạng thái/quan hệ/phân quyền) không thuộc loại test nào nên không tính vào % - ghi chú 1 lần
   // ở nhóm đầu tiên để không bị đọc nhầm là phần của "Cần kiểm".
   const firstSpecCategory = GROUPS.find(
-    (g) => !isChecklistCategory(g.category) && endpoint.dimensions.some((d) => d.category === g.category)
+    (g) => !isCountedCategory(g.category) && endpoint.dimensions.some((d) => d.category === g.category)
   )?.category
 
   const scopeMutation = useMutation({

@@ -50,6 +50,12 @@ class CoverageGapFillServiceTest {
              "responseStatusCodes":["201","400"]}""";
 
     @Mock
+    private com.aiapitesting.backend.repository.AuthProfileRepository authProfileRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
+
+    @Mock
     private ProjectService projectService;
 
     @Mock
@@ -132,6 +138,79 @@ class CoverageGapFillServiceTest {
         });
         assertThat(saved).extracting(TestCase::getRequestBody)
                 .containsExactlyInAnyOrder("{}", "{\"email\":null}");
+    }
+
+    // ---- Module 17 (17a) - ma trận phân quyền ----
+
+    private com.aiapitesting.backend.entity.AuthProfile profile(String name, String roleKey) {
+        com.aiapitesting.backend.entity.AuthProfile p = com.aiapitesting.backend.entity.AuthProfile.builder()
+                .id(UUID.randomUUID()).project(project).name(name).roleKey(roleKey)
+                .authType(com.aiapitesting.backend.entity.TargetAuthType.BEARER_TOKEN).build();
+        when(authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(p));
+        return p;
+    }
+
+    private com.aiapitesting.backend.entity.EndpointRole rule(Endpoint endpoint, com.aiapitesting.backend.entity.AuthProfile profile,
+                                                              com.aiapitesting.backend.entity.AuthzExpectation expectation) {
+        com.aiapitesting.backend.entity.EndpointRole r = com.aiapitesting.backend.entity.EndpointRole.builder()
+                .id(UUID.randomUUID()).endpoint(endpoint).authProfileId(profile.getId()).expectation(expectation).build();
+        when(endpointRoleRepository.findAllByEndpoint(endpoint)).thenReturn(List.of(r));
+        return r;
+    }
+
+    @Test
+    void fill_authzDeny_copiesBaselineWithProfileAndExpects403_onlyThatItem() {
+        Endpoint endpoint = endpoint("/admin/users", "POST", false, EMAIL_SCHEMA);
+        TestCase positive = testCase(endpoint, "Tạo user hợp lệ", 201, "{\"email\":\"an@gmail.com\"}");
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of(positive));
+        var candidate = profile("Ứng viên", "CANDIDATE");
+        rule(endpoint, candidate, com.aiapitesting.backend.entity.AuthzExpectation.DENY);
+
+        CoverageFillResponse response = coverageGapFillService.fill(projectId, endpoint.getId(),
+                new com.aiapitesting.backend.dto.request.CoverageFillRequest(List.of("AUTHZ_DENIED|||CANDIDATE")));
+
+        assertThat(response.createdCount()).isEqualTo(1);
+        List<TestCase> saved = savedCases();
+        assertThat(saved).singleElement().satisfies(tc -> {
+            assertThat(tc.getAuthProfileId()).isEqualTo(candidate.getId());
+            assertThat(tc.getExpectedStatus()).isEqualTo(403);
+            assertThat(tc.getRequestBody()).isEqualTo("{\"email\":\"an@gmail.com\"}");
+            assertThat(tc.getAuthOverride()).isEqualTo(TestCaseAuthOverride.DEFAULT);
+            // MANUAL để lần "Sinh Test Case" sau (chỉ xoá nhóm AI/Security chưa khoá) không xoá mất case phân quyền.
+            assertThat(tc.getSource()).isEqualTo(TestCaseSource.MANUAL);
+            assertThat(tc.getGenerationOrigin()).isEqualTo(TestCaseGenerationOrigin.SYSTEM_FILLED);
+        });
+    }
+
+    @Test
+    void fill_authzAllow_keepsBaselineSuccessStatus_andSkipsCellsAlreadyCovered() {
+        Endpoint endpoint = endpoint("/admin/users", "POST", false, EMAIL_SCHEMA);
+        TestCase positive = testCase(endpoint, "Tạo user hợp lệ", 201, "{\"email\":\"an@gmail.com\"}");
+        var hr = profile("HR", "HR");
+        TestCase alreadyThere = testCase(endpoint, "HR tạo user", 201, "{\"email\":\"an@gmail.com\"}");
+        alreadyThere.setAuthProfileId(hr.getId());
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of(positive, alreadyThere));
+        rule(endpoint, hr, com.aiapitesting.backend.entity.AuthzExpectation.ALLOW);
+
+        CoverageFillResponse response = coverageGapFillService.fill(projectId, endpoint.getId(),
+                new com.aiapitesting.backend.dto.request.CoverageFillRequest(List.of("AUTHZ_ALLOWED|||HR")));
+
+        // Ô đã có test gọi bằng vai trò HR kỳ vọng 2xx -> không tạo trùng.
+        assertThat(response.createdCount()).isZero();
+    }
+
+    @Test
+    void fill_authzAllow_withoutAnyUsableBaseline_reportedNotFilled() {
+        Endpoint endpoint = endpoint("/admin/users", "POST", false, EMAIL_SCHEMA);
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of());
+        var hr = profile("HR", "HR");
+        rule(endpoint, hr, com.aiapitesting.backend.entity.AuthzExpectation.ALLOW);
+
+        CoverageFillResponse response = coverageGapFillService.fill(projectId, endpoint.getId(),
+                new com.aiapitesting.backend.dto.request.CoverageFillRequest(List.of("AUTHZ_ALLOWED|||HR")));
+
+        assertThat(response.createdCount()).isZero();
+        assertThat(response.notFilled()).singleElement().satisfies(nf -> assertThat(nf.reason()).contains("test case làm gốc"));
     }
 
     @Test

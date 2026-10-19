@@ -97,6 +97,9 @@ class EndpointImportServiceTest {
             """;
 
     @Mock
+    private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
+
+    @Mock
     private ProjectService projectService;
 
     @Mock

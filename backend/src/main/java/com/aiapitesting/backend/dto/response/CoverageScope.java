@@ -37,7 +37,8 @@ public record CoverageScope(boolean positive, boolean negative, boolean boundary
 
     /** 4 loại checklist EP/BVA - chỉ các dòng thuộc 4 loại này tính vào "Cần kiểm"/% coverage. */
     public static boolean isChecklistCategory(String category) {
+        // AUTHZ (Module 17 - 17a): mục phân quyền theo ma trận người dùng khai, không phải EP/BVA nhưng là thứ họ chủ động yêu cầu kiểm.
         return "POSITIVE".equals(category) || "NEGATIVE".equals(category)
-                || "BOUNDARY".equals(category) || "SECURITY".equals(category);
+                || "BOUNDARY".equals(category) || "SECURITY".equals(category) || "AUTHZ".equals(category);
     }
 }

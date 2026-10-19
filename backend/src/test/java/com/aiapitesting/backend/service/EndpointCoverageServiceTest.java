@@ -62,6 +62,12 @@ class EndpointCoverageServiceTest {
     @Mock
     private TestResultRepository testResultRepository;
 
+    @Mock
+    private com.aiapitesting.backend.repository.AuthProfileRepository authProfileRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
+
     // Module 15j - bản thật (không mock): coverage chấm bằng CHÍNH checklist của planner, mock thì test vô nghĩa.
     @Spy
     private TestCaseChecklistPlanner testCaseChecklistPlanner = new TestCaseChecklistPlanner();
@@ -293,6 +299,95 @@ class EndpointCoverageServiceTest {
         assertThat(dimensionByCategory(result, "STATUS_CODE", "200").status()).isEqualTo(CoverageDimensionStatus.COVERED);
         // Mã lỗi vẫn phải đúng mã: kỳ vọng 201 không phủ được 404.
         assertThat(dimensionByCategory(result, "STATUS_CODE", "404").status()).isEqualTo(CoverageDimensionStatus.MISSING);
+    }
+
+    // ---- Module 17 (17a) - ma trận phân quyền ----
+
+    private com.aiapitesting.backend.entity.AuthProfile authProfile(String name, String roleKey) {
+        com.aiapitesting.backend.entity.AuthProfile p = com.aiapitesting.backend.entity.AuthProfile.builder()
+                .id(UUID.randomUUID()).project(project).name(name).roleKey(roleKey)
+                .authType(com.aiapitesting.backend.entity.TargetAuthType.BEARER_TOKEN).build();
+        when(authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(p));
+        return p;
+    }
+
+    private void declareRule(Endpoint endpoint, com.aiapitesting.backend.entity.AuthProfile profile,
+                             com.aiapitesting.backend.entity.AuthzExpectation expectation) {
+        com.aiapitesting.backend.entity.EndpointRole role = com.aiapitesting.backend.entity.EndpointRole.builder()
+                .id(UUID.randomUUID()).endpoint(endpoint).authProfileId(profile.getId()).expectation(expectation).build();
+        when(endpointRoleRepository.findAllByEndpointProject(project)).thenReturn(List.of(role));
+    }
+
+    @Test
+    void getEndpointCoverage_noRoleMatrix_authRowStillNotApplicableWithGuidance() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(result.dimensions()).noneMatch(d -> d.category().equals("AUTHZ"));
+        assertThat(dimensionByCategory(result, "AUTH", "Phân quyền").detail()).contains("Vai trò");
+    }
+
+    @Test
+    void getEndpointCoverage_denyRuleWithoutTest_isMissingAndFillableWhenBaselineExists() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        TestCase baseline = testCase(endpoint, "Hợp lệ", 201, "{\"email\":\"a@b.co\"}");
+        stubProject(List.of(endpoint), List.of(baseline), List.of());
+        var candidate = authProfile("Ứng viên", "CANDIDATE");
+        declareRule(endpoint, candidate, com.aiapitesting.backend.entity.AuthzExpectation.DENY);
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        CoverageDimensionResponse row = result.dimensions().stream().filter(d -> d.category().equals("AUTHZ")).findFirst().orElseThrow();
+        assertThat(row.status()).isEqualTo(CoverageDimensionStatus.MISSING);
+        assertThat(row.itemKey()).isEqualTo("AUTHZ_DENIED|||CANDIDATE");
+        assertThat(row.fillable()).isTrue();
+        // Khi có ma trận thì dòng AUTH "không áp dụng" nhường chỗ cho các mục thật.
+        assertThat(result.dimensions()).noneMatch(d -> d.category().equals("AUTH"));
+    }
+
+    @Test
+    void getEndpointCoverage_denyRule_coveredOnlyByProfileTestExpecting403Or401() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        var candidate = authProfile("Ứng viên", "CANDIDATE");
+        declareRule(endpoint, candidate, com.aiapitesting.backend.entity.AuthzExpectation.DENY);
+
+        TestCase wrongProfile = testCase(endpoint, "Không profile, 403", 403, "{\"email\":\"a@b.co\"}");
+        TestCase wrongDirection = testCase(endpoint, "Profile nhưng kỳ vọng 200", 200, "{\"email\":\"a@b.co\"}");
+        wrongDirection.setAuthProfileId(candidate.getId());
+        TestCase securityOverride = testCase(endpoint, "Profile nhưng cố ý bỏ token", 401, "{\"email\":\"a@b.co\"}", TestCaseAuthOverride.NONE);
+        securityOverride.setAuthProfileId(candidate.getId());
+        stubProject(List.of(endpoint), List.of(wrongProfile, wrongDirection, securityOverride), List.of());
+
+        assertThat(dimensionByCategory(coverageOf(endpoint), "AUTHZ", "Ứng viên").status()).isEqualTo(CoverageDimensionStatus.MISSING);
+
+        TestCase good = testCase(endpoint, "Ứng viên bị 403", 403, "{\"email\":\"a@b.co\"}");
+        good.setAuthProfileId(candidate.getId());
+        stubProject(List.of(endpoint), List.of(wrongProfile, wrongDirection, securityOverride, good), List.of());
+
+        assertThat(dimensionByCategory(coverageOf(endpoint), "AUTHZ", "Ứng viên").status()).isEqualTo(CoverageDimensionStatus.COVERED);
+    }
+
+    @Test
+    void getEndpointCoverage_authzRowsCountTowardPercent_specRowsDoNot() {
+        Endpoint endpoint = endpoint("/users", "GET", false, "{\"responseStatusCodes\":[\"200\"]}");
+        var hr = authProfile("HR", "HR");
+        declareRule(endpoint, hr, com.aiapitesting.backend.entity.AuthzExpectation.ALLOW);
+        TestCase positive = testCase(endpoint, "Hợp lệ", 200, null);
+        TestCase hrCall = testCase(endpoint, "HR gọi", 200, null);
+        hrCall.setAuthProfileId(hr.getId());
+        stubProject(List.of(endpoint), List.of(positive, hrCall), List.of());
+        endpoint.setScopePositive(true);
+        endpoint.setScopeNegative(false);
+        endpoint.setScopeBoundary(false);
+        endpoint.setScopeSecurity(false);
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        // Positive + AUTHZ(HR) đều phủ -> 100%.
+        assertThat(result.coveragePercent()).isEqualTo(100.0);
+        assertThat(result.dimensions()).anyMatch(d -> d.category().equals("AUTHZ") && d.status() == CoverageDimensionStatus.COVERED);
     }
 
     // ---- Chấm mục checklist ----

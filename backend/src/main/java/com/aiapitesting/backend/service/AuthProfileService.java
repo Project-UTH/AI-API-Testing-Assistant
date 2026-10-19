@@ -7,6 +7,7 @@ import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.repository.AuthProfileRepository;
+import com.aiapitesting.backend.repository.EndpointRoleRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class AuthProfileService {
     private final ProjectService projectService;
     private final AuthProfileRepository authProfileRepository;
     private final TestCaseRepository testCaseRepository;
+    private final EndpointRoleRepository endpointRoleRepository;
     private final AesEncryptionService aesEncryptionService;
 
     public List<AuthProfileResponse> list(UUID projectId) {
@@ -97,6 +99,8 @@ public class AuthProfileService {
         if (inUse > 0) {
             throw new InvalidRequestException("Còn " + inUse + " test case đang dùng profile này - đổi sang profile khác hoặc xoá chúng trước");
         }
+        // Khai báo ma trận phân quyền của vai trò này là cấu hình (không phải công sức người dùng) nên xoá theo.
+        endpointRoleRepository.deleteAllByAuthProfileId(profileId);
         authProfileRepository.delete(profile);
     }
 

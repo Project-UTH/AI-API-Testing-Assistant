@@ -13,6 +13,7 @@ import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.repository.BugReportEventRepository;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.EndpointRoleRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -47,6 +48,7 @@ public class ProjectService {
     private final BugReportRepository bugReportRepository;
     private final BugReportEventRepository bugReportEventRepository;
     private final AuthProfileRepository authProfileRepository;
+    private final EndpointRoleRepository endpointRoleRepository;
     private final CurrentUserService currentUserService;
     private final AesEncryptionService aesEncryptionService;
 
@@ -120,6 +122,7 @@ public class ProjectService {
         testCaseAssertionRepository.deleteAllByTestCaseEndpointProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
         testGenerationEventRepository.deleteAllByEndpointProject(project);
+        endpointRoleRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         authProfileRepository.deleteAllByProject(project);
         projectRepository.delete(project);
