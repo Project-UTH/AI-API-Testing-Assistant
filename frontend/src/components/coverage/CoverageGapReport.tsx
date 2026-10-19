@@ -20,6 +20,7 @@ import {
   type CoverageRunStatus,
   type CoverageScope,
   type EndpointCoverage,
+  setEndpointRequiresAuth,
 } from "@/lib/coverage"
 
 const SCOPE_NAMES: Record<ChecklistCategory, string> = {
@@ -108,6 +109,14 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
     },
   })
 
+  const authMutation = useMutation({
+    mutationFn: (requiresAuth: boolean | null) => setEndpointRequiresAuth(projectId, endpoint.endpointId, requiresAuth),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
+      queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
+    },
+  })
+
   function toggleScope(category: ChecklistCategory) {
     const next = {
       positive: endpoint.scope.positive,
@@ -170,6 +179,52 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
         {scopeMutation.isError && (
           <span className="text-xs text-destructive">
             {scopeMutation.error instanceof Error ? scopeMutation.error.message : "Không đổi được phạm vi."}
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Endpoint có yêu cầu xác thực không">
+        <span className="text-xs text-muted-foreground">Yêu cầu xác thực:</span>
+        {(
+          [
+            { value: true, label: "Có", title: "Endpoint cần token - mục Security (thiếu/sai token) được đưa vào cần kiểm" },
+            { value: false, label: "Không", title: "Endpoint công khai - mục Security ghi là không áp dụng" },
+          ] as const
+        ).map((option) => {
+          const active = endpoint.requiresAuthSource === "MANUAL" && endpoint.requiresAuth === option.value
+          return (
+            <button
+              key={option.label}
+              type="button"
+              aria-pressed={active}
+              disabled={authMutation.isPending}
+              title={option.title}
+              onClick={() => authMutation.mutate(option.value)}
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-muted"
+              )}
+            >
+              {option.label}
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          aria-pressed={endpoint.requiresAuthSource === "SPEC"}
+          disabled={authMutation.isPending || endpoint.requiresAuthSource === "SPEC"}
+          title="Dùng giá trị theo spec OpenAPI (bỏ khai báo thủ công)"
+          onClick={() => authMutation.mutate(null)}
+          className={cn(
+            "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed",
+            endpoint.requiresAuthSource === "SPEC" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-muted"
+          )}
+        >
+          Theo spec ({endpoint.requiresAuthSource === "SPEC" ? (endpoint.requiresAuth ? "có" : "không") : "đang ghi đè"})
+        </button>
+        {authMutation.isError && (
+          <span className="text-xs text-destructive">
+            {authMutation.error instanceof Error ? authMutation.error.message : "Không đổi được."}
           </span>
         )}
       </div>

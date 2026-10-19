@@ -1,11 +1,15 @@
 package com.aiapitesting.backend.controller;
 
+import com.aiapitesting.backend.dto.request.BulkRequiresAuthRequest;
+import com.aiapitesting.backend.dto.request.SetRequiresAuthRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
+import com.aiapitesting.backend.dto.response.BulkUpdateResponse;
 import com.aiapitesting.backend.dto.response.EndpointResponse;
 import com.aiapitesting.backend.dto.response.ImportImpactResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.service.EndpointAuthRequirementService;
 import com.aiapitesting.backend.service.EndpointImportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +20,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,10 +36,27 @@ import java.util.UUID;
 public class EndpointController {
 
     private final EndpointImportService endpointImportService;
+    private final EndpointAuthRequirementService endpointAuthRequirementService;
 
     @GetMapping("/import-impact")
     public ResponseEntity<ApiResponse<ImportImpactResponse>> getImportImpact(@PathVariable UUID projectId) {
         return ResponseEntity.ok(ApiResponse.of(endpointImportService.getImportImpact(projectId)));
+    }
+
+    /** Module 17 (1.3) - khai endpoint có yêu cầu xác thực hay không (null = theo spec). */
+    @PutMapping("/{endpointId}/requires-auth")
+    public ResponseEntity<ApiResponse<EndpointResponse>> setRequiresAuth(
+            @PathVariable UUID projectId, @PathVariable UUID endpointId, @RequestBody SetRequiresAuthRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(
+                endpointAuthRequirementService.setRequiresAuth(projectId, endpointId, request == null ? null : request.requiresAuth())));
+    }
+
+    @PutMapping("/requires-auth/bulk")
+    public ResponseEntity<ApiResponse<BulkUpdateResponse>> bulkSetRequiresAuth(
+            @PathVariable UUID projectId, @RequestBody BulkRequiresAuthRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(endpointAuthRequirementService.bulkSetRequiresAuth(projectId, request)));
     }
 
     @PostMapping("/import")

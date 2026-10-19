@@ -88,7 +88,7 @@ public class ExecutionFailureAnalyzer {
                     historyOf(result, rows, Map.of()),
                     execution.getTargetBaseUrlSnapshot(), execution.getTargetAuthUpdatedAtSnapshot(), context,
                     failedAssertionsOf(result), lastOtherVersionOf(result, rows),
-                    result.getTestCase().getEndpoint() == null ? null : result.getTestCase().getEndpoint().isRequiresAuth(),
+                    result.getTestCase().getEndpoint() == null ? null : result.getTestCase().getEndpoint().effectiveRequiresAuth(),
                     fallbackPathParamsByTestCaseId.getOrDefault(result.getTestCase().getId(), Map.of()),
                     hasAssertions(result));
             FailureCauseClassifier.Result classified = failureCauseClassifier.classify(input);
@@ -305,7 +305,7 @@ public class ExecutionFailureAnalyzer {
                 defaultAuthCalled++;
                 // Chỉ endpoint spec khai YÊU CẦU xác thực mới chứng minh được token còn dùng: endpoint công khai nhận 200 dù
                 // token hỏng.
-                boolean authRequired = r.getTestCase().getEndpoint() != null && r.getTestCase().getEndpoint().isRequiresAuth();
+                boolean authRequired = r.getTestCase().getEndpoint() != null && r.getTestCase().getEndpoint().effectiveRequiresAuth();
                 anyEndpointRequiresAuth |= authRequired;
                 if (authRequired && r.getResponseStatus() != null && !AUTH_STATUSES.contains(r.getResponseStatus())) {
                     defaultAuthAccepted++;

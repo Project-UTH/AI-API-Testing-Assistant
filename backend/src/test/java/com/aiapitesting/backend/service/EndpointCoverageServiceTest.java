@@ -263,6 +263,24 @@ class EndpointCoverageServiceTest {
         assertThat(result.dimensions()).anyMatch(d -> d.category().equals("NEGATIVE"));
     }
 
+    @Test
+    void getEndpointCoverage_manualRequiresAuth_turnsSecurityRowsFromNotApplicableToMissing() {
+        // Spec không khai security (requiresAuth=false) nhưng API thật chặn 401: người dùng khai tay -> mục Security phải hiện ra.
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+        assertThat(coverageOf(endpoint).dimensions())
+                .filteredOn(d -> d.category().equals("SECURITY"))
+                .isNotEmpty().allMatch(d -> d.status() == CoverageDimensionStatus.NOT_APPLICABLE);
+
+        endpoint.setRequiresAuthManual(true);
+        EndpointCoverageResponse after = coverageOf(endpoint);
+
+        assertThat(after.requiresAuth()).isTrue();
+        assertThat(after.requiresAuthSource()).isEqualTo("MANUAL");
+        assertThat(after.dimensions()).filteredOn(d -> d.category().equals("SECURITY"))
+                .isNotEmpty().allMatch(d -> d.status() == CoverageDimensionStatus.MISSING);
+    }
+
     // ---- Chấm mục checklist ----
 
     @Test

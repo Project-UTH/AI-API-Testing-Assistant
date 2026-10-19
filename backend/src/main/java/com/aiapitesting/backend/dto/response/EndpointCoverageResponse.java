@@ -26,6 +26,8 @@ public record EndpointCoverageResponse(
         double executedPercent,
         boolean schemaReadable,
         CoverageScope scope,
+        boolean requiresAuth,
+        String requiresAuthSource,
         List<CoverageDimensionResponse> dimensions
 ) {
 }

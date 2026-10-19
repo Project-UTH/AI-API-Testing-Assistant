@@ -202,16 +202,16 @@ public class EndpointCoverageService {
         // thật sự bù được. Khác duy nhất: ở đây lấy case hợp lệ đầu tiên, còn lúc bù thật ưu tiên case đã chạy PASS.
         GeneratedTestCase baseline = candidates.stream()
                 .map(Candidate::generated)
-                .filter(g -> testCaseChecklistPlanner.isUsableBaseline(spec, g, endpoint.isRequiresAuth()))
+                .filter(g -> testCaseChecklistPlanner.isUsableBaseline(spec, g, endpoint.effectiveRequiresAuth()))
                 .findFirst().orElse(null);
         GeneratedTestCase securityBaseline = baseline != null ? baseline
                 : candidates.isEmpty() ? null : candidates.get(0).generated();
 
         CoverageScope scope = CoverageScope.of(endpoint);
         List<CoverageDimensionResponse> dimensions = new ArrayList<>();
-        for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planScoped(spec, endpoint.isRequiresAuth(), scope)) {
+        for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planScoped(spec, endpoint.effectiveRequiresAuth(), scope)) {
             GeneratedTestCase base = item.type().name().startsWith("SECURITY_") ? securityBaseline : baseline;
-            dimensions.add(checklistDimension(spec, item, candidates, endpoint.isRequiresAuth(), context, base));
+            dimensions.add(checklistDimension(spec, item, candidates, endpoint.effectiveRequiresAuth(), context, base));
         }
         for (String statusCode : facts.statusCodes()) {
             dimensions.add(statusCodeDimension(statusCode, testCases, context));
@@ -232,7 +232,8 @@ public class EndpointCoverageService {
 
         return new EndpointCoverageResponse(
                 endpoint.getId(), endpoint.getPath(), endpoint.getMethod(), testCases.size(),
-                round1(coveragePercent), round1(executedPercent), facts.parsed(), scope, dimensions);
+                round1(coveragePercent), round1(executedPercent), facts.parsed(), scope,
+                endpoint.effectiveRequiresAuth(), endpoint.getRequiresAuthManual() != null ? "MANUAL" : "SPEC", dimensions);
     }
 
     /**

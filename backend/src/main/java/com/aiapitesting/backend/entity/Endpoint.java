@@ -75,6 +75,20 @@ public class Endpoint {
     @Column
     private Boolean scopeSecurity;
 
+    /**
+     * Module 17 (1.3) - người dùng tự khai endpoint có yêu cầu xác thực hay không, GHI ĐÈ giá trị suy từ spec. Null = theo spec
+     * ({@link #requiresAuth}). Cần vì nhiều API (springdoc mặc định) không khai {@code security} dù thực tế chặn 401 - lúc đó
+     * mọi mục Security bị "không áp dụng" mà không có cách sửa. Cột riêng (không sửa {@code requiresAuth}) để import lại spec
+     * không xoá mất khai báo của người dùng và vẫn biết giá trị gốc từ spec.
+     */
+    @Column
+    private Boolean requiresAuthManual;
+
+    /** Giá trị dùng cho mọi tính toán (checklist Security, phân loại Fail...): khai báo thủ công nếu có, không thì theo spec. */
+    public boolean effectiveRequiresAuth() {
+        return requiresAuthManual != null ? requiresAuthManual : requiresAuth;
+    }
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

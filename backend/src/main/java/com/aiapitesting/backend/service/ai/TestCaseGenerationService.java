@@ -310,7 +310,7 @@ public class TestCaseGenerationService {
         // mục (bỏ giới hạn 15 mục/lần của 15h - người dùng chốt nâng max-tokens thay vì cắt bớt).
         TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
         List<TestCaseChecklistPlanner.ChecklistItem> items = includeSecurity
-                ? testCaseChecklistPlanner.planSecurity(endpoint.isRequiresAuth())
+                ? testCaseChecklistPlanner.planSecurity(endpoint.effectiveRequiresAuth())
                 : testCaseChecklistPlanner.plan(spec, includePositive, includeNegative, includeBoundary);
         List<GeneratedTestCase> survivors = survivingCases(endpoint, source);
         for (TestCaseChecklistPlanner.ChecklistItem item : items) {

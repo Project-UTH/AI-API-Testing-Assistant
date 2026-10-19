@@ -7,6 +7,9 @@ export interface Endpoint {
   summary: string | null
   createdAt: string
   testCaseCount: number
+  /** Module 17 (1.3) - giá trị đang dùng: khai báo thủ công nếu có, không thì suy từ spec. */
+  requiresAuth: boolean
+  requiresAuthSource: "SPEC" | "MANUAL"
 }
 
 export type TargetAuthType = "NONE" | "API_KEY" | "BEARER_TOKEN"

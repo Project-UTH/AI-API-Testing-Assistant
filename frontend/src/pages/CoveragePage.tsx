@@ -7,6 +7,7 @@ import { cn, METHOD_STYLES } from "@/lib/utils"
 import { coverageCounts, getProjectCoverage, scopeLabel } from "@/lib/coverage"
 import { CoverageSummary } from "@/components/shared/CoverageMatrixChart"
 import { CoverageGapReport } from "@/components/coverage/CoverageGapReport"
+import { BulkAuthBar } from "@/components/coverage/BulkAuthBar"
 
 /**
  * Module 15c - Coverage Matrix. Toàn bộ số liệu tính tất định từ OpenAPI spec +
@@ -63,6 +64,8 @@ export function CoveragePage() {
             coveragePercent={data.overallCoveragePercent}
             executedPercent={data.overallExecutedPercent}
           />
+
+          <BulkAuthBar projectId={id!} endpointCount={data.endpoints.length} />
 
           {data.endpoints.length === 0 && (
             <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">

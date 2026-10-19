@@ -84,6 +84,9 @@ export interface EndpointCoverage {
   executedPercent: number
   schemaReadable: boolean
   scope: CoverageScope
+  /** Module 17 (1.3) - endpoint có yêu cầu xác thực không (khai thủ công nếu có, không thì suy từ spec). */
+  requiresAuth: boolean
+  requiresAuthSource: "SPEC" | "MANUAL"
   dimensions: CoverageDimension[]
 }
 
@@ -149,6 +152,29 @@ export function updateCoverageScope(
   return apiFetch<EndpointCoverage>(`/projects/${projectId}/endpoints/${endpointId}/coverage/scope`, {
     method: "PUT",
     body: JSON.stringify(scope),
+  })
+}
+
+/** Module 17 (1.3) - khai endpoint có yêu cầu xác thực không. requiresAuth = null: bỏ khai báo thủ công, quay về giá trị của spec. */
+export function setEndpointRequiresAuth(projectId: string, endpointId: string, requiresAuth: boolean | null): Promise<unknown> {
+  return apiFetch<unknown>(`/projects/${projectId}/endpoints/${endpointId}/requires-auth`, {
+    method: "PUT",
+    body: JSON.stringify({ requiresAuth }),
+  })
+}
+
+export interface BulkRequiresAuthInput {
+  endpointIds?: string[]
+  pathPrefix?: string
+  method?: string
+  requiresAuth: boolean | null
+}
+
+/** Đặt hàng loạt theo tiền tố đường dẫn/method (không điều kiện nào = mọi endpoint của project). */
+export function bulkSetRequiresAuth(projectId: string, input: BulkRequiresAuthInput): Promise<{ updated: number }> {
+  return apiFetch<{ updated: number }>(`/projects/${projectId}/endpoints/requires-auth/bulk`, {
+    method: "PUT",
+    body: JSON.stringify(input),
   })
 }
 

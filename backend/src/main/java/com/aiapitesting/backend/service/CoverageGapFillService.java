@@ -75,7 +75,7 @@ public class CoverageGapFillService {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
-        boolean requiresAuth = endpoint.isRequiresAuth();
+        boolean requiresAuth = endpoint.effectiveRequiresAuth();
         TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
         List<Candidate> candidates = testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint).stream()
                 .map(tc -> new Candidate(tc, testCaseChecklistPlanner.toCandidate(tc)))
