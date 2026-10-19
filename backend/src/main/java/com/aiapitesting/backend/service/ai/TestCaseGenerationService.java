@@ -650,6 +650,7 @@ public class TestCaseGenerationService {
                     testCase.resolvedPath(),
                     writeFallbacksAsJson(testCase.pathParamFallbacks()),
                     AiGenerationFailedException::new);
+            testCasePathValidator.validateDynamicTokens(AiGenerationFailedException::new, testCase.resolvedPath(), testCase.requestBody());
         }
     }
 

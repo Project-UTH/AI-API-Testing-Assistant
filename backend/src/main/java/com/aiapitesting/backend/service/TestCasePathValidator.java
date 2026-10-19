@@ -47,6 +47,17 @@ public class TestCasePathValidator {
         }
     }
 
+    /** Từ chối token ngày động sai cú pháp (vd {{today+5x}}) - nếu không sẽ bị gửi nguyên văn và gây lỗi 400 khó hiểu. */
+    public void validateDynamicTokens(Function<String, ? extends RuntimeException> exceptionFactory, String... texts) {
+        for (String text : texts) {
+            String bad = DynamicPlaceholderResolver.firstMalformed(text);
+            if (bad != null) {
+                throw exceptionFactory.apply("Placeholder ngày động sai cú pháp: " + bad
+                        + " - dùng {{today}}, {{today+30d}}, {{today-1d}}, {{now}}, {{now+1h}}, {{now-15m}}");
+            }
+        }
+    }
+
     /** Trích danh sách tên tham số từ các token {{tenThamSo}} trong 1 chuỗi. */
     public Set<String> extractPlaceholders(String text) {
         Set<String> result = new LinkedHashSet<>();
@@ -55,7 +66,9 @@ public class TestCasePathValidator {
         }
         Matcher matcher = DOUBLE_BRACE_TOKEN.matcher(text);
         while (matcher.find()) {
-            result.add(matcher.group(1));
+            if (!DynamicPlaceholderResolver.RESERVED_NAMES.contains(matcher.group(1))) { // {{today}}/{{now}} là ngày động, không phải tham số
+                result.add(matcher.group(1));
+            }
         }
         return result;
     }
@@ -65,6 +78,7 @@ public class TestCasePathValidator {
         if (text == null) {
             return null;
         }
+        text = DynamicPlaceholderResolver.resolve(text);
         Matcher matcher = DOUBLE_BRACE_TOKEN.matcher(text);
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {

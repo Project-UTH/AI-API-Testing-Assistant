@@ -80,6 +80,8 @@ public class TestCaseService {
     public TestCaseResponse create(UUID projectId, UUID endpointId, TestCaseRequest request) {
         Endpoint endpoint = getOwnedEndpoint(projectId, endpointId);
         testCasePathValidator.validate(request.resolvedPath(), request.pathParamFallbacks(), InvalidRequestException::new);
+        testCasePathValidator.validateDynamicTokens(InvalidRequestException::new, request.resolvedPath(), request.requestBody(),
+                request.requestHeaders());
 
         TestCase testCase = TestCase.builder()
                 .endpoint(endpoint)
@@ -109,6 +111,8 @@ public class TestCaseService {
         Endpoint endpoint = getOwnedEndpoint(projectId, endpointId);
         TestCase testCase = getOwnedTestCase(endpoint, testCaseId);
         testCasePathValidator.validate(request.resolvedPath(), request.pathParamFallbacks(), InvalidRequestException::new);
+        testCasePathValidator.validateDynamicTokens(InvalidRequestException::new, request.resolvedPath(), request.requestBody(),
+                request.requestHeaders());
 
         testCase.setName(request.name());
         testCase.setDescription(request.description());
