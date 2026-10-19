@@ -4,7 +4,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
-import { getRoleMatrix, updateRoleMatrix, type AuthzExpectation } from "@/lib/roleMatrix"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  getRoleMatrix,
+  previewRoleMatrix,
+  updateRoleMatrix,
+  type AuthzExpectation,
+  type RoleRuleInput,
+  type RoleRulesPreview,
+} from "@/lib/roleMatrix"
 
 const CELL_LABEL: Record<AuthzExpectation | "NONE", string> = { NONE: "—", ALLOW: "Được", DENY: "Cấm" }
 const CELL_STYLE: Record<AuthzExpectation | "NONE", string> = {
@@ -28,6 +45,8 @@ export function RoleMatrixPanel({ projectId }: { projectId: string }) {
   const [pathPrefix, setPathPrefix] = useState("")
   const [method, setMethod] = useState("")
   const [message, setMessage] = useState<string | null>(null)
+  /** Quy tắc đang chờ xác nhận sau khi xem trước (hộp thoại mở khi != null). */
+  const [pending, setPending] = useState<{ rule: RoleRuleInput; preview: RoleRulesPreview } | null>(null)
 
   const { data, isLoading } = useQuery({ queryKey: ["role-matrix", projectId], queryFn: () => getRoleMatrix(projectId) })
 
@@ -39,6 +58,15 @@ export function RoleMatrixPanel({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
     },
     onError: (error) => setMessage(error instanceof ApiError ? error.message : "Không cập nhật được."),
+  })
+
+  const previewMutation = useMutation({
+    mutationFn: (rule: RoleRuleInput) => previewRoleMatrix(projectId, [rule]).then((preview) => ({ rule, preview })),
+    onSuccess: (result) => {
+      setMessage(null)
+      setPending(result)
+    },
+    onError: (error) => setMessage(error instanceof ApiError ? error.message : "Không xem trước được."),
   })
 
   const profiles = data?.profiles ?? []
@@ -95,9 +123,9 @@ export function RoleMatrixPanel({ projectId }: { projectId: string }) {
             />
             <Button
               size="sm"
-              disabled={mutation.isPending || !effectiveProfile}
+              disabled={mutation.isPending || previewMutation.isPending || !effectiveProfile}
               onClick={() =>
-                mutation.mutate({
+                previewMutation.mutate({
                   profileId: effectiveProfile,
                   pathPrefix: pathPrefix.trim() || undefined,
                   method: method.trim() || undefined,
@@ -105,7 +133,7 @@ export function RoleMatrixPanel({ projectId }: { projectId: string }) {
                 })
               }
             >
-              Áp dụng
+              {previewMutation.isPending ? "Đang xem trước..." : "Áp dụng"}
             </Button>
             {message && <span className="text-xs text-muted-foreground">{message}</span>}
           </div>
@@ -154,6 +182,52 @@ export function RoleMatrixPanel({ projectId }: { projectId: string }) {
           </div>
         </>
       )}
+      <AlertDialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận áp dụng quy tắc?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pending?.preview.rules[0]?.matchedNothing
+                ? "Quy tắc không khớp endpoint nào - kiểm tra lại tiền tố đường dẫn và method."
+                : `Quy tắc khớp ${pending?.preview.rules[0]?.matchedEndpoints ?? 0} endpoint, sẽ tạo ${pending?.preview.cellsToCreate ?? 0}, đổi ${pending?.preview.cellsToChange ?? 0}, xoá ${pending?.preview.cellsToDelete ?? 0} ô.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {pending && pending.preview.rules[0] && pending.preview.rules[0].matchedEndpoints > 0 && (
+            <div className="text-xs">
+              <p className="text-muted-foreground">Ví dụ:</p>
+              <ul className="mt-1 list-disc pl-5">
+                {pending.preview.rules[0].samplePaths.map((path) => (
+                  <li key={path} className="font-mono">
+                    {path}
+                  </li>
+                ))}
+              </ul>
+              {pending.preview.rules[0].matchedEndpoints > pending.preview.rules[0].samplePaths.length && (
+                <p className="mt-1 text-muted-foreground">
+                  ...và {pending.preview.rules[0].matchedEndpoints - pending.preview.rules[0].samplePaths.length} endpoint khác.
+                </p>
+              )}
+              {pending.preview.rules[0].overridesExisting > 0 && (
+                <p role="alert" className="mt-2 text-amber-700 dark:text-amber-400">
+                  Ghi đè {pending.preview.rules[0].overridesExisting} ô đã khai trước đó.
+                </p>
+              )}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel autoFocus>Quay lại chỉnh</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={mutation.isPending || (pending?.preview.rules[0]?.matchedNothing ?? true)}
+              onClick={() => {
+                if (pending) mutation.mutate(pending.rule)
+                setPending(null)
+              }}
+            >
+              Lưu quy tắc
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </details>
   )
 }

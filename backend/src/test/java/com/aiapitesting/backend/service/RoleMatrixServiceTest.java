@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.request.RoleRulesRequest;
 import com.aiapitesting.backend.dto.request.RoleRulesRequest.RuleInput;
 import com.aiapitesting.backend.dto.response.BulkUpdateResponse;
+import com.aiapitesting.backend.dto.response.RoleRulesPreviewResponse;
 import com.aiapitesting.backend.dto.response.RoleMatrixResponse;
 import com.aiapitesting.backend.entity.AuthProfile;
 import com.aiapitesting.backend.entity.AuthzExpectation;
@@ -27,8 +28,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -160,5 +163,62 @@ class RoleMatrixServiceTest {
                 .satisfies(r -> assertThat(r.rules()).containsEntry(candidate.getId(), AuthzExpectation.DENY));
         assertThat(response.endpoints()).filteredOn(r -> r.endpointId().equals(publicJobs.getId())).singleElement()
                 .satisfies(r -> assertThat(r.rules()).isEmpty());
+    }
+
+    // ---- Module 17 (S5) - xem trước quy tắc ----
+
+    @Test
+    void preview_reportsMatchedEndpointsSamplesAndWritesNothing() {
+        RoleRulesPreviewResponse preview = service.preview(projectId, new RoleRulesRequest(List.of(
+                new RuleInput(null, "/api/hr/", null, candidate.getId(), AuthzExpectation.DENY),
+                new RuleInput(null, "/api/nothing/", null, hr.getId(), AuthzExpectation.ALLOW))));
+
+        assertThat(preview.rules()).hasSize(2);
+        RoleRulesPreviewResponse.RuleReport first = preview.rules().get(0);
+        assertThat(first.ruleIndex()).isEqualTo(1);
+        assertThat(first.profileName()).isEqualTo("Ứng viên");
+        assertThat(first.matchedEndpoints()).isEqualTo(2);
+        assertThat(first.samplePaths()).containsExactly("GET /api/hr/jobs", "POST /api/hr/jobs");
+        assertThat(preview.rules().get(1).matchedNothing()).isTrue();
+        assertThat(preview.cellsToCreate()).isEqualTo(2);
+        assertThat(preview.totalCells()).isEqualTo(2);
+        verify(endpointRoleRepository, never()).saveAll(any());
+        verify(endpointRoleRepository, never()).deleteAll(any());
+    }
+
+    @Test
+    void preview_laterRuleOverridingEarlierOne_andExistingCell_areCountedAsOverrides() {
+        EndpointRole existing = EndpointRole.builder().id(UUID.randomUUID()).endpoint(publicJobs).authProfileId(hr.getId())
+                .expectation(AuthzExpectation.DENY).build();
+        when(endpointRoleRepository.findAllByEndpointProject(project)).thenReturn(List.of(existing));
+
+        RoleRulesPreviewResponse preview = service.preview(projectId, new RoleRulesRequest(List.of(
+                new RuleInput(null, "/api/hr/", null, candidate.getId(), AuthzExpectation.DENY),
+                new RuleInput(List.of(hrJobsPost.getId()), null, null, candidate.getId(), AuthzExpectation.ALLOW),
+                new RuleInput(List.of(publicJobs.getId()), null, null, hr.getId(), AuthzExpectation.ALLOW))));
+
+        assertThat(preview.rules().get(1).overridesEarlier()).isEqualTo(1);
+        assertThat(preview.rules().get(1).overridesExisting()).isZero();
+        assertThat(preview.rules().get(2).overridesExisting()).isEqualTo(1);
+        assertThat(preview.cellsToCreate()).isEqualTo(2);
+        assertThat(preview.cellsToChange()).isEqualTo(1);
+        assertThat(existing.getExpectation()).isEqualTo(AuthzExpectation.DENY); // preview không sửa entity
+    }
+
+    @Test
+    void preview_totalEqualsWhatUpdateWrites_includingDeletesAndNoOpRules() {
+        EndpointRole existing = EndpointRole.builder().id(UUID.randomUUID()).endpoint(publicJobs).authProfileId(hr.getId())
+                .expectation(AuthzExpectation.ALLOW).build();
+        when(endpointRoleRepository.findAllByEndpointProject(project)).thenReturn(List.of(existing));
+        RoleRulesRequest request = new RoleRulesRequest(List.of(
+                new RuleInput(null, "/api/hr/", null, candidate.getId(), AuthzExpectation.DENY),
+                new RuleInput(List.of(publicJobs.getId()), null, null, hr.getId(), AuthzExpectation.ALLOW), // trùng giá trị đã lưu: không ghi
+                new RuleInput(List.of(hrJobs.getId()), null, null, hr.getId(), null)));                    // xoá ô chưa khai: không ghi
+
+        int previewTotal = service.preview(projectId, request).totalCells();
+        BulkUpdateResponse saved = service.update(projectId, request);
+
+        assertThat(previewTotal).isEqualTo(2);
+        assertThat(saved.updated()).isEqualTo(previewTotal);
     }
 }
