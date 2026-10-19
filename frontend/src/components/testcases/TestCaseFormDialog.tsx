@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ApiError } from "@/lib/api"
+import { listAuthProfiles } from "@/lib/authProfiles"
 import {
   createTestCase,
   getDependencySuggestions,
@@ -100,12 +101,18 @@ export function TestCaseFormDialog({
 }: TestCaseFormDialogProps) {
   const queryClient = useQueryClient()
   const isEdit = Boolean(testCase)
+  const { data: authProfiles = [] } = useQuery({
+    queryKey: ["auth-profiles", projectId],
+    queryFn: () => listAuthProfiles(projectId),
+    enabled: open,
+  })
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [requestHeaders, setRequestHeaders] = useState("")
   const [requestBody, setRequestBody] = useState("")
   const [expectedStatus, setExpectedStatus] = useState("200")
   const [authOverride, setAuthOverride] = useState<TestCaseAuthOverride>("DEFAULT")
+  const [authProfileId, setAuthProfileId] = useState("")
   const [resolvedPath, setResolvedPath] = useState("")
   const [pathParamFallbacks, setPathParamFallbacks] = useState("")
   const [dependencies, setDependencies] = useState<LocalDependency[]>([])
@@ -129,6 +136,7 @@ export function TestCaseFormDialog({
       setRequestBody(testCase?.requestBody ?? "")
       setExpectedStatus(testCase ? String(testCase.expectedStatus) : "200")
       setAuthOverride(testCase?.authOverride ?? "DEFAULT")
+      setAuthProfileId(testCase?.authProfileId ?? "")
       setResolvedPath(testCase?.resolvedPath ?? endpointPath)
       setPathParamFallbacks(testCase?.pathParamFallbacks ?? "")
       setDependencies(
@@ -193,6 +201,7 @@ export function TestCaseFormDialog({
         requestBody,
         expectedStatus: Number(expectedStatus),
         authOverride,
+        authProfileId: authProfileId || null,
         resolvedPath,
         pathParamFallbacks,
         dependencies: dependencies.map(({ dependsOnTestCaseId, jsonPath, placeholderName }) => ({
@@ -348,6 +357,28 @@ export function TestCaseFormDialog({
               onChange={(e) => setExpectedStatus(e.target.value)}
             />
           </div>
+
+          {authProfiles.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="test-case-auth-profile">Vai trò (profile xác thực)</Label>
+              <p className="text-xs text-muted-foreground">
+                Chọn vai trò để gọi target API bằng token của vai trò đó (vd HR, Candidate). Để mặc định = token chung của project.
+              </p>
+              <select
+                id="test-case-auth-profile"
+                className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
+                value={authProfileId}
+                onChange={(e) => setAuthProfileId(e.target.value)}
+              >
+                <option value="">Mặc định (token của project)</option>
+                {authProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.roleKey})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="test-case-auth-override">Xác thực khi gọi target API</Label>

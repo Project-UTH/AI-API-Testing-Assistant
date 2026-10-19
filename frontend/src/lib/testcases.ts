@@ -135,6 +135,8 @@ export interface TestCase {
   pathParamFallbacks: string | null
   source: TestCaseSource
   authOverride: TestCaseAuthOverride
+  /** Module 17 (3.1) - profile xác thực (vai trò) test case dùng; null = token mặc định của project. */
+  authProfileId: string | null
   /** Module 15h - null cho case Security/MANUAL/dữ liệu tạo trước 15h. */
   generationOrigin: TestCaseGenerationOrigin | null
   /** Module 15h - mô tả mục checklist EP/BVA mà case này đạt (hệ thống chấm theo nội dung). */
@@ -195,6 +197,8 @@ export interface TestCaseInput {
   resolvedPath?: string
   pathParamFallbacks?: string
   authOverride?: TestCaseAuthOverride
+  /** null = token mặc định của project. */
+  authProfileId?: string | null
   dependencies?: TestCaseDependencyInput[]
   assertions?: TestCaseAssertionInput[]
 }

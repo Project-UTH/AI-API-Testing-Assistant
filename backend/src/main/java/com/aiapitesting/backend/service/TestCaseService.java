@@ -19,6 +19,7 @@ import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestCaseHasDependentsException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
 import com.aiapitesting.backend.repository.BugReportRepository;
+import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -49,6 +50,7 @@ public class TestCaseService {
     private final TestResultRepository testResultRepository;
     private final BugReportRepository bugReportRepository;
     private final TestCasePathValidator testCasePathValidator;
+    private final AuthProfileRepository authProfileRepository;
 
     public List<TestCaseResponse> listByProject(UUID projectId) {
         Project project = projectService.getOwnedProject(projectId);
@@ -90,6 +92,7 @@ public class TestCaseService {
                 .pathParamFallbacks(request.pathParamFallbacks())
                 .source(TestCaseSource.MANUAL)
                 .authOverride(request.authOverride() == null ? TestCaseAuthOverride.DEFAULT : request.authOverride())
+                .authProfileId(validatedProfileId(endpoint.getProject(), request.authProfileId()))
                 .build();
         testCaseRepository.save(testCase);
 
@@ -115,6 +118,7 @@ public class TestCaseService {
         testCase.setResolvedPath(request.resolvedPath());
         testCase.setPathParamFallbacks(request.pathParamFallbacks());
         testCase.setAuthOverride(request.authOverride() == null ? TestCaseAuthOverride.DEFAULT : request.authOverride());
+        testCase.setAuthProfileId(validatedProfileId(endpoint.getProject(), request.authProfileId()));
 
         // save() trên entity đã có id dùng merge() nội bộ, trả về bản managed khác với association
         // endpoint chưa init - dùng lại testCase đang có (endpoint đã init sẵn) để tránh
@@ -127,6 +131,16 @@ public class TestCaseService {
                 testCase,
                 dependencies.stream().map(TestCaseDependencyResponse::from).toList(),
                 assertions.stream().map(TestCaseAssertionResponse::from).toList());
+    }
+
+    /** Profile xác thực phải thuộc ĐÚNG project của endpoint - không cho test case của project này dùng token của project khác. */
+    private UUID validatedProfileId(Project project, UUID authProfileId) {
+        if (authProfileId == null) {
+            return null;
+        }
+        return authProfileRepository.findByIdAndProject(authProfileId, project)
+                .orElseThrow(() -> new InvalidRequestException("Profile xác thực không tồn tại trong project này"))
+                .getId();
     }
 
     /** Bật/tắt khoá 1 test case - test case đang khoá không bị xoá khi "Sinh Test Case" xoá-và-thay. */

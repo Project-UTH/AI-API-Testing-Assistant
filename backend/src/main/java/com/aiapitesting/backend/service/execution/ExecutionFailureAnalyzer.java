@@ -90,7 +90,7 @@ public class ExecutionFailureAnalyzer {
                     failedAssertionsOf(result), lastOtherVersionOf(result, rows),
                     result.getTestCase().getEndpoint() == null ? null : result.getTestCase().getEndpoint().effectiveRequiresAuth(),
                     fallbackPathParamsByTestCaseId.getOrDefault(result.getTestCase().getId(), Map.of()),
-                    hasAssertions(result));
+                    hasAssertions(result), result.getTestCase().getAuthProfileId() != null);
             FailureCauseClassifier.Result classified = failureCauseClassifier.classify(input);
             if (classified != null) {
                 result.setFailureCause(classified.cause());
@@ -301,7 +301,9 @@ public class ExecutionFailureAnalyzer {
                 connectionErrors++;
             }
             TestCaseAuthOverride override = r.getTestCase().getAuthOverride();
-            if (override == null || override == TestCaseAuthOverride.DEFAULT) {
+            // Test chạy bằng profile vai trò (Module 17 - 3.1) không dùng token mặc định: không đếm vào bằng chứng về token đó.
+            boolean usesProjectToken = r.getTestCase().getAuthProfileId() == null;
+            if (usesProjectToken && (override == null || override == TestCaseAuthOverride.DEFAULT)) {
                 defaultAuthCalled++;
                 // Chỉ endpoint spec khai YÊU CẦU xác thực mới chứng minh được token còn dùng: endpoint công khai nhận 200 dù
                 // token hỏng.

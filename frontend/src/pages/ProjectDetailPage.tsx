@@ -1,13 +1,14 @@
 import { useState } from "react"
 import { useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { KeyRound, Upload } from "lucide-react"
+import { KeyRound, Upload, Users } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { EndpointList } from "@/components/projects/EndpointList"
 import { ImportOpenApiDialog } from "@/components/projects/ImportOpenApiDialog"
 import { NextStepBanner } from "@/components/projects/NextStepBanner"
 import { TargetAuthDialog } from "@/components/projects/TargetAuthDialog"
+import { AuthProfilesDialog } from "@/components/projects/AuthProfilesDialog"
 import { getProject } from "@/lib/projects"
 
 const TARGET_AUTH_LABEL: Record<string, string> = {
@@ -20,6 +21,7 @@ export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [importOpen, setImportOpen] = useState(false)
   const [targetAuthOpen, setTargetAuthOpen] = useState(false)
+  const [profilesOpen, setProfilesOpen] = useState(false)
 
   const { data: project } = useQuery({
     queryKey: ["projects", id],
@@ -49,6 +51,10 @@ export function ProjectDetailPage() {
                 <KeyRound className="h-4 w-4" />
                 Sửa xác thực
               </Button>
+              <Button size="sm" variant="outline" onClick={() => setProfilesOpen(true)}>
+                <Users className="h-4 w-4" />
+                Vai trò
+              </Button>
               <Button size="sm" onClick={() => setImportOpen(true)}>
                 <Upload className="h-4 w-4" />
                 Import OpenAPI
@@ -63,6 +69,7 @@ export function ProjectDetailPage() {
             onOpenChange={setImportOpen}
             projectId={id!}
           />
+          <AuthProfilesDialog open={profilesOpen} onOpenChange={setProfilesOpen} projectId={id!} />
           <TargetAuthDialog
             open={targetAuthOpen}
             onOpenChange={setTargetAuthOpen}

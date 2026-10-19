@@ -1,10 +1,12 @@
 package com.aiapitesting.backend.service.execution;
 
+import com.aiapitesting.backend.entity.AuthProfile;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
+import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
 import com.aiapitesting.backend.service.TestCasePathValidator;
@@ -20,9 +22,13 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
 
 /**
  * Test tích hợp thật với 1 HTTP server cục bộ (com.sun.net.httpserver.HttpServer, có sẵn trong JDK,
@@ -34,6 +40,7 @@ class RestAssuredTestRunnerTest {
     private CapturingHandler handler;
     private RestAssuredTestRunner runner;
     private Project project;
+    private final AuthProfileRepository authProfileRepository = org.mockito.Mockito.mock(AuthProfileRepository.class);
 
     @BeforeEach
     void setUp() throws IOException {
@@ -43,7 +50,7 @@ class RestAssuredTestRunnerTest {
 
         AesEncryptionService aesEncryptionService =
                 new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
-        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator());
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator(), authProfileRepository);
         project = Project.builder().targetBaseUrl("http://localhost:" + server.getAddress().getPort()).build();
     }
 
@@ -71,7 +78,7 @@ class RestAssuredTestRunnerTest {
         server.start();
         AesEncryptionService aesEncryptionService =
                 new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
-        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator());
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator(), authProfileRepository);
         project = Project.builder()
                 .targetBaseUrl("http://localhost:" + server.getAddress().getPort())
                 .targetAuthType(TargetAuthType.BEARER_TOKEN)
@@ -90,7 +97,7 @@ class RestAssuredTestRunnerTest {
         server.start();
         AesEncryptionService aesEncryptionService =
                 new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
-        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator());
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator(), authProfileRepository);
         project = Project.builder()
                 .targetBaseUrl("http://localhost:" + server.getAddress().getPort())
                 .targetAuthType(TargetAuthType.BEARER_TOKEN)
@@ -110,7 +117,7 @@ class RestAssuredTestRunnerTest {
         server.start();
         AesEncryptionService aesEncryptionService =
                 new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
-        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator());
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aesEncryptionService, new TestCasePathValidator(), authProfileRepository);
         project = Project.builder()
                 .targetBaseUrl("http://localhost:" + server.getAddress().getPort())
                 .targetAuthType(TargetAuthType.BEARER_TOKEN)
@@ -171,6 +178,109 @@ class RestAssuredTestRunnerTest {
 
         assertThat(result.statusCode()).isEqualTo(404);
         assertThat(result.responseBody()).isEqualTo("not found");
+    }
+
+    // ---- Module 17 (3.1) - profile xác thực (vai trò) ----
+
+    private Project projectWithDefaultToken(AesEncryptionService aes) {
+        UUID projectId = UUID.randomUUID();
+        return Project.builder().id(projectId)
+                .targetBaseUrl("http://localhost:" + server.getAddress().getPort())
+                .targetAuthType(TargetAuthType.BEARER_TOKEN)
+                .targetAuthValueEncrypted(aes.encrypt("project-default-token"))
+                .build();
+    }
+
+    private AesEncryptionService aes() {
+        return new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
+    }
+
+    @Test
+    void run_testCaseWithAuthProfile_sendsThatProfilesTokenNotTheProjectDefault() {
+        server.start();
+        AesEncryptionService aes = aes();
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aes, new TestCasePathValidator(), authProfileRepository);
+        project = projectWithDefaultToken(aes);
+        UUID profileId = UUID.randomUUID();
+        when(authProfileRepository.findByIdAndProjectId(profileId, project.getId())).thenReturn(Optional.of(AuthProfile.builder()
+                .id(profileId).roleKey("CANDIDATE").authType(TargetAuthType.BEARER_TOKEN)
+                .authValueEncrypted(aes.encrypt("candidate-token")).build()));
+        Endpoint endpoint = Endpoint.builder().method("GET").path("/pets").build();
+        TestCase testCase = TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(200).authProfileId(profileId).build();
+
+        runner.run(project, testCase, Map.of());
+
+        assertThat(handler.headers.getFirst("Authorization")).isEqualTo("Bearer candidate-token");
+    }
+
+    @Test
+    void run_authOverrideNoneBeatsProfile_noAuthorizationHeader() {
+        server.start();
+        AesEncryptionService aes = aes();
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aes, new TestCasePathValidator(), authProfileRepository);
+        project = projectWithDefaultToken(aes);
+        UUID profileId = UUID.randomUUID();
+        when(authProfileRepository.findByIdAndProjectId(profileId, project.getId())).thenReturn(Optional.of(AuthProfile.builder()
+                .id(profileId).roleKey("HR").authType(TargetAuthType.BEARER_TOKEN).authValueEncrypted(aes.encrypt("hr-token")).build()));
+        Endpoint endpoint = Endpoint.builder().method("GET").path("/pets").build();
+        TestCase testCase = TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(401)
+                .authProfileId(profileId).authOverride(TestCaseAuthOverride.NONE).build();
+
+        runner.run(project, testCase, Map.of());
+
+        assertThat(handler.headers.getFirst("Authorization")).isNull();
+    }
+
+    @Test
+    void run_authOverrideInvalidWithProfile_neverSendsTheRealProfileToken() {
+        server.start();
+        AesEncryptionService aes = aes();
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aes, new TestCasePathValidator(), authProfileRepository);
+        project = projectWithDefaultToken(aes);
+        UUID profileId = UUID.randomUUID();
+        when(authProfileRepository.findByIdAndProjectId(profileId, project.getId())).thenReturn(Optional.of(AuthProfile.builder()
+                .id(profileId).roleKey("HR").authType(TargetAuthType.BEARER_TOKEN).authValueEncrypted(aes.encrypt("hr-token")).build()));
+        Endpoint endpoint = Endpoint.builder().method("GET").path("/pets").build();
+        TestCase testCase = TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(401)
+                .authProfileId(profileId).authOverride(TestCaseAuthOverride.INVALID).build();
+
+        runner.run(project, testCase, Map.of());
+
+        assertThat(handler.headers.getFirst("Authorization")).startsWith("Bearer ").doesNotContain("hr-token");
+    }
+
+    @Test
+    void run_profileNoneType_sendsNoAuthorizationHeaderEvenWhenProjectHasDefaultToken() {
+        // Vai trò "ẩn danh": gọi không token dù project có token mặc định.
+        server.start();
+        AesEncryptionService aes = aes();
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aes, new TestCasePathValidator(), authProfileRepository);
+        project = projectWithDefaultToken(aes);
+        UUID profileId = UUID.randomUUID();
+        when(authProfileRepository.findByIdAndProjectId(profileId, project.getId())).thenReturn(Optional.of(AuthProfile.builder()
+                .id(profileId).roleKey("ANONYMOUS").authType(TargetAuthType.NONE).build()));
+        Endpoint endpoint = Endpoint.builder().method("GET").path("/pets").build();
+        TestCase testCase = TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(401).authProfileId(profileId).build();
+
+        runner.run(project, testCase, Map.of());
+
+        assertThat(handler.headers.getFirst("Authorization")).isNull();
+    }
+
+    @Test
+    void run_profileMissingOrFromAnotherProject_failsInsteadOfFallingBackToDefaultToken() {
+        server.start();
+        AesEncryptionService aes = aes();
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aes, new TestCasePathValidator(), authProfileRepository);
+        project = projectWithDefaultToken(aes);
+        UUID profileId = UUID.randomUUID();
+        when(authProfileRepository.findByIdAndProjectId(profileId, project.getId())).thenReturn(Optional.empty());
+        Endpoint endpoint = Endpoint.builder().method("GET").path("/pets").build();
+        TestCase testCase = TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(200).authProfileId(profileId).build();
+
+        assertThatThrownBy(() -> runner.run(project, testCase, Map.of()))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("Profile xác thực");
+        assertThat(handler.headers).isNull(); // không có request nào tới target
     }
 
     private static class CapturingHandler implements HttpHandler {

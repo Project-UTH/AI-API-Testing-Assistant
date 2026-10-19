@@ -87,7 +87,7 @@ public class FailureCauseClassifier {
             String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
             Instant authUpdatedAt, ExecutionContext context,
             List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion, Boolean endpointRequiresAuth,
-            Map<String, String> fallbackPathParams, boolean hasAssertions
+            Map<String, String> fallbackPathParams, boolean hasAssertions, boolean usesAuthProfile
     ) {
         /** Dạng không có thông tin về tham số đường dẫn dự phòng/assertion - giữ cho các nơi chưa cần. */
         public Input(
@@ -98,7 +98,7 @@ public class FailureCauseClassifier {
         ) {
             this(status, expectedStatus, responseStatus, errorKind, durationMs, errorMessage, authOverride, history,
                     currentBaseUrl, authUpdatedAt, context, failedAssertions, lastOtherVersion, endpointRequiresAuth,
-                    Map.of(), false);
+                    Map.of(), false, false);
         }
 
         /** Dạng không có thông tin về spec xác thực - giữ cho các nơi chưa cần. */
@@ -363,7 +363,9 @@ public class FailureCauseClassifier {
     // ---- Xác thực ----
 
     private boolean isUnexpectedAuthFailure(Input in) {
-        boolean usesDefaultAuth = in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT;
+        // Test chạy bằng 1 profile vai trò (Module 17 - 3.1) KHÔNG dùng token mặc định của project: 401/403 của nó nói về vai trò đó
+        // (có thể là kết quả phân quyền đúng/sai), không nói gì về token project - không gán nhãn "nghi token" bằng bằng chứng của token khác.
+        boolean usesDefaultAuth = (in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT) && !in.usesAuthProfile();
         // Token đã chứng minh còn dùng được (test dùng token mặc định khác trong cùng lượt nhận phản hồi không phải
         // 401/403) thì 401/403 riêng lẻ KHÔNG được quy cho token - nếu không sẽ che đúng loại lỗi thật của API.
         boolean tokenProvenValid = in.context() != null && in.context().defaultAuthAcceptedCount() > 0;

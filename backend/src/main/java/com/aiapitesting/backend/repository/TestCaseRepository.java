@@ -24,6 +24,9 @@ public interface TestCaseRepository extends JpaRepository<TestCase, UUID> {
 
     long countByEndpointProjectAndLockedTrue(Project project);
 
+    // Module 17 (3.1) - số test case đang dùng 1 profile xác thực (chặn xoá profile còn được dùng).
+    long countByAuthProfileId(UUID authProfileId);
+
     // JOIN FETCH endpoint - tránh LazyInitializationException sau khi session đóng, và N+1 khi map danh sách.
     @Query("SELECT tc FROM TestCase tc JOIN FETCH tc.endpoint WHERE tc.endpoint.project = :project")
     List<TestCase> findAllByEndpointProject(@Param("project") Project project);

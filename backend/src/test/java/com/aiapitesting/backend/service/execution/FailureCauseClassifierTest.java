@@ -284,6 +284,25 @@ class FailureCauseClassifierTest {
         assertThat(classifier.classify(failed(200, 404, history)).cause()).isEqualTo(FailureCause.DATA_STATE);
     }
 
+    // ---- Test dùng profile vai trò (Module 17 - 3.1) ----
+
+    @Test
+    void forbiddenOnTestUsingAnAuthProfile_isNeverBlamedOnTheProjectToken() {
+        // 403 của vai trò Candidate khi gọi endpoint của HR: có thể là phân quyền đúng/sai, không nói gì về token của project.
+        Input in = new Input(TestResultStatus.FAILED, 200, 403, null, 50L, null, TestCaseAuthOverride.DEFAULT, history(fail(0, 403)),
+                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, true);
+
+        assertThat(classifier.classify(in).cause()).isNotEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
+    void sameForbiddenOnProjectDefaultToken_stillBlamedOnTheToken() {
+        Input in = new Input(TestResultStatus.FAILED, 200, 403, null, 50L, null, TestCaseAuthOverride.DEFAULT, history(fail(0, 403)),
+                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, false);
+
+        assertThat(classifier.classify(in).cause()).isEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
     // ---- STATE_CONFLICT (Module 17 - 1.5) ----
 
     @Test

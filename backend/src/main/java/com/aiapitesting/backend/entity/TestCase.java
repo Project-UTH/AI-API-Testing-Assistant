@@ -124,6 +124,14 @@ public class TestCase {
     @Column(columnDefinition = "VARCHAR(255)")
     private String checklistItem;
 
+    /**
+     * Module 17 (3.1) - test case gọi target bằng profile xác thực (vai trò) nào. Null = token mặc định của Project (hành vi cũ).
+     * Lưu UUID thường (không quan hệ JPA) vì runner chạy @Async ngoài transaction - quan hệ lazy sẽ vỡ ở đó. authOverride
+     * NONE/INVALID vẫn thắng profile (case Security cố ý bỏ/sai token).
+     */
+    @Column
+    private UUID authProfileId;
+
     /** Khoá test case khỏi bị xoá khi "Sinh Test Case" xoá-và-thay - bật/tắt qua nút khoá riêng. */
     @Column(nullable = false)
     @Builder.Default
