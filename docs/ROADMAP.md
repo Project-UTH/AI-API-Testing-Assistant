@@ -1348,6 +1348,25 @@ Rà soát chuyên gia tìm các chỗ gắn với 1 ứng dụng cụ thể, x�
 
 Đối chiếu code thật; mục nào đã làm thì không liệt kê lại. Kích thước S/M/L. **Thứ tự đề xuất: P0 trước.**
 
+#### 17h. Kết quả so sánh 'AI sinh test' vs 'tự thêm 1 test đúng + hệ thống sinh' trên hệ thống lớn (API tuyển dụng 110 endpoint, 2026-10-20)
+
+Cùng API, cùng token HR, cùng phạm vi Positive+Negative+Boundary (Security N/A vì spec không khai xác thực). Dữ liệu đo thật:
+
+| | AI sinh | 1 test đúng + hệ thống sinh |
+|---|---|---|
+| **Endpoint vừa** `PUT /jobs/{jobId}/interview-template` (5 field) | 121 giây, **20.907 token**, 25 test (có 3 cặp trùng) | **0,1 giây, 0 token**, 19 test (1 tay + 18 hệ thống) |
+| Kết quả chạy | 10 Pass / 15 Fail, trong đó **13 Fail giả** (`RESOURCE_NOT_FOUND`: AI dùng UUID mẫu của Swagger làm `jobId`) | 17 Pass / 2 Fail, **cả 2 là tín hiệu thật** |
+| **Endpoint nhiều ràng buộc** `PUT /companies/{id}` (8 field, 6 có ràng buộc) | **THẤT BẠI**: đủ 4 nhóm và P+N+B đều quá 180 giây (500, `AnthropicIoException`); tách nhóm: Positive 8s/12.307 token, Negative 13s/13.395 token, **Boundary vượt 180s** | 0,1 giây, 0 token, 23 test, 21 Pass, 2 Fail thật |
+
+Phát hiện:
+- **AI không biết id thật** nên đường dẫn `{{id}}`/`{{jobId}}` dùng UUID mẫu: mọi test cần tài nguyên tồn tại đều 404 (Fail giả, gây nhiễu). Hệ thống mượn đường dẫn thật từ test đúng của người dùng nên không bị.
+- **Endpoint nhiều field: AI không hoàn thành được** (output quá dài > ngưỡng đọc 150s / request 180s) - xác nhận rủi ro S6/P0-4 bằng số đo.
+- **Sinh theo từng nhóm KHÔNG cộng dồn:** gọi Negative sau Positive thay thế test Positive (còn 2 test Negative, mất Positive). Cần sinh cộng dồn hoặc tự chia lô theo nhóm rồi gộp.
+- AI sinh **trùng** boundary với mục checklist (3 cặp 'đúng maxLength' lặp).
+- Cả 2 cách cùng bắt được 2 chỗ spec lệch API (spec `minLength: 0` nhưng API từ chối chuỗi rỗng cho `subject`/`name`/`senderName`); hệ thống gắn `TEST_DATA_SUSPECT` đúng.
+- Kết luận: với checklist EP/BVA, hệ thống tất định **nhanh hơn, rẻ hơn, ít nhiễu hơn** và chạy được ở endpoint lớn; AI chỉ nên dùng cho phần ngoài checklist (logic nghiệp vụ). Quy trình khuyến nghị: tự thêm 1 test đúng -> bấm Bổ sung -> (tuỳ chọn) AI sinh phần 'extra'.
+- [ ] **AI-1:** sinh theo nhóm phải cộng dồn (không xoá nhóm đã sinh) hoặc tự chia lô; **AI-2:** khi project đã có test đúng cho endpoint thì AI phải mượn đường dẫn/id thật từ đó (hoặc không sinh test cần id thật); **AI-3:** loại trùng với mục checklist trước khi lưu; **AI-4:** giới hạn số mục gửi AI mỗi lần để không vượt thời gian.
+
 **P0 - hỏng hoặc rủi ro khi dùng cho dự án 100+ endpoint**
 - [ ] **P0-1. Frontend cắt dữ liệu ở 100 endpoint (S) - ĐÃ XÁC MINH:** `lib/endpoints.ts:68` và `lib/admin.ts:109` gọi `size=100` cố định; API 110 endpoint mất 10 endpoint ở trang Endpoint/Test case/Lịch sử, không có cảnh báo 'hiển thị 100/110'. Sửa: lặp các trang hoặc 'Tải thêm'.
 - [ ] **P0-2. SSRF guard cho import URL và URL đích (S):** chưa chặn IP nội bộ/loopback/link-local (169.254.169.254), redirect sang IP nội bộ, DNS rebinding; cho phép localhost bằng cờ cấu hình vì demo. Gộp với webhook (S7) và allowlist host đích theo project.
