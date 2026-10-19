@@ -11,6 +11,7 @@ const TABS = [
   { to: "coverage", label: "Coverage", end: false },
   { to: "history", label: "Lịch sử", end: false },
   { to: "bug-reports", label: "Bug Report", end: false },
+  { to: "ci", label: "Tích hợp CI", end: false },
 ]
 
 /**

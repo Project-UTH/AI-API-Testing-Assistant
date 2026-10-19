@@ -31,6 +31,10 @@ public interface TestExecutionRepository extends JpaRepository<TestExecution, UU
 
     Optional<TestExecution> findByIdAndProject(UUID id, Project project);
 
+    // Module 17 (17d) - CI chỉ biết projectId (từ token): tra theo id project, không cần nạp Project/lazy proxy.
+    @Query("SELECT e FROM TestExecution e WHERE e.id = :id AND e.project.id = :projectId")
+    Optional<TestExecution> findByIdAndProjectId(@Param("id") UUID id, @Param("projectId") UUID projectId);
+
     // Module 17 (17c) - các lượt chạy gần nhất của project (chọn lượt để so sánh).
     List<TestExecution> findTop50ByProjectOrderByStartedAtDesc(Project project);
 }

@@ -46,6 +46,9 @@ class ProjectServiceTest {
     private com.aiapitesting.backend.repository.AuthProfileRepository authProfileRepository;
 
     @Mock
+    private com.aiapitesting.backend.repository.ApiTokenRepository apiTokenRepository;
+
+    @Mock
     private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
 
     @Mock

@@ -16,6 +16,7 @@ import { ProjectsPage } from "@/pages/ProjectsPage"
 import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
 import { TestCasesPage } from "@/pages/TestCasesPage"
 import { CoveragePage } from "@/pages/CoveragePage"
+import { CiIntegrationPage } from "@/pages/CiIntegrationPage"
 import { ExecutionComparePage } from "@/pages/ExecutionComparePage"
 import { TestExecutionPage } from "@/pages/TestExecutionPage"
 import { TestHistoryPage } from "@/pages/TestHistoryPage"
@@ -46,6 +47,7 @@ function App() {
               <Route path="coverage" element={<CoveragePage />} />
               <Route path="history" element={<TestHistoryPage />} />
               <Route path="bug-reports" element={<BugReportPage />} />
+              <Route path="ci" element={<CiIntegrationPage />} />
               <Route path="executions/:executionId" element={<TestExecutionPage />} />
               <Route path="executions/:executionId/compare" element={<ExecutionComparePage />} />
             </Route>

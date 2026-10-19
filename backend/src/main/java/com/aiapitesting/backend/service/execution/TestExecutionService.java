@@ -64,12 +64,22 @@ public class TestExecutionService {
 
     public TestExecutionResponse trigger(UUID projectId, TestExecutionRequest request) {
         Project project = projectService.getOwnedProject(projectId);
+        return triggerForProject(project, request.testCaseIds(), null, null);
+    }
+
+    /**
+     * Chạy suite cho 1 Project đã được caller kiểm quyền (JWT: getOwnedProject; CI: token đã gắn với đúng project này). Tách khỏi
+     * {@link #trigger} để luồng CI không phải đi qua SecurityContext của người dùng (Module 17 - 17d).
+     *
+     * @param ciApiTokenId token CI khởi chạy (null nếu từ giao diện); ciFailOn chế độ kết luận CI (null = mặc định)
+     */
+    public TestExecutionResponse triggerForProject(Project project, List<UUID> testCaseIds, UUID ciApiTokenId, String ciFailOn) {
         if (project.getTargetBaseUrl() == null || project.getTargetBaseUrl().isBlank()) {
             throw new InvalidRequestException(
                     "Project chưa cấu hình Target Base URL, vui lòng import lại và điền URL");
         }
 
-        List<TestCase> selected = resolveOwnedTestCases(project, request.testCaseIds());
+        List<TestCase> selected = resolveOwnedTestCases(project, testCaseIds);
         Set<UUID> selectedIds = selected.stream().map(TestCase::getId).collect(Collectors.toSet());
 
         // Toàn bộ dependency trong project, load 1 lần - BFS bao đóng bắc cầu chạy hoàn toàn trong
@@ -122,6 +132,8 @@ public class TestExecutionService {
                         // Module 16 - chụp lại cấu hình lúc chạy (project có thể đổi URL/token giữa 2 lần chạy).
                         .targetBaseUrlSnapshot(project.getTargetBaseUrl())
                         .targetAuthUpdatedAtSnapshot(project.getTargetAuthUpdatedAt())
+                        .ciApiTokenId(ciApiTokenId)
+                        .ciFailOn(ciFailOn)
                         .build());
 
         // Ghi 1 dòng lịch sử cho mọi endpoint có mặt trong tập test case đã chạy (tự chọn lẫn

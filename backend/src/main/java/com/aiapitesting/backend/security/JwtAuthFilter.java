@@ -25,6 +25,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
 
+    /** Route /api/v1/ci/** chỉ nhận token API CI (X-Api-Token) - JWT đăng nhập KHÔNG được xác thực ở đó (Module 17 - 17d). */
+    @Override
+    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
+        return request.getRequestURI().startsWith(ApiTokenAuthFilter.CI_PATH_PREFIX);
+    }
+
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                      @NonNull HttpServletResponse response,

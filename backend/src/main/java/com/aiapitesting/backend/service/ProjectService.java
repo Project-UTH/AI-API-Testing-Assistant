@@ -9,6 +9,7 @@ import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
+import com.aiapitesting.backend.repository.ApiTokenRepository;
 import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.repository.BugReportEventRepository;
 import com.aiapitesting.backend.repository.BugReportRepository;
@@ -48,6 +49,7 @@ public class ProjectService {
     private final BugReportRepository bugReportRepository;
     private final BugReportEventRepository bugReportEventRepository;
     private final AuthProfileRepository authProfileRepository;
+    private final ApiTokenRepository apiTokenRepository;
     private final EndpointRoleRepository endpointRoleRepository;
     private final CurrentUserService currentUserService;
     private final AesEncryptionService aesEncryptionService;
@@ -125,6 +127,7 @@ public class ProjectService {
         endpointRoleRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         authProfileRepository.deleteAllByProject(project);
+        apiTokenRepository.deleteAllByProject(project);
         projectRepository.delete(project);
     }
 

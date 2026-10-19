@@ -45,6 +45,13 @@ public class TestExecution {
      */
     private Instant targetAuthUpdatedAtSnapshot;
 
+    /** Module 17 (17d) - lượt chạy do token API CI khởi chạy (UUID thường, không FK: thu hồi/xoá token không vướng lịch sử); null = chạy từ giao diện. */
+    private java.util.UUID ciApiTokenId;
+
+    /** Module 17 (17d) - chế độ kết luận CI đã chọn lúc khởi chạy (API_FAIL/ANY_FAIL); null = mặc định. */
+    @Column(length = 20)
+    private String ciFailOn;
+
     @PrePersist
     protected void onCreate() {
         this.startedAt = Instant.now();
