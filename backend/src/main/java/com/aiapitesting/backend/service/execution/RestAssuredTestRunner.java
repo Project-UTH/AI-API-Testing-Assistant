@@ -68,7 +68,9 @@ public class RestAssuredTestRunner {
         headers.putAll(parseHeaders(headersJson));
 
         TargetAuthHeaderResolver.AuthHeader authHeader = resolveAuthHeader(project, testCase);
-        if (authHeader != null) {
+        if (authHeader != null && authHeader.query()) {
+            request = request.queryParam(authHeader.name(), authHeader.value());
+        } else if (authHeader != null) {
             headers.put(authHeader.name(), authHeader.value());
         }
         // Content-Type do RestAssured gắn theo cách mã hoá body (json/form/multipart/raw): bỏ khỏi map để không gửi trùng 2 header.

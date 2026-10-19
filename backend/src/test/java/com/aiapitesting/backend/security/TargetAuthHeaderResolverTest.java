@@ -50,4 +50,25 @@ class TargetAuthHeaderResolverTest {
         assertThat(resolver.resolveInvalid(TargetAuthType.BEARER_TOKEN, null, "bad")).isEqualTo(new AuthHeader("Authorization", "Bearer bad"));
         assertThat(resolver.resolveInvalid(TargetAuthType.BASIC_AUTH, null, "bad").value()).startsWith("Basic ");
     }
+
+    @Test
+    void queryParamAuth_isSentAsQueryParameter_validatedAndKeepsNameWhenInvalid() {
+        AuthHeader header = resolver.resolve(TargetAuthType.QUERY_PARAM, "api_key=k-123");
+        assertThat(header.query()).isTrue();
+        assertThat(header.name()).isEqualTo("api_key");
+        assertThat(header.value()).isEqualTo("k-123");
+        assertThat(resolver.resolve(TargetAuthType.QUERY_PARAM, "token=a=b").value()).isEqualTo("a=b"); // dấu = trong giá trị giữ nguyên
+
+        assertThat(TargetAuthHeaderResolver.isValidQueryParamValue("key=v")).isTrue();
+        assertThat(TargetAuthHeaderResolver.isValidQueryParamValue("no-equals")).isFalse();
+        assertThat(TargetAuthHeaderResolver.isValidQueryParamValue("=v")).isFalse();
+        assertThat(TargetAuthHeaderResolver.isValidQueryParamValue("k=")).isFalse();
+        assertThat(TargetAuthHeaderResolver.isValidQueryParamValue("bad name=v")).isFalse();
+        assertThat(TargetAuthHeaderResolver.isValidQueryParamValue("k=v\r\nX: 1")).isFalse();
+
+        AuthHeader invalid = resolver.resolveInvalid(TargetAuthType.QUERY_PARAM, "api_key=real", "bad");
+        assertThat(invalid.query()).isTrue();
+        assertThat(invalid.name()).isEqualTo("api_key");
+        assertThat(invalid.value()).isEqualTo("bad");
+    }
 }

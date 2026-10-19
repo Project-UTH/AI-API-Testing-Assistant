@@ -205,6 +205,13 @@ public class FailureCauseClassifier {
             return new Result(FailureCause.AUTH_CONFIG, authEvidence(in, history, ctx));
         }
 
+        // 3b. 403 (đã xác thực nhưng không đủ quyền) khi kỳ vọng thành công, mà token mặc định đã chứng minh dùng được ở test khác: nghi token/vai
+        //     trò thiếu quyền cho endpoint này. Đặt trước luật lịch sử để 403 lặp lại không bị gọi là "lỗi ổn định của API".
+        Result forbidden = tokenForbidden(in);
+        if (forbidden != null) {
+            return forbidden;
+        }
+
         // 4-7. Phân loại theo mẫu kết quả qua các lần chạy cùng phiên bản test.
         // Bỏ các lần Fail do môi trường/token đã chấm trước đó: chúng không nói gì về việc API/test có đổi hay không
         // (vd Pass, Fail-do-token, Fail-do-token, Fail thật không phải "bậc thang dữ liệu đổi").
@@ -420,6 +427,21 @@ public class FailureCauseClassifier {
     }
 
     // ---- Xác thực ----
+
+    private Result tokenForbidden(Input in) {
+        boolean usesDefaultAuth = (in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT) && !in.usesAuthProfile();
+        Integer expected = in.expectedStatus();
+        if (in.status() != TestResultStatus.FAILED || !usesDefaultAuth || !Objects.equals(in.responseStatus(), 403)
+                || expected == null || expected < 200 || expected > 299
+                || in.context() == null || in.context().defaultAuthAcceptedCount() <= 0) {
+            return null;
+        }
+        return new Result(FailureCause.TOKEN_FORBIDDEN, List.of(
+                "API trả 403 (đã xác thực nhưng không đủ quyền) trong khi kỳ vọng " + expected + "; token mặc định của project được chấp nhận ở "
+                        + in.context().defaultAuthAcceptedCount() + " test khác trong cùng lượt chạy nên token còn dùng được",
+                "Nhiều khả năng token/vai trò mặc định không có quyền gọi endpoint này (vd endpoint của vai trò khác): gán profile vai trò đúng "
+                        + "ở Sửa test case. Cũng có thể API chặn nhầm (bug thật) - kiểm thử black-box không phân biệt được"));
+    }
 
     private boolean isUnexpectedAuthFailure(Input in) {
         // Test chạy bằng 1 profile vai trò (Module 17 - 3.1) KHÔNG dùng token mặc định của project: 401/403 của nó nói về vai trò đó

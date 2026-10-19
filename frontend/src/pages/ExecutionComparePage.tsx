@@ -66,6 +66,7 @@ const CAUSE_LABEL: Record<string, string> = {
   AUTHZ_VIOLATION: "Sai lệch phân quyền",
   TEST_DATA_SUSPECT: "Nghi dữ liệu test không hợp lệ",
   MASS_ASSIGNMENT: "Nhận field không khai báo (mass assignment)",
+  TOKEN_FORBIDDEN: "Nghi token thiếu quyền cho endpoint này",
 }
 
 const SHOWN_ORDER: ExecutionDiffCategory[] = [

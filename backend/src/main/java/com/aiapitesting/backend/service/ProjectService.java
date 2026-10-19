@@ -113,6 +113,9 @@ public class ProjectService {
         if (authType == TargetAuthType.BASIC_AUTH && (authValue == null || authValue.indexOf(':') <= 0)) {
             throw new InvalidRequestException("Basic Auth cần giá trị dạng tên:mật khẩu");
         }
+        if (authType == TargetAuthType.QUERY_PARAM && !TargetAuthHeaderResolver.isValidQueryParamValue(authValue)) {
+            throw new InvalidRequestException("Khoá API qua query string cần giá trị dạng tên_tham_số=giá trị (vd api_key=abc123)");
+        }
         if (authType == TargetAuthType.CUSTOM_HEADER && !TargetAuthHeaderResolver.isValidCustomHeaderValue(authValue)) {
             throw new InvalidRequestException("Header tuỳ ý cần giá trị dạng Tên-Header: giá trị (vd X-Auth-Token: abc123)");
         }

@@ -31,6 +31,7 @@ export type FailureCauseCode =
   | "AUTHZ_VIOLATION"
   | "TEST_DATA_SUSPECT"
   | "MASS_ASSIGNMENT"
+  | "TOKEN_FORBIDDEN"
 
 export interface FailureCause {
   code: FailureCauseCode

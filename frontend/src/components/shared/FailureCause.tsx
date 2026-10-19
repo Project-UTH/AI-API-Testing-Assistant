@@ -19,6 +19,7 @@ const CAUSE_STYLES: Record<FailureCauseCode, string> = {
   AUTHZ_VIOLATION: "bg-destructive/10 text-destructive",
   TEST_DATA_SUSPECT: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   MASS_ASSIGNMENT: "bg-destructive/10 text-destructive",
+  TOKEN_FORBIDDEN: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
 }
 
 /** Gợi ý việc nên làm cho từng nguyên nhân - chỉ là gợi ý cho nghi ngờ, không phải kết luận. */
@@ -43,6 +44,8 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
     "API từ chối đầu vào (400/422) và phản hồi nói dữ liệu không hợp lệ (vd ngày quá khứ, giá trị không có trong danh mục). Ưu tiên Sửa test case: đổi dữ liệu thành giá trị hợp lệ rồi chạy lại. Chỉ tạo Bug Report nếu đã chắc dữ liệu hợp lệ mà API vẫn từ chối.",
   MASS_ASSIGNMENT:
     "Phát hiện bảo mật: API nhận field không khai báo trong schema (giá trị đánh dấu xuất hiện lại trong phản hồi) hoặc lỗi 5xx khi nhận chúng. Kiểm tra whitelist/DTO ở backend, rồi xoá dữ liệu probe đã ghi trên hệ thống đích. Đây là lỗ hổng, không phải lỗi test.",
+  TOKEN_FORBIDDEN:
+    "API trả 403 (đã xác thực nhưng không đủ quyền) trong khi token mặc định dùng được ở test khác. Mở Sửa test case và chọn profile vai trò đúng cho endpoint này (nút Vai trò của project). Chỉ coi là lỗi API nếu chắc vai trò mặc định phải được phép.",
 }
 
 /** Nhãn ngắn cạnh badge Fail/Lỗi - tooltip là bằng chứng đầy đủ. */

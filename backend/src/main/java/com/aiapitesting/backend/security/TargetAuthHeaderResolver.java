@@ -15,8 +15,15 @@ import java.util.regex.Pattern;
 @Component
 public class TargetAuthHeaderResolver {
 
-    public record AuthHeader(String name, String value) {
+    /** @param query true = gửi dưới dạng tham số query string (QUERY_PARAM) thay vì header HTTP. */
+    public record AuthHeader(String name, String value, boolean query) {
+        public AuthHeader(String name, String value) {
+            this(name, value, false);
+        }
     }
+
+    /** Tên tham số query hợp lệ: chữ, số, _ . - (không cho ký tự điều khiển/phân tách URL). */
+    private static final Pattern QUERY_NAME = Pattern.compile("[A-Za-z0-9_.\\-]{1,100}");
 
     /** Tên header HTTP hợp lệ (RFC 7230 token, rút gọn) - chặn ký tự xuống dòng/dấu cách để không chèn header. */
     private static final Pattern HEADER_NAME = Pattern.compile("[A-Za-z0-9!#$%&'*+.^_`|~-]{1,100}");
@@ -31,6 +38,7 @@ public class TargetAuthHeaderResolver {
             case BASIC_AUTH -> new AuthHeader("Authorization",
                     "Basic " + Base64.getEncoder().encodeToString(rawValue.getBytes(StandardCharsets.UTF_8)));
             case CUSTOM_HEADER -> parseCustomHeader(rawValue);
+            case QUERY_PARAM -> parseQueryParam(rawValue);
             case NONE -> null;
         };
     }
@@ -41,6 +49,10 @@ public class TargetAuthHeaderResolver {
             AuthHeader real = realValueOrNull == null ? null : parseCustomHeader(realValueOrNull);
             return new AuthHeader(real == null ? "X-Auth-Token" : real.name(), invalidValue);
         }
+        if (authType == TargetAuthType.QUERY_PARAM) {
+            AuthHeader real = realValueOrNull == null ? null : parseQueryParam(realValueOrNull);
+            return new AuthHeader(real == null ? "api_key" : real.name(), invalidValue, true);
+        }
         if (authType == TargetAuthType.BASIC_AUTH) {
             return resolve(authType, "invalid-user:" + invalidValue);
         }
@@ -50,6 +62,27 @@ public class TargetAuthHeaderResolver {
     /** Giá trị cho CUSTOM_HEADER hợp lệ khi có dạng "Tên-Header: giá trị" với tên là token HTTP hợp lệ. */
     public static boolean isValidCustomHeaderValue(String raw) {
         return parseCustomHeader(raw) != null;
+    }
+
+    /** Giá trị cho QUERY_PARAM hợp lệ khi có dạng "tên=giá trị". */
+    public static boolean isValidQueryParamValue(String raw) {
+        return parseQueryParam(raw) != null;
+    }
+
+    private static AuthHeader parseQueryParam(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        int eq = raw.indexOf('=');
+        if (eq <= 0) {
+            return null;
+        }
+        String name = raw.substring(0, eq).trim();
+        String value = raw.substring(eq + 1).trim();
+        if (!QUERY_NAME.matcher(name).matches() || value.isEmpty() || value.contains("\r") || value.contains("\n")) {
+            return null;
+        }
+        return new AuthHeader(name, value, true);
     }
 
     private static AuthHeader parseCustomHeader(String raw) {

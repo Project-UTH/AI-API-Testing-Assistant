@@ -454,6 +454,12 @@ public class EndpointImportService {
         if (header == null) {
             return safeUrlFetcher.fetch(url);
         }
+        if (header.query()) {
+            // Khoá API qua query string: gắn vào URL tải tài liệu (mã hoá giá trị) thay vì header
+            String separator = url.contains("?") ? "&" : "?";
+            return safeUrlFetcher.fetch(url + separator + header.name() + "="
+                    + java.net.URLEncoder.encode(header.value(), java.nio.charset.StandardCharsets.UTF_8));
+        }
         return safeUrlFetcher.fetch(url, header.name(), header.value());
     }
 

@@ -67,7 +67,13 @@ public enum FailureCause {
      * Module 17 (17b-2) - test mass-assignment: API NHẬN field đặc quyền không khai báo (phản chiếu lại giá trị đánh dấu) hoặc lỗi 5xx khi
      * nhận chúng. Là PHÁT HIỆN bảo mật thật (không phải lỗi môi trường/dữ liệu test) nên không bị loại khỏi Bug Report. Thêm vào CUỐI enum.
      */
-    MASS_ASSIGNMENT("Nhận field không khai báo (mass assignment)", false);
+    MASS_ASSIGNMENT("Nhận field không khai báo (mass assignment)", false),
+    /**
+     * Test kỳ vọng thành công nhưng API trả 403 (đã xác thực, KHÔNG đủ quyền) trong khi chính token mặc định đó được chấp nhận ở test khác
+     * cùng lượt: nhiều khả năng token/vai trò mặc định thiếu quyền cho endpoint này (vd gọi endpoint của vai trò khác) hơn là lỗi API. Không
+     * thuộc nhóm "không phải do API" (có thể API chặn nhầm) nhưng không tự tạo/đóng Bug Report. Thêm vào CUỐI enum.
+     */
+    TOKEN_FORBIDDEN("Nghi token thiếu quyền cho endpoint này", false);
 
     private final String label;
     private final boolean notApiFault;
@@ -96,6 +102,6 @@ public enum FailureCause {
      */
     public boolean suppressesBugAutomation() {
         return notApiFault || this == FLAKY || this == EXPECTATION_MISMATCH || this == STATE_CONFLICT
-                || this == TEST_DATA_SUSPECT;
+                || this == TEST_DATA_SUSPECT || this == TOKEN_FORBIDDEN;
     }
 }

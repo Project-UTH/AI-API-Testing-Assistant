@@ -662,4 +662,29 @@ class FailureCauseClassifierTest {
         assertThat(InputRejectionDetector.excerptIfRejected("{\"error\":\"Internal failure\"}")).isNull();
         assertThat(InputRejectionDetector.excerptIfRejected("{\"id\":1}")).isNull();
     }
+
+    // ---- 403 với token mặc định đã chứng minh dùng được ----
+
+    private Input forbidden(Integer expected, int acceptedCount, TestCaseAuthOverride override, boolean profile) {
+        return new Input(TestResultStatus.FAILED, expected, 403, null, 50L, null, override, history(fail(1, 403), fail(2, 403), fail(3, 403)),
+                "http://target", null, new ExecutionContext(0, 10, 0, 10, acceptedCount), List.of(), null, true, java.util.Map.of(), false, profile, 0);
+    }
+
+    @Test
+    void forbiddenWithDefaultTokenProvenValid_isTokenForbidden_evenAfterRepeatedFails() {
+        Result result = classifier.classify(forbidden(200, 6, TestCaseAuthOverride.DEFAULT, false));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.TOKEN_FORBIDDEN);
+        assertThat(result.evidence()).anyMatch(l -> l.contains("403") && l.contains("6 test khác"));
+        assertThat(FailureCause.TOKEN_FORBIDDEN.suppressesBugAutomation()).isTrue();
+        assertThat(FailureCause.TOKEN_FORBIDDEN.isNotApiFault()).isFalse();
+    }
+
+    @Test
+    void tokenForbidden_doesNotApplyToProfilesIntentionalSecurityTestsUnprovenTokensOrNon2xxExpectation() {
+        assertThat(classifier.classify(forbidden(200, 6, TestCaseAuthOverride.DEFAULT, true)).cause()).isNotEqualTo(FailureCause.TOKEN_FORBIDDEN);
+        assertThat(classifier.classify(forbidden(200, 6, TestCaseAuthOverride.NONE, false)).cause()).isNotEqualTo(FailureCause.TOKEN_FORBIDDEN);
+        assertThat(classifier.classify(forbidden(200, 0, TestCaseAuthOverride.DEFAULT, false)).cause()).isNotEqualTo(FailureCause.TOKEN_FORBIDDEN);
+        assertThat(classifier.classify(forbidden(404, 6, TestCaseAuthOverride.DEFAULT, false)).cause()).isNotEqualTo(FailureCause.TOKEN_FORBIDDEN);
+    }
 }

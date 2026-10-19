@@ -46,7 +46,7 @@ public final class ExecutionConclusionCalculator {
     /** Fail chưa đủ bằng chứng để gọi là lỗi API: nghi dữ liệu test, hoặc "chưa đủ dữ liệu" với phản hồi 4xx. 5xx/không phản hồi thì không. */
     private static boolean needsReview(TestResult r) {
         FailureCause cause = r.getFailureCause();
-        if (cause == FailureCause.TEST_DATA_SUSPECT) {
+        if (cause == FailureCause.TEST_DATA_SUSPECT || cause == FailureCause.TOKEN_FORBIDDEN) {
             return true;
         }
         Integer status = r.getResponseStatus();

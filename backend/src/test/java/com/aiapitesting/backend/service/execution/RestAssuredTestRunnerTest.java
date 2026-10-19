@@ -367,9 +367,28 @@ class RestAssuredTestRunnerTest {
         assertThat(handler.headers.getFirst("X-Auth-Token")).isNotEqualTo("tok-123").isNotNull();
     }
 
+    @Test
+    void run_queryParamAuth_addsTheKeyToTheUrl_andInvalidOverrideKeepsTheParamName() {
+        server.start();
+        AesEncryptionService aes = new AesEncryptionService(Base64.getEncoder().encodeToString(new byte[32]));
+        runner = new RestAssuredTestRunner(new TargetAuthHeaderResolver(), aes, new TestCasePathValidator(), authProfileRepository);
+        project = Project.builder().targetBaseUrl("http://localhost:" + server.getAddress().getPort())
+                .targetAuthType(TargetAuthType.QUERY_PARAM).targetAuthValueEncrypted(aes.encrypt("api_key=secret-1")).build();
+        Endpoint endpoint = Endpoint.builder().method("GET").path("/pets").build();
+
+        runner.run(project, TestCase.builder().endpoint(endpoint).resolvedPath("/pets?limit=5").expectedStatus(200).build(), Map.of());
+        assertThat(handler.query).contains("limit=5").contains("api_key=secret-1");
+        assertThat(handler.headers.getFirst("Authorization")).isNull();
+
+        runner.run(project, TestCase.builder().endpoint(endpoint).resolvedPath("/pets").expectedStatus(401)
+                .authOverride(com.aiapitesting.backend.entity.TestCaseAuthOverride.INVALID).build(), Map.of());
+        assertThat(handler.query).startsWith("api_key=").doesNotContain("secret-1");
+    }
+
     private static class CapturingHandler implements HttpHandler {
         volatile String method;
         volatile String path;
+        volatile String query;
         volatile com.sun.net.httpserver.Headers headers;
         volatile String body;
         volatile int statusCode;
@@ -384,6 +403,7 @@ class RestAssuredTestRunnerTest {
         public void handle(HttpExchange exchange) throws IOException {
             method = exchange.getRequestMethod();
             path = exchange.getRequestURI().getPath();
+            query = exchange.getRequestURI().getRawQuery();
             headers = exchange.getRequestHeaders();
             body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
 
