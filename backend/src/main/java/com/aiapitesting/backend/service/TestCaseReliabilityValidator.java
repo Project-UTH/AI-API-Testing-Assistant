@@ -90,8 +90,8 @@ public class TestCaseReliabilityValidator {
             return violations.isEmpty() ? Result.reliable() : new Result(TestCaseReliability.NEEDS_REVIEW, violations);
         }
 
-        if (source == TestCaseSource.SECURITY) {
-            return Result.reliable();
+        if (source == TestCaseSource.SECURITY || source == TestCaseSource.BUSINESS) {
+            return Result.reliable(); // test nghiệp vụ kỳ vọng lỗi vì luật ngoài spec: không có gì để đối chiếu nên không gắn cờ
         }
         if (violations.isEmpty()) {
             return new Result(TestCaseReliability.NEEDS_REVIEW, List.of(

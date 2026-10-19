@@ -1,6 +1,6 @@
 import { apiFetch } from "@/lib/api"
 
-export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY"
+export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY" | "BUSINESS"
 
 export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
 
@@ -211,6 +211,8 @@ export interface GenerateTestCasesOptions {
   includePositive?: boolean
   includeNegative?: boolean
   includeBoundary?: boolean
+  /** Nhóm nghiệp vụ: AI đoán luật không có trong spec (mọi lý do đều là GIẢ ĐỊNH). */
+  includeBusiness?: boolean
 }
 
 /** Báo cáo checklist của lần sinh nhóm Basic gần nhất - null nếu chưa có (Module 15h). */
@@ -230,6 +232,7 @@ export function generateTestCases(
       includePositive: options?.includePositive ?? false,
       includeNegative: options?.includeNegative ?? false,
       includeBoundary: options?.includeBoundary ?? false,
+      includeBusiness: options?.includeBusiness ?? false,
     }),
   })
 }

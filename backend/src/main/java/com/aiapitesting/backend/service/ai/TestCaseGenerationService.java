@@ -111,18 +111,22 @@ public class TestCaseGenerationService {
         boolean includePositive = request == null || request.includePositive();
         boolean includeNegative = request == null || request.includeNegative();
         boolean includeBoundary = request == null || request.includeBoundary();
-        if (!includePositive && !includeNegative && !includeBoundary && !includeSecurity) {
+        boolean includeBusiness = request != null && request.includeBusiness();
+        if (!includePositive && !includeNegative && !includeBoundary && !includeSecurity && !includeBusiness) {
             throw new InvalidRequestException(
-                    "Phải chọn ít nhất 1 loại test case để sinh (Positive/Negative/Boundary/Security)");
+                    "Phải chọn ít nhất 1 loại test case để sinh (Positive/Negative/Boundary/Security/Nghiệp vụ)");
         }
 
         // Ghi lại loại test case vừa chọn làm phạm vi đo coverage của endpoint: trang Coverage chỉ tính các loại
         // này (cột null = chưa từng chọn → đủ 4 loại).
-        endpoint.setScopePositive(includePositive);
-        endpoint.setScopeNegative(includeNegative);
-        endpoint.setScopeBoundary(includeBoundary);
-        endpoint.setScopeSecurity(includeSecurity);
-        endpointRepository.save(endpoint);
+        // Nhóm Nghiệp vụ không đổi phạm vi coverage (chỉ chọn riêng nghiệp vụ thì giữ phạm vi cũ).
+        if (includePositive || includeNegative || includeBoundary || includeSecurity) {
+            endpoint.setScopePositive(includePositive);
+            endpoint.setScopeNegative(includeNegative);
+            endpoint.setScopeBoundary(includeBoundary);
+            endpoint.setScopeSecurity(includeSecurity);
+            endpointRepository.save(endpoint);
+        }
 
         // Mỗi lần bấm "Sinh Test Case" khai báo lại toàn bộ tập test case AI-quản-lý cho endpoint
         // này = đúng những gì đang được tick. Nhóm có tick -> gọi AI sinh lại (xoá-và-thay). Nhóm
@@ -143,6 +147,12 @@ public class TestCaseGenerationService {
             deleteExistingGroup(endpoint, TestCaseSource.SECURITY);
         }
 
+        if (includeBusiness) {
+            groups.add(generateBusinessGroup(endpoint));
+        } else {
+            deleteExistingGroup(endpoint, TestCaseSource.BUSINESS);
+        }
+
         GenerationPlanSummary planSummary = merge(groups.stream().map(GroupResult::planSummary).toList());
         if (groups.size() > 1) {
             // Báo cáo đọc lại sau khi tải trang lấy từ dòng lịch sử MỚI NHẤT - ghi bản gộp cả 2 nhóm vào đó.
@@ -155,6 +165,76 @@ public class TestCaseGenerationService {
                 .map(TestCaseResponse::from)
                 .toList();
         return CompletableFuture.completedFuture(new GenerateTestCasesResponse(saved, planSummary));
+    }
+
+    /** Số test nghiệp vụ tối đa giữ lại mỗi lần sinh (AI hay trả thừa/trùng). */
+    static final int MAX_BUSINESS_CASES = 12;
+
+    /**
+     * Nhóm NGHIỆP VỤ: 1 lệnh gọi AI, KHÔNG có checklist (spec không khai luật nào để chấm). Giữ tối đa {@link #MAX_BUSINESS_CASES} case không
+     * trùng tên/trùng nội dung, rationale luôn bắt đầu "GIẢ ĐỊNH". Không gọi Tier 2 (không có gì để đối chiếu với spec).
+     */
+    private GroupResult generateBusinessGroup(Endpoint endpoint) {
+        Prompt prompt = buildBusinessPrompt(endpoint);
+        List<GeneratedTestCase> generated;
+        Usage usage;
+        try {
+            ResponseEntity<ChatResponse, List<GeneratedTestCase>> response = chatClient.prompt(prompt).call()
+                    .responseEntity(new ParameterizedTypeReference<List<GeneratedTestCase>>() {
+                    });
+            generated = response.entity();
+            usage = response.response().getMetadata().getUsage();
+        } catch (Exception e) {
+            log.warn("Goi AI that bai khi sinh test nghiep vu cho endpoint {}: {}", endpoint.getId(), e.toString());
+            throw new AiGenerationFailedException("Không thể sinh test nghiệp vụ từ AI, vui lòng thử lại");
+        }
+        validate(generated);
+
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        List<GeneratedTestCase> kept = new ArrayList<>();
+        for (GeneratedTestCase g : generated) {
+            String key = (g.name() == null ? "" : g.name().trim().toLowerCase()) + "|" + g.requestBody() + "|" + g.resolvedPath();
+            if (kept.size() < MAX_BUSINESS_CASES && seen.add(key)) {
+                String rationale = g.rationale() == null ? "" : g.rationale().trim();
+                kept.add(new GeneratedTestCase(g.name(), g.description(), g.requestHeaders(), g.requestBody(), g.expectedStatus(),
+                        g.resolvedPath(), g.pathParamFallbacks(), g.authOverride(),
+                        rationale.startsWith("GIẢ ĐỊNH") ? rationale : "GIẢ ĐỊNH: " + rationale));
+            }
+        }
+        deleteExistingGroup(endpoint, TestCaseSource.BUSINESS);
+
+        List<TestCase> entities = kept.stream()
+                .map(g -> toEntity(endpoint, g, TestCaseSource.BUSINESS, TestCaseGenerationOrigin.AI_BUSINESS, null, false))
+                .toList();
+        GenerationPlanSummary planSummary = new GenerationPlanSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, List.of(), List.of());
+        TestGenerationEvent event = TestGenerationEvent.builder()
+                .endpoint(endpoint)
+                .testCaseCount(entities.size())
+                .snapshotJson(writeSnapshotAsJson(kept))
+                .planSummaryJson(writePlanSummaryAsJson(planSummary))
+                .promptTokens(usage == null ? null : usage.getPromptTokens())
+                .completionTokens(usage == null ? null : usage.getCompletionTokens())
+                .totalTokens(usage == null ? null : usage.getTotalTokens())
+                .build();
+        testGenerationEventRepository.save(event);
+        return new GroupResult(testCaseRepository.saveAll(entities), planSummary, event);
+    }
+
+    private Prompt buildBusinessPrompt(Endpoint endpoint) {
+        String groupRules = render(readTemplate("prompts/generate/business.st"), new HashMap<>());
+        String templateText;
+        try {
+            templateText = promptResource.getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Không đọc được prompt template generate-test-case.st", e);
+        }
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("method", endpoint.getMethod());
+        variables.put("path", endpoint.getPath());
+        variables.put("summary", endpoint.getSummary() == null ? "(không có mô tả)" : endpoint.getSummary());
+        variables.put("schemaJson", endpoint.getSchema());
+        variables.put("groupRules", groupRules.stripTrailing());
+        return template(templateText).create(variables);
     }
 
     /** Gộp báo cáo của nhóm Cơ bản + Security trong cùng 1 lần bấm "Sinh Test Case" (Module 15i). */

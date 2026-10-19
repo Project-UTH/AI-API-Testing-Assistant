@@ -86,6 +86,7 @@ public class CoverageGapFillService {
         boolean requiresAuth = endpoint.effectiveRequiresAuth();
         TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
         List<Candidate> candidates = testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint).stream()
+                .filter(tc -> tc.getSource() != TestCaseSource.BUSINESS)
                 .map(tc -> new Candidate(tc, testCaseChecklistPlanner.toCandidate(tc)))
                 .toList();
         Set<String> requested = request == null || request.itemKeys() == null || request.itemKeys().isEmpty()

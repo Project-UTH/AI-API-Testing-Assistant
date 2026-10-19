@@ -148,6 +148,41 @@ class TestCaseGenerationServiceTest {
     }
 
     @Test
+    void generate_businessGroup_savesCappedDedupedAssumptionCases_withBusinessSource_andKeepsCoverageScope() throws Exception {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
+        List<GeneratedTestCase> many = new java.util.ArrayList<>();
+        for (int i = 0; i < 15; i++) {
+            many.add(new GeneratedTestCase("Nghiệp vụ - luật " + i, "mo ta", Map.of("Content-Type", "application/json"),
+                    "{\"email\":\"a" + i + "@b.com\"}", 400, "/users", Map.of(), null, i == 0 ? "GIẢ ĐỊNH: luật 0" : "email phải duy nhất"));
+        }
+        many.add(many.get(1)); // trùng hoàn toàn: phải bị loại
+        stubAiResponse(many);
+        when(testCaseRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<TestCaseResponse> result = testCaseGenerationService
+                .generate(projectId, endpointId, new com.aiapitesting.backend.dto.request.GenerateTestCasesRequest(false, false, false, false, true))
+                .get().testCases();
+
+        assertThat(result).hasSize(TestCaseGenerationService.MAX_BUSINESS_CASES);
+        ArgumentCaptor<List<TestCase>> saved = ArgumentCaptor.forClass(List.class);
+        verify(testCaseRepository).saveAll(saved.capture());
+        assertThat(saved.getValue()).allSatisfy(tc -> {
+            assertThat(tc.getSource()).isEqualTo(TestCaseSource.BUSINESS);
+            assertThat(tc.getGenerationOrigin()).isEqualTo(com.aiapitesting.backend.entity.TestCaseGenerationOrigin.AI_BUSINESS);
+            assertThat(tc.getRationale()).startsWith("GIẢ ĐỊNH");
+        });
+        // chỉ chọn Nghiệp vụ: phạm vi coverage EP/BVA của endpoint KHÔNG bị đổi
+        verify(endpointRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void businessPromptTemplate_asksForAssumedRules_withDynamicDates_andOneViolatedRulePerTest() throws Exception {
+        String prompt = new String(getClass().getResourceAsStream("/prompts/generate/business.st").readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(prompt).contains("GIẢ ĐỊNH").contains("{{today+30d}}").contains("ĐÚNG 1 luật").contains("KHÔNG kỳ vọng 500");
+    }
+
+    @Test
     void generate_success_deletesOldCasesThenSavesNewOnes() throws Exception {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
@@ -172,9 +207,10 @@ class TestCaseGenerationServiceTest {
         verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.AI_GENERATED);
         verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.SECURITY);
         // Dọn TestResult + TestCaseDependency (phía consumer) trước khi xoá - tránh lỗi khoá ngoại
-        // 1451 - gọi 2 lần vì cả 2 nhóm (AI_GENERATED và SECURITY) đều được dọn trong lần sinh này.
-        verify(testResultRepository, org.mockito.Mockito.times(2)).deleteAllByTestCaseIn(anyList());
-        verify(testCaseDependencyRepository, org.mockito.Mockito.times(2)).deleteAllByTestCaseIn(anyList());
+        // 1451 - gọi 3 lần vì cả 3 nhóm (AI_GENERATED, SECURITY và BUSINESS) đều được dọn trong lần sinh này.
+        verify(testCaseRepository).deleteAllByEndpointAndSourceAndLockedFalse(endpoint, TestCaseSource.BUSINESS);
+        verify(testResultRepository, org.mockito.Mockito.times(3)).deleteAllByTestCaseIn(anyList());
+        verify(testCaseDependencyRepository, org.mockito.Mockito.times(3)).deleteAllByTestCaseIn(anyList());
 
         ArgumentCaptor<List<TestCase>> savedCaptor = ArgumentCaptor.forClass(List.class);
         verify(testCaseRepository).saveAll(savedCaptor.capture());

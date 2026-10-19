@@ -213,6 +213,7 @@ public class EndpointCoverageService {
         SchemaFacts facts = extractSchemaFacts(endpoint);
         TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
         List<Candidate> candidates = testCases.stream()
+                .filter(tc -> tc.getSource() != com.aiapitesting.backend.entity.TestCaseSource.BUSINESS) // nghiệp vụ không tính vào EP/BVA
                 .map(tc -> new Candidate(tc, testCaseChecklistPlanner.toCandidate(tc)))
                 .toList();
 

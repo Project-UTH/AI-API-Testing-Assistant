@@ -61,6 +61,7 @@ const SOURCE_LABEL: Record<TestCase["source"], string> = {
   AI_GENERATED: "AI",
   MANUAL: "Tự thêm",
   SECURITY: "Security",
+  BUSINESS: "Nghiệp vụ (AI đoán)",
 }
 
 interface TestCaseDetailDialogProps {

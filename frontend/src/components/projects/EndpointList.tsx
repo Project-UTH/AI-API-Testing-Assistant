@@ -54,11 +54,12 @@ export function EndpointList({ projectId }: EndpointListProps) {
   const [includePositive, setIncludePositive] = useState(true)
   const [includeNegative, setIncludeNegative] = useState(true)
   const [includeBoundary, setIncludeBoundary] = useState(true)
+  const [includeBusiness, setIncludeBusiness] = useState(false)
 
   const endpoints = data?.data ?? []
   // Không có gì để sinh nếu không tích ít nhất 1 trong 4 loại - khớp validate phía backend
   // (InvalidRequestException "Phải chọn ít nhất 1 loại test case để sinh").
-  const hasAnyCategorySelected = includePositive || includeNegative || includeBoundary || includeSecurity
+  const hasAnyCategorySelected = includePositive || includeNegative || includeBoundary || includeSecurity || includeBusiness
 
   function toggleSelect(endpointId: string, checked: boolean) {
     setSelectedIds((prev) => {
@@ -102,6 +103,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
         includePositive,
         includeNegative,
         includeBoundary,
+        includeBusiness,
       })
         .then((result) => {
           setGenerationState((prev) => ({
@@ -340,6 +342,13 @@ export function EndpointList({ projectId }: EndpointListProps) {
               >
                 <Checkbox checked={includeSecurity} onCheckedChange={(checked) => setIncludeSecurity(checked === true)} />
                 + Security
+              </label>
+              <label
+                className="flex items-center gap-1.5 text-sm text-muted-foreground"
+                title="AI đoán luật nghiệp vụ không có trong spec (ngày hạn, min≤max, mã tham chiếu...). Là GIẢ ĐỊNH, tốn thêm token, không tính vào độ bao phủ."
+              >
+                <Checkbox checked={includeBusiness} onCheckedChange={(checked) => setIncludeBusiness(checked === true)} />
+                + Nghiệp vụ (AI đoán)
               </label>
               <Button size="sm" disabled={!hasAnyCategorySelected} onClick={handleGenerate}>
                 <Sparkles className="h-4 w-4" />

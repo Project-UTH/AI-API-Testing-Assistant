@@ -24,12 +24,14 @@ const SOURCE_STYLES: Record<TestCase["source"], string> = {
   AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   MANUAL: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
   SECURITY: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  BUSINESS: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
 }
 
 const SOURCE_LABEL: Record<TestCase["source"], string> = {
   AI_GENERATED: "AI",
   MANUAL: "Tự thêm",
   SECURITY: "Security",
+  BUSINESS: "Nghiệp vụ (AI đoán)",
 }
 
 interface FormState {
