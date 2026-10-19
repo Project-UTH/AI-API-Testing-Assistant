@@ -16,7 +16,15 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
-import { getImportImpact, importOpenApi, type TargetAuthType } from "@/lib/endpoints"
+import { ImportDiffPreview } from "@/components/projects/ImportDiffPreview"
+import {
+  getImportImpact,
+  importOpenApi,
+  previewImport,
+  type ImportApplyMode,
+  type ImportDiff,
+  type TargetAuthType,
+} from "@/lib/endpoints"
 
 interface ImportOpenApiDialogProps {
   open: boolean
@@ -56,6 +64,9 @@ export function ImportOpenApiDialog({
   const [authValue, setAuthValue] = useState("")
   const [targetBaseUrl, setTargetBaseUrl] = useState("")
   const [confirmedDataLoss, setConfirmedDataLoss] = useState(false)
+  // Module 17 (17c) - chế độ áp spec lên project đã có endpoint + bước xem trước thay đổi.
+  const [applyMode, setApplyMode] = useState<ImportApplyMode>("DIFF")
+  const [diffPreview, setDiffPreview] = useState<ImportDiff | null>(null)
 
   // Số liệu dữ liệu sẽ bị xoá - tải mỗi lần mở dialog (không dùng cache cũ). Lỗi tải = "chưa biết", KHÔNG được coi
   // là "không có dữ liệu" (fail-open): khi đó vẫn bắt xác nhận với cảnh báo chung.
@@ -72,7 +83,11 @@ export function ImportOpenApiDialog({
   }, [open])
   const impact = impactQuery.data
   const impactUnknown = impactQuery.isError
-  const needsConfirm = impactUnknown || (impact !== undefined && hasDataToLose(impact))
+  // Project đã có endpoint thì mới có lựa chọn chế độ; project trống thì import thẳng như cũ.
+  const hasExistingEndpoints = (impact?.endpointCount ?? 0) > 0
+  const replaceMode = !hasExistingEndpoints || applyMode === "REPLACE"
+  // Chỉ chế độ THAY THẾ xoá dữ liệu nên chỉ khi đó mới cần cảnh báo/xác nhận (chế độ DIFF giữ test case, lịch sử, bug report).
+  const needsConfirm = replaceMode && (impactUnknown || (impact !== undefined && hasDataToLose(impact)))
 
   function resetForm() {
     setConfirmedDataLoss(false)
@@ -82,17 +97,28 @@ export function ImportOpenApiDialog({
     setAuthType("NONE")
     setAuthValue("")
     setTargetBaseUrl("")
+    setApplyMode("DIFF")
+    setDiffPreview(null)
   }
 
+  function importInput() {
+    return {
+      url: mode === "url" ? url : undefined,
+      file: mode === "file" ? (file ?? undefined) : undefined,
+      authType: mode === "file" ? ("NONE" as const) : authType,
+      authValue: mode === "file" ? "" : authValue,
+      targetBaseUrl,
+      mode: hasExistingEndpoints ? applyMode : undefined,
+    }
+  }
+
+  const previewMutation = useMutation({
+    mutationFn: () => previewImport(projectId, importInput()),
+    onSuccess: (diff) => setDiffPreview(diff),
+  })
+
   const mutation = useMutation({
-    mutationFn: () =>
-      importOpenApi(projectId, {
-        url: mode === "url" ? url : undefined,
-        file: mode === "file" ? (file ?? undefined) : undefined,
-        authType: mode === "file" ? "NONE" : authType,
-        authValue: mode === "file" ? "" : authValue,
-        targetBaseUrl,
-      }),
+    mutationFn: () => importOpenApi(projectId, importInput()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
       // Import xoá cả test case/kết quả/bug của project - các màn hình đó không được giữ số liệu cũ trong cache.
@@ -110,14 +136,20 @@ export function ImportOpenApiDialog({
     },
   })
 
+  // Chế độ cập nhật theo thay đổi (project đã có endpoint): bấm lần 1 = xem trước diff, lần 2 (sau khi thấy) = import thật.
+  const needsPreviewStep = hasExistingEndpoints && !replaceMode
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (needsPreviewStep && diffPreview === null) {
+      previewMutation.mutate()
+      return
+    }
     mutation.mutate()
   }
 
   const formFilled = mode === "url" ? url.trim().length > 0 : file !== null
   const impactReady = !impactQuery.isPending
-  const canSubmit = formFilled && impactReady && (!needsConfirm || confirmedDataLoss)
+  const canSubmit = formFilled && impactReady && (!needsConfirm || confirmedDataLoss) && !previewMutation.isPending
 
   return (
     <Dialog
@@ -139,15 +171,43 @@ export function ImportOpenApiDialog({
           {impactQuery.isPending && (
             <p className="text-sm text-muted-foreground">Đang kiểm tra dữ liệu hiện có của project...</p>
           )}
-          {impactUnknown && (
+          {impactUnknown && replaceMode && (
             <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
               Không kiểm tra được dữ liệu hiện có của project. Import sẽ XOÁ toàn bộ test case, kết quả chạy và bug
               report của project này (nếu có) và không khôi phục được.
             </div>
           )}
-          {impact !== undefined && hasDataToLose(impact) && (
+          {hasExistingEndpoints && (
+            <fieldset className="flex flex-col gap-2" disabled={diffPreview !== null}>
+              <legend className="mb-1 text-sm font-medium">Project đã có endpoint - cách áp dụng spec mới</legend>
+              <label className={cn("flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm", applyMode === "DIFF" ? "border-primary bg-primary/5" : "border-border")}>
+                <input type="radio" name="apply-mode" className="mt-1" checked={applyMode === "DIFF"} onChange={() => { setApplyMode("DIFF"); setDiffPreview(null) }} />
+                <span>
+                  <span className="font-medium">Cập nhật theo thay đổi (khuyến nghị)</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Giữ test case, lịch sử chạy, bug report và ma trận phân quyền của endpoint không đổi. Chỉ thêm endpoint mới, cập nhật endpoint
+                    đổi spec và đánh dấu endpoint không còn trong spec.
+                  </span>
+                </span>
+              </label>
+              <label className={cn("flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm", applyMode === "REPLACE" ? "border-destructive bg-destructive/5" : "border-border")}>
+                <input type="radio" name="apply-mode" className="mt-1" checked={applyMode === "REPLACE"} onChange={() => { setApplyMode("REPLACE"); setDiffPreview(null) }} />
+                <span>
+                  <span className="font-medium text-destructive">Thay thế toàn bộ</span>
+                  <span className="block text-xs text-muted-foreground">Xoá mọi endpoint, test case, lịch sử chạy và bug report rồi tạo lại từ spec. Không khôi phục được.</span>
+                </span>
+              </label>
+            </fieldset>
+          )}
+          {replaceMode && impact !== undefined && hasDataToLose(impact) && (
             <DataLossWarning impact={impact} title="Import sẽ xoá dữ liệu hiện có của project này" />
           )}
+          {previewMutation.isError && (
+            <p className="text-sm text-destructive">
+              {previewMutation.error instanceof ApiError ? previewMutation.error.message : "Không xem trước được, vui lòng thử lại"}
+            </p>
+          )}
+          {diffPreview !== null && <ImportDiffPreview diff={diffPreview} />}
 
           <div className="flex gap-2">
             <Button
@@ -268,7 +328,17 @@ export function ImportOpenApiDialog({
               className="sm:self-end"
               disabled={!canSubmit || mutation.isPending}
             >
-              {mutation.isPending ? "Đang import..." : needsConfirm ? "Import và xoá dữ liệu cũ" : "Import"}
+              {mutation.isPending
+                ? "Đang import..."
+                : previewMutation.isPending
+                  ? "Đang so sánh..."
+                  : needsConfirm
+                    ? "Import và xoá dữ liệu cũ"
+                    : needsPreviewStep && diffPreview === null
+                      ? "Xem trước thay đổi"
+                      : needsPreviewStep
+                        ? "Import (cập nhật theo thay đổi)"
+                        : "Import"}
             </Button>
           </DialogFooter>
         </form>

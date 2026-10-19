@@ -397,4 +397,219 @@ class EndpointImportServiceTest {
 
         assertThat(project.getTargetBaseUrl()).isNull();
     }
+
+    // ---- Module 17 (17c) - import theo diff ----
+
+    private static final String SPEC_PETS_WITH_QUERY = """
+            {
+              "openapi": "3.0.0",
+              "info": { "title": "Sample", "version": "1.0" },
+              "paths": {
+                "/pets": {
+                  "get": {
+                    "summary": "List pets",
+                    "parameters": [ { "name": "limit", "in": "query", "required": true, "schema": { "type": "integer" } } ],
+                    "responses": { "200": { "description": "ok" } }
+                  }
+                }
+              }
+            }
+            """;
+
+    private MockMultipartFile spec(String content) {
+        return new MockMultipartFile("file", "spec.json", "application/json", content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Import lần đầu (project chưa có endpoint) rồi trả các endpoint đã lưu - dùng làm "endpoint hiện có" cho lần import kế. */
+    private List<Endpoint> firstImport(String content) {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        endpointImportService.importFromFile(projectId, spec(content), null, null, null, com.aiapitesting.backend.entity.ImportMode.DIFF);
+        ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
+        verify(endpointRepository).saveAll(captor.capture());
+        List<Endpoint> saved = new java.util.ArrayList<>(captor.getValue());
+        saved.forEach(e -> e.setId(UUID.randomUUID()));
+        clearInvocations(endpointRepository, testCaseRepository, bugReportRepository, testResultRepository, testExecutionRepository,
+                endpointRoleRepository);
+        return saved;
+    }
+
+    private void projectAlreadyHas(List<Endpoint> existing) {
+        lenient().when(endpointRepository.countByProject(project)).thenReturn((long) existing.size());
+        lenient().when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(existing);
+    }
+
+    private void verifyNothingDeleted() {
+        verify(endpointRepository, never()).deleteAllByProject(any());
+        verify(testCaseRepository, never()).deleteAllByEndpointProject(any());
+        verify(bugReportRepository, never()).deleteAllByProject(any());
+        verify(testResultRepository, never()).deleteAllByTestCaseEndpointProject(any());
+        verify(testExecutionRepository, never()).deleteAllByProject(any());
+        verify(endpointRoleRepository, never()).deleteAllByEndpointProject(any());
+    }
+
+    @Test
+    void diffImport_sameSpecAgain_keepsEverythingAndDeletesNothing() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI);
+        projectAlreadyHas(existing);
+
+        List<EndpointResponse> result = endpointImportService.importFromFile(
+                projectId, spec(SAMPLE_OPENAPI), null, null, null, com.aiapitesting.backend.entity.ImportMode.DIFF);
+
+        verifyNothingDeleted();
+        assertThat(result).hasSize(1);
+        assertThat(existing.get(0).getSchemaChangedAt()).isNull();
+        assertThat(Boolean.TRUE.equals(existing.get(0).getMissingFromSpec())).isFalse();
+    }
+
+    @Test
+    void diffImport_changedEndpoint_isUpdatedAndFlaggedButItsTestCasesStay() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI);
+        projectAlreadyHas(existing);
+
+        endpointImportService.importFromFile(projectId, spec(SPEC_PETS_WITH_QUERY), null, null, null,
+                com.aiapitesting.backend.entity.ImportMode.DIFF);
+
+        verifyNothingDeleted();
+        Endpoint pets = existing.get(0);
+        assertThat(pets.getSchema()).contains("limit");
+        assertThat(pets.getSchemaChangedAt()).isNotNull();
+    }
+
+    @Test
+    void diffImport_newEndpointIsAdded_missingOneIsFlaggedNotDeleted() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI); // chỉ có GET /pets
+        projectAlreadyHas(existing);
+
+        // Spec mới bỏ GET /pets, chỉ còn GET /pets/{id}
+        List<EndpointResponse> result = endpointImportService.importFromFile(projectId, spec(OPENAPI_WITH_RESPONSE_SCHEMA), null, null, null,
+                com.aiapitesting.backend.entity.ImportMode.DIFF);
+
+        verifyNothingDeleted();
+        assertThat(existing.get(0).getMissingFromSpec()).isTrue();
+        ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
+        verify(endpointRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(Endpoint::getPath).contains("/pets", "/pets/{id}");
+    }
+
+    @Test
+    void diffImport_legacyEndpointWithoutHash_comparedByItsStoredData_notTreatedAsChanged() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI);
+        existing.get(0).setSpecHash(null); // endpoint tạo trước Module 17
+        projectAlreadyHas(existing);
+
+        endpointImportService.importFromFile(projectId, spec(SAMPLE_OPENAPI), null, null, null, com.aiapitesting.backend.entity.ImportMode.DIFF);
+
+        assertThat(existing.get(0).getSchemaChangedAt()).isNull();
+        assertThat(existing.get(0).getSpecHash()).isNotNull(); // được ghi lại
+    }
+
+    @Test
+    void replaceMode_stillDeletesEverythingEvenWhenEndpointsExist() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI);
+        projectAlreadyHas(existing);
+
+        endpointImportService.importFromFile(projectId, spec(SAMPLE_OPENAPI), null, null, null, com.aiapitesting.backend.entity.ImportMode.REPLACE);
+
+        verify(endpointRepository).deleteAllByProject(project);
+        verify(testCaseRepository).deleteAllByEndpointProject(project);
+    }
+
+    @Test
+    void preview_reportsCountsWithoutWritingAnything() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI);
+        projectAlreadyHas(existing);
+        when(testCaseRepository.countByEndpointIds(anyList())).thenReturn(List.of());
+
+        var diff = endpointImportService.previewFromFile(projectId, spec(SPEC_PETS_WITH_QUERY));
+
+        assertThat(diff.changedCount()).isEqualTo(1);
+        assertThat(diff.addedCount()).isZero();
+        assertThat(diff.removedCount()).isZero();
+        assertThat(diff.changedEndpoints()).containsExactly("GET /pets");
+        verify(endpointRepository, never()).saveAll(anyList());
+        verify(endpointRepository, never()).save(any());
+        assertThat(existing.get(0).getSchemaChangedAt()).isNull();
+    }
+
+    private static final String SAMPLE_OPENAPI_NEW_SUMMARY = SAMPLE_OPENAPI.replace("List pets", "Danh sach thu cung");
+
+    @Test
+    void diffImport_onlyTheSummaryChanged_isNotTreatedAsSpecChange() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI);
+        projectAlreadyHas(existing);
+
+        endpointImportService.importFromFile(projectId, spec(SAMPLE_OPENAPI_NEW_SUMMARY), null, null, null,
+                com.aiapitesting.backend.entity.ImportMode.DIFF);
+
+        // Cột schema có ghi kèm summary: đổi 1 câu mô tả không được làm test case bị coi là "có thể lỗi thời".
+        assertThat(existing.get(0).getSchemaChangedAt()).isNull();
+        assertThat(existing.get(0).getSummary()).isEqualTo("Danh sach thu cung");
+    }
+
+    @Test
+    void diffImport_sameSpecParsedTwice_givesTheSameHash() {
+        List<Endpoint> first = firstImport(OPENAPI_WITH_RESPONSE_SCHEMA);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        endpointImportService.importFromFile(projectId, spec(OPENAPI_WITH_RESPONSE_SCHEMA), null, null, null,
+                com.aiapitesting.backend.entity.ImportMode.REPLACE);
+        ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
+        verify(endpointRepository).saveAll(captor.capture());
+
+        assertThat(captor.getValue().get(0).getSpecHash()).isNotNull().isEqualTo(first.get(0).getSpecHash());
+    }
+
+    @Test
+    void diffImport_legacyEndpointWithoutHashAndResponseSchemas_isUnchangedAndGetsBackfilledNotFlagged() {
+        List<Endpoint> existing = firstImport(OPENAPI_WITH_RESPONSE_SCHEMA);
+        Endpoint legacy = existing.get(0);
+        legacy.setSpecHash(null);
+        legacy.setResponseSchemas(null); // import trước khi có đối chiếu schema response
+        projectAlreadyHas(existing);
+
+        endpointImportService.importFromFile(projectId, spec(OPENAPI_WITH_RESPONSE_SCHEMA), null, null, null,
+                com.aiapitesting.backend.entity.ImportMode.DIFF);
+
+        assertThat(legacy.getSchemaChangedAt()).isNull();
+        assertThat(legacy.getSpecHash()).isNotNull();
+        assertThat(legacy.getResponseSchemas()).isNotNull();
+    }
+
+    @Test
+    void diffImport_userLeftBaseUrlBlank_keepsTheConfiguredBaseUrl() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI_WITH_SERVERS);
+        project.setTargetBaseUrl("http://my-configured-target:9000");
+        projectAlreadyHas(existing);
+
+        endpointImportService.importFromFile(projectId, spec(SAMPLE_OPENAPI_WITH_SERVERS), null, null, null,
+                com.aiapitesting.backend.entity.ImportMode.DIFF);
+
+        assertThat(project.getTargetBaseUrl()).isEqualTo("http://my-configured-target:9000");
+    }
+
+    @Test
+    void diffImport_userGaveBaseUrl_isApplied() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI);
+        project.setTargetBaseUrl("http://old:1");
+        projectAlreadyHas(existing);
+
+        endpointImportService.importFromFile(projectId, spec(SAMPLE_OPENAPI), null, null, "http://new:2",
+                com.aiapitesting.backend.entity.ImportMode.DIFF);
+
+        assertThat(project.getTargetBaseUrl()).isEqualTo("http://new:2");
+    }
+
+    @Test
+    void diffImport_unchangedEndpoints_areNotRewritten() {
+        List<Endpoint> existing = firstImport(SAMPLE_OPENAPI);
+        existing.get(0).setMissingFromSpec(false);
+        projectAlreadyHas(existing);
+
+        endpointImportService.importFromFile(projectId, spec(SAMPLE_OPENAPI), null, null, null, com.aiapitesting.backend.entity.ImportMode.DIFF);
+
+        ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
+        verify(endpointRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).isEmpty();
+    }
 }

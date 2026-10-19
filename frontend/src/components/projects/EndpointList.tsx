@@ -236,6 +236,22 @@ export function EndpointList({ projectId }: EndpointListProps) {
                   </span>
                 )}
                 {!endpoint.summary && <span className="flex-1" />}
+                {endpoint.missingFromSpec && (
+                  <span
+                    className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive"
+                    title="Lần import gần nhất không còn thấy endpoint này trong spec. Test case của nó vẫn được giữ - khi chạy có thể nhận 404."
+                  >
+                    Không còn trong spec
+                  </span>
+                )}
+                {!endpoint.missingFromSpec && endpoint.schemaChangedAt && (
+                  <span
+                    className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+                    title="Spec của endpoint này đã đổi ở lần import gần nhất - test case có thể lỗi thời, nên xem lại hoặc chạy lại."
+                  >
+                    Spec đổi {new Date(endpoint.schemaChangedAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
+                  </span>
+                )}
                 {state?.status === "pending" && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
                 {state?.status === "error" && <span className="shrink-0 text-xs text-destructive">{state.message}</span>}
                 <span className="shrink-0 text-xs text-muted-foreground">

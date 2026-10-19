@@ -89,6 +89,18 @@ public class Endpoint {
         return requiresAuthManual != null ? requiresAuthManual : requiresAuth;
     }
 
+    /** Module 17 (17c) - SHA-256 của phần spec ảnh hưởng tới việc kiểm thử (schema + response schema + requiresAuth); null = chưa tính (dữ liệu cũ). */
+    @Column(length = 64)
+    private String specHash;
+
+    /** Module 17 (17c) - lần import gần nhất ĐÃ ĐỔI spec của endpoint này (test case của nó có thể lỗi thời). Null = chưa đổi lần nào. */
+    @Column
+    private Instant schemaChangedAt;
+
+    /** Module 17 (17c) - endpoint không còn trong spec ở lần import gần nhất (vẫn giữ test case/lịch sử; chỉ khi import kiểu thay thế mới xoá). */
+    @Column
+    private Boolean missingFromSpec;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

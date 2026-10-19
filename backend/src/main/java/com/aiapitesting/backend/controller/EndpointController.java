@@ -5,7 +5,9 @@ import com.aiapitesting.backend.dto.request.SetRequiresAuthRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.BulkUpdateResponse;
 import com.aiapitesting.backend.dto.response.EndpointResponse;
+import com.aiapitesting.backend.dto.response.ImportDiffResponse;
 import com.aiapitesting.backend.dto.response.ImportImpactResponse;
+import com.aiapitesting.backend.entity.ImportMode;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.exception.InvalidRequestException;
@@ -66,7 +68,8 @@ public class EndpointController {
             @RequestParam(required = false) MultipartFile file,
             @RequestParam(required = false) TargetAuthType authType,
             @RequestParam(required = false) String authValue,
-            @RequestParam(required = false) String targetBaseUrl
+            @RequestParam(required = false) String targetBaseUrl,
+            @RequestParam(defaultValue = "DIFF") ImportMode mode
     ) {
         boolean hasUrl = url != null && !url.isBlank();
         boolean hasFile = file != null && !file.isEmpty();
@@ -76,10 +79,30 @@ public class EndpointController {
         }
 
         List<EndpointResponse> imported = hasUrl
-                ? endpointImportService.importFromUrl(projectId, url, authType, authValue, targetBaseUrl)
-                : endpointImportService.importFromFile(projectId, file, authType, authValue, targetBaseUrl);
+                ? endpointImportService.importFromUrl(projectId, url, authType, authValue, targetBaseUrl, mode)
+                : endpointImportService.importFromFile(projectId, file, authType, authValue, targetBaseUrl, mode);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(imported));
+    }
+
+    /** Module 17 (17c) - so sánh spec mới với endpoint hiện có, không ghi gì. Cùng tham số với /import. */
+    @PostMapping("/import-preview")
+    public ResponseEntity<ApiResponse<ImportDiffResponse>> previewImport(
+            @PathVariable UUID projectId,
+            @RequestParam(required = false) String url,
+            @RequestParam(required = false) MultipartFile file,
+            @RequestParam(required = false) TargetAuthType authType,
+            @RequestParam(required = false) String authValue
+    ) {
+        boolean hasUrl = url != null && !url.isBlank();
+        boolean hasFile = file != null && !file.isEmpty();
+        if (hasUrl == hasFile) {
+            throw new InvalidRequestException("Phải cung cấp đúng một trong hai: url hoặc file");
+        }
+        ImportDiffResponse diff = hasUrl
+                ? endpointImportService.previewFromUrl(projectId, url, authType, authValue)
+                : endpointImportService.previewFromFile(projectId, file);
+        return ResponseEntity.ok(ApiResponse.of(diff));
     }
 
     @GetMapping

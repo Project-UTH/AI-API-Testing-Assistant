@@ -1,10 +1,12 @@
 package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.response.EndpointResponse;
+import com.aiapitesting.backend.dto.response.ImportDiffResponse;
 import com.aiapitesting.backend.dto.response.ImportImpactResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.ImportMode;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
@@ -74,26 +76,59 @@ public class EndpointImportService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /** Dạng cũ (giữ cho test/nơi gọi sẵn có): thay thế toàn bộ. Controller dùng dạng có {@link ImportMode}. */
     @Transactional
     public List<EndpointResponse> importFromUrl(
             UUID projectId, String url, TargetAuthType authType, String authValue, String targetBaseUrl
     ) {
+        return importFromUrl(projectId, url, authType, authValue, targetBaseUrl, ImportMode.REPLACE);
+    }
+
+    @Transactional
+    public List<EndpointResponse> importFromUrl(
+            UUID projectId, String url, TargetAuthType authType, String authValue, String targetBaseUrl, ImportMode mode
+    ) {
         projectService.validateTargetAuthValue(authType, authValue);
         String content = fetchUrlContent(url, authType, authValue);
-        return doImport(projectId, content, authType, authValue, targetBaseUrl);
+        return doImport(projectId, content, authType, authValue, targetBaseUrl, mode);
     }
 
     @Transactional
     public List<EndpointResponse> importFromFile(
             UUID projectId, MultipartFile file, TargetAuthType authType, String authValue, String targetBaseUrl
     ) {
-        String content;
+        return importFromFile(projectId, file, authType, authValue, targetBaseUrl, ImportMode.REPLACE);
+    }
+
+    @Transactional
+    public List<EndpointResponse> importFromFile(
+            UUID projectId, MultipartFile file, TargetAuthType authType, String authValue, String targetBaseUrl, ImportMode mode
+    ) {
+        return doImport(projectId, readFile(file), authType, authValue, targetBaseUrl, mode);
+    }
+
+    /** Module 17 (17c) - so sánh spec mới với endpoint hiện có, KHÔNG ghi gì (kể cả xác thực/targetBaseUrl). */
+    public ImportDiffResponse previewFromFile(UUID projectId, MultipartFile file) {
+        return preview(projectId, readFile(file));
+    }
+
+    public ImportDiffResponse previewFromUrl(UUID projectId, String url, TargetAuthType authType, String authValue) {
+        projectService.validateTargetAuthValue(authType, authValue);
+        return preview(projectId, fetchUrlContent(url, authType, authValue));
+    }
+
+    private String readFile(MultipartFile file) {
         try {
-            content = new String(file.getBytes(), StandardCharsets.UTF_8);
+            return new String(file.getBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new SwaggerParseException("Không thể đọc file đã tải lên");
         }
-        return doImport(projectId, content, authType, authValue, targetBaseUrl);
+    }
+
+    private ImportDiffResponse preview(UUID projectId, String content) {
+        Project project = projectService.getOwnedProject(projectId);
+        List<Endpoint> incoming = parseEndpoints(project, content).endpoints();
+        return diff(project, incoming).toResponse(this::testCaseCountsOf);
     }
 
     /** Số liệu của dữ liệu sẽ bị xoá nếu import lại - giao diện dùng để cảnh báo trước khi xác nhận. */
@@ -127,16 +162,10 @@ public class EndpointImportService {
                 EndpointResponse.from(endpoint, testCaseCountByEndpointId.getOrDefault(endpoint.getId(), 0L)));
     }
 
-    private List<EndpointResponse> doImport(
-            UUID projectId, String content, TargetAuthType authType, String authValue, String targetBaseUrl
-    ) {
-        Project project = projectService.getOwnedProject(projectId);
-        // Import xoá toàn bộ execution/kết quả của project: đang có lần chạy chưa xong thì để lại bản ghi mồ côi/lỗi FK.
-        if (testExecutionRepository.existsByProjectAndStatusIn(project, EnumSet.of(ExecutionStatus.PENDING, ExecutionStatus.RUNNING))) {
-            throw new ExecutionInProgressException("Project đang có lần chạy test chưa xong, vui lòng đợi chạy xong rồi import lại");
-        }
-        applyAuthConfig(project, authType, authValue);
+    private record Parsed(OpenAPI openApi, List<Endpoint> endpoints) {
+    }
 
+    private Parsed parseEndpoints(Project project, String content) {
         ParseOptions options = new ParseOptions();
         options.setResolve(true);
         // setResolve(true) chỉ resolve $ref trỏ ra ngoài file - $ref nội bộ vẫn giữ dạng
@@ -150,10 +179,6 @@ public class EndpointImportService {
             throw new SwaggerParseException("Không parse được nội dung OpenAPI đã cung cấp");
         }
 
-        // targetBaseUrl (nơi gọi API thật) khác `content` đang parse (tài liệu OpenAPI) - ưu tiên
-        // giá trị người dùng tự nhập, chỉ suy ra từ servers[] khi để trống.
-        project.setTargetBaseUrl(resolveTargetBaseUrl(targetBaseUrl, openApi));
-
         List<Endpoint> endpoints = new ArrayList<>();
         boolean hasGlobalSecurity = openApi.getSecurity() != null && !openApi.getSecurity().isEmpty();
         openApi.getPaths().forEach((path, pathItem) ->
@@ -162,6 +187,35 @@ public class EndpointImportService {
 
         if (endpoints.isEmpty()) {
             throw new SwaggerParseException("Tài liệu OpenAPI không chứa endpoint nào");
+        }
+        endpoints.forEach(e -> e.setSpecHash(specHashOf(e)));
+        return new Parsed(openApi, endpoints);
+    }
+
+    private List<EndpointResponse> doImport(
+            UUID projectId, String content, TargetAuthType authType, String authValue, String targetBaseUrl, ImportMode mode
+    ) {
+        Project project = projectService.getOwnedProject(projectId);
+        boolean diffMode = mode == ImportMode.DIFF && endpointRepository.countByProject(project) > 0;
+        // Thay thế xoá toàn bộ execution/kết quả của project: đang có lần chạy chưa xong thì để lại bản ghi mồ côi/lỗi FK.
+        // Import theo diff không xoá gì nên không cần chặn.
+        if (!diffMode && testExecutionRepository.existsByProjectAndStatusIn(project, EnumSet.of(ExecutionStatus.PENDING, ExecutionStatus.RUNNING))) {
+            throw new ExecutionInProgressException("Project đang có lần chạy test chưa xong, vui lòng đợi chạy xong rồi import lại");
+        }
+        applyAuthConfig(project, authType, authValue);
+
+        Parsed parsed = parseEndpoints(project, content);
+        // targetBaseUrl (nơi gọi API thật) khác `content` đang parse (tài liệu OpenAPI) - ưu tiên
+        // giá trị người dùng tự nhập, chỉ suy ra từ servers[] khi để trống.
+        // Chế độ DIFF: người dùng để trống ô này khi chỉ cập nhật spec - KHÔNG được ghi đè URL đã cấu hình bằng giá trị suy từ servers[]
+        // (hoặc null) làm mọi lần chạy sau trỏ sai đích. Chỉ ghi khi người dùng nhập, hoặc project chưa có URL nào.
+        boolean userGaveBaseUrl = targetBaseUrl != null && !targetBaseUrl.isBlank();
+        if (!diffMode || userGaveBaseUrl || project.getTargetBaseUrl() == null || project.getTargetBaseUrl().isBlank()) {
+            project.setTargetBaseUrl(resolveTargetBaseUrl(targetBaseUrl, parsed.openApi()));
+        }
+
+        if (diffMode) {
+            return applyDiff(project, parsed.endpoints());
         }
 
         // Dọn hết bảng phụ thuộc endpoint cũ trước khi xoá - đều là khoá ngoại NOT NULL.
@@ -176,8 +230,161 @@ public class EndpointImportService {
         testGenerationEventRepository.deleteAllByEndpointProject(project);
         endpointRoleRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
-        List<Endpoint> saved = endpointRepository.saveAll(endpoints);
+        List<Endpoint> saved = endpointRepository.saveAll(parsed.endpoints());
         return saved.stream().map(EndpointResponse::from).toList();
+    }
+
+    // ---- Module 17 (17c) - import theo diff ----
+
+    /** Khoá nhận diện 1 endpoint giữa 2 lần import: method + path (không phân biệt hoa/thường ở method). */
+    private static String keyOf(Endpoint endpoint) {
+        return endpoint.getMethod().toUpperCase(java.util.Locale.ROOT) + " " + endpoint.getPath();
+    }
+
+    /**
+     * Phần spec làm đổi điều cần kiểm thử: schema + schema response + có yêu cầu xác thực không. Mô tả (summary) KHÔNG tính -
+     * cột {@code schema} có ghi kèm "summary" nên phải bỏ ra trước khi băm, nếu không đổi 1 câu mô tả cũng thành "spec đổi".
+     */
+    static String specHashOf(Endpoint endpoint) {
+        return sha256(schemaPart(endpoint) + "\u0000" + (endpoint.getResponseSchemas() == null ? "" : endpoint.getResponseSchemas())
+                + "\u0000" + endpoint.isRequiresAuth());
+    }
+
+    /** Hash CHỈ phần schema + requiresAuth - dùng so endpoint cũ (chưa có specHash, response schema có thể chưa lưu) cho công bằng. */
+    static String schemaOnlyHashOf(Endpoint endpoint) {
+        return sha256(schemaPart(endpoint) + "\u0000" + endpoint.isRequiresAuth());
+    }
+
+    private static String schemaPart(Endpoint endpoint) {
+        String schema = endpoint.getSchema();
+        if (schema == null || schema.isBlank()) {
+            return "";
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = SCHEMA_MAPPER.readTree(schema);
+            if (node instanceof com.fasterxml.jackson.databind.node.ObjectNode object) {
+                object.remove("summary");
+            }
+            return node.toString();
+        } catch (Exception e) {
+            return schema; // schema hỏng: băm nguyên văn (vẫn ổn định)
+        }
+    }
+
+    private static final ObjectMapper SCHEMA_MAPPER = new ObjectMapper();
+
+    private static String sha256(String canonical) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 luôn có sẵn trong JDK", e);
+        }
+    }
+
+    /** existing + bản mới tương ứng; unchanged/changed tách theo hash. */
+    private record Pair(Endpoint existing, Endpoint incoming) {
+    }
+
+    private record Diff(List<Endpoint> added, List<Pair> changed, List<Pair> unchanged, List<Endpoint> missing) {
+        ImportDiffResponse toResponse(java.util.function.Function<List<UUID>, Map<UUID, Long>> countTestCases) {
+            List<UUID> changedIds = changed.stream().map(p -> p.existing().getId()).toList();
+            long affected = changedIds.isEmpty() ? 0 : countTestCases.apply(changedIds).values().stream().mapToLong(Long::longValue).sum();
+            return new ImportDiffResponse(added.size(), changed.size(), missing.size(), unchanged.size(), affected,
+                    changed.stream().map(p -> keyOf(p.existing())).toList(),
+                    missing.stream().map(EndpointImportService::keyOf).toList(),
+                    added.stream().map(EndpointImportService::keyOf).toList());
+        }
+    }
+
+    /** Số test case theo endpoint, truy vấn theo lô để không vượt giới hạn tham số của mệnh đề IN với project hàng nghìn endpoint. */
+    private Map<UUID, Long> testCaseCountsOf(List<UUID> endpointIds) {
+        Map<UUID, Long> counts = new java.util.HashMap<>();
+        for (int from = 0; from < endpointIds.size(); from += 500) {
+            List<UUID> batch = endpointIds.subList(from, Math.min(from + 500, endpointIds.size()));
+            testCaseRepository.countByEndpointIds(batch).forEach(row -> counts.put(row.getEndpointId(), row.getCount()));
+        }
+        return counts;
+    }
+
+    private Diff diff(Project project, List<Endpoint> incoming) {
+        Map<String, Endpoint> existingByKey = new java.util.LinkedHashMap<>();
+        endpointRepository.findAllByProjectOrderByCreatedAtAsc(project).forEach(e -> existingByKey.putIfAbsent(keyOf(e), e));
+        List<Endpoint> added = new ArrayList<>();
+        List<Pair> changed = new ArrayList<>();
+        List<Pair> unchanged = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (Endpoint candidate : incoming) {
+            String key = keyOf(candidate);
+            if (!seen.add(key)) {
+                continue; // spec khai trùng method+path: lấy bản đầu
+            }
+            Endpoint existing = existingByKey.get(key);
+            if (existing == null) {
+                added.add(candidate);
+                continue;
+            }
+            // Endpoint cũ chưa có specHash (import trước Module 17): response schema của nó thường chưa được lưu ("cần import
+            // lại") nên so cả hash sẽ báo "đổi" hàng loạt - chỉ so phần schema + requiresAuth.
+            boolean same = existing.getSpecHash() != null
+                    ? existing.getSpecHash().equals(candidate.getSpecHash())
+                    : schemaOnlyHashOf(existing).equals(schemaOnlyHashOf(candidate));
+            (same ? unchanged : changed).add(new Pair(existing, candidate));
+        }
+        List<Endpoint> missing = existingByKey.entrySet().stream()
+                .filter(en -> !seen.contains(en.getKey())).map(Map.Entry::getValue).toList();
+        return new Diff(added, changed, unchanged, missing);
+    }
+
+    private List<EndpointResponse> applyDiff(Project project, List<Endpoint> incoming) {
+        Diff diff = diff(project, incoming);
+        Instant now = Instant.now();
+        List<Endpoint> toSave = new ArrayList<>(diff.added());
+        for (Pair pair : diff.changed()) {
+            Endpoint e = pair.existing();
+            Endpoint n = pair.incoming();
+            e.setSchema(n.getSchema());
+            e.setResponseSchemas(n.getResponseSchemas());
+            e.setRequiresAuth(n.isRequiresAuth());
+            e.setSummary(n.getSummary());
+            e.setSpecHash(n.getSpecHash());
+            e.setSchemaChangedAt(now);
+            e.setMissingFromSpec(false);
+            toSave.add(e);
+        }
+        for (Pair pair : diff.unchanged()) {
+            Endpoint e = pair.existing();
+            Endpoint n = pair.incoming();
+            // Không đổi nội dung kiểm thử: chỉ làm mới mô tả, bỏ cờ "không còn trong spec", và bổ sung dữ liệu endpoint cũ còn thiếu
+            // (specHash, response schema) mà KHÔNG đặt schemaChangedAt.
+            boolean dirty = false;
+            if (!java.util.Objects.equals(e.getSummary(), n.getSummary())) {
+                e.setSummary(n.getSummary());
+                dirty = true;
+            }
+            if (e.getSpecHash() == null || e.getResponseSchemas() == null && n.getResponseSchemas() != null) {
+                e.setSpecHash(n.getSpecHash());
+                e.setResponseSchemas(n.getResponseSchemas());
+                dirty = true;
+            }
+            if (Boolean.TRUE.equals(e.getMissingFromSpec())) {
+                e.setMissingFromSpec(false);
+                dirty = true;
+            }
+            if (dirty) {
+                toSave.add(e);
+            }
+        }
+        diff.missing().forEach(e -> {
+            if (!Boolean.TRUE.equals(e.getMissingFromSpec())) {
+                e.setMissingFromSpec(true);
+                toSave.add(e);
+            }
+        });
+        endpointRepository.saveAll(toSave);
+        List<Endpoint> all = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project);
+        Map<UUID, Long> testCaseCounts = testCaseCountsOf(all.stream().map(Endpoint::getId).toList());
+        return all.stream().map(e -> EndpointResponse.from(e, testCaseCounts.getOrDefault(e.getId(), 0L))).toList();
     }
 
     private String resolveTargetBaseUrl(String targetBaseUrl, OpenAPI openApi) {
