@@ -107,10 +107,10 @@ export interface TestExecution {
   autoIncludedTestCaseIds: string[]
 }
 
-export function triggerExecution(projectId: string, testCaseIds: string[]): Promise<TestExecution> {
+export function triggerExecution(projectId: string, testCaseIds: string[], cleanupCreated = false): Promise<TestExecution> {
   return apiFetch<TestExecution>(`/projects/${projectId}/executions`, {
     method: "POST",
-    body: JSON.stringify({ testCaseIds }),
+    body: JSON.stringify({ testCaseIds, cleanupCreated }),
   })
 }
 

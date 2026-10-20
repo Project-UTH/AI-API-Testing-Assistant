@@ -64,7 +64,7 @@ public class TestExecutionService {
 
     public TestExecutionResponse trigger(UUID projectId, TestExecutionRequest request) {
         Project project = projectService.getOwnedProject(projectId);
-        return triggerForProject(project, request.testCaseIds(), null, null);
+        return triggerForProject(project, request.testCaseIds(), null, null, Boolean.TRUE.equals(request.cleanupCreated()));
     }
 
     /**
@@ -74,6 +74,10 @@ public class TestExecutionService {
      * @param ciApiTokenId token CI khởi chạy (null nếu từ giao diện); ciFailOn chế độ kết luận CI (null = mặc định)
      */
     public TestExecutionResponse triggerForProject(Project project, List<UUID> testCaseIds, UUID ciApiTokenId, String ciFailOn) {
+        return triggerForProject(project, testCaseIds, ciApiTokenId, ciFailOn, false);
+    }
+
+    public TestExecutionResponse triggerForProject(Project project, List<UUID> testCaseIds, UUID ciApiTokenId, String ciFailOn, boolean cleanupCreated) {
         if (project.getTargetBaseUrl() == null || project.getTargetBaseUrl().isBlank()) {
             throw new InvalidRequestException(
                     "Project chưa cấu hình Target Base URL, vui lòng import lại và điền URL");
@@ -148,7 +152,7 @@ public class TestExecutionService {
                 .toList());
 
         testExecutionRunner.runInBackground(
-                execution, ordered, project, edgesByConsumerId, autoIncludedIds, assertionsByTestCaseId);
+                execution, ordered, project, edgesByConsumerId, autoIncludedIds, assertionsByTestCaseId, cleanupCreated);
 
         return TestExecutionResponse.pending(execution, List.copyOf(autoIncludedIds));
     }

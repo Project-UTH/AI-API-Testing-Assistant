@@ -147,7 +147,7 @@ class TestExecutionServiceTest {
 
         ArgumentCaptor<List<TestCase>> orderedCaptor = ArgumentCaptor.forClass(List.class);
         verify(testExecutionRunner).runInBackground(
-                any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID(), anyAssertionMap());
+                any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID(), anyAssertionMap(), org.mockito.ArgumentMatchers.eq(false));
         assertThat(orderedCaptor.getValue()).extracting(TestCase::getId).containsExactly(id2, id1);
 
         // Lịch sử (Module 8) - cả 2 test case đã chọn cùng thuộc 1 endpoint, chỉ ghi 1 dòng liên kết.
@@ -181,7 +181,7 @@ class TestExecutionServiceTest {
 
         ArgumentCaptor<List<TestCase>> orderedCaptor = ArgumentCaptor.forClass(List.class);
         verify(testExecutionRunner).runInBackground(
-                any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID(), anyAssertionMap());
+                any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID(), anyAssertionMap(), org.mockito.ArgumentMatchers.eq(false));
         assertThat(orderedCaptor.getValue()).extracting(TestCase::getId).containsExactly(source.getId(), consumer.getId());
 
         // Lịch sử (Module 8) - consumer thuộc getEndpoint, source chỉ có mặt do auto-included (chaining)
@@ -247,7 +247,7 @@ class TestExecutionServiceTest {
 
         ArgumentCaptor<List<TestCase>> orderedCaptor = ArgumentCaptor.forClass(List.class);
         verify(testExecutionRunner).runInBackground(
-                any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID(), anyAssertionMap());
+                any(TestExecution.class), orderedCaptor.capture(), any(Project.class), anyMap(), anySetOfUUID(), anyAssertionMap(), org.mockito.ArgumentMatchers.eq(false));
         List<TestCase> ordered = orderedCaptor.getValue();
         assertThat(ordered).hasSize(3);
         assertThat(ordered.get(ordered.size() - 1).getId()).isEqualTo(deletePet.getId());

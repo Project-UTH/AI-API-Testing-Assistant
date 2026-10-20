@@ -74,6 +74,7 @@ export function TestCasesPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isRunning, setIsRunning] = useState(false)
+  const [cleanupCreated, setCleanupCreated] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
 
   const testCasesByEndpoint = useMemo(() => {
@@ -145,7 +146,7 @@ export function TestCasesPage() {
     setRunError(null)
     setIsRunning(true)
     try {
-      const execution = await triggerExecution(projectId, Array.from(selectedIds))
+      const execution = await triggerExecution(projectId, Array.from(selectedIds), cleanupCreated)
       navigate(`/projects/${projectId}/executions/${execution.id}`)
     } catch (error) {
       setRunError(error instanceof ApiError ? error.message : "Đã xảy ra lỗi, vui lòng thử lại")
@@ -187,6 +188,13 @@ export function TestCasesPage() {
             <History className="h-4 w-4" />
             Lịch sử chạy test
           </Button>
+          <label
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            title="Sau khi chạy, xoá các bản ghi cha do CHÍNH lần chạy này tạo cho test con (cần API có endpoint DELETE tương ứng). Không xoá dữ liệu nào khác. Lỗi khi xoá không đổi kết quả test."
+          >
+            <Checkbox checked={cleanupCreated} onCheckedChange={(c) => setCleanupCreated(c === true)} disabled={isRunning} />
+            Dọn dữ liệu đã tạo
+          </label>
           <Button size="sm" disabled={selectedIds.size === 0 || isRunning} onClick={handleRun}>
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Chạy Test {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}

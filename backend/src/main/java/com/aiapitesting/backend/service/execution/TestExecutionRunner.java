@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service.execution;
 import com.aiapitesting.backend.dto.response.AssertionResultResponse;
 import com.aiapitesting.backend.entity.ErrorKind;
 import com.aiapitesting.backend.entity.ExecutionStatus;
+import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
@@ -50,6 +51,7 @@ public class TestExecutionRunner {
     private final TestCasePathValidator testCasePathValidator;
     private final BugReportStatusService bugReportStatusService;
     private final ExecutionFailureAnalyzer executionFailureAnalyzer;
+    private final com.aiapitesting.backend.repository.EndpointRepository endpointRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Module 16 - dữ liệu phụ thu được quanh 1 lần gọi target, truyền xuống finish() để lưu cùng TestResult. */
@@ -59,11 +61,19 @@ public class TestExecutionRunner {
         }
     }
 
-    @Async
     public void runInBackground(
             TestExecution execution, List<TestCase> testCases, Project project,
             Map<UUID, List<DependencyEdge>> edgesByConsumerId, Set<UUID> autoIncludedIds,
             Map<UUID, List<AssertionSpec>> assertionsByTestCaseId
+    ) {
+        runInBackground(execution, testCases, project, edgesByConsumerId, autoIncludedIds, assertionsByTestCaseId, false);
+    }
+
+    @Async
+    public void runInBackground(
+            TestExecution execution, List<TestCase> testCases, Project project,
+            Map<UUID, List<DependencyEdge>> edgesByConsumerId, Set<UUID> autoIncludedIds,
+            Map<UUID, List<AssertionSpec>> assertionsByTestCaseId, boolean cleanupCreated
     ) {
         execution.setStatus(ExecutionStatus.RUNNING);
         testExecutionRepository.save(execution);
@@ -73,6 +83,7 @@ public class TestExecutionRunner {
         Map<UUID, TestResultStatus> statusByTestCaseId = new HashMap<>();
         Map<UUID, String> responseBodyByTestCaseId = new HashMap<>();
         List<TestResult> savedResults = new ArrayList<>();
+        List<CreatedResource> createdResources = new ArrayList<>();
 
         try {
             Map<UUID, TestCase> testCaseById = new HashMap<>();
@@ -81,15 +92,21 @@ public class TestExecutionRunner {
                 boolean autoIncluded = autoIncludedIds.contains(testCase.getId());
                 List<DependencyEdge> ownEdges = edgesByConsumerId.getOrDefault(testCase.getId(), List.of());
                 if (!autoIncluded && isIsolatedConsumer(testCase) && !ownEdges.isEmpty()) {
-                    refreshCreatedSources(ownEdges, testCaseById, edgesByConsumerId, project, statusByTestCaseId, responseBodyByTestCaseId);
+                    refreshCreatedSources(ownEdges, testCaseById, edgesByConsumerId, project, statusByTestCaseId, responseBodyByTestCaseId, createdResources);
                 }
                 runOne(execution, testCase, project, edgesByConsumerId.getOrDefault(testCase.getId(), List.of()),
                         statusByTestCaseId, responseBodyByTestCaseId, autoIncluded,
                         assertionsByTestCaseId.getOrDefault(testCase.getId(), List.of()), savedResults);
+                if (cleanupCreated) {
+                    registerOriginalParent(testCase, edgesByConsumerId, statusByTestCaseId, responseBodyByTestCaseId, createdResources);
+                }
             }
             // Module 16 - phân loại nguyên nhân fail SAU KHI cả lượt chạy xong (cần xem "anh em" cùng lượt để biết
             // N/M test cùng lỗi), RỒI MỚI chạy tự động hoá Bug Report. Trước đây onNewTestResult gọi ngay lúc lưu
             // từng kết quả - 1 lượt fail hàng loạt vì token hết hạn sẽ tự mở lại các bug đã đóng.
+            if (cleanupCreated) {
+                cleanupCreatedResources(project, createdResources);
+            }
             executionFailureAnalyzer.analyze(execution, savedResults);
             savedResults.forEach(bugReportStatusService::onNewTestResult);
             execution.setStatus(ExecutionStatus.COMPLETED);
@@ -100,6 +117,63 @@ public class TestExecutionRunner {
             execution.setFinishedAt(Instant.now());
             testExecutionRepository.save(execution);
         }
+    }
+
+    /** Test POST nguồn của {{id}} đã chạy PASSED: bản ghi nó vừa tạo cũng là do lần chạy này tạo nên được dọn cùng (chỉ khi bật dọn dẹp). */
+    private void registerOriginalParent(
+            TestCase testCase, Map<UUID, List<DependencyEdge>> edgesByConsumerId, Map<UUID, TestResultStatus> statusByTestCaseId,
+            Map<UUID, String> responseBodyByTestCaseId, List<CreatedResource> createdResources
+    ) {
+        if (testCase.getEndpoint() == null || !"POST".equalsIgnoreCase(testCase.getEndpoint().getMethod())
+                || statusByTestCaseId.get(testCase.getId()) != TestResultStatus.PASSED) {
+            return;
+        }
+        String jsonPath = edgesByConsumerId.values().stream().flatMap(List::stream)
+                .filter(e -> e.sourceTestCaseId().equals(testCase.getId())).map(DependencyEdge::jsonPath).findFirst().orElse(null);
+        if (jsonPath != null) {
+            createdResources.add(new CreatedResource(testCase.getEndpoint().getPath(), extractJsonPathValue(responseBodyByTestCaseId.get(testCase.getId()), jsonPath)));
+        }
+    }
+
+    /** Tài nguyên cha do chính lần chạy này tạo (đường dẫn endpoint POST + id trích từ phản hồi) - đối tượng duy nhất được phép xoá khi dọn dẹp. */
+    private record CreatedResource(String createPath, String id) {
+    }
+
+    /**
+     * Dọn dẹp TUỲ CHỌN: xoá các tài nguyên cha do chính lần chạy này tạo, bằng endpoint DELETE có đường dẫn "{createPath}/{tham số}" của project. Không có
+     * endpoint DELETE tương ứng hoặc không trích được id thì bỏ qua; lỗi khi xoá chỉ ghi log, không đổi kết quả test, không bao giờ xoá thứ gì khác.
+     */
+    private void cleanupCreatedResources(Project project, List<CreatedResource> created) {
+        int deleted = 0;
+        int skipped = 0;
+        for (CreatedResource resource : created) {
+            if (resource.id() == null || resource.id().isBlank()) {
+                skipped++;
+                continue;
+            }
+            Endpoint deleteEndpoint = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project).stream()
+                    .filter(e -> "DELETE".equalsIgnoreCase(e.getMethod()))
+                    .filter(e -> e.getPath().matches(java.util.regex.Pattern.quote(resource.createPath()) + "/\\{[^/}]+}"))
+                    .findFirst().orElse(null);
+            if (deleteEndpoint == null) {
+                skipped++;
+                continue;
+            }
+            try {
+                TestCase teardown = TestCase.builder().endpoint(deleteEndpoint)
+                        .resolvedPath(deleteEndpoint.getPath().replaceAll("\\{[^/}]+}", java.util.regex.Matcher.quoteReplacement(resource.id())))
+                        .expectedStatus(204).build();
+                RestAssuredTestRunner.RunResult r = restAssuredTestRunner.run(project, teardown, Map.of());
+                if (r.statusCode() >= 200 && r.statusCode() < 300) {
+                    deleted++;
+                } else {
+                    log.warn("Don dep that bai: DELETE {} tra {}", teardown.getResolvedPath(), r.statusCode());
+                }
+            } catch (RuntimeException e) {
+                log.warn("Don dep that bai cho tai nguyen cua {}: {}", resource.createPath(), e.toString());
+            }
+        }
+        log.info("Don dep tai nguyen do lan chay tao: xoa {}, bo qua {}", deleted, skipped);
     }
 
     /** Test do hệ thống sinh (bù checklist) và test gốc AI: mỗi test dùng tài nguyên cha RIÊNG để không cộng dồn trạng thái lên nhau. */
@@ -116,7 +190,8 @@ public class TestExecutionRunner {
      */
     private void refreshCreatedSources(
             List<DependencyEdge> edges, Map<UUID, TestCase> testCaseById, Map<UUID, List<DependencyEdge>> edgesByConsumerId,
-            Project project, Map<UUID, TestResultStatus> statusByTestCaseId, Map<UUID, String> responseBodyByTestCaseId
+            Project project, Map<UUID, TestResultStatus> statusByTestCaseId, Map<UUID, String> responseBodyByTestCaseId,
+            List<CreatedResource> createdResources
     ) {
         for (UUID sourceId : edges.stream().map(DependencyEdge::sourceTestCaseId).distinct().toList()) {
             TestCase source = testCaseById.get(sourceId);
@@ -137,6 +212,8 @@ public class TestExecutionRunner {
                 RestAssuredTestRunner.RunResult fresh = restAssuredTestRunner.run(project, source, fallbacks);
                 if (fresh.statusCode() >= 200 && fresh.statusCode() < 300 && fresh.responseBody() != null) {
                     responseBodyByTestCaseId.put(sourceId, fresh.responseBody());
+                    String jsonPath = edges.stream().filter(e -> e.sourceTestCaseId().equals(sourceId)).map(DependencyEdge::jsonPath).findFirst().orElse("$.id");
+                    createdResources.add(new CreatedResource(source.getEndpoint().getPath(), extractJsonPathValue(fresh.responseBody(), jsonPath)));
                 }
             } catch (RuntimeException e) {
                 log.warn("Khong tao duoc tai nguyen cha moi cho test con (giu tai nguyen cu): {}", e.toString());
