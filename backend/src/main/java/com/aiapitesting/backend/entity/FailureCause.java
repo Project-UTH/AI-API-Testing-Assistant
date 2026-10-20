@@ -73,7 +73,13 @@ public enum FailureCause {
      * cùng lượt: nhiều khả năng token/vai trò mặc định thiếu quyền cho endpoint này (vd gọi endpoint của vai trò khác) hơn là lỗi API. Không
      * thuộc nhóm "không phải do API" (có thể API chặn nhầm) nhưng không tự tạo/đóng Bug Report. Thêm vào CUỐI enum.
      */
-    TOKEN_FORBIDDEN("Nghi token thiếu quyền cho endpoint này", false);
+    TOKEN_FORBIDDEN("Nghi token thiếu quyền cho endpoint này", false),
+    /**
+     * API trả 401 (chưa xác thực) cho request có token mặc định ĐÃ được API chấp nhận ở test khác cùng lượt, trong khi test kỳ vọng 400/422 (body
+     * sai kiểu/enum/định dạng...). Dấu hiệu API xử lý lỗi đầu vào sai mã (vd lỗi đọc JSON bị chuyển sang luồng xác thực) - là PHÁT HIỆN thật
+     * của API đích, KHÔNG bị loại khỏi Bug Report. Black-box không chứng minh tuyệt đối (không có request đối chứng riêng). Thêm vào CUỐI enum.
+     */
+    API_WRONG_STATUS("API trả sai mã lỗi (401 thay vì 400)", false);
 
     private final String label;
     private final boolean notApiFault;

@@ -663,6 +663,29 @@ class FailureCauseClassifierTest {
         assertThat(InputRejectionDetector.excerptIfRejected("{\"id\":1}")).isNull();
     }
 
+    // ---- 401 thay vì 400 dù token hợp lệ ----
+
+    private Input wrongStatus401(Integer expected, int acceptedCount, TestCaseAuthOverride override) {
+        return new Input(TestResultStatus.FAILED, expected, 401, null, 50L, null, override, history(fail(1, 401)),
+                "http://target", null, new ExecutionContext(0, 10, 0, 10, acceptedCount), List.of(), null, true, java.util.Map.of(), false, false, 0);
+    }
+
+    @Test
+    void unauthorizedWhereBadInputExpected_withTokenProvenValid_isApiWrongStatus_notAuthConfig() {
+        Result result = classifier.classify(wrongStatus401(400, 5, TestCaseAuthOverride.DEFAULT));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.API_WRONG_STATUS);
+        assertThat(FailureCause.API_WRONG_STATUS.isNotApiFault()).isFalse();
+        assertThat(FailureCause.API_WRONG_STATUS.suppressesBugAutomation()).isFalse(); // phát hiện thật, không bị loại khỏi Bug Report
+    }
+
+    @Test
+    void apiWrongStatus_doesNotApplyWhenTokenUnprovenOrIntentionalSecurityOrNon400Expectation() {
+        assertThat(classifier.classify(wrongStatus401(400, 0, TestCaseAuthOverride.DEFAULT)).cause()).isNotEqualTo(FailureCause.API_WRONG_STATUS);
+        assertThat(classifier.classify(wrongStatus401(400, 5, TestCaseAuthOverride.NONE)).cause()).isNotEqualTo(FailureCause.API_WRONG_STATUS);
+        assertThat(classifier.classify(wrongStatus401(200, 5, TestCaseAuthOverride.DEFAULT)).cause()).isNotEqualTo(FailureCause.API_WRONG_STATUS);
+    }
+
     // ---- 403 với token mặc định đã chứng minh dùng được ----
 
     private Input forbidden(Integer expected, int acceptedCount, TestCaseAuthOverride override, boolean profile) {

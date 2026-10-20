@@ -67,6 +67,7 @@ const CAUSE_LABEL: Record<string, string> = {
   TEST_DATA_SUSPECT: "Nghi dữ liệu test không hợp lệ",
   MASS_ASSIGNMENT: "Nhận field không khai báo (mass assignment)",
   TOKEN_FORBIDDEN: "Nghi token thiếu quyền cho endpoint này",
+  API_WRONG_STATUS: "API trả sai mã lỗi (401 thay vì 400)",
 }
 
 const SHOWN_ORDER: ExecutionDiffCategory[] = [

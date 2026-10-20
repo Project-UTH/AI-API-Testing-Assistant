@@ -201,6 +201,10 @@ public class FailureCauseClassifier {
 
         // 3. Xác thực: nhận 401/403 ngoài kỳ vọng khi test dùng token mặc định của project. Case Security cố ý
         //    bỏ/sai token (authOverride NONE/INVALID) thì 401 là CHỦ ĐÍCH - không bao giờ gắn nhãn này.
+        Result wrongStatus = apiWrongStatus(in);
+        if (wrongStatus != null) {
+            return wrongStatus;
+        }
         if (isUnexpectedAuthFailure(in)) {
             return new Result(FailureCause.AUTH_CONFIG, authEvidence(in, history, ctx));
         }
@@ -441,6 +445,27 @@ public class FailureCauseClassifier {
                         + in.context().defaultAuthAcceptedCount() + " test khác trong cùng lượt chạy nên token còn dùng được",
                 "Nhiều khả năng token/vai trò mặc định không có quyền gọi endpoint này (vd endpoint của vai trò khác): gán profile vai trò đúng "
                         + "ở Sửa test case. Cũng có thể API chặn nhầm (bug thật) - kiểm thử black-box không phân biệt được"));
+    }
+
+    /**
+     * 401 cho request mà test kỳ vọng 400/422 (đầu vào sai), trong khi token mặc định đã được API chấp nhận ở test khác cùng lượt: không thể quy cho
+     * token. Gắn nhãn là phát hiện của API (không che bằng "lỗi cấu hình xác thực"). Chỉ áp cho test dùng token mặc định, không áp cho case Security
+     * cố ý bỏ/sai token (401 khi đó là kết quả đúng).
+     */
+    private Result apiWrongStatus(Input in) {
+        boolean usesDefaultAuth = (in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT) && !in.usesAuthProfile();
+        Integer expected = in.expectedStatus();
+        if (in.status() != TestResultStatus.FAILED || !usesDefaultAuth || in.responseStatus() == null || in.responseStatus() != 401
+                || expected == null || (expected != 400 && expected != 422)
+                || in.context() == null || in.context().defaultAuthAcceptedCount() <= 0) {
+            return null;
+        }
+        return new Result(FailureCause.API_WRONG_STATUS, List.of(
+                "API trả 401 trong khi test kỳ vọng " + expected + " (đầu vào sai). Token mặc định đã được API chấp nhận ở "
+                        + in.context().defaultAuthAcceptedCount() + " test khác trong cùng lượt chạy nên không quy cho token.",
+                "Nhiều khả năng API xử lý lỗi đầu vào sai mã (vd lỗi đọc JSON/enum bị chuyển sang luồng xác thực). Nên báo cho đồ án đích, không sửa kỳ vọng "
+                        + "cho khớp 401.",
+                "Giới hạn black-box: chưa có request đối chứng riêng - có thể kiểm bằng cách gửi cùng token với body hợp lệ."));
     }
 
     private boolean isUnexpectedAuthFailure(Input in) {
