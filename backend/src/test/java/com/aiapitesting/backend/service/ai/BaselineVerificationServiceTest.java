@@ -238,4 +238,105 @@ class BaselineVerificationServiceTest {
         BaselineRequest withValue = new BaselineRequest(true, 2, Map.of("id", "REAL"), true, false);
         assertThat(service.execute(projectId, endpointId, withValue).status()).isEqualTo("CONFIRMED");
     }
+
+    // ---- Giám sát từng bước, chạy thử, huỷ và trần token ----
+
+    /** Ghi lại các bước để kiểm tra; có thể cấu hình huỷ sau N lần kiểm tra và trần token. */
+    private static class Recording implements com.aiapitesting.backend.service.job.JobProgress {
+        final java.util.List<String> phases = new java.util.ArrayList<>();
+        final boolean dryRun;
+        final int cap;
+        int cancelAfterChecks = Integer.MAX_VALUE;
+        int checks;
+        int tokens;
+
+        Recording(boolean dryRun, int cap) {
+            this.dryRun = dryRun;
+            this.cap = cap;
+        }
+
+        @Override
+        public Step start(UUID endpointId, String endpointLabel, String phase, String actor, String title) {
+            phases.add(phase + ":" + actor);
+            return (status, detail, httpStatus, t) -> { };
+        }
+
+        @Override
+        public void checkCancelled() {
+            if (++checks > cancelAfterChecks) {
+                throw new com.aiapitesting.backend.service.job.JobCancelledException();
+            }
+        }
+
+        @Override
+        public int addTokens(int t) {
+            tokens += t;
+            return tokens;
+        }
+
+        @Override
+        public int tokensUsed() {
+            return tokens;
+        }
+
+        @Override
+        public int tokenCap() {
+            return cap;
+        }
+
+        @Override
+        public boolean isDryRun() {
+            return dryRun;
+        }
+    }
+
+    @Test
+    void successfulRun_reportsEachSystemAndAiStepInOrder() {
+        results(TestResultStatus.PASSED, 201, "{}");
+        Recording rec = new Recording(false, 0);
+
+        BaselineResponse response = service.execute(projectId, endpointId, confirmed(2), rec);
+
+        assertThat(response.status()).isEqualTo("CONFIRMED");
+        assertThat(rec.phases).containsExactly("PRECHECK:SYSTEM", "AI_BASELINE:AI", "RUN:SYSTEM", "LOCK:SYSTEM", "FILL:SYSTEM");
+        assertThat(rec.tokens).isEqualTo(5000);
+    }
+
+    @Test
+    void dryRun_listsPlannedSteps_withoutCallingAiTargetOrWritingTests() {
+        Recording rec = new Recording(true, 0);
+
+        BaselineResponse response = service.execute(projectId, endpointId, confirmed(2), rec);
+
+        assertThat(response.status()).isEqualTo("DRY_RUN");
+        assertThat(rec.phases).containsExactly("PRECHECK:SYSTEM", "AI_BASELINE:AI", "RUN:SYSTEM", "FILL:SYSTEM");
+        assertThat(askCount).isZero();
+        verify(executionService, never()).triggerForProject(any(), any(), any(), any());
+        verify(generation, never()).saveBaselineTest(any(), any(), any(), any());
+    }
+
+    @Test
+    void cancelAtASafeBoundary_stopsBeforeAnotherAiCall_andKeepsNothingLocked() {
+        results(TestResultStatus.FAILED, 400, "{\"error\":\"bad\"}");
+        Recording rec = new Recording(false, 0);
+        rec.cancelAfterChecks = 3; // PRECHECK(1) -> vòng 1 đầu(2) -> sau AI(3) -> vòng 2 đầu(4) = huỷ
+
+        assertThatThrownBy(() -> service.execute(projectId, endpointId, confirmed(3), rec))
+                .isInstanceOf(com.aiapitesting.backend.service.job.JobCancelledException.class);
+
+        assertThat(askCount).isEqualTo(1);
+        verify(testCaseService, never()).setLocked(any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void jobTokenCap_stopsRepairLoopBeforeTheNextAiCall() {
+        results(TestResultStatus.FAILED, 400, "{\"error\":\"bad\"}");
+        Recording rec = new Recording(false, 3000); // 1 lần gọi AI = 5000 > trần 3000
+
+        BaselineResponse response = service.execute(projectId, endpointId, confirmed(3), rec);
+
+        assertThat(response.status()).isEqualTo("NEEDS_HUMAN");
+        assertThat(response.reason()).isEqualTo("TOKEN_BUDGET");
+        assertThat(askCount).isEqualTo(1);
+    }
 }

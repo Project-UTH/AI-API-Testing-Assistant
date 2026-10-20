@@ -49,6 +49,12 @@ class ProjectServiceTest {
     private com.aiapitesting.backend.repository.ApiTokenRepository apiTokenRepository;
 
     @Mock
+    private com.aiapitesting.backend.repository.GenerationJobRepository generationJobRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.GenerationJobStepRepository generationJobStepRepository;
+
+    @Mock
     private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
 
     @Mock

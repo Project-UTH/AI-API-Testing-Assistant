@@ -172,6 +172,11 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("VALIDATION_ERROR", "Giá trị của tham số '" + ex.getName() + "' không đúng định dạng"));
     }
 
+    @ExceptionHandler(GenerationJobNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleGenerationJobNotFound(GenerationJobNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiErrorResponse.of("NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex) {
         log.warn("Body khong doc duoc: {}", ex.getMostSpecificCause().toString());

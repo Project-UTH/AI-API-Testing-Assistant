@@ -20,6 +20,7 @@ import com.aiapitesting.backend.service.CoverageGapFillService;
 import com.aiapitesting.backend.service.ProjectService;
 import com.aiapitesting.backend.service.TestCaseService;
 import com.aiapitesting.backend.service.execution.TestExecutionService;
+import com.aiapitesting.backend.service.job.JobProgress;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -94,17 +95,43 @@ public class BaselineVerificationService {
     }
 
     BaselineResponse execute(UUID projectId, UUID endpointId, BaselineRequest request) {
+        return execute(projectId, endpointId, request, JobProgress.NOOP);
+    }
+
+    /** Chạy ĐỒNG BỘ trong luồng gọi (dùng bởi job nền): báo từng bước cho {@code progress}, kiểm tra huỷ ở ranh giới an toàn. */
+    public BaselineResponse run(UUID projectId, UUID endpointId, BaselineRequest request, JobProgress progress) {
+        return execute(projectId, endpointId, request, progress);
+    }
+
+    /**
+     * Như {@link #execute(UUID, UUID, BaselineRequest)} nhưng báo từng bước cho {@code progress} (giao diện giám sát) và kiểm tra huỷ ở ranh giới
+     * an toàn (đầu mỗi vòng, sau lần gọi AI, trước khi bổ sung checklist). Chạy thử (dry-run) chỉ ghi các bước 'sẽ làm gì' - không gọi AI/API đích.
+     */
+    BaselineResponse execute(UUID projectId, UUID endpointId, BaselineRequest request, JobProgress progress) {
+        JobProgress p = progress == null ? JobProgress.NOOP : progress;
         BaselineRequest req = request == null ? new BaselineRequest(false, null, null, null, false) : request;
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        String label = endpoint.getMethod() + " " + endpoint.getPath();
+        JobProgress.Step pre = p.start(endpointId, label, "PRECHECK", "SYSTEM", "Kiểm tra endpoint và điều kiện chạy");
         if (isWriteMethod(endpoint.getMethod()) && !Boolean.TRUE.equals(req.getConfirmWrite())) {
-            throw new InvalidRequestException("Test gốc sẽ được CHẠY THẬT trên API đích và có thể ghi dữ liệu (" + endpoint.getMethod()
-                    + "): cần xác nhận (confirmWrite) trước");
+            String msg = "Test gốc sẽ được CHẠY THẬT trên API đích và có thể ghi dữ liệu (" + endpoint.getMethod() + "): cần xác nhận (confirmWrite) trước";
+            pre.fail(msg);
+            throw new InvalidRequestException(msg);
         }
+        p.checkCancelled();
         boolean fill = req.getFillCoverage() == null || req.getFillCoverage();
         if (!Boolean.TRUE.equals(req.getForce()) && coverageGapFillService.hasConfirmedBaseline(projectId, endpointId)) {
+            pre.ok("Endpoint đã có test gốc hợp lệ đã Pass: bỏ qua AI, dùng test đó làm nền");
+            if (p.isDryRun()) {
+                JobProgress.Step f = p.start(endpointId, label, "FILL", "SYSTEM", "Sẽ bổ sung checklist từ test gốc có sẵn (0 token)");
+                f.skipped("Chạy thử: không ghi gì");
+                return new BaselineResponse("DRY_RUN", null, "Chạy thử: endpoint đã có test gốc, chỉ cần bổ sung checklist.", null, List.of(), 0, 0, null, null);
+            }
+            JobProgress.Step f = p.start(endpointId, label, "FILL", "SYSTEM", "Hệ thống bổ sung checklist từ test gốc có sẵn (0 token)");
             int filled = fill ? coverageGapFillService.fill(projectId, endpointId, new CoverageFillRequest(null)).createdCount() : 0;
+            f.ok("Đã tạo " + filled + " test");
             return new BaselineResponse("ALREADY_HAS_BASELINE", null, "Endpoint đã có test gốc hợp lệ đã Pass, không cần AI sinh lại.",
                     null, List.of(), 0, filled, null, null);
         }
@@ -122,13 +149,23 @@ public class BaselineVerificationService {
             }
         }
         if (!missingParams.isEmpty()) {
-            return new BaselineResponse("NEEDS_HUMAN", "MISSING_PARAM_VALUE",
-                    "Cần giá trị thật cho tham số đường dẫn " + missingParams + " (chưa có test POST tạo tài nguyên để nối chuỗi). Chưa gọi AI nên chưa tốn token.",
+            String msg = "Cần giá trị thật cho tham số đường dẫn " + missingParams + " (chưa có test POST tạo tài nguyên để nối chuỗi). Chưa gọi AI nên chưa tốn token.";
+            pre.fail(msg);
+            return new BaselineResponse("NEEDS_HUMAN", "MISSING_PARAM_VALUE", msg, null, List.of(), 0, 0, null, null);
+        }
+        pre.ok("Chưa có test gốc đã Pass: cần AI sinh 1 test gốc rồi chạy thử xác nhận");
+
+        if (p.isDryRun()) {
+            p.start(endpointId, label, "AI_BASELINE", "AI", "Sẽ gọi AI sinh 1 test gốc hợp lệ (~10.000 token)").skipped("Chạy thử: chưa gọi AI");
+            p.start(endpointId, label, "RUN", "SYSTEM", "Sẽ chạy thử test gốc trên API đích (" + endpoint.getMethod() + " thật)").skipped("Chạy thử: chưa gọi API đích");
+            p.start(endpointId, label, "FILL", "SYSTEM", "Sẽ bổ sung toàn bộ checklist từ test gốc (0 token)").skipped("Chạy thử: chưa ghi test");
+            return new BaselineResponse("DRY_RUN", null, "Chạy thử: sẽ gọi AI 1 lần (tối đa " + (1 + MAX_REPAIR_ROUNDS) + " lần nếu phải sửa), chạy thật test gốc rồi bổ sung checklist.",
                     null, List.of(), 0, 0, null, null);
         }
 
         int maxRepair = Math.max(0, Math.min(req.getMaxRepairRounds() == null ? DEFAULT_REPAIR_ROUNDS : req.getMaxRepairRounds(), MAX_REPAIR_ROUNDS));
         Map<String, String> userValues = req.getPathParamValues() == null ? Map.of() : req.getPathParamValues();
+        int cap = p.tokenCap() > 0 ? p.tokenCap() : TOKEN_BUDGET;
 
         List<BaselineResponse.Round> rounds = new ArrayList<>();
         UUID testId = null;
@@ -136,24 +173,44 @@ public class BaselineVerificationService {
         int tokens = 0;
         RunOutcome last = null;
         for (int attempt = 0; attempt <= maxRepair; attempt++) {
-            if (tokens >= TOKEN_BUDGET) {
-                return human("TOKEN_BUDGET", "Đã chạm trần " + TOKEN_BUDGET + " token cho 1 lần chạy mà test gốc chưa Pass.", testId, rounds, tokens, last);
+            p.checkCancelled();
+            if (tokens >= cap || p.overCap()) {
+                String msg = "Đã chạm trần " + cap + " token cho lần chạy này mà test gốc chưa Pass.";
+                p.start(endpointId, label, "DIAGNOSE", "SYSTEM", "Dừng: chạm trần token").fail(msg);
+                return human("TOKEN_BUDGET", msg, testId, rounds, tokens, last);
             }
-            TestCaseGenerationService.BaselineProposal proposal = generationService.askBaseline(projectId, endpointId, previous);
+            JobProgress.Step ai = p.start(endpointId, label, "AI_BASELINE", "AI",
+                    attempt == 0 ? "AI sinh 1 test gốc hợp lệ" : "AI sửa test gốc theo lỗi thật của API (lần " + attempt + ")");
+            TestCaseGenerationService.BaselineProposal proposal;
+            try {
+                proposal = generationService.askBaseline(projectId, endpointId, previous);
+            } catch (RuntimeException e) {
+                ai.fail(e.getMessage());
+                throw e;
+            }
             tokens += proposal.tokens();
+            p.addTokens(proposal.tokens());
+            ai.finish("OK", "Đã sinh: " + proposal.test().name() + (proposal.test().resolvedPath() == null ? "" : " | " + proposal.test().resolvedPath()),
+                    null, proposal.tokens());
+            p.checkCancelled();
+
             GeneratedTestCase test = withUserValues(proposal.test(), userValues);
             testId = generationService.saveBaselineTest(projectId, endpointId, test, testId);
-            generationService.applyChaining(projectId, endpointId, testId);
+            int chained = generationService.applyChaining(projectId, endpointId, testId);
+            if (chained > 0) {
+                p.start(endpointId, label, "CHAIN", "SYSTEM", "Nối chuỗi dữ liệu").ok("Tự nối " + chained + " tham số đường dẫn với test POST tạo tài nguyên");
+            }
 
-            RunOutcome outcome = runAndWait(projectId, testId);
+            RunOutcome outcome = runStep(p, endpointId, label, projectId, testId, "Chạy thử test gốc trên API đích");
             last = outcome;
             boolean hasPathParams = test.resolvedPath() != null && PATH_PLACEHOLDER.matcher(test.resolvedPath()).find();
             Diagnosis diagnosis = diagnose(outcome, hasPathParams);
 
             if (diagnosis.decision() == Decision.ADOPT_2XX) {
                 // API trả 2xx khác mã AI kỳ vọng (vd 201 thay vì 200): hệ thống tự sửa kỳ vọng, chạy lại, KHÔNG tốn AI.
+                p.start(endpointId, label, "DIAGNOSE", "SYSTEM", "Sửa kỳ vọng sang " + outcome.httpStatus()).ok(diagnosis.message());
                 generationService.setBaselineExpectedStatus(projectId, endpointId, testId, outcome.httpStatus());
-                RunOutcome second = runAndWait(projectId, testId);
+                RunOutcome second = runStep(p, endpointId, label, projectId, testId, "Chạy lại test gốc sau khi sửa kỳ vọng");
                 last = second;
                 outcome = second;
                 diagnosis = diagnose(second, hasPathParams);
@@ -162,18 +219,40 @@ public class BaselineVerificationService {
                     proposal.tokens(), diagnosis.message()));
 
             if (diagnosis.decision() == Decision.PASSED) {
+                p.start(endpointId, label, "LOCK", "SYSTEM", "Khoá test gốc làm nền").ok("Test gốc đã Pass sau " + (attempt + 1) + " lần thử");
                 testCaseService.setLocked(projectId, endpointId, testId, true);
+                p.checkCancelled();
+                JobProgress.Step f = p.start(endpointId, label, "FILL", "SYSTEM", "Hệ thống bổ sung toàn bộ checklist từ test gốc (0 token)");
                 int filled = fill ? coverageGapFillService.fill(projectId, endpointId, new CoverageFillRequest(null)).createdCount() : 0;
+                f.ok("Đã tạo " + filled + " test");
                 return new BaselineResponse("CONFIRMED", null, "Test gốc đã Pass sau " + (attempt + 1) + " lần thử và được khoá làm nền.",
                         testId, rounds, tokens, filled, outcome.httpStatus(), mask(outcome.body()));
             }
             if (diagnosis.decision() == Decision.HUMAN) {
+                p.start(endpointId, label, "DIAGNOSE", "SYSTEM", "Dừng: cần người xử lý (" + diagnosis.reason() + ")").fail(diagnosis.message());
                 return human(diagnosis.reason(), diagnosis.message(), testId, rounds, tokens, outcome);
             }
+            p.start(endpointId, label, "DIAGNOSE", "SYSTEM", "Chưa Pass (HTTP " + outcome.httpStatus() + ")").ok(diagnosis.message());
             previous = new TestCaseGenerationService.BaselineAttempt(test, outcome.httpStatus(), outcome.body());
         }
-        return human("REPAIR_EXHAUSTED", "AI đã sửa " + maxRepair + " lần nhưng test gốc vẫn chưa Pass - xem phản hồi của API và sửa tay test gốc.",
-                testId, rounds, tokens, last);
+        String msg = "AI đã sửa " + maxRepair + " lần nhưng test gốc vẫn chưa Pass - xem phản hồi của API và sửa tay test gốc.";
+        p.start(endpointId, label, "DIAGNOSE", "SYSTEM", "Dừng: hết số lần AI sửa").fail(msg);
+        return human("REPAIR_EXHAUSTED", msg, testId, rounds, tokens, last);
+    }
+
+    private RunOutcome runStep(JobProgress p, UUID endpointId, String label, UUID projectId, UUID testId, String title) {
+        JobProgress.Step run = p.start(endpointId, label, "RUN", "SYSTEM", title);
+        RunOutcome outcome;
+        try {
+            outcome = runAndWait(projectId, testId);
+        } catch (RuntimeException e) {
+            run.fail(e.getMessage());
+            throw e;
+        }
+        String detail = outcome.timedOut() ? "Quá thời gian chờ kết quả"
+                : "HTTP " + (outcome.httpStatus() == null ? "—" : outcome.httpStatus()) + (outcome.status() == TestResultStatus.PASSED ? " - Pass" : " - chưa Pass");
+        run.finish(outcome.status() == TestResultStatus.PASSED ? "OK" : "FAILED", detail, outcome.httpStatus(), null);
+        return outcome;
     }
 
     // ---- Chẩn đoán kết quả chạy thử (thuần tuý, dễ kiểm thử) ----

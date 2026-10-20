@@ -47,6 +47,8 @@ public class ProjectService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
+    private final com.aiapitesting.backend.repository.GenerationJobRepository generationJobRepository;
+    private final com.aiapitesting.backend.repository.GenerationJobStepRepository generationJobStepRepository;
     private final BugReportRepository bugReportRepository;
     private final BugReportEventRepository bugReportEventRepository;
     private final AuthProfileRepository authProfileRepository;
@@ -125,6 +127,12 @@ public class ProjectService {
     public void delete(UUID id) {
         Project project = getOwnedProject(id);
         // Thứ tự bắt buộc để tránh vi phạm khoá ngoại: bảng tham chiếu sâu nhất xoá trước.
+        // Job sinh test (không có khoá ngoại): dọn bước rồi job của project
+        java.util.List<java.util.UUID> jobIds = generationJobRepository.findIdsByProjectId(project.getId());
+        if (!jobIds.isEmpty()) {
+            generationJobStepRepository.deleteAllByJobIdIn(jobIds);
+            generationJobRepository.deleteAllByProjectId(project.getId());
+        }
         bugReportRepository.deleteAllByProject(project);
         bugReportEventRepository.deleteAllByEndpointProject(project);
         testExecutionEndpointRepository.deleteAllByExecutionProject(project);
