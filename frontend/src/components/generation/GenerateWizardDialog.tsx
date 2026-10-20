@@ -43,6 +43,7 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
   const [rounds, setRounds] = useState(2)
   const [fillCoverage, setFillCoverage] = useState(true)
   const [dryRun, setDryRun] = useState(false)
+  const [includeBusiness, setIncludeBusiness] = useState(false)
   const [values, setValues] = useState<Record<string, string>>({})
 
   const mutation = useMutation({
@@ -55,6 +56,7 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
         maxRepairRounds: rounds,
         pathParamValues: Object.fromEntries(Object.entries(values).filter(([, v]) => v.trim() !== "")),
         fillCoverage,
+        includeBusiness,
       }),
     onSuccess: (job) => {
       track(job)
@@ -129,6 +131,13 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
             <label className="flex items-center gap-2 text-xs">
               <Checkbox checked={fillCoverage} onCheckedChange={(c) => setFillCoverage(c === true)} />
               Tự bổ sung toàn bộ checklist sau khi xác nhận
+            </label>
+            <label
+              className="flex items-center gap-2 text-xs"
+              title="Sau khi checklist đủ, AI đoán thêm luật nghiệp vụ không có trong spec. Là GIẢ ĐỊNH, tốn thêm token, không tính vào độ bao phủ, cần bạn duyệt."
+            >
+              <Checkbox checked={includeBusiness} onCheckedChange={(c) => setIncludeBusiness(c === true)} />
+              + AI bổ sung nghiệp vụ còn thiếu (GIẢ ĐỊNH)
             </label>
             <label className="flex items-center gap-2 text-xs" title="Chỉ liệt kê các bước sẽ làm, không gọi AI và không gọi API đích">
               <Checkbox checked={dryRun} onCheckedChange={(c) => setDryRun(c === true)} />

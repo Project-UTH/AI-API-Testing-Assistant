@@ -225,7 +225,13 @@ public class GenerationJobService {
                     BaselineRequest br = new BaselineRequest(Boolean.TRUE.equals(req.getConfirmWrite()), req.getMaxRepairRounds(),
                             req.getPathParamValues(), req.getFillCoverage(), false);
                     BaselineResponse r = baseline.run(projectId, endpointId, br, ctx);
-                    yield new GenerationJobResponse.EndpointResult(endpointId, label, r.status(), r.reason(), r.message(), r.tokensUsed(), r.filledCount());
+                    GenerationJobResponse.EndpointResult base = new GenerationJobResponse.EndpointResult(
+                            endpointId, label, r.status(), r.reason(), r.message(), r.tokensUsed(), r.filledCount());
+                    boolean baselineOk = ctx.isDryRun() || "CONFIRMED".equals(r.status()) || "ALREADY_HAS_BASELINE".equals(r.status());
+                    if (baselineOk && Boolean.TRUE.equals(req.getIncludeBusiness())) {
+                        runAiGaps(projectId, endpointId, label, ctx);
+                    }
+                    yield base;
                 }
                 case GenerationJob.TYPE_SYSTEM -> runSystemTier(projectId, endpointId, label, ctx);
                 default -> runLegacy(projectId, endpointId, label, req, ctx);
@@ -259,6 +265,33 @@ public class GenerationJobService {
     }
 
     /** Nút 'Sinh Test Case' cũ chạy trong job: AI sinh theo các nhóm đã tick, hệ thống chấm theo nội dung và tự bù mục còn thiếu. */
+    /**
+     * Bước AI "còn thiếu": sau khi checklist đã đủ, AI đoán thêm luật nghiệp vụ không có trong spec. Kết quả là test BUSINESS gắn nhãn
+     * GIẢ ĐỊNH, không khoá, không tính vào độ bao phủ - người dùng phải duyệt. Lỗi ở bước này KHÔNG làm hỏng kết quả của test đã xác nhận.
+     */
+    private void runAiGaps(UUID projectId, UUID endpointId, String label, JobContext ctx) {
+        if (ctx.isDryRun()) {
+            ctx.start(endpointId, label, "AI_GAPS", "AI", "Sẽ nhờ AI đoán thêm test nghiệp vụ còn thiếu (GIẢ ĐỊNH, cần duyệt)").skipped("Chạy thử: chưa gọi AI");
+            return;
+        }
+        ctx.checkCancelled();
+        if (ctx.overCap()) {
+            ctx.start(endpointId, label, "AI_GAPS", "AI", "Bỏ qua bước AI bổ sung nghiệp vụ").skipped("Đã chạm trần token của job");
+            return;
+        }
+        JobProgress.Step s = ctx.start(endpointId, label, "AI_GAPS", "AI", "AI đoán thêm test nghiệp vụ còn thiếu (nhãn GIẢ ĐỊNH, không tính vào độ bao phủ)");
+        try {
+            GenerateTestCasesResponse r = generation.generate(projectId, endpointId, new GenerateTestCasesRequest(false, false, false, false, true)).get();
+            s.finish("OK", "Thêm " + r.testCases().size() + " test nghiệp vụ GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả", null, null);
+        } catch (java.util.concurrent.ExecutionException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            s.fail(cause.getMessage());
+        }
+    }
+
     private GenerationJobResponse.EndpointResult runLegacy(UUID projectId, UUID endpointId, String label, StartGenerationJobRequest req, JobContext ctx) {
         GenerateTestCasesRequest g = new GenerateTestCasesRequest(
                 Boolean.TRUE.equals(req.getIncludeSecurity()), !Boolean.FALSE.equals(req.getIncludePositive()),
