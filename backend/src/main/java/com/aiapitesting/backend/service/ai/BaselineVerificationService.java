@@ -62,6 +62,7 @@ public class BaselineVerificationService {
     private final TestExecutionRepository testExecutionRepository;
     private final TestResultRepository testResultRepository;
     private final TestCaseService testCaseService;
+    private final com.aiapitesting.backend.service.DependencySuggestionService dependencySuggestionService;
 
     private long executionTimeoutMs;
     private long pollIntervalMs;
@@ -70,6 +71,7 @@ public class BaselineVerificationService {
             ProjectService projectService, EndpointRepository endpointRepository, TestCaseGenerationService generationService,
             CoverageGapFillService coverageGapFillService, TestExecutionService testExecutionService,
             TestExecutionRepository testExecutionRepository, TestResultRepository testResultRepository, TestCaseService testCaseService,
+            com.aiapitesting.backend.service.DependencySuggestionService dependencySuggestionService,
             @Value("${baseline.execution-timeout-ms:120000}") long executionTimeoutMs,
             @Value("${baseline.poll-interval-ms:500}") long pollIntervalMs
     ) {
@@ -81,6 +83,7 @@ public class BaselineVerificationService {
         this.testExecutionRepository = testExecutionRepository;
         this.testResultRepository = testResultRepository;
         this.testCaseService = testCaseService;
+        this.dependencySuggestionService = dependencySuggestionService;
         this.executionTimeoutMs = executionTimeoutMs;
         this.pollIntervalMs = pollIntervalMs;
     }
@@ -104,6 +107,24 @@ public class BaselineVerificationService {
             int filled = fill ? coverageGapFillService.fill(projectId, endpointId, new CoverageFillRequest(null)).createdCount() : 0;
             return new BaselineResponse("ALREADY_HAS_BASELINE", null, "Endpoint đã có test gốc hợp lệ đã Pass, không cần AI sinh lại.",
                     null, List.of(), 0, filled, null, null);
+        }
+
+        // Tham số đường dẫn cần id thật: không có giá trị người dùng nhập và không có test POST để nối chuỗi thì AI chỉ đoán id (UUID mẫu) -> chắc chắn 404.
+        // Hỏi ngay, KHÔNG tốn token.
+        Map<String, String> given = req.getPathParamValues() == null ? Map.of() : req.getPathParamValues();
+        List<String> missingParams = new ArrayList<>();
+        java.util.regex.Matcher pm = Pattern.compile("\\{(\\w+)}").matcher(endpoint.getPath() == null ? "" : endpoint.getPath());
+        while (pm.find()) {
+            String name = pm.group(1);
+            boolean provided = given.get(name) != null && !given.get(name).isBlank();
+            if (!provided && !dependencySuggestionService.hasCreatorSource(projectId, endpointId, name)) {
+                missingParams.add(name);
+            }
+        }
+        if (!missingParams.isEmpty()) {
+            return new BaselineResponse("NEEDS_HUMAN", "MISSING_PARAM_VALUE",
+                    "Cần giá trị thật cho tham số đường dẫn " + missingParams + " (chưa có test POST tạo tài nguyên để nối chuỗi). Chưa gọi AI nên chưa tốn token.",
+                    null, List.of(), 0, 0, null, null);
         }
 
         int maxRepair = Math.max(0, Math.min(req.getMaxRepairRounds() == null ? DEFAULT_REPAIR_ROUNDS : req.getMaxRepairRounds(), MAX_REPAIR_ROUNDS));

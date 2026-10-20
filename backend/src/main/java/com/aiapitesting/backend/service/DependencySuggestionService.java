@@ -61,6 +61,14 @@ public class DependencySuggestionService {
         return suggestions;
     }
 
+    /** Có test POST (kỳ vọng 2xx) tạo tài nguyên để nối chuỗi lấy giá trị cho tham số đường dẫn này không - dùng để hỏi người dùng TRƯỚC khi tốn token AI. */
+    public boolean hasCreatorSource(UUID projectId, UUID endpointId, String paramName) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        return findSuggestion(project, endpoint, paramName).isPresent();
+    }
+
     private Optional<DependencySuggestionResponse> findSuggestion(Project project, Endpoint endpoint, String paramName) {
         String candidatePath = cutPathBeforeParam(endpoint.getPath(), paramName);
         if (candidatePath == null) {

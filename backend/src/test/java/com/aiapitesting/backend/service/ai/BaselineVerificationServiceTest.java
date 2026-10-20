@@ -53,6 +53,7 @@ class BaselineVerificationServiceTest {
     private final TestExecutionRepository executionRepository = mock(TestExecutionRepository.class);
     private final TestResultRepository resultRepository = mock(TestResultRepository.class);
     private final TestCaseService testCaseService = mock(TestCaseService.class);
+    private final com.aiapitesting.backend.service.DependencySuggestionService dependencySuggestion = mock(com.aiapitesting.backend.service.DependencySuggestionService.class);
     private BaselineVerificationService service;
 
     private final UUID projectId = UUID.randomUUID();
@@ -69,7 +70,7 @@ class BaselineVerificationServiceTest {
     @BeforeEach
     void setUp() {
         service = new BaselineVerificationService(projectService, endpointRepository, generation, gapFill, executionService,
-                executionRepository, resultRepository, testCaseService, 1000, 1);
+                executionRepository, resultRepository, testCaseService, dependencySuggestion, 1000, 1);
         Project project = Project.builder().id(projectId).build();
         endpoint = Endpoint.builder().id(endpointId).method("POST").path("/jobs").build();
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
@@ -211,5 +212,30 @@ class BaselineVerificationServiceTest {
         GeneratedTestCase merged = BaselineVerificationService.withUserValues(test("/jobs/{{id}}"), Map.of("id", "REAL-ID"));
         assertThat(merged.pathParamFallbacks()).containsEntry("id", "REAL-ID");
         assertThat(BaselineVerificationService.withUserValues(test("/jobs"), Map.of())).isEqualTo(test("/jobs"));
+    }
+
+    @Test
+    void pathParamWithoutValueOrChainSource_asksTheHumanFirst_withoutSpendingAnyToken() {
+        endpoint.setPath("/companies/{id}");
+        when(dependencySuggestion.hasCreatorSource(projectId, endpointId, "id")).thenReturn(false);
+
+        BaselineResponse response = service.execute(projectId, endpointId, confirmed(2));
+
+        assertThat(response.status()).isEqualTo("NEEDS_HUMAN");
+        assertThat(response.reason()).isEqualTo("MISSING_PARAM_VALUE");
+        assertThat(response.tokensUsed()).isZero();
+        assertThat(askCount).isZero();
+    }
+
+    @Test
+    void pathParamWithUserValueOrChainSource_proceedsToAi() {
+        endpoint.setPath("/companies/{id}");
+        results(TestResultStatus.PASSED, 200, "{}");
+        when(dependencySuggestion.hasCreatorSource(projectId, endpointId, "id")).thenReturn(true);
+        assertThat(service.execute(projectId, endpointId, confirmed(2)).status()).isEqualTo("CONFIRMED");
+
+        when(dependencySuggestion.hasCreatorSource(projectId, endpointId, "id")).thenReturn(false);
+        BaselineRequest withValue = new BaselineRequest(true, 2, Map.of("id", "REAL"), true, false);
+        assertThat(service.execute(projectId, endpointId, withValue).status()).isEqualTo("CONFIRMED");
     }
 }
