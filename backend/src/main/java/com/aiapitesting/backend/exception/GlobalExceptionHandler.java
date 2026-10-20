@@ -174,6 +174,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        log.warn("Body khong doc duoc: {}", ex.getMostSpecificCause().toString());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiErrorResponse.of("VALIDATION_ERROR", "Nội dung gửi lên không đúng định dạng JSON hoặc sai kiểu dữ liệu"));
     }

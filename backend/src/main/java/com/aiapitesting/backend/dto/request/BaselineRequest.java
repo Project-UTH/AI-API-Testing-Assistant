@@ -19,9 +19,9 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class BaselineRequest {
-    private boolean confirmWrite;
+    private Boolean confirmWrite;
     private Integer maxRepairRounds;
     private Map<String, String> pathParamValues;
     private Boolean fillCoverage;
-    private boolean force;
+    private Boolean force;
 }

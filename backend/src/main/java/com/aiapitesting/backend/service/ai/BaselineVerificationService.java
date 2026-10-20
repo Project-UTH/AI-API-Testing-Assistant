@@ -95,12 +95,12 @@ public class BaselineVerificationService {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
-        if (isWriteMethod(endpoint.getMethod()) && !req.isConfirmWrite()) {
+        if (isWriteMethod(endpoint.getMethod()) && !Boolean.TRUE.equals(req.getConfirmWrite())) {
             throw new InvalidRequestException("Test gốc sẽ được CHẠY THẬT trên API đích và có thể ghi dữ liệu (" + endpoint.getMethod()
                     + "): cần xác nhận (confirmWrite) trước");
         }
         boolean fill = req.getFillCoverage() == null || req.getFillCoverage();
-        if (!req.isForce() && coverageGapFillService.hasConfirmedBaseline(projectId, endpointId)) {
+        if (!Boolean.TRUE.equals(req.getForce()) && coverageGapFillService.hasConfirmedBaseline(projectId, endpointId)) {
             int filled = fill ? coverageGapFillService.fill(projectId, endpointId, new CoverageFillRequest(null)).createdCount() : 0;
             return new BaselineResponse("ALREADY_HAS_BASELINE", null, "Endpoint đã có test gốc hợp lệ đã Pass, không cần AI sinh lại.",
                     null, List.of(), 0, filled, null, null);
