@@ -8,6 +8,7 @@ import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
+import com.aiapitesting.backend.service.DynamicPlaceholderResolver;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,7 +49,8 @@ public class RestAssuredTestRunner {
     }
 
     public RunResult run(Project project, TestCase testCase, Map<String, String> resolvedValues) {
-        String path = testCasePathValidator.substitute(testCase.getResolvedPath(), resolvedValues);
+        DynamicPlaceholderResolver.RunScope scope = new DynamicPlaceholderResolver.RunScope();
+        String path = testCasePathValidator.substitute(testCase.getResolvedPath(), resolvedValues, scope);
 
         RequestSpecification request = RestAssured.given()
                 .baseUri(project.getTargetBaseUrl())
@@ -63,7 +65,7 @@ public class RestAssuredTestRunner {
         // requestBody sẽ khiến request có 2 header Authorization cùng lúc (giả + auth header thật ở
         // dưới) - target API nhận 2 giá trị Authorization sẽ từ chối luôn (403) dù giá trị thật vẫn
         // có mặt, làm sai lệch hẳn kết quả test case authOverride=DEFAULT (đã gặp thật khi verify).
-        String headersJson = testCasePathValidator.substitute(testCase.getRequestHeaders(), resolvedValues);
+        String headersJson = testCasePathValidator.substitute(testCase.getRequestHeaders(), resolvedValues, scope);
         Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         headers.putAll(parseHeaders(headersJson));
 
@@ -79,7 +81,7 @@ public class RestAssuredTestRunner {
             request = request.headers(headers);
         }
 
-        String body = testCasePathValidator.substitute(testCase.getRequestBody(), resolvedValues);
+        String body = testCasePathValidator.substitute(testCase.getRequestBody(), resolvedValues, scope);
         if (body != null && !body.isBlank()) {
             RequestBodyEncoder.Plan plan = RequestBodyEncoder.plan(headerContentType, testCase.getEndpoint().getRequestContentType(), body);
             request = switch (plan.kind()) {

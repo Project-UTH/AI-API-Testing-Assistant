@@ -75,10 +75,15 @@ public class TestCasePathValidator {
 
     /** Thay mọi token {{tenThamSo}} trong text bằng giá trị thật tương ứng trong values. */
     public String substitute(String text, Map<String, String> values) {
+        return substitute(text, values, null);
+    }
+
+    /** scope != null: thay thêm {{uuid}}/{{rand}}/{{runId}} (giá trị sinh theo lần chạy, dùng chung scope cho path/header/body). */
+    public String substitute(String text, Map<String, String> values, DynamicPlaceholderResolver.RunScope scope) {
         if (text == null) {
             return null;
         }
-        text = DynamicPlaceholderResolver.resolve(text);
+        text = DynamicPlaceholderResolver.resolveUnique(DynamicPlaceholderResolver.resolve(text), scope);
         Matcher matcher = DOUBLE_BRACE_TOKEN.matcher(text);
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {

@@ -16,13 +16,54 @@ import java.util.regex.Pattern;
 public final class DynamicPlaceholderResolver {
 
     /** Tên bị giữ chỗ: không được dùng làm tham số path/dependency. */
-    public static final java.util.Set<String> RESERVED_NAMES = java.util.Set.of("today", "now");
+    public static final java.util.Set<String> RESERVED_NAMES = java.util.Set.of("today", "now", "uuid", "rand", "runId");
 
     private static final Pattern TOKEN = Pattern.compile("\\{\\{(today|now)(?:([+-])(\\d{1,4})([dhm]))?}}");
     /** Token trông giống ngày động (bắt đầu bằng today/now) - để phát hiện cú pháp sai. */
     private static final Pattern LOOKS_DYNAMIC = Pattern.compile("\\{\\{\\s*(?:today|now)(?:[+-][^}]*)?\\s*}}");
 
+    /** {{uuid}}, {{rand}}, {{runId}}, hoặc dạng có tên {{uuid:a}} (cùng tên = cùng giá trị trong 1 lần chạy test case). */
+    private static final Pattern UNIQUE_TOKEN = Pattern.compile("\\{\\{(uuid|rand|runId)(?::(\\w{1,20}))?}}");
+
     private DynamicPlaceholderResolver() {
+    }
+
+    /**
+     * Giá trị sinh MỖI LẦN CHẠY test case để dữ liệu tạo ra không đụng bản ghi cũ (email/mã duy nhất, lặp lại được):
+     * {{uuid}} và {{rand}} cho giá trị mới mỗi lần xuất hiện, {{uuid:a}} dùng lại cùng giá trị trong cùng test case (path/header/body),
+     * {{runId}} là 1 mã ngắn cố định trong lần chạy. Không thread-safe: mỗi lần chạy tạo 1 scope riêng.
+     */
+    public static final class RunScope {
+        private final java.util.Map<String, String> named = new java.util.HashMap<>();
+        private final String runId = java.util.UUID.randomUUID().toString().substring(0, 8);
+
+        String valueOf(String kind, String name) {
+            if (name != null) {
+                return named.computeIfAbsent(kind + ":" + name, k -> fresh(kind));
+            }
+            return fresh(kind);
+        }
+
+        private String fresh(String kind) {
+            return switch (kind) {
+                case "uuid" -> java.util.UUID.randomUUID().toString();
+                case "rand" -> String.valueOf(java.util.concurrent.ThreadLocalRandom.current().nextInt(100_000, 1_000_000));
+                default -> runId;
+            };
+        }
+    }
+
+    public static String resolveUnique(String text, RunScope scope) {
+        if (text == null || scope == null || !text.contains("{{")) {
+            return text;
+        }
+        Matcher m = UNIQUE_TOKEN.matcher(text);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            m.appendReplacement(out, Matcher.quoteReplacement(scope.valueOf(m.group(1), m.group(2))));
+        }
+        m.appendTail(out);
+        return out.toString();
     }
 
     public static String resolve(String text) {

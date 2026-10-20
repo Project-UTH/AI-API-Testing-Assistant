@@ -68,4 +68,16 @@ class DynamicPlaceholderResolverTest {
         String prompt = new String(getClass().getResourceAsStream("/prompts/generate-test-case.st").readAllBytes(), StandardCharsets.UTF_8);
         assertThat(prompt).contains("{{today+30d}}").contains("{{now+1h}}").contains("date-time").contains("KHÔNG BAO GIỜ ghi cứng");
     }
+
+    @Test
+    void resolveUnique_sinhGiaTriMoiMoiLanVaDungLaiTheoTen() {
+        DynamicPlaceholderResolver.RunScope scope = new DynamicPlaceholderResolver.RunScope();
+        String out = DynamicPlaceholderResolver.resolveUnique("{{uuid}}|{{uuid}}|{{uuid:a}}|{{uuid:a}}|{{runId}}|{{runId}}|{{rand}}", scope);
+        String[] parts = out.split("\\|");
+        assertThat(parts[0]).isNotEqualTo(parts[1]);
+        assertThat(parts[2]).isEqualTo(parts[3]).hasSize(36);
+        assertThat(parts[4]).isEqualTo(parts[5]).hasSize(8);
+        assertThat(parts[6]).matches("\\d{6}");
+        assertThat(DynamicPlaceholderResolver.resolveUnique("{{uuid}}", null)).isEqualTo("{{uuid}}");
+    }
 }
