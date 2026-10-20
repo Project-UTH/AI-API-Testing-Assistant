@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import { ChevronDown, Coins, Loader2, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -8,10 +8,11 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { cn, METHOD_STYLES } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
-import { generateTestCases, type GenerateTestCasesResponse } from "@/lib/testcases"
 import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
 import { AuthHintBanner } from "@/components/projects/AuthHintBanner"
-import { BaselineGenerateDialog } from "@/components/projects/BaselineGenerateDialog"
+import { GenerateWizardDialog } from "@/components/generation/GenerateWizardDialog"
+import { useGenerationJobs } from "@/components/generation/GenerationJobsProvider"
+import { startJob } from "@/lib/generationJobs"
 import { getDashboardSummary } from "@/lib/dashboard"
 import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
 
@@ -19,14 +20,10 @@ interface EndpointListProps {
   projectId: string
 }
 
-type GenerationState =
-  | { status: "pending" }
-  // result chỉ có khi vừa sinh trong phiên này (Module 15h) - không có khi lấy testCaseCount từ server.
-  | { status: "success"; count: number; result?: GenerateTestCasesResponse }
-  | { status: "error"; message: string }
+type GenerationState = { status: "success"; count: number }
 
 export function EndpointList({ projectId }: EndpointListProps) {
-  const queryClient = useQueryClient()
+  const { track } = useGenerationJobs()
   const { data, isLoading, isError } = useQuery({
     queryKey: ["endpoints", projectId],
     queryFn: () => listEndpoints(projectId),
@@ -48,7 +45,6 @@ export function EndpointList({ projectId }: EndpointListProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   // Endpoint đang mở phần chi tiết (coverage + báo cáo lần sinh) - mặc định gập để danh sách gọn, 1 dòng/endpoint.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
-  const [generationState, setGenerationState] = useState<Record<string, GenerationState>>({})
   const [includeSecurity, setIncludeSecurity] = useState(false)
   // Mặc định cả 3 đều bật - giữ đúng hành vi cũ (luôn sinh đủ Positive/Negative/Boundary) cho tới
   // khi người dùng chủ động bỏ tích bớt.
@@ -87,50 +83,24 @@ export function EndpointList({ projectId }: EndpointListProps) {
     })
   }
 
-  function handleGenerate() {
-    // Gọi thẳng generateTestCases (không qua useMutation) - mỗi endpoint là 1 Promise độc lập,
-    // đảm bảo callback của từng cái không bị "đè" khi bấm sinh nhiều endpoint cùng lúc (dùng chung
-    // 1 instance useMutation cho nhiều lần mutate() đồng thời chỉ đáng tin cậy với lần gọi cuối).
-    // Bỏ chọn NGAY khi bấm (không đợi tới lúc xong) - trước đây chỉ bỏ chọn sau khi thành công,
-    // nghĩa là bấm "Sinh Test Case" 2 lần liên tiếp trong lúc lần đầu còn đang chạy sẽ gửi 2 request
-    // trùng cho cùng 1 endpoint, gây race điều kiện thật ở backend (2 lượt xoá-sinh-lại chồng nhau
-    // cho cùng test case -> StaleStateException). Bỏ chọn ngay khiến nút "Sinh Test Case" tự vô hiệu
-    // hoá (disabled={selectedIds.size===0}) cho tới khi người dùng chủ động tích lại.
-    const idsToGenerate = Array.from(selectedIds)
-    setSelectedIds(new Set())
-    idsToGenerate.forEach((endpointId) => {
-      setGenerationState((prev) => ({ ...prev, [endpointId]: { status: "pending" } }))
-      generateTestCases(projectId, endpointId, {
+  // Sinh chạy NỀN qua job: tiến trình hiện ở khung giám sát (thu nhỏ/huỷ được). Bỏ chọn ngay khi bấm để không gửi job trùng.
+  const startBatch = useMutation({
+    mutationFn: (type: "LEGACY" | "SYSTEM") =>
+      startJob(projectId, {
+        endpointIds: Array.from(selectedIds),
+        type,
         includeSecurity,
         includePositive,
         includeNegative,
         includeBoundary,
         includeBusiness,
-      })
-        .then((result) => {
-          setGenerationState((prev) => ({
-            ...prev,
-            [endpointId]: { status: "success", count: result.testCases.length, result },
-          }))
-          // Đồng bộ lại testCaseCount thật từ server - để trạng thái "đã sinh" không bị mất
-          // khi rời trang rồi quay lại (generationState chỉ sống trong phiên hiện tại)
-          queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
-          // Báo cáo checklist đã lưu ở backend vừa đổi - bỏ bản cũ trong cache.
-          queryClient.invalidateQueries({ queryKey: ["generation-plan", projectId, endpointId] })
-          // Bộ test case đổi thì Coverage cũng đổi - trước đây không tự cập nhật.
-          queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
-        })
-        .catch((error) => {
-          setGenerationState((prev) => ({
-            ...prev,
-            [endpointId]: {
-              status: "error",
-              message: error instanceof ApiError ? error.message : "Đã xảy ra lỗi, vui lòng thử lại",
-            },
-          }))
-        })
-    })
-  }
+      }),
+    onSuccess: (job) => {
+      setSelectedIds(new Set())
+      track(job)
+    },
+  })
+  const startError = startBatch.error instanceof ApiError ? startBatch.error.message : startBatch.isError ? "Không bắt đầu được job, vui lòng thử lại." : null
 
   if (isLoading) {
     return <p className="mt-4 text-muted-foreground">Đang tải danh sách endpoint...</p>
@@ -153,9 +123,8 @@ export function EndpointList({ projectId }: EndpointListProps) {
   }
 
   // "Chọn tất cả" chỉ xét endpoint chọn được (không đang sinh) - so với toàn bộ thì khi có endpoint đang sinh nhãn kẹt ở "Chọn tất cả".
-  const selectableEndpoints = endpoints.filter((e) => generationState[e.id]?.status !== "pending")
+  const selectableEndpoints = endpoints
   const allSelectableSelected = selectableEndpoints.length > 0 && selectableEndpoints.every((e) => selectedIds.has(e.id))
-  const pendingCount = endpoints.filter((e) => generationState[e.id]?.status === "pending").length
   // Số endpoint đã tick mà đã có test case: sinh lại sẽ thay test case AI chưa khoá của chúng.
   const regenerateCount = endpoints.filter((e) => selectedIds.has(e.id) && e.testCaseCount > 0).length
   const todayTokens = summary?.aiTokensToday ?? 0
@@ -209,11 +178,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
           // generationState chỉ phản ánh thao tác trong phiên hiện tại (mất khi rời trang);
           // testCaseCount lấy từ server là nguồn sự thật lâu dài - dùng nó làm mặc định khi
           // chưa có trạng thái phiên nào ghi đè lên.
-          const state: GenerationState | undefined =
-            generationState[endpoint.id] ??
-            (endpoint.testCaseCount > 0
-              ? { status: "success", count: endpoint.testCaseCount }
-              : undefined)
+          const state: GenerationState | undefined = endpoint.testCaseCount > 0 ? { status: "success", count: endpoint.testCaseCount } : undefined
           const selected = selectedIds.has(endpoint.id)
           const isExpanded = expandedIds.has(endpoint.id)
           const coverageOfEndpoint = coverageByEndpointId.get(endpoint.id)
@@ -224,7 +189,6 @@ export function EndpointList({ projectId }: EndpointListProps) {
                 <Checkbox
                   aria-label={`Chọn ${endpoint.method} ${endpoint.path}`}
                   checked={selected}
-                  disabled={state?.status === "pending"}
                   onCheckedChange={(checked) => toggleSelect(endpoint.id, checked === true)}
                 />
                 <span
@@ -258,8 +222,6 @@ export function EndpointList({ projectId }: EndpointListProps) {
                     Spec đổi {new Date(endpoint.schemaChangedAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
                   </span>
                 )}
-                {state?.status === "pending" && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
-                {state?.status === "error" && <span className="shrink-0 text-xs text-destructive">{state.message}</span>}
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {endpoint.testCaseCount > 0 ? (
                     <>
@@ -316,7 +278,6 @@ export function EndpointList({ projectId }: EndpointListProps) {
                 <GenerationPlanReport
                   projectId={projectId}
                   endpointId={endpoint.id}
-                  freshPlan={state.result?.planSummary ?? undefined}
                   coverage={coverageByEndpointId.get(endpoint.id)}
                 />
               )}
@@ -326,7 +287,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
       </ul>
 
       {baselineEndpointId && endpoints.find((e) => e.id === baselineEndpointId) && (
-        <BaselineGenerateDialog
+        <GenerateWizardDialog
           key={baselineEndpointId}
           projectId={projectId}
           endpoint={endpoints.find((e) => e.id === baselineEndpointId)!}
@@ -335,12 +296,11 @@ export function EndpointList({ projectId }: EndpointListProps) {
         />
       )}
 
-      {(selectedIds.size > 0 || pendingCount > 0) && (
+      {selectedIds.size > 0 && (
         <div className="sticky bottom-4 z-20 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-lg">
-          {pendingCount > 0 && (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Đang sinh test case cho {pendingCount} endpoint, có thể mất vài chục giây...
+          {startError && (
+            <p role="alert" className="text-sm text-destructive">
+              {startError}
             </p>
           )}
           {selectedIds.size > 0 && (
@@ -373,8 +333,17 @@ export function EndpointList({ projectId }: EndpointListProps) {
                 <Checkbox checked={includeBusiness} onCheckedChange={(checked) => setIncludeBusiness(checked === true)} />
                 + Nghiệp vụ (AI đoán)
               </label>
-              <Button size="sm" disabled={!hasAnyCategorySelected} onClick={handleGenerate}>
-                <Sparkles className="h-4 w-4" />
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={startBatch.isPending}
+                title="Bổ sung test theo checklist từ test gốc đã Pass, không gọi AI (0 token)"
+                onClick={() => startBatch.mutate("SYSTEM")}
+              >
+                Bổ sung bằng hệ thống (0 token)
+              </Button>
+              <Button size="sm" disabled={!hasAnyCategorySelected || startBatch.isPending} onClick={() => startBatch.mutate("LEGACY")}>
+                {startBatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Sinh Test Case
               </Button>
             </div>

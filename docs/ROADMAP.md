@@ -1478,3 +1478,8 @@ Phát hiện:
 ## Cách cập nhật file này
 
 Tick `- [x]` khi xong 1 task. Đổi trạng thái module trong bảng đầu file (⬜ Chưa bắt đầu / 🟡 Đang làm / ✅ Xong). Commit: `docs: cập nhật roadmap - module X`.
+
+#### 17n. ĐÃ LÀM (2026-10-20): Khung giám sát job sinh test (frontend)
+- [x] Bấm "Sinh đầy đủ" / "Sinh Test Case" / "Bổ sung bằng hệ thống (0 token)" -> tạo job chạy nền, hiện khung giám sát từng bước (nhãn Hệ thống/AI, HTTP, token), nút Huỷ (có xác nhận), thu nhỏ thành pill ở góc phải dưới, sống qua mọi lần chuyển trang và tải lại (id job lưu localStorage), tóm tắt + gợi ý khi NEEDS_HUMAN.
+- [x] Wizard cấu hình (xác nhận ghi thật, tham số đường dẫn, số vòng sửa, chạy thử). Bỏ BaselineGenerateDialog cũ.
+- [ ] Còn lại GD2/GD3 backend: placeholder {{uuid}}/{{rand}}/{{runId}}, bước AI "còn thiếu" (ASSUMPTION), provenance trên TestCase, teardown/báo dữ liệu thừa.
