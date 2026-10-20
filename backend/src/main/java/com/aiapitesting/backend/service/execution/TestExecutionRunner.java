@@ -5,6 +5,7 @@ import com.aiapitesting.backend.entity.ErrorKind;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
@@ -74,8 +75,14 @@ public class TestExecutionRunner {
         List<TestResult> savedResults = new ArrayList<>();
 
         try {
+            Map<UUID, TestCase> testCaseById = new HashMap<>();
+            testCases.forEach(t -> testCaseById.putIfAbsent(t.getId(), t));
             for (TestCase testCase : testCases) {
                 boolean autoIncluded = autoIncludedIds.contains(testCase.getId());
+                List<DependencyEdge> ownEdges = edgesByConsumerId.getOrDefault(testCase.getId(), List.of());
+                if (!autoIncluded && isIsolatedConsumer(testCase) && !ownEdges.isEmpty()) {
+                    refreshCreatedSources(ownEdges, testCaseById, edgesByConsumerId, project, statusByTestCaseId, responseBodyByTestCaseId);
+                }
                 runOne(execution, testCase, project, edgesByConsumerId.getOrDefault(testCase.getId(), List.of()),
                         statusByTestCaseId, responseBodyByTestCaseId, autoIncluded,
                         assertionsByTestCaseId.getOrDefault(testCase.getId(), List.of()), savedResults);
@@ -92,6 +99,48 @@ public class TestExecutionRunner {
         } finally {
             execution.setFinishedAt(Instant.now());
             testExecutionRepository.save(execution);
+        }
+    }
+
+    /** Test do hệ thống sinh (bù checklist) và test gốc AI: mỗi test dùng tài nguyên cha RIÊNG để không cộng dồn trạng thái lên nhau. */
+    private static boolean isIsolatedConsumer(TestCase testCase) {
+        return testCase.getGenerationOrigin() == TestCaseGenerationOrigin.SYSTEM_FILLED
+                || testCase.getGenerationOrigin() == TestCaseGenerationOrigin.AI_BASELINE;
+    }
+
+    /**
+     * Gọi LẠI test POST tạo tài nguyên (nguồn của {{id}}) ngay trước test con, để test con chạy trên tài nguyên cha MỚI: tránh lỗi 409/cộng dồn khi
+     * nhiều test cùng tạo con trên 1 cha (vd tổng trọng số rubric) và tránh test DELETE xoá mất cha dùng chung của các test sau. Đây là bước chuẩn bị,
+     * KHÔNG lưu thành kết quả test và không đổi kết luận. Chỉ áp cho nguồn là POST không phụ thuộc test khác; nguồn gốc đã không PASSED thì bỏ qua
+     * (test con sẽ BLOCKED như cũ). Lỗi khi chuẩn bị thì giữ tài nguyên cũ, không giấu lỗi của test con.
+     */
+    private void refreshCreatedSources(
+            List<DependencyEdge> edges, Map<UUID, TestCase> testCaseById, Map<UUID, List<DependencyEdge>> edgesByConsumerId,
+            Project project, Map<UUID, TestResultStatus> statusByTestCaseId, Map<UUID, String> responseBodyByTestCaseId
+    ) {
+        for (UUID sourceId : edges.stream().map(DependencyEdge::sourceTestCaseId).distinct().toList()) {
+            TestCase source = testCaseById.get(sourceId);
+            if (source == null || source.getEndpoint() == null || !"POST".equalsIgnoreCase(source.getEndpoint().getMethod())
+                    || !edgesByConsumerId.getOrDefault(sourceId, List.of()).isEmpty()
+                    || statusByTestCaseId.get(sourceId) != TestResultStatus.PASSED) {
+                continue;
+            }
+            Set<String> placeholders = new LinkedHashSet<>();
+            placeholders.addAll(testCasePathValidator.extractPlaceholders(source.getResolvedPath()));
+            placeholders.addAll(testCasePathValidator.extractPlaceholders(source.getRequestBody()));
+            placeholders.addAll(testCasePathValidator.extractPlaceholders(source.getRequestHeaders()));
+            Map<String, String> fallbacks = parseFallbacks(source.getPathParamFallbacks());
+            if (!fallbacks.keySet().containsAll(placeholders)) {
+                continue;
+            }
+            try {
+                RestAssuredTestRunner.RunResult fresh = restAssuredTestRunner.run(project, source, fallbacks);
+                if (fresh.statusCode() >= 200 && fresh.statusCode() < 300 && fresh.responseBody() != null) {
+                    responseBodyByTestCaseId.put(sourceId, fresh.responseBody());
+                }
+            } catch (RuntimeException e) {
+                log.warn("Khong tao duoc tai nguyen cha moi cho test con (giu tai nguyen cu): {}", e.toString());
+            }
         }
     }
 

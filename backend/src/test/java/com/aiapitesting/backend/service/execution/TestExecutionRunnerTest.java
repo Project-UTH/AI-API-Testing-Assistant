@@ -186,6 +186,34 @@ class TestExecutionRunnerTest {
     }
 
     @Test
+    void runInBackground_systemFilledConsumers_eachGetTheirOwnFreshParentResource() {
+        Endpoint createEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/pet").build();
+        TestCase source = TestCase.builder().id(UUID.randomUUID()).endpoint(createEndpoint)
+                .resolvedPath("/pet").requestBody("{}").expectedStatus(201).createdAt(Instant.now()).build();
+        TestCase first = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).resolvedPath("/pet/{{petId}}")
+                .pathParamFallbacks("{\"petId\":\"999\"}").expectedStatus(200).createdAt(Instant.now())
+                .generationOrigin(com.aiapitesting.backend.entity.TestCaseGenerationOrigin.SYSTEM_FILLED).build();
+        TestCase second = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).resolvedPath("/pet/{{petId}}")
+                .pathParamFallbacks("{\"petId\":\"999\"}").expectedStatus(200).createdAt(Instant.now())
+                .generationOrigin(com.aiapitesting.backend.entity.TestCaseGenerationOrigin.SYSTEM_FILLED).build();
+        // Mỗi lần gọi test nguồn trả 1 id mới: lần chạy chính thức -> 1, hai lần làm mới trước test con -> 2 và 3
+        when(restAssuredTestRunner.run(eq(project), eq(source), eq(Map.of())))
+                .thenReturn(new RestAssuredTestRunner.RunResult(201, "{\"id\":1}"), new RestAssuredTestRunner.RunResult(201, "{\"id\":2}"),
+                        new RestAssuredTestRunner.RunResult(201, "{\"id\":3}"));
+        when(restAssuredTestRunner.run(eq(project), any(TestCase.class), org.mockito.ArgumentMatchers.argThat(m -> m != null && !m.isEmpty())))
+                .thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+        DependencyEdge edge = new DependencyEdge(source.getId(), "Tao pet", "$.id", "petId");
+
+        runner.runInBackground(execution, List.of(source, first, second), project,
+                Map.of(first.getId(), List.of(edge), second.getId(), List.of(edge)), Set.of(source.getId()), Map.of());
+
+        verify(restAssuredTestRunner).run(eq(project), eq(first), eq(Map.of("petId", "2")));
+        verify(restAssuredTestRunner).run(eq(project), eq(second), eq(Map.of("petId", "3")));
+        // Chỉ 2 kết quả test + 1 kết quả nguồn được lưu: các lần làm mới là bước chuẩn bị, không thành kết quả
+        verify(testResultRepository, times(3)).save(any(TestResult.class));
+    }
+
+    @Test
     void runInBackground_dependencySourceNotPassed_marksConsumerBlockedWithoutCallingRunnerForIt() {
         Endpoint createEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/pet").build();
         TestCase source = TestCase.builder().id(UUID.randomUUID()).endpoint(createEndpoint)
