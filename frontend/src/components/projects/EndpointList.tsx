@@ -52,7 +52,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
   const [includeNegative, setIncludeNegative] = useState(true)
   const [includeBoundary, setIncludeBoundary] = useState(true)
   const [includeBusiness, setIncludeBusiness] = useState(false)
-  const [baselineEndpointId, setBaselineEndpointId] = useState<string | null>(null)
+  const [wizardIds, setWizardIds] = useState<string[] | null>(null)
 
   const endpoints = data?.data ?? []
   // Không có gì để sinh nếu không tích ít nhất 1 trong 4 loại - khớp validate phía backend
@@ -249,7 +249,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
                   variant="outline"
                   className="shrink-0"
                   aria-label={`Sinh đầy đủ ${endpoint.method} ${endpoint.path}`}
-                  onClick={() => setBaselineEndpointId(endpoint.id)}
+                  onClick={() => setWizardIds([endpoint.id])}
                 >
                   <Sparkles className="h-3.5 w-3.5" />
                   Sinh đầy đủ
@@ -286,13 +286,13 @@ export function EndpointList({ projectId }: EndpointListProps) {
         })}
       </ul>
 
-      {baselineEndpointId && endpoints.find((e) => e.id === baselineEndpointId) && (
+      {wizardIds && endpoints.some((e) => wizardIds.includes(e.id)) && (
         <GenerateWizardDialog
-          key={baselineEndpointId}
+          key={wizardIds.join(",")}
           projectId={projectId}
-          endpoint={endpoints.find((e) => e.id === baselineEndpointId)!}
+          endpoints={endpoints.filter((e) => wizardIds.includes(e.id))}
           open
-          onOpenChange={(open) => !open && setBaselineEndpointId(null)}
+          onOpenChange={(open) => !open && setWizardIds(null)}
         />
       )}
 
@@ -333,6 +333,18 @@ export function EndpointList({ projectId }: EndpointListProps) {
                 <Checkbox checked={includeBusiness} onCheckedChange={(checked) => setIncludeBusiness(checked === true)} />
                 + Nghiệp vụ (AI đoán)
               </label>
+              <Button
+                size="sm"
+                variant="outline"
+                title="AI sinh test gốc hợp lệ cho từng endpoint đã chọn, chạy thật xác nhận, rồi hệ thống bổ sung checklist (chạy nền, huỷ được)"
+                onClick={() => {
+                  setWizardIds(Array.from(selectedIds))
+                  setSelectedIds(new Set())
+                }}
+              >
+                <Sparkles className="h-4 w-4" />
+                Sinh đầy đủ ({selectedIds.size})
+              </Button>
               <Button
                 size="sm"
                 variant="outline"

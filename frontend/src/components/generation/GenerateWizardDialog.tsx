@@ -24,7 +24,8 @@ import { getProject } from "@/lib/projects"
 
 interface Props {
   projectId: string
-  endpoint: Endpoint
+  /** 1 hoặc nhiều endpoint: job chạy lần lượt từng endpoint, dùng chung cấu hình và trần token. */
+  endpoints: Endpoint[]
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -33,10 +34,11 @@ interface Props {
  * Cấu hình rồi bắt đầu job "Sinh đầy đủ" chạy nền. Hộp thoại đóng ngay khi job bắt đầu; tiến trình hiện ở khung giám sát (thu nhỏ được).
  * Test gốc được chạy trên API đích nên với method ghi bắt buộc người dùng xác nhận.
  */
-export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }: Props) {
+export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange }: Props) {
   const { track } = useGenerationJobs()
-  const isWrite = WRITE_METHODS.includes(endpoint.method.toUpperCase())
-  const params = pathParamNames(endpoint.path)
+  const isWrite = endpoints.some((e) => WRITE_METHODS.includes(e.method.toUpperCase()))
+  const params = Array.from(new Set(endpoints.flatMap((e) => pathParamNames(e.path))))
+  const many = endpoints.length > 1
   const { data: project } = useQuery({ queryKey: ["project", projectId], queryFn: () => getProject(projectId), enabled: open })
 
   const [confirmWrite, setConfirmWrite] = useState(false)
@@ -50,7 +52,7 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
   const mutation = useMutation({
     mutationFn: () =>
       startJob(projectId, {
-        endpointIds: [endpoint.id],
+        endpointIds: endpoints.map((e) => e.id),
         type: "FULL",
         dryRun,
         confirmWrite,
@@ -74,7 +76,7 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
       <AlertDialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Sinh đầy đủ: {endpoint.method} {endpoint.path}
+            {many ? `Sinh đầy đủ cho ${endpoints.length} endpoint` : `Sinh đầy đủ: ${endpoints[0].method} ${endpoints[0].path}`}
           </AlertDialogTitle>
           <AlertDialogDescription>
             AI sinh 1 test gốc hợp lệ, hệ thống chạy thử trên API thật để xác nhận (AI tự sửa theo lỗi thật nếu cần), rồi tự bổ sung toàn bộ checklist
@@ -88,7 +90,7 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
           </p>
           {isWrite && (
             <div role="note" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs">
-              <p className="font-medium text-destructive">Hệ thống sẽ GHI THẬT vào API đích ({endpoint.method})</p>
+              <p className="font-medium text-destructive">Hệ thống sẽ GHI THẬT vào API đích ({Array.from(new Set(endpoints.filter((e) => WRITE_METHODS.includes(e.method.toUpperCase())).map((e) => e.method))).join("/")})</p>
               <p className="mt-1 text-muted-foreground">
                 Test gốc được chạy thật, có thể tạo hoặc sửa dữ liệu (và chạy lại nếu AI phải sửa). Chỉ dùng với môi trường test/staging, không dùng với
                 production.
@@ -164,7 +166,7 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
             </select>
           </div>
           <p className="text-xs text-muted-foreground">
-            Ước tính {(10000 * (1 + (includeBusiness ? 1 : 0))).toLocaleString("vi-VN")}–{(10000 * (1 + rounds + (includeBusiness ? 1 : 0))).toLocaleString("vi-VN")} token (mỗi lần gọi AI ~6.500–27.000).
+            Ước tính {(endpoints.length * 10000 * (1 + (includeBusiness ? 1 : 0))).toLocaleString("vi-VN")}–{(endpoints.length * 10000 * (1 + rounds + (includeBusiness ? 1 : 0))).toLocaleString("vi-VN")} token (mỗi lần gọi AI ~6.500–27.000).
             Không giới hạn thời gian: bước AI có thể kéo dài vài phút, bạn theo dõi từng bước và bấm Huỷ khi cần. Chạm trần token thì job dừng ở bước an toàn.
           </p>
           {!targetUrl && <p className="text-xs text-destructive">Project chưa có Target URL: import lại spec và điền URL trước.</p>}

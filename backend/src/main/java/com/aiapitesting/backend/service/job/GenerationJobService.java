@@ -192,7 +192,7 @@ public class GenerationJobService {
         String finalStatus;
         String error = null;
         try {
-            for (UUID endpointId : endpointIds) {
+            for (UUID endpointId : orderForChaining(endpointIds)) {
                 ctx.checkCancelled();
                 results.add(runEndpoint(job, projectId, endpointId, req, ctx));
             }
@@ -214,6 +214,22 @@ public class GenerationJobService {
         done.setErrorMessage(error);
         done.setResultJson(toJson(results));
         jobs.save(done);
+    }
+
+    /**
+     * Lô nhiều endpoint: POST (tạo tài nguyên) chạy TRƯỚC để các endpoint dùng {id} nối chuỗi được với dữ liệu thật, DELETE chạy SAU CÙNG để không
+     * xoá mất tài nguyên các endpoint khác còn cần. Giữ nguyên thứ tự người dùng chọn trong cùng nhóm (sort ổn định).
+     */
+    private List<UUID> orderForChaining(List<UUID> endpointIds) {
+        if (endpointIds.size() < 2) {
+            return endpointIds;
+        }
+        java.util.Map<UUID, Integer> rank = new java.util.HashMap<>();
+        for (UUID id : endpointIds) {
+            String method = endpointRepository.findById(id).map(Endpoint::getMethod).orElse("");
+            rank.put(id, "POST".equalsIgnoreCase(method) ? 0 : "DELETE".equalsIgnoreCase(method) ? 2 : 1);
+        }
+        return endpointIds.stream().sorted(java.util.Comparator.comparingInt(rank::get)).toList();
     }
 
     private GenerationJobResponse.EndpointResult runEndpoint(
