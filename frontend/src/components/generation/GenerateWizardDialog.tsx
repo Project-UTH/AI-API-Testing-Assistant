@@ -44,6 +44,7 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
   const [fillCoverage, setFillCoverage] = useState(true)
   const [dryRun, setDryRun] = useState(false)
   const [includeBusiness, setIncludeBusiness] = useState(false)
+  const [tokenCap, setTokenCap] = useState(120000)
   const [values, setValues] = useState<Record<string, string>>({})
 
   const mutation = useMutation({
@@ -57,6 +58,7 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
         pathParamValues: Object.fromEntries(Object.entries(values).filter(([, v]) => v.trim() !== "")),
         fillCoverage,
         includeBusiness,
+        tokenCap,
       }),
     onSuccess: (job) => {
       track(job)
@@ -122,7 +124,7 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
               value={rounds}
               onChange={(e) => setRounds(Number(e.target.value))}
             >
-              {[0, 1, 2, 3].map((n) => (
+              {[0, 1, 2, 3, 4, 5].map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>
@@ -144,7 +146,27 @@ export function GenerateWizardDialog({ projectId, endpoint, open, onOpenChange }
               Chạy thử (không gọi AI/API đích)
             </label>
           </div>
-          <p className="text-xs text-muted-foreground">Ước tính ~10.000 token AI mỗi lần gọi (tối đa 30.000), mất 20–120 giây. Có thể huỷ bất cứ lúc nào.</p>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Label htmlFor="gw-cap" className="text-xs">
+              Trần token AI của lần chạy
+            </Label>
+            <select
+              id="gw-cap"
+              className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+              value={tokenCap}
+              onChange={(e) => setTokenCap(Number(e.target.value))}
+            >
+              {[30000, 60000, 120000, 250000, 500000].map((n) => (
+                <option key={n} value={n}>
+                  {n.toLocaleString("vi-VN")}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Ước tính {(10000 * (1 + (includeBusiness ? 1 : 0))).toLocaleString("vi-VN")}–{(10000 * (1 + rounds + (includeBusiness ? 1 : 0))).toLocaleString("vi-VN")} token (mỗi lần gọi AI ~6.500–27.000).
+            Không giới hạn thời gian: bước AI có thể kéo dài vài phút, bạn theo dõi từng bước và bấm Huỷ khi cần. Chạm trần token thì job dừng ở bước an toàn.
+          </p>
           {!targetUrl && <p className="text-xs text-destructive">Project chưa có Target URL: import lại spec và điền URL trước.</p>}
           {mutation.isError && (
             <p role="alert" className="text-sm text-destructive">

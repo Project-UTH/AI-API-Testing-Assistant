@@ -58,7 +58,7 @@ export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDi
   const queryClient = useQueryClient()
   const [now, setNow] = useState(() => Date.now())
 
-  const { data: job, error } = useQuery({
+  const { data: job, error, isError: pollFailed, dataUpdatedAt } = useQuery({
     queryKey: ["gen-job", jobId],
     queryFn: async (): Promise<GenerationJob> => {
       const previous = queryClient.getQueryData<GenerationJob>(["gen-job", jobId])
@@ -204,6 +204,11 @@ export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDi
           Đang huỷ: sẽ dừng ở bước an toàn tiếp theo (lần gọi AI hoặc chạy test đang dở vẫn kết thúc trước). Các bước đã làm được giữ lại.
         </p>
       )}
+      {active && pollFailed && now - dataUpdatedAt > 15000 && (
+        <p role="alert" className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">
+          Mất kết nối tới máy chủ, dữ liệu có thể đã cũ (cập nhật lần cuối {formatElapsed(now - dataUpdatedAt)} trước). Job vẫn chạy ở backend; đang tự thử lại.
+        </p>
+      )}
       {cancelMutation.isError && (
         <p role="alert" className="px-4 py-2 text-xs text-destructive">
           {cancelMutation.error instanceof ApiError ? cancelMutation.error.message : "Không huỷ được, vui lòng thử lại."}
@@ -220,7 +225,7 @@ export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDi
             </p>
             <ol className="flex flex-col gap-1.5 border-l border-border pl-3">
               {steps.map((s) => (
-                <StepRow key={s.seq} step={s} />
+                <StepRow key={s.seq} step={s} now={now} />
               ))}
             </ol>
           </div>
@@ -232,7 +237,8 @@ export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDi
   )
 }
 
-function StepRow({ step }: { step: GenerationStep }) {
+function StepRow({ step, now }: { step: GenerationStep; now: number }) {
+  const stepMs = step.status === "RUNNING" && step.startedAt ? now - new Date(step.startedAt).getTime() : 0
   const icon =
     step.status === "RUNNING" ? (
       <Loader2 className="size-3.5 animate-spin text-primary motion-reduce:animate-none" aria-label="Đang chạy" />
@@ -263,8 +269,14 @@ function StepRow({ step }: { step: GenerationStep }) {
             HTTP {step.httpStatus}
           </span>
         )}
+        {step.status === "RUNNING" && stepMs > 0 && <span className="text-muted-foreground">{formatElapsed(stepMs)}</span>}
         {step.tokens !== null && step.tokens > 0 && <span className="text-muted-foreground">{step.tokens.toLocaleString("vi-VN")} token</span>}
       </div>
+      {step.status === "RUNNING" && stepMs > 180000 && (
+        <p className="mt-0.5 pl-5 text-amber-700 dark:text-amber-400">
+          Bước này đã chạy hơn {Math.floor(stepMs / 60000)} phút (thường do AI xử lý yêu cầu lớn). Vẫn đang chờ phản hồi; bấm Huỷ nếu không muốn đợi.
+        </p>
+      )}
       {step.detail && <p className="mt-0.5 pl-5 break-words text-muted-foreground">{step.detail}</p>}
     </li>
   )

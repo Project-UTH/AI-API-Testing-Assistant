@@ -49,9 +49,9 @@ import java.util.regex.Pattern;
 public class BaselineVerificationService {
 
     static final int DEFAULT_REPAIR_ROUNDS = 2;
-    static final int MAX_REPAIR_ROUNDS = 3;
+    static final int MAX_REPAIR_ROUNDS = 5;
     /** Trần token AI cho 1 lần chạy (lần sinh đầu + các lần sửa). */
-    static final int TOKEN_BUDGET = 30_000;
+    static final int TOKEN_BUDGET = 120_000;
     private static final int BODY_LIMIT = 1_500;
     private static final Pattern PATH_PLACEHOLDER = Pattern.compile("\\{\\{\\w+}}");
 
@@ -73,7 +73,7 @@ public class BaselineVerificationService {
             CoverageGapFillService coverageGapFillService, TestExecutionService testExecutionService,
             TestExecutionRepository testExecutionRepository, TestResultRepository testResultRepository, TestCaseService testCaseService,
             com.aiapitesting.backend.service.DependencySuggestionService dependencySuggestionService,
-            @Value("${baseline.execution-timeout-ms:120000}") long executionTimeoutMs,
+            @Value("${baseline.execution-timeout-ms:600000}") long executionTimeoutMs,
             @Value("${baseline.poll-interval-ms:500}") long pollIntervalMs
     ) {
         this.projectService = projectService;
@@ -244,7 +244,7 @@ public class BaselineVerificationService {
         JobProgress.Step run = p.start(endpointId, label, "RUN", "SYSTEM", title);
         RunOutcome outcome;
         try {
-            outcome = runAndWait(projectId, testId);
+            outcome = runAndWait(p, projectId, testId);
         } catch (RuntimeException e) {
             run.fail(e.getMessage());
             throw e;
@@ -300,12 +300,13 @@ public class BaselineVerificationService {
 
     // ---- Chạy 1 test và chờ kết quả ----
 
-    private RunOutcome runAndWait(UUID projectId, UUID testId) {
+    private RunOutcome runAndWait(JobProgress p, UUID projectId, UUID testId) {
         Project project = projectService.getOwnedProject(projectId);
         TestExecutionResponse started = testExecutionService.triggerForProject(project, List.of(testId), null, null);
         long deadline = System.currentTimeMillis() + executionTimeoutMs;
         TestExecution execution = null;
         while (System.currentTimeMillis() < deadline) {
+            p.checkCancelled(); // huỷ có hiệu lực ngay cả khi đang chờ lần chạy
             execution = testExecutionRepository.findById(started.id()).orElse(null);
             if (execution != null && (execution.getStatus() == ExecutionStatus.COMPLETED || execution.getStatus() == ExecutionStatus.FAILED)) {
                 break;

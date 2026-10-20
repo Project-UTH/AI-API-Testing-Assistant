@@ -169,6 +169,16 @@ public class TestCaseGenerationService {
         return CompletableFuture.completedFuture(new GenerateTestCasesResponse(saved, planSummary));
     }
 
+    /** Token của lần sinh gần nhất của endpoint nếu xảy ra sau {@code since} (job dùng để cộng vào trần token); 0 nếu không có. */
+    @Transactional(readOnly = true)
+    public int tokensSince(UUID endpointId, java.time.Instant since) {
+        return endpointRepository.findById(endpointId)
+                .flatMap(testGenerationEventRepository::findFirstByEndpointOrderByCreatedAtDesc)
+                .filter(e -> e.getCreatedAt() != null && !e.getCreatedAt().isBefore(since) && e.getTotalTokens() != null)
+                .map(e -> e.getTotalTokens())
+                .orElse(0);
+    }
+
     /** Số test nghiệp vụ tối đa giữ lại mỗi lần sinh (AI hay trả thừa/trùng). */
     static final int MAX_BUSINESS_CASES = 12;
 

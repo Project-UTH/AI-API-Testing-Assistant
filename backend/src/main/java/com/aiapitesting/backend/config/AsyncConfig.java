@@ -42,7 +42,7 @@ public class AsyncConfig {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(2);
         executor.setMaxPoolSize(6);
-        executor.setQueueCapacity(0);
+        executor.setQueueCapacity(10);
         executor.setThreadNamePrefix("gen-job-");
         executor.initialize();
         return new DelegatingSecurityContextAsyncTaskExecutor(executor);

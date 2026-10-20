@@ -281,8 +281,11 @@ public class GenerationJobService {
         }
         JobProgress.Step s = ctx.start(endpointId, label, "AI_GAPS", "AI", "AI đoán thêm test nghiệp vụ còn thiếu (nhãn GIẢ ĐỊNH, không tính vào độ bao phủ)");
         try {
+            java.time.Instant since = java.time.Instant.now().minusSeconds(1);
             GenerateTestCasesResponse r = generation.generate(projectId, endpointId, new GenerateTestCasesRequest(false, false, false, false, true)).get();
-            s.finish("OK", "Thêm " + r.testCases().size() + " test nghiệp vụ GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả", null, null);
+            int tokens = generation.tokensSince(endpointId, since);
+            ctx.addTokens(tokens);
+            s.finish("OK", "Thêm " + r.testCases().size() + " test nghiệp vụ GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả", null, tokens);
         } catch (java.util.concurrent.ExecutionException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -304,12 +307,15 @@ public class GenerationJobService {
         ctx.checkCancelled();
         JobProgress.Step s = ctx.start(endpointId, label, "AI_GENERATE", "AI", "AI sinh test theo checklist, hệ thống chấm theo nội dung và tự bù mục thiếu");
         try {
+            java.time.Instant since = java.time.Instant.now().minusSeconds(1);
             GenerateTestCasesResponse r = generation.generate(projectId, endpointId, g).get();
+            int tokens = generation.tokensSince(endpointId, since);
+            ctx.addTokens(tokens);
             GenerationPlanSummary plan = r.planSummary();
             String detail = "Đã tạo " + r.testCases().size() + " test"
                     + (plan == null ? "" : " (AI đạt " + plan.aiSatisfiedCount() + " mục, hệ thống bù " + plan.systemFilledCount() + ", đề xuất thêm " + plan.aiExtraCount() + ")");
-            s.finish("OK", detail, null, null);
-            return new GenerationJobResponse.EndpointResult(endpointId, label, "GENERATED", null, detail, 0, plan == null ? 0 : plan.systemFilledCount());
+            s.finish("OK", detail, null, tokens);
+            return new GenerationJobResponse.EndpointResult(endpointId, label, "GENERATED", null, detail, tokens, plan == null ? 0 : plan.systemFilledCount());
         } catch (java.util.concurrent.ExecutionException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
