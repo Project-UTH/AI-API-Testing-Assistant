@@ -34,7 +34,7 @@ public class Project {
     private User owner;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "target_auth_type", nullable = false)
+    @Column(name = "target_auth_type", nullable = false, columnDefinition = "VARCHAR(20)")
     @Builder.Default
     private TargetAuthType targetAuthType = TargetAuthType.NONE;
 

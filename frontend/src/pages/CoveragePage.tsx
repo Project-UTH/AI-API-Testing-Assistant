@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react"
-import { Link, useParams, useSearchParams } from "react-router-dom"
+import { useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import { cn, METHOD_STYLES } from "@/lib/utils"
-import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
-import { CoverageSummary, RiskBadge } from "@/components/shared/CoverageMatrixChart"
+import { coverageCounts, getProjectCoverage, scopeLabel } from "@/lib/coverage"
+import { CoverageSummary } from "@/components/shared/CoverageMatrixChart"
 import { CoverageGapReport } from "@/components/coverage/CoverageGapReport"
+import { BulkAuthBar } from "@/components/coverage/BulkAuthBar"
+import { RoleMatrixPanel } from "@/components/coverage/RoleMatrixPanel"
 
 /**
- * Module 15c - Coverage Matrix + Risk Engine. Toàn bộ số liệu tính tất định từ OpenAPI spec +
+ * Module 15c - Coverage Matrix. Toàn bộ số liệu tính tất định từ OpenAPI spec +
  * test case hiện có (không gọi AI) - xem EndpointCoverageService (backend).
  * Module 15j - Coverage Gap Analysis: mỗi endpoint chỉ rõ còn thiếu mục nào, vì sao cần, bằng chứng, và
  * bổ sung ngay (hệ thống tự tạo, 0 token).
@@ -50,16 +51,9 @@ export function CoveragePage() {
 
   return (
     <div>
-      <Button variant="ghost" size="sm" nativeButton={false} render={<Link to={`/projects/${id}`} />}>
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại Project
-      </Button>
-
-      <h1 className="mt-4 text-2xl font-semibold">Coverage Matrix</h1>
+      <h2 className="text-lg font-semibold">Coverage Matrix</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Hệ thống tự lập danh sách mục cần kiểm từ đặc tả OpenAPI (checklist EP/BVA - cùng checklist dùng khi sinh test
-        case, cộng mã trạng thái khai báo và quan hệ giữa các endpoint), rồi đọc nội dung từng test case để biết mục nào
-        đã có, đã chạy chưa, mục nào còn thiếu và vì sao. Tính tất định, không dùng AI để suy coverage.
+        Các tình huống cần kiểm tra được suy ra từ spec OpenAPI, đối chiếu với test case hiện có. Tính tất định, không dùng AI.
       </p>
 
       {isLoading && <p className="mt-6 text-muted-foreground">Đang tính coverage...</p>}
@@ -70,8 +64,10 @@ export function CoveragePage() {
           <CoverageSummary
             coveragePercent={data.overallCoveragePercent}
             executedPercent={data.overallExecutedPercent}
-            riskWeightedCoveragePercent={data.overallRiskWeightedCoveragePercent}
           />
+
+          <BulkAuthBar projectId={id!} endpointCount={data.endpoints.length} />
+          <RoleMatrixPanel projectId={id!} />
 
           {data.endpoints.length === 0 && (
             <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -114,7 +110,14 @@ export function CoveragePage() {
                         Chưa có test case nào
                       </span>
                     )}
-                    <RiskBadge level={endpoint.riskLevel} reasons={endpoint.riskReasons} />
+                    {scopeLabel(endpoint.scope) && (
+                      <span
+                        className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                        title="Chỉ các loại này được tính vào số mục cần kiểm. Mở endpoint để đổi phạm vi."
+                      >
+                        Phạm vi: {scopeLabel(endpoint.scope)}
+                      </span>
+                    )}
                     <span className="shrink-0 text-xs text-muted-foreground">
                       <span className="font-medium text-foreground">
                         {counts.covered}/{counts.relevant} mục
@@ -133,12 +136,6 @@ export function CoveragePage() {
                           Không đọc được định nghĩa OpenAPI (schema) của endpoint này - danh sách mục cần kiểm bên dưới
                           KHÔNG đầy đủ, không nên tin số % hiện tại.
                         </p>
-                      )}
-                      {endpoint.riskReasons.length > 0 && (
-                        <div className="mb-3 text-xs text-muted-foreground">
-                          <span className="font-medium">Vì sao risk {endpoint.riskScore}/100: </span>
-                          {endpoint.riskReasons.join("; ")}
-                        </div>
                       )}
                       <CoverageGapReport projectId={id!} endpoint={endpoint} />
                     </div>

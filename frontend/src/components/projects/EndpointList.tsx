@@ -1,31 +1,25 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Coins, Loader2, Sparkles } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { ChevronDown, Coins, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn, METHOD_STYLES } from "@/lib/utils"
-import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
-import { generateTestCases, type GenerateTestCasesResponse } from "@/lib/testcases"
 import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
+import { AuthHintBanner } from "@/components/projects/AuthHintBanner"
+import { GenerateWizardDialog } from "@/components/generation/GenerateWizardDialog"
 import { getDashboardSummary } from "@/lib/dashboard"
-import { getProjectCoverage } from "@/lib/coverage"
-import { RiskBadge } from "@/components/shared/CoverageMatrixChart"
+import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
 
 interface EndpointListProps {
   projectId: string
 }
 
-type GenerationState =
-  | { status: "pending" }
-  // result chỉ có khi vừa sinh trong phiên này (Module 15h) - không có khi lấy testCaseCount từ server.
-  | { status: "success"; count: number; result?: GenerateTestCasesResponse }
-  | { status: "error"; message: string }
+type GenerationState = { status: "success"; count: number }
 
 export function EndpointList({ projectId }: EndpointListProps) {
-  const queryClient = useQueryClient()
   const { data, isLoading, isError } = useQuery({
     queryKey: ["endpoints", projectId],
     queryFn: () => listEndpoints(projectId),
@@ -37,28 +31,21 @@ export function EndpointList({ projectId }: EndpointListProps) {
     queryFn: () => getDashboardSummary(),
   })
 
-  // Module 15c - chỉ hiển thị badge risk để người dùng tự quyết định tích gì, KHÔNG tự tick
-  // checkbox (bộ checkbox Positive/Negative/Boundary/Security hiện dùng CHUNG cho mọi endpoint
-  // đang chọn cùng lúc, nên tự tick theo risk của 1 endpoint sẽ ảnh hưởng nhầm sang endpoint khác).
+  // Coverage của từng endpoint, truyền xuống báo cáo kế hoạch sinh test case.
   const { data: coverage } = useQuery({
     queryKey: ["project-coverage", projectId],
     queryFn: () => getProjectCoverage(projectId),
   })
-  const riskByEndpointId = new Map((coverage?.endpoints ?? []).map((e) => [e.endpointId, e]))
+  const coverageByEndpointId = new Map((coverage?.endpoints ?? []).map((e) => [e.endpointId, e]))
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [generationState, setGenerationState] = useState<Record<string, GenerationState>>({})
-  const [includeSecurity, setIncludeSecurity] = useState(false)
+  // Endpoint đang mở phần chi tiết (coverage + báo cáo lần sinh) - mặc định gập để danh sách gọn, 1 dòng/endpoint.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   // Mặc định cả 3 đều bật - giữ đúng hành vi cũ (luôn sinh đủ Positive/Negative/Boundary) cho tới
   // khi người dùng chủ động bỏ tích bớt.
-  const [includePositive, setIncludePositive] = useState(true)
-  const [includeNegative, setIncludeNegative] = useState(true)
-  const [includeBoundary, setIncludeBoundary] = useState(true)
+  const [wizardIds, setWizardIds] = useState<string[] | null>(null)
 
   const endpoints = data?.data ?? []
-  // Không có gì để sinh nếu không tích ít nhất 1 trong 4 loại - khớp validate phía backend
-  // (InvalidRequestException "Phải chọn ít nhất 1 loại test case để sinh").
-  const hasAnyCategorySelected = includePositive || includeNegative || includeBoundary || includeSecurity
 
   function toggleSelect(endpointId: string, checked: boolean) {
     setSelectedIds((prev) => {
@@ -72,49 +59,18 @@ export function EndpointList({ projectId }: EndpointListProps) {
     })
   }
 
-  function handleGenerate() {
-    // Gọi thẳng generateTestCases (không qua useMutation) - mỗi endpoint là 1 Promise độc lập,
-    // đảm bảo callback của từng cái không bị "đè" khi bấm sinh nhiều endpoint cùng lúc (dùng chung
-    // 1 instance useMutation cho nhiều lần mutate() đồng thời chỉ đáng tin cậy với lần gọi cuối).
-    // Bỏ chọn NGAY khi bấm (không đợi tới lúc xong) - trước đây chỉ bỏ chọn sau khi thành công,
-    // nghĩa là bấm "Sinh Test Case" 2 lần liên tiếp trong lúc lần đầu còn đang chạy sẽ gửi 2 request
-    // trùng cho cùng 1 endpoint, gây race điều kiện thật ở backend (2 lượt xoá-sinh-lại chồng nhau
-    // cho cùng test case -> StaleStateException). Bỏ chọn ngay khiến nút "Sinh Test Case" tự vô hiệu
-    // hoá (disabled={selectedIds.size===0}) cho tới khi người dùng chủ động tích lại.
-    const idsToGenerate = Array.from(selectedIds)
-    setSelectedIds(new Set())
-    idsToGenerate.forEach((endpointId) => {
-      setGenerationState((prev) => ({ ...prev, [endpointId]: { status: "pending" } }))
-      generateTestCases(projectId, endpointId, {
-        includeSecurity,
-        includePositive,
-        includeNegative,
-        includeBoundary,
-      })
-        .then((result) => {
-          setGenerationState((prev) => ({
-            ...prev,
-            [endpointId]: { status: "success", count: result.testCases.length, result },
-          }))
-          // Đồng bộ lại testCaseCount thật từ server - để trạng thái "đã sinh" không bị mất
-          // khi rời trang rồi quay lại (generationState chỉ sống trong phiên hiện tại)
-          queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
-          // Báo cáo checklist đã lưu ở backend vừa đổi - bỏ bản cũ trong cache.
-          queryClient.invalidateQueries({ queryKey: ["generation-plan", projectId, endpointId] })
-          // Bộ test case đổi thì Coverage/risk badge cũng đổi - trước đây không tự cập nhật.
-          queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
-        })
-        .catch((error) => {
-          setGenerationState((prev) => ({
-            ...prev,
-            [endpointId]: {
-              status: "error",
-              message: error instanceof ApiError ? error.message : "Đã xảy ra lỗi, vui lòng thử lại",
-            },
-          }))
-        })
+  function toggleExpanded(endpointId: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(endpointId)) {
+        next.delete(endpointId)
+      } else {
+        next.add(endpointId)
+      }
+      return next
     })
   }
+
 
   if (isLoading) {
     return <p className="mt-4 text-muted-foreground">Đang tải danh sách endpoint...</p>
@@ -136,13 +92,19 @@ export function EndpointList({ projectId }: EndpointListProps) {
     )
   }
 
+  // "Chọn tất cả" chỉ xét endpoint chọn được (không đang sinh) - so với toàn bộ thì khi có endpoint đang sinh nhãn kẹt ở "Chọn tất cả".
+  const selectableEndpoints = endpoints
+  const allSelectableSelected = selectableEndpoints.length > 0 && selectableEndpoints.every((e) => selectedIds.has(e.id))
   const todayTokens = summary?.aiTokensToday ?? 0
   const dailyLimit = summary?.aiDailyTokenLimit ?? 0
   const nearOrOverQuota = dailyLimit > 0 && todayTokens >= dailyLimit
+  // Số token chỉ đáng nhìn khi đã dùng đáng kể (từ nửa hạn mức) - lúc còn thoải mái nó chỉ là 1 khối nhiễu ngay đầu danh sách.
+  const showTokenUsage = dailyLimit > 0 && todayTokens >= dailyLimit / 2
 
   return (
     <div className="mt-4 flex flex-col gap-3">
-      {summary && (
+      <AuthHintBanner projectId={projectId} />
+      {summary && showTokenUsage && (
         <div
           className={cn(
             "flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm",
@@ -162,78 +124,39 @@ export function EndpointList({ projectId }: EndpointListProps) {
             {todayTokens.toLocaleString("vi-VN")} / {dailyLimit.toLocaleString("vi-VN")}
           </span>
           {nearOrOverQuota && (
-            <span className="font-medium text-destructive">Đã đạt giới hạn hôm nay - Sinh Test Case sẽ bị chặn</span>
+            <span className="font-medium text-destructive">Đã đạt giới hạn hôm nay - Sinh test case có dùng AI sẽ bị chặn</span>
           )}
         </div>
       )}
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
-          {selectedIds.size > 0 ? `Đã chọn ${selectedIds.size} endpoint` : "Chọn endpoint để sinh test case"}
+          Tick endpoint rồi bấm Sinh test case: AI sinh 1 test gốc hợp lệ (tốn token), hệ thống chạy thật xác nhận và bổ sung các nhóm test bạn chọn.
         </span>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includePositive}
-              onCheckedChange={(checked) => setIncludePositive(checked === true)}
-            />
-            Positive
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includeNegative}
-              onCheckedChange={(checked) => setIncludeNegative(checked === true)}
-            />
-            Negative
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includeBoundary}
-              onCheckedChange={(checked) => setIncludeBoundary(checked === true)}
-            />
-            Boundary
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includeSecurity}
-              onCheckedChange={(checked) => setIncludeSecurity(checked === true)}
-            />
-            + Security
-          </label>
-          <Button
-            size="sm"
-            disabled={selectedIds.size === 0 || !hasAnyCategorySelected}
-            onClick={handleGenerate}
-          >
-            <Sparkles className="h-4 w-4" />
-            Sinh Test Case
-          </Button>
-        </div>
+        <button
+          type="button"
+          className="text-xs text-primary underline underline-offset-4"
+          onClick={() => setSelectedIds(allSelectableSelected ? new Set() : new Set(selectableEndpoints.map((e) => e.id)))}
+        >
+          {allSelectableSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+        </button>
       </div>
-      {!hasAnyCategorySelected && (
-        <p className="text-xs text-destructive">
-          Phải tích ít nhất 1 trong Positive/Negative/Boundary/Security để có thứ sinh ra.
-        </p>
-      )}
 
       <ul className="flex flex-col gap-2">
         {endpoints.map((endpoint) => {
           // generationState chỉ phản ánh thao tác trong phiên hiện tại (mất khi rời trang);
           // testCaseCount lấy từ server là nguồn sự thật lâu dài - dùng nó làm mặc định khi
           // chưa có trạng thái phiên nào ghi đè lên.
-          const state: GenerationState | undefined =
-            generationState[endpoint.id] ??
-            (endpoint.testCaseCount > 0
-              ? { status: "success", count: endpoint.testCaseCount }
-              : undefined)
-          const alreadyGenerated = state?.status === "success"
+          const state: GenerationState | undefined = endpoint.testCaseCount > 0 ? { status: "success", count: endpoint.testCaseCount } : undefined
           const selected = selectedIds.has(endpoint.id)
-          const willRegenerate = alreadyGenerated && selected
+          const isExpanded = expandedIds.has(endpoint.id)
+          const coverageOfEndpoint = coverageByEndpointId.get(endpoint.id)
+          const counts = coverageOfEndpoint ? coverageCounts(coverageOfEndpoint) : null
           return (
             <li key={endpoint.id} className="rounded-lg border border-border p-3">
               <div className="flex items-center gap-3">
                 <Checkbox
+                  aria-label={`Chọn ${endpoint.method} ${endpoint.path}`}
                   checked={selected}
-                  disabled={state?.status === "pending"}
                   onCheckedChange={(checked) => toggleSelect(endpoint.id, checked === true)}
                 />
                 <span
@@ -244,55 +167,119 @@ export function EndpointList({ projectId }: EndpointListProps) {
                 >
                   {endpoint.method}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.path}</span>
-                {riskByEndpointId.get(endpoint.id) && (
-                  <RiskBadge
-                    level={riskByEndpointId.get(endpoint.id)!.riskLevel}
-                    reasons={riskByEndpointId.get(endpoint.id)!.riskReasons}
-                  />
-                )}
+                <span className="min-w-0 truncate font-mono text-sm">{endpoint.path}</span>
                 {endpoint.summary && (
-                  <span className="shrink-0 truncate text-sm text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground" title={endpoint.summary}>
                     {endpoint.summary}
                   </span>
                 )}
-                {state?.status === "pending" && (
-                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-                )}
-                {state?.status === "success" && willRegenerate && (
-                  <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
-                    Sinh lại sẽ thay test case AI đã sinh (trừ case đang khoá 🔒), giữ nguyên test case bạn tự thêm
-                  </span>
-                )}
-                {state?.status === "success" && !willRegenerate && (
-                  <span className="shrink-0 text-xs text-green-600 dark:text-green-400">
-                    Có {state.count} test case
-                  </span>
-                )}
-                {state?.status === "error" && (
-                  <span className="shrink-0 text-xs text-destructive">{state.message}</span>
-                )}
-                {endpoint.testCaseCount > 0 && (
-                  <Link
-                    to={`/projects/${projectId}/test-cases?endpointId=${endpoint.id}`}
-                    className="shrink-0 text-xs text-primary underline-offset-4 hover:underline"
+                {!endpoint.summary && <span className="flex-1" />}
+                {endpoint.missingFromSpec && (
+                  <span
+                    className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive"
+                    title="Lần import gần nhất không còn thấy endpoint này trong spec. Test case của nó vẫn được giữ - khi chạy có thể nhận 404."
                   >
-                    Xem test case
-                  </Link>
+                    Không còn trong spec
+                  </span>
+                )}
+                {!endpoint.missingFromSpec && endpoint.schemaChangedAt && (
+                  <span
+                    className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+                    title="Spec của endpoint này đã đổi ở lần import gần nhất - test case có thể lỗi thời, nên xem lại hoặc chạy lại."
+                  >
+                    Spec đổi {new Date(endpoint.schemaChangedAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
+                  </span>
+                )}
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {endpoint.testCaseCount > 0 ? (
+                    <>
+                      <span className="font-medium text-foreground">{endpoint.testCaseCount}</span> test
+                      {counts && (
+                        <>
+                          {" · "}
+                          <span className="font-medium text-foreground">
+                            {counts.covered}/{counts.relevant}
+                          </span>{" "}
+                          mục
+                          {counts.missing > 0 && (
+                            <span className="text-amber-700 dark:text-amber-400"> · thiếu {counts.missing}</span>
+                          )}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    "Chưa có test case"
+                  )}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  aria-label={`Sinh test case ${endpoint.method} ${endpoint.path}`}
+                  onClick={() => setWizardIds([endpoint.id])}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Sinh test case
+                </Button>
+                {endpoint.testCaseCount > 0 && (
+                  <>
+                    <Link
+                      to={`/projects/${projectId}/test-cases?endpointId=${endpoint.id}`}
+                      className="shrink-0 text-xs text-primary underline underline-offset-4"
+                    >
+                      Xem test case
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label={`${isExpanded ? "Thu gọn" : "Mở"} chi tiết ${endpoint.method} ${endpoint.path}`}
+                      aria-expanded={isExpanded}
+                      className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() => toggleExpanded(endpoint.id)}
+                    >
+                      <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
+                    </button>
+                  </>
                 )}
               </div>
-              {state?.status === "success" && !willRegenerate && state.count > 0 && (
+              {isExpanded && state?.status === "success" && state.count > 0 && (
                 <GenerationPlanReport
                   projectId={projectId}
                   endpointId={endpoint.id}
-                  freshPlan={state.result?.planSummary ?? undefined}
-                  coverage={riskByEndpointId.get(endpoint.id)}
+                  coverage={coverageByEndpointId.get(endpoint.id)}
                 />
               )}
             </li>
           )
         })}
       </ul>
+
+      {wizardIds && endpoints.some((e) => wizardIds.includes(e.id)) && (
+        <GenerateWizardDialog
+          key={wizardIds.join(",")}
+          projectId={projectId}
+          endpoints={endpoints.filter((e) => wizardIds.includes(e.id))}
+          open
+          onOpenChange={(open) => !open && setWizardIds(null)}
+        />
+      )}
+
+      {selectedIds.size > 0 && (
+        <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-lg">
+          <span className="text-sm font-medium">Đã chọn {selectedIds.size} endpoint</span>
+          <Button
+            size="sm"
+            title="AI sinh test gốc hợp lệ, hệ thống chạy thật xác nhận rồi bổ sung các nhóm test bạn chọn (chạy nền, xem từng bước, huỷ được)"
+            onClick={() => {
+              setWizardIds(Array.from(selectedIds))
+              setSelectedIds(new Set())
+            }}
+          >
+            <Sparkles className="h-4 w-4" />
+            Sinh test case ({selectedIds.size})
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

@@ -4,7 +4,12 @@ import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.request.CoverageFillRequest;
 import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageFillResponse;
+import com.aiapitesting.backend.dto.response.CoverageScope;
+import com.aiapitesting.backend.service.execution.MassAssignmentProbe;
+import com.aiapitesting.backend.entity.AuthProfile;
+import com.aiapitesting.backend.entity.AuthzExpectation;
 import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.EndpointRole;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
@@ -15,7 +20,9 @@ import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.EndpointRoleRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
@@ -57,6 +64,8 @@ public class CoverageGapFillService {
     private final TestCaseRepository testCaseRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestResultRepository testResultRepository;
+    private final AuthProfileRepository authProfileRepository;
+    private final EndpointRoleRepository endpointRoleRepository;
     private final TestCaseChecklistPlanner testCaseChecklistPlanner;
     private final TestCaseReliabilityValidator testCaseReliabilityValidator;
     private final TestCasePathValidator testCasePathValidator;
@@ -74,9 +83,10 @@ public class CoverageGapFillService {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
-        boolean requiresAuth = endpoint.isRequiresAuth();
+        boolean requiresAuth = endpoint.effectiveRequiresAuth();
         TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
         List<Candidate> candidates = testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint).stream()
+                .filter(tc -> tc.getSource() != TestCaseSource.BUSINESS)
                 .map(tc -> new Candidate(tc, testCaseChecklistPlanner.toCandidate(tc)))
                 .toList();
         Set<String> requested = request == null || request.itemKeys() == null || request.itemKeys().isEmpty()
@@ -84,12 +94,27 @@ public class CoverageGapFillService {
 
         // Chấm lại NGAY lúc bù (không tin trạng thái frontend đang hiển thị) - mục đã có case đạt thì bỏ qua,
         // tránh tạo trùng khi người dùng bấm 2 lần hoặc vừa tự thêm case ở tab khác.
-        List<TestCaseChecklistPlanner.ChecklistItem> missing = testCaseChecklistPlanner.planAll(spec, requiresAuth).stream()
+        CoverageScope scope = CoverageScope.of(endpoint);
+        List<TestCaseChecklistPlanner.ChecklistItem> missing = testCaseChecklistPlanner.planScoped(spec, requiresAuth, scope).stream()
                 .filter(item -> item.notApplicableReason() == null)
                 .filter(item -> requested == null || requested.contains(TestCaseChecklistPlanner.key(item)))
                 .filter(item -> candidates.stream().noneMatch(c -> testCaseChecklistPlanner.covers(spec, item, c.generated(), requiresAuth)))
                 .toList();
-        if (missing.isEmpty()) {
+        // Module 17 (17a) - ô ma trận phân quyền chưa có test (chấm lại lúc bù, cùng lý do như trên).
+        Map<UUID, AuthProfile> profilesById = new HashMap<>();
+        authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project).forEach(p -> profilesById.put(p.getId(), p));
+        List<EndpointRole> missingAuthz = endpointRoleRepository.findAllByEndpoint(endpoint).stream()
+                .filter(rule -> scope.security()) // ma trận phân quyền thuộc nhóm Security
+                .filter(rule -> profilesById.containsKey(rule.getAuthProfileId()))
+                .filter(rule -> requested == null
+                        || requested.contains(AuthzMatrix.key(rule.getExpectation(), profilesById.get(rule.getAuthProfileId()).getRoleKey())))
+                .filter(rule -> candidates.stream().noneMatch(c -> AuthzMatrix.covers(rule.getExpectation(), rule.getAuthProfileId(), c.entity())))
+                .toList();
+        boolean needProbe = Boolean.TRUE.equals(endpoint.getScopeOwasp()) && MassAssignmentFields.isWriteMethod(endpoint.getMethod())
+                && spec.hasBody() && spec.bodyIsJson()
+                && (requested == null || requested.contains(EndpointCoverageService.OWASP_KEY))
+                && candidates.stream().noneMatch(c -> MassAssignmentProbe.KIND.equals(c.entity().getProbeKind()));
+        if (missing.isEmpty() && missingAuthz.isEmpty() && !needProbe) {
             return new CoverageFillResponse(0, List.of(), List.of(), null, 0);
         }
 
@@ -128,6 +153,36 @@ public class CoverageGapFillService {
                     security), source));
         }
 
+        for (EndpointRole rule : missingAuthz) {
+            AuthProfile profile = profilesById.get(rule.getAuthProfileId());
+            boolean allow = rule.getExpectation() == AuthzExpectation.ALLOW;
+            String key = AuthzMatrix.key(rule.getExpectation(), profile.getRoleKey());
+            String label = AuthzMatrix.label(rule.getExpectation(), profile.getName());
+            // ALLOW cần dữ liệu hợp lệ thật; DENY chỉ đổi người gọi nên case gốc đầu tiên cũng được (như Security).
+            Candidate base = allow ? baseline : securityBaseline;
+            if (base == null) {
+                notFilled.add(new CoverageFillResponse.NotFilled(key, label,
+                        "Cần ít nhất 1 test case làm gốc (kỳ vọng thành công) để mượn dữ liệu gọi endpoint này"));
+                continue;
+            }
+            pending.add(new Pending(toAuthzEntity(endpoint, base.entity(), profile, rule.getExpectation(), label), base.entity()));
+        }
+
+        if (needProbe) {
+            if (baseline == null) {
+                notFilled.add(new CoverageFillResponse.NotFilled(EndpointCoverageService.OWASP_KEY, "Mass assignment",
+                        "Cần ít nhất 1 test case hợp lệ (kỳ vọng thành công) làm gốc để mượn body"));
+            } else {
+                TestCase probe = toMassAssignmentEntity(endpoint, spec, baseline.entity());
+                if (probe == null) {
+                    notFilled.add(new CoverageFillResponse.NotFilled(EndpointCoverageService.OWASP_KEY, "Mass assignment",
+                            "Body của test case gốc không phải JSON object nên không tiêm được field"));
+                } else {
+                    pending.add(new Pending(probe, baseline.entity()));
+                }
+            }
+        }
+
         List<TestCase> saved = pending.isEmpty()
                 ? List.of() : testCaseRepository.saveAll(pending.stream().map(Pending::entity).toList());
         copyDependencies(pending);
@@ -141,6 +196,23 @@ public class CoverageGapFillService {
                 notFilled,
                 anyBorrowed && usedBaseline != null ? usedBaseline.entity().getName() : null,
                 fromSpecCount);
+    }
+
+    /** Endpoint đã có test gốc hợp lệ VÀ lần chạy mới nhất của nó PASS (đủ tin để dùng làm nền bù) - bước 'AI sinh gốc' có thể bỏ qua. */
+    @Transactional(readOnly = true)
+    public boolean hasConfirmedBaseline(UUID projectId, UUID endpointId) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
+        Map<UUID, TestResultStatus> latest = new HashMap<>();
+        for (TestResultRepository.TestCaseLatestResult row : testResultRepository.findLatestResultsByProject(project)) {
+            latest.putIfAbsent(row.getTestCaseId(), row.getStatus());
+        }
+        return testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint).stream()
+                .filter(tc -> tc.getSource() != TestCaseSource.BUSINESS)
+                .filter(tc -> latest.get(tc.getId()) == TestResultStatus.PASSED)
+                .anyMatch(tc -> testCaseChecklistPlanner.isUsableBaseline(spec, testCaseChecklistPlanner.toCandidate(tc), endpoint.effectiveRequiresAuth()));
     }
 
     /**
@@ -235,6 +307,67 @@ public class CoverageGapFillService {
         if (!copies.isEmpty()) {
             testCaseDependencyRepository.saveAll(copies);
         }
+    }
+
+    /**
+     * Case bù cho ô ma trận phân quyền: copy case gốc (dữ liệu, đường dẫn, liên kết dữ liệu), chỉ đổi NGƯỜI GỌI (profile vai trò) và
+     * kỳ vọng (ALLOW giữ mã thành công của case gốc, DENY = 403). Nguồn MANUAL + nguồn gốc SYSTEM_FILLED để lần "Sinh Test Case"
+     * sau không xoá mất (nó chỉ xoá nhóm AI/Security chưa khoá).
+     */
+    private TestCase toAuthzEntity(Endpoint endpoint, TestCase base, AuthProfile profile, AuthzExpectation expectation, String label) {
+        boolean allow = expectation == AuthzExpectation.ALLOW;
+        return TestCase.builder()
+                .endpoint(endpoint)
+                .name("Phân quyền - " + profile.getName() + (allow ? " được phép" : " bị cấm"))
+                .description("Hệ thống tự bổ sung từ ma trận phân quyền (copy case gốc '" + base.getName() + "', đổi người gọi sang vai trò '"
+                        + profile.getName() + "'): " + label)
+                .requestHeaders(base.getRequestHeaders())
+                .requestBody(base.getRequestBody())
+                .rationale(AuthzMatrix.why(expectation, profile.getName()))
+                .expectedStatus(allow ? base.getExpectedStatus() : AuthzMatrix.DENIED_STATUS)
+                .resolvedPath(base.getResolvedPath())
+                .pathParamFallbacks(base.getPathParamFallbacks())
+                .source(TestCaseSource.MANUAL)
+                .generationOrigin(TestCaseGenerationOrigin.SYSTEM_FILLED)
+                .checklistItem(truncate(label))
+                .authOverride(TestCaseAuthOverride.DEFAULT)
+                .authProfileId(profile.getId())
+                .build();
+    }
+
+    /**
+     * Probe mass-assignment (17b-2): copy case gốc hợp lệ, thêm field đặc quyền không khai báo vào body. Kỳ vọng giữ mã thành công của
+     * case gốc (API bỏ qua field lạ); runner chấm riêng theo {@code probeKind}: 400/422 cũng được coi là đạt (từ chối field lạ).
+     */
+    private TestCase toMassAssignmentEntity(Endpoint endpoint, TestCaseChecklistPlanner.Spec spec, TestCase base) {
+        java.util.Set<String> declared = spec.rules().stream()
+                .filter(r -> r.location() == TestCaseChecklistPlanner.ParamLocation.BODY).map(TestCaseChecklistPlanner.FieldRule::name)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.List<MassAssignmentProbe.Field> fields = MassAssignmentProbe.chooseFields(declared, endpoint.getId());
+        String body = MassAssignmentProbe.inject(base.getRequestBody(), fields);
+        if (body == null) {
+            return null;
+        }
+        return TestCase.builder()
+                .endpoint(endpoint)
+                .name("Probe bảo mật - field không khai báo (mass assignment)")
+                .description("Hệ thống tự bổ sung (copy case gốc '" + base.getName() + "', thêm field: "
+                        + fields.stream().map(MassAssignmentProbe.Field::name).collect(java.util.stream.Collectors.joining(", "))
+                        + "). Đạt = API bỏ qua hoặc từ chối; Fail = API nhận và trả lại field.")
+                .requestHeaders(base.getRequestHeaders())
+                .requestBody(body)
+                .rationale("OWASP API3/API6: API không được tự gán field không khai báo trong schema.")
+                .expectedStatus(base.getExpectedStatus())
+                .resolvedPath(base.getResolvedPath())
+                .pathParamFallbacks(base.getPathParamFallbacks())
+                .source(TestCaseSource.MANUAL)
+                .generationOrigin(TestCaseGenerationOrigin.SYSTEM_FILLED)
+                .checklistItem(truncate("Mass assignment"))
+                .authOverride(base.getAuthOverride() == null ? TestCaseAuthOverride.DEFAULT : base.getAuthOverride())
+                .authProfileId(base.getAuthProfileId())
+                .probeKind(MassAssignmentProbe.KIND)
+                .probeFieldsJson(writeJson(fields))
+                .build();
     }
 
     private boolean isSecurity(TestCaseChecklistPlanner.ChecklistItem item) {

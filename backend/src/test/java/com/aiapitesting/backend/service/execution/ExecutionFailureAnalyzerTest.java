@@ -38,13 +38,19 @@ class ExecutionFailureAnalyzerTest {
     @Mock
     private TestResultRepository testResultRepository;
 
+    @Mock
+    private com.aiapitesting.backend.repository.TestCaseDependencyRepository testCaseDependencyRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.TestCaseAssertionRepository testCaseAssertionRepository;
+
     private ExecutionFailureAnalyzer analyzer;
     private Endpoint endpoint;
     private TestExecution execution;
 
     @BeforeEach
     void setUp() {
-        analyzer = new ExecutionFailureAnalyzer(testResultRepository, new FailureCauseClassifier());
+        analyzer = new ExecutionFailureAnalyzer(testResultRepository, new FailureCauseClassifier(), testCaseDependencyRepository, testCaseAssertionRepository);
         endpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/pets").build();
         execution = TestExecution.builder().id(UUID.randomUUID()).targetBaseUrlSnapshot("http://target").build();
     }
@@ -106,6 +112,76 @@ class ExecutionFailureAnalyzerTest {
         };
     }
 
+    // ---- 404 do id dự phòng (RESOURCE_NOT_FOUND) ----
+
+    private TestResult notFoundResult(String resolvedPath, String fallbacksJson) {
+        TestCase testCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).expectedStatus(200)
+                .resolvedPath(resolvedPath).pathParamFallbacks(fallbacksJson).authOverride(TestCaseAuthOverride.DEFAULT).build();
+        return TestResult.builder().id(UUID.randomUUID()).testCase(testCase).execution(execution)
+                .status(TestResultStatus.FAILED).responseStatus(404).testCaseFingerprint("fp").build();
+    }
+
+    private com.aiapitesting.backend.repository.TestCaseDependencyRepository.PlaceholderRow dependencyRow(UUID testCaseId, String name) {
+        return new com.aiapitesting.backend.repository.TestCaseDependencyRepository.PlaceholderRow() {
+            @Override
+            public UUID getTestCaseId() {
+                return testCaseId;
+            }
+
+            @Override
+            public String getPlaceholderName() {
+                return name;
+            }
+        };
+    }
+
+    @Test
+    void notFoundOnFallbackIdInPath_isResourceNotFoundAndNamesTheFallbackValue() {
+        TestResult r = notFoundResult("/api/products/{{id}}", "{\"id\":\"1\"}");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(r, "fp", TestResultStatus.FAILED, 404, 0)));
+
+        analyzer.analyze(execution, List.of(r));
+
+        assertThat(r.getFailureCause()).isEqualTo(FailureCause.RESOURCE_NOT_FOUND);
+        assertThat(r.getFailureEvidence()).contains("{id}=1");
+    }
+
+    @Test
+    void fallbackOnlyInQueryString_isNotAPathParam() {
+        TestResult r = notFoundResult("/api/products?minPrice={{minPrice}}", "{\"minPrice\":\"5\"}");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(r, "fp", TestResultStatus.FAILED, 404, 0)));
+
+        analyzer.analyze(execution, List.of(r));
+
+        assertThat(r.getFailureCause()).isNotEqualTo(FailureCause.RESOURCE_NOT_FOUND);
+    }
+
+    @Test
+    void pathParamSuppliedByDependency_isNotAFallback() {
+        TestResult r = notFoundResult("/api/products/{{id}}", "{\"id\":\"1\"}");
+        when(testCaseDependencyRepository.findPlaceholderRowsByTestCaseIds(anyList()))
+                .thenReturn(List.of(dependencyRow(r.getTestCase().getId(), "id")));
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(r, "fp", TestResultStatus.FAILED, 404, 0)));
+
+        analyzer.analyze(execution, List.of(r));
+
+        assertThat(r.getFailureCause()).isNotEqualTo(FailureCause.RESOURCE_NOT_FOUND);
+    }
+
+    @Test
+    void notFoundOnlyChecksDependenciesForResultsThatActuallyGot404() {
+        TestResult r = result(TestResultStatus.FAILED, 200, 500, "fp");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of(
+                row(r, "fp", TestResultStatus.FAILED, 500, 0)));
+
+        analyzer.analyze(execution, List.of(r));
+
+        org.mockito.Mockito.verifyNoInteractions(testCaseDependencyRepository);
+    }
+
     @Test
     void noFailuresAndNoUnstableTest_savesNothing() {
         List<TestResult> results = List.of(result(TestResultStatus.PASSED, 200, 200, "fp"),
@@ -146,6 +222,66 @@ class ExecutionFailureAnalyzerTest {
         });
         assertThat(results.get(3).getFailureCause()).isNull();
         verify(testResultRepository).saveAll(results.subList(0, 3));
+    }
+
+    @Test
+    void tokenProvenValidByAnotherTestOnAProtectedEndpoint_aLoneForbiddenIsNotBlamedOnTheToken() {
+        // Target trả 403 cho JSON hỏng dù token tốt (bug của API): test khác trên endpoint yêu cầu xác thực nhận 200.
+        Endpoint protectedEndpoint = Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/api/products").requiresAuth(true).build();
+        endpoint = protectedEndpoint;
+        TestResult lone403 = result(TestResultStatus.FAILED, 400, 403, "fp-a");
+        TestResult proof = result(TestResultStatus.PASSED, 200, 200, "fp-b");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, List.of(lone403, proof));
+
+        assertThat(lone403.getFailureCause()).isNotEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
+    void passOnAPublicEndpointDoesNotProveTheTokenIsValid() {
+        Endpoint publicEndpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/health").requiresAuth(false).build();
+        TestResult rejected = result(TestResultStatus.FAILED, 200, 401, "fp-a");
+        endpoint = publicEndpoint;
+        TestResult publicPass = result(TestResultStatus.PASSED, 200, 200, "fp-b");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, List.of(rejected, publicPass));
+
+        assertThat(rejected.getFailureCause()).isEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
+    void specWithoutAnySecurity_minority401WhileOthersSucceed_isNotBlamedOnTheToken() {
+        // Ca thật (ai-recruitment-agent): spec không khai security nên requiresAuth=false ở mọi endpoint; API trả 401 cho id sai kiểu
+        // trong khi các test khác cùng token nhận 200 - đó là hành vi của API, không phải token hỏng.
+        endpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/api/hr/jobs/{id}").requiresAuth(false).build();
+        TestResult wrongType401 = result(TestResultStatus.FAILED, 400, 401, "fp-a");
+        List<TestResult> results = new ArrayList<>(List.of(wrongType401));
+        for (int i = 0; i < 3; i++) {
+            results.add(result(TestResultStatus.PASSED, 200, 200, "fp-ok" + i));
+        }
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, results);
+
+        assertThat(wrongType401.getFailureCause()).isNotEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
+    void specWithoutAnySecurity_majority401_stillBlamedOnTheToken() {
+        // Token hết hạn thật: hầu hết test bị từ chối, chỉ 1 endpoint công khai vẫn 200 - không được coi là bằng chứng token tốt.
+        endpoint = Endpoint.builder().id(UUID.randomUUID()).method("GET").path("/api/hr/jobs").requiresAuth(false).build();
+        List<TestResult> results = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            results.add(result(TestResultStatus.FAILED, 200, 401, "fp" + i));
+        }
+        results.add(result(TestResultStatus.PASSED, 200, 200, "fp-public"));
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, results);
+
+        assertThat(results.subList(0, 3)).allSatisfy(r -> assertThat(r.getFailureCause()).isEqualTo(FailureCause.AUTH_CONFIG));
     }
 
     @Test

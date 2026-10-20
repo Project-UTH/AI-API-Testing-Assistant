@@ -1,6 +1,6 @@
 import { apiFetch } from "@/lib/api"
 
-export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY"
+export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY" | "BUSINESS"
 
 export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
 
@@ -9,7 +9,7 @@ export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
  * AI_CHECKLIST = AI sinh, đạt mục checklist; AI_EXTRA = AI đề xuất thêm ngoài checklist;
  * SYSTEM_FILLED = hệ thống tự bù mục AI làm thiếu/sai.
  */
-export type TestCaseGenerationOrigin = "AI_CHECKLIST" | "AI_EXTRA" | "SYSTEM_FILLED"
+export type TestCaseGenerationOrigin = "AI_CHECKLIST" | "AI_EXTRA" | "SYSTEM_FILLED" | "AI_BUSINESS" | "AI_BASELINE"
 
 export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label: string; className: string; title: string }> = {
   AI_CHECKLIST: {
@@ -27,6 +27,21 @@ export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label
     className: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
     title: "AI làm thiếu/sai mục checklist này, hệ thống tự tạo từ 1 case hợp lệ AI đã sinh (sửa đúng 1 chỗ)",
   },
+  AI_BUSINESS: {
+    label: "AI đoán nghiệp vụ",
+    className: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    title: "Luật nghiệp vụ do AI đoán, không có trong spec. Là GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả, không tính vào độ bao phủ",
+  },
+  AI_BASELINE: {
+    label: "Test gốc",
+    className: "bg-green-500/10 text-green-700 dark:text-green-400",
+    title: "Test gốc hợp lệ do AI sinh và đã được chạy thật xác nhận Pass, dùng làm nền để hệ thống bổ sung checklist",
+  },
+}
+
+/** Giá trị nguồn gốc lạ (backend thêm mới mà frontend chưa biết) không được làm trắng cả trang. */
+export function originDisplay(origin: TestCaseGenerationOrigin) {
+  return GENERATION_ORIGIN_DISPLAY[origin] ?? { label: origin, className: "bg-muted text-muted-foreground", title: "Nguồn gốc test case" }
 }
 
 export type ChecklistItemStatus = "ALREADY_COVERED" | "AI_SATISFIED" | "SYSTEM_FILLED" | "NOT_FILLABLE" | "NOT_APPLICABLE"
@@ -135,6 +150,8 @@ export interface TestCase {
   pathParamFallbacks: string | null
   source: TestCaseSource
   authOverride: TestCaseAuthOverride
+  /** Module 17 (3.1) - profile xác thực (vai trò) test case dùng; null = token mặc định của project. */
+  authProfileId: string | null
   /** Module 15h - null cho case Security/MANUAL/dữ liệu tạo trước 15h. */
   generationOrigin: TestCaseGenerationOrigin | null
   /** Module 15h - mô tả mục checklist EP/BVA mà case này đạt (hệ thống chấm theo nội dung). */
@@ -143,6 +160,9 @@ export interface TestCase {
   createdAt: string
   dependencies: TestCaseDependency[]
   assertions: TestCaseAssertion[]
+  /** Module 17 (17b-2) - "MASS_ASSIGNMENT" cho test probe bảo mật tự sinh; probeFields = tên field đã tiêm. */
+  probeKind?: string | null
+  probeFields?: string[]
 }
 
 export interface ReliabilityDisplay {
@@ -195,6 +215,8 @@ export interface TestCaseInput {
   resolvedPath?: string
   pathParamFallbacks?: string
   authOverride?: TestCaseAuthOverride
+  /** null = token mặc định của project. */
+  authProfileId?: string | null
   dependencies?: TestCaseDependencyInput[]
   assertions?: TestCaseAssertionInput[]
 }
@@ -204,27 +226,13 @@ export interface GenerateTestCasesOptions {
   includePositive?: boolean
   includeNegative?: boolean
   includeBoundary?: boolean
+  /** Nhóm nghiệp vụ: AI đoán luật không có trong spec (mọi lý do đều là GIẢ ĐỊNH). */
+  includeBusiness?: boolean
 }
 
 /** Báo cáo checklist của lần sinh nhóm Basic gần nhất - null nếu chưa có (Module 15h). */
 export function getLatestGenerationPlan(projectId: string, endpointId: string) {
   return apiFetch<GenerationPlanSummary | null>(`/projects/${projectId}/endpoints/${endpointId}/generation-plan`)
-}
-
-export function generateTestCases(
-  projectId: string,
-  endpointId: string,
-  options?: GenerateTestCasesOptions
-): Promise<GenerateTestCasesResponse> {
-  return apiFetch<GenerateTestCasesResponse>(`/projects/${projectId}/endpoints/${endpointId}/generate-tests`, {
-    method: "POST",
-    body: JSON.stringify({
-      includeSecurity: options?.includeSecurity ?? false,
-      includePositive: options?.includePositive ?? false,
-      includeNegative: options?.includeNegative ?? false,
-      includeBoundary: options?.includeBoundary ?? false,
-    }),
-  })
 }
 
 export function setTestCaseLocked(

@@ -4,7 +4,9 @@ Context nền cho Claude Code khi làm việc trong repo `AI-API-Testing-Assista
 
 ## Giới thiệu dự án
 
-Hệ thống kiểm thử API thông minh: import OpenAPI/Swagger, dùng AI sinh test case, cho phép người dùng review/sửa trước khi chạy, thực thi test, phân tích kết quả và hỗ trợ sinh bug report.
+Hệ thống kiểm thử API: import OpenAPI/Swagger, sinh test case theo hướng **hybrid** (AI chỉ sinh 1 test gốc hợp lệ được CHẠY THẬT để xác nhận; hệ thống tất định bù checklist EP/BVA/bảo mật/phân quyền, 0 token; AI nghiệp vụ là tuỳ chọn, gắn nhãn GIẢ ĐỊNH), cho phép người dùng review/sửa trước khi chạy, thực thi test, phân loại nguyên nhân Fail và hỗ trợ sinh bug report. Việc sinh chạy NỀN (job) có khung giám sát từng bước, huỷ được.
+
+**Nguyên tắc cốt lõi:** kiểm thử để PHÁT HIỆN lỗi của API đích và báo cho đồ án đích, KHÔNG sửa test/kỳ vọng cho khớp hành vi sai để test Pass (vd API trả 401 thay vì 400 là phát hiện thật, nhãn `API_WRONG_STATUS`, không được bỏ qua). AI là trợ lý có kiểm chứng; hệ thống tất định đảm bảo chất lượng. Hướng tiếp theo: đo độ chính xác bằng lỗi cài sẵn (roadmap 17o).
 
 Đồ án môn học, nhóm 2-4 người.
 
@@ -35,7 +37,8 @@ AI-API-Testing-Assistant/
 
 - Mỗi Project thuộc về 1 User tạo ra nó
 - Endpoint sinh ra từ import OpenAPI/Swagger
-- TestCase do AI sinh hoặc người dùng tự thêm/sửa
+- TestCase do AI sinh (test gốc `AI_BASELINE`, nghiệp vụ `BUSINESS`), hệ thống bù (`SYSTEM_FILLED`) hoặc người dùng tự thêm/sửa
+- GenerationJob → GenerationJobStep (1-n): một lần bấm "Sinh test case", ghi từng bước hệ thống/AI để giám sát
 - TestExecution là 1 lần chạy, có thể gồm nhiều TestResult
 
 ## Quy tắc bắt buộc
@@ -44,7 +47,8 @@ AI-API-Testing-Assistant/
 - **Kiến trúc backend**: theo `.claude/skills/springboot-architecture/SKILL.md` — Controller mỏng, business logic ở Service
 - **Bảo mật**: API Key/Token của target API phải mã hoá AES-256 trước khi lưu DB, không log ra console/file dưới mọi hình thức
 - **Auth**: JWT, mọi endpoint trừ `/auth/*` đều yêu cầu token hợp lệ. `User` có `role` (`USER`/`ADMIN`) — route `/api/v1/admin/**` chỉ `ADMIN` mới gọi được (xem Module 11 Trang Admin trong roadmap)
-- **Async**: sinh test case AI và thực thi test suite không được block request chính — dùng `@Async`
+- **Async**: sinh test case (job nền `generation-jobs`, 202 + polling) và thực thi test suite không được block request chính — dùng `@Async`. Không đặt giới hạn thời gian cứng cho cả job; người dùng thấy từng bước và tự huỷ
+- **Enum backend ↔ frontend**: mỗi giá trị enum mới thêm ở backend (nguồn gốc test, nguyên nhân Fail, trạng thái job...) PHẢI thêm vào bảng hiển thị frontend cùng lúc (thiếu một giá trị từng làm trắng trang Test case)
 - **Prompt AI**: mọi prompt gửi cho LLM phải nằm trong `backend/src/main/resources/prompts/*.st`, load qua Spring AI `PromptTemplate` — không hardcode prompt string trực tiếp trong Java code. Sửa prompt = sửa file `.st`, không sửa logic Java
 
 ## Git workflow

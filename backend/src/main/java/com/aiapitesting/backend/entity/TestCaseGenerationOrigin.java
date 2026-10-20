@@ -11,5 +11,9 @@ package com.aiapitesting.backend.entity;
 public enum TestCaseGenerationOrigin {
     AI_CHECKLIST,
     AI_EXTRA,
-    SYSTEM_FILLED
+    SYSTEM_FILLED,
+    /** Test nghiệp vụ do AI đoán (xem {@link TestCaseSource#BUSINESS}); mọi rationale đều là GIẢ ĐỊNH, không kiểm chứng được từ spec. */
+    AI_BUSINESS,
+    /** Test gốc hợp lệ do AI sinh rồi được CHẠY THỬ xác nhận (xem BaselineVerificationService); thêm vào CUỐI enum. */
+    AI_BASELINE
 }

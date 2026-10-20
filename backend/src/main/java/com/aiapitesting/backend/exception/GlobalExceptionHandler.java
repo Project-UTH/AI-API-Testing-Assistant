@@ -4,10 +4,18 @@ import com.aiapitesting.backend.dto.response.ApiErrorResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
 @RestControllerAdvice
@@ -59,6 +67,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleProjectNotFound(ProjectNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiErrorResponse.of("PROJECT_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyRequests(TooManyRequestsException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ApiErrorResponse.of("TOO_MANY_REQUESTS", ex.getMessage()));
     }
 
     @ExceptionHandler(ForbiddenException.class)
@@ -121,6 +135,12 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("TEST_CASE_HAS_DEPENDENTS", ex.getMessage()));
     }
 
+    @ExceptionHandler(ExecutionInProgressException.class)
+    public ResponseEntity<ApiErrorResponse> handleExecutionInProgress(ExecutionInProgressException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of("EXECUTION_IN_PROGRESS", ex.getMessage()));
+    }
+
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
@@ -135,6 +155,58 @@ public class GlobalExceptionHandler {
                 .orElse("Dữ liệu đầu vào không hợp lệ");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiErrorResponse.of("VALIDATION_ERROR", message));
+    }
+
+    // Lỗi do phía gọi (client) - trước đây rơi vào handler chung bên dưới và bị trả 500 INTERNAL_ERROR làm sai lệch
+    // nghĩa: route không tồn tại, id sai định dạng, JSON hỏng, thiếu tham số, sai method/Content-Type. Không log
+    // stack trace (không phải lỗi hệ thống).
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNoResource(NoResourceFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiErrorResponse.of("NOT_FOUND", "Không tìm thấy đường dẫn yêu cầu"));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of("VALIDATION_ERROR", "Giá trị của tham số '" + ex.getName() + "' không đúng định dạng"));
+    }
+
+    @ExceptionHandler(GenerationJobNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleGenerationJobNotFound(GenerationJobNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiErrorResponse.of("NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        log.warn("Body khong doc duoc: {}", ex.getMostSpecificCause().toString());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of("VALIDATION_ERROR", "Nội dung gửi lên không đúng định dạng JSON hoặc sai kiểu dữ liệu"));
+    }
+
+    @ExceptionHandler({MissingServletRequestParameterException.class, MissingServletRequestPartException.class})
+    public ResponseEntity<ApiErrorResponse> handleMissingParameter(Exception ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of("VALIDATION_ERROR", "Thiếu tham số bắt buộc trong yêu cầu"));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodNotAllowed(HttpRequestMethodNotSupportedException ex) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ApiErrorResponse.of("METHOD_NOT_ALLOWED", "Phương thức HTTP không được hỗ trợ cho đường dẫn này"));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(ApiErrorResponse.of("UNSUPPORTED_MEDIA_TYPE", "Định dạng nội dung (Content-Type) không được hỗ trợ"));
+    }
+
+    /** Module 17 (2.1) - file upload vượt giới hạn: trước đây rơi vào handler chung và trả 500 không có thông báo rõ. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleUploadTooLarge(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ApiErrorResponse.of("PAYLOAD_TOO_LARGE", "File vượt quá giới hạn 20MB - hãy tách spec hoặc loại bớt phần không cần"));
     }
 
     @ExceptionHandler(Exception.class)

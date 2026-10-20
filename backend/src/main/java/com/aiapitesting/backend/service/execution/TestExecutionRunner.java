@@ -3,8 +3,10 @@ package com.aiapitesting.backend.service.execution;
 import com.aiapitesting.backend.dto.response.AssertionResultResponse;
 import com.aiapitesting.backend.entity.ErrorKind;
 import com.aiapitesting.backend.entity.ExecutionStatus;
+import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
@@ -49,17 +51,29 @@ public class TestExecutionRunner {
     private final TestCasePathValidator testCasePathValidator;
     private final BugReportStatusService bugReportStatusService;
     private final ExecutionFailureAnalyzer executionFailureAnalyzer;
+    private final com.aiapitesting.backend.repository.EndpointRepository endpointRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Module 16 - dữ liệu phụ thu được quanh 1 lần gọi target, truyền xuống finish() để lưu cùng TestResult. */
-    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint) {
+    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint, String schemaViolationsJson, String securityFindingsJson) {
+        Meta(Long durationMs, ErrorKind errorKind, String fingerprint) {
+            this(durationMs, errorKind, fingerprint, null, null);
+        }
+    }
+
+    public void runInBackground(
+            TestExecution execution, List<TestCase> testCases, Project project,
+            Map<UUID, List<DependencyEdge>> edgesByConsumerId, Set<UUID> autoIncludedIds,
+            Map<UUID, List<AssertionSpec>> assertionsByTestCaseId
+    ) {
+        runInBackground(execution, testCases, project, edgesByConsumerId, autoIncludedIds, assertionsByTestCaseId, false);
     }
 
     @Async
     public void runInBackground(
             TestExecution execution, List<TestCase> testCases, Project project,
             Map<UUID, List<DependencyEdge>> edgesByConsumerId, Set<UUID> autoIncludedIds,
-            Map<UUID, List<AssertionSpec>> assertionsByTestCaseId
+            Map<UUID, List<AssertionSpec>> assertionsByTestCaseId, boolean cleanupCreated
     ) {
         execution.setStatus(ExecutionStatus.RUNNING);
         testExecutionRepository.save(execution);
@@ -69,17 +83,30 @@ public class TestExecutionRunner {
         Map<UUID, TestResultStatus> statusByTestCaseId = new HashMap<>();
         Map<UUID, String> responseBodyByTestCaseId = new HashMap<>();
         List<TestResult> savedResults = new ArrayList<>();
+        List<CreatedResource> createdResources = new ArrayList<>();
 
         try {
+            Map<UUID, TestCase> testCaseById = new HashMap<>();
+            testCases.forEach(t -> testCaseById.putIfAbsent(t.getId(), t));
             for (TestCase testCase : testCases) {
                 boolean autoIncluded = autoIncludedIds.contains(testCase.getId());
+                List<DependencyEdge> ownEdges = edgesByConsumerId.getOrDefault(testCase.getId(), List.of());
+                if (!autoIncluded && isIsolatedConsumer(testCase) && !ownEdges.isEmpty()) {
+                    refreshCreatedSources(ownEdges, testCaseById, edgesByConsumerId, project, statusByTestCaseId, responseBodyByTestCaseId, createdResources);
+                }
                 runOne(execution, testCase, project, edgesByConsumerId.getOrDefault(testCase.getId(), List.of()),
                         statusByTestCaseId, responseBodyByTestCaseId, autoIncluded,
                         assertionsByTestCaseId.getOrDefault(testCase.getId(), List.of()), savedResults);
+                if (cleanupCreated) {
+                    registerOriginalParent(testCase, edgesByConsumerId, statusByTestCaseId, responseBodyByTestCaseId, createdResources);
+                }
             }
             // Module 16 - phân loại nguyên nhân fail SAU KHI cả lượt chạy xong (cần xem "anh em" cùng lượt để biết
             // N/M test cùng lỗi), RỒI MỚI chạy tự động hoá Bug Report. Trước đây onNewTestResult gọi ngay lúc lưu
             // từng kết quả - 1 lượt fail hàng loạt vì token hết hạn sẽ tự mở lại các bug đã đóng.
+            if (cleanupCreated) {
+                cleanupCreatedResources(project, createdResources);
+            }
             executionFailureAnalyzer.analyze(execution, savedResults);
             savedResults.forEach(bugReportStatusService::onNewTestResult);
             execution.setStatus(ExecutionStatus.COMPLETED);
@@ -89,6 +116,108 @@ public class TestExecutionRunner {
         } finally {
             execution.setFinishedAt(Instant.now());
             testExecutionRepository.save(execution);
+        }
+    }
+
+    /** Test POST nguồn của {{id}} đã chạy PASSED: bản ghi nó vừa tạo cũng là do lần chạy này tạo nên được dọn cùng (chỉ khi bật dọn dẹp). */
+    private void registerOriginalParent(
+            TestCase testCase, Map<UUID, List<DependencyEdge>> edgesByConsumerId, Map<UUID, TestResultStatus> statusByTestCaseId,
+            Map<UUID, String> responseBodyByTestCaseId, List<CreatedResource> createdResources
+    ) {
+        if (testCase.getEndpoint() == null || !"POST".equalsIgnoreCase(testCase.getEndpoint().getMethod())
+                || statusByTestCaseId.get(testCase.getId()) != TestResultStatus.PASSED) {
+            return;
+        }
+        String jsonPath = edgesByConsumerId.values().stream().flatMap(List::stream)
+                .filter(e -> e.sourceTestCaseId().equals(testCase.getId())).map(DependencyEdge::jsonPath).findFirst().orElse(null);
+        if (jsonPath != null) {
+            createdResources.add(new CreatedResource(testCase.getEndpoint().getPath(), extractJsonPathValue(responseBodyByTestCaseId.get(testCase.getId()), jsonPath)));
+        }
+    }
+
+    /** Tài nguyên cha do chính lần chạy này tạo (đường dẫn endpoint POST + id trích từ phản hồi) - đối tượng duy nhất được phép xoá khi dọn dẹp. */
+    private record CreatedResource(String createPath, String id) {
+    }
+
+    /**
+     * Dọn dẹp TUỲ CHỌN: xoá các tài nguyên cha do chính lần chạy này tạo, bằng endpoint DELETE có đường dẫn "{createPath}/{tham số}" của project. Không có
+     * endpoint DELETE tương ứng hoặc không trích được id thì bỏ qua; lỗi khi xoá chỉ ghi log, không đổi kết quả test, không bao giờ xoá thứ gì khác.
+     */
+    private void cleanupCreatedResources(Project project, List<CreatedResource> created) {
+        int deleted = 0;
+        int skipped = 0;
+        for (CreatedResource resource : created) {
+            if (resource.id() == null || resource.id().isBlank()) {
+                skipped++;
+                continue;
+            }
+            Endpoint deleteEndpoint = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project).stream()
+                    .filter(e -> "DELETE".equalsIgnoreCase(e.getMethod()))
+                    .filter(e -> e.getPath().matches(java.util.regex.Pattern.quote(resource.createPath()) + "/\\{[^/}]+}"))
+                    .findFirst().orElse(null);
+            if (deleteEndpoint == null) {
+                skipped++;
+                continue;
+            }
+            try {
+                TestCase teardown = TestCase.builder().endpoint(deleteEndpoint)
+                        .resolvedPath(deleteEndpoint.getPath().replaceAll("\\{[^/}]+}", java.util.regex.Matcher.quoteReplacement(resource.id())))
+                        .expectedStatus(204).build();
+                RestAssuredTestRunner.RunResult r = restAssuredTestRunner.run(project, teardown, Map.of());
+                if (r.statusCode() >= 200 && r.statusCode() < 300) {
+                    deleted++;
+                } else {
+                    log.warn("Don dep that bai: DELETE {} tra {}", teardown.getResolvedPath(), r.statusCode());
+                }
+            } catch (RuntimeException e) {
+                log.warn("Don dep that bai cho tai nguyen cua {}: {}", resource.createPath(), e.toString());
+            }
+        }
+        log.info("Don dep tai nguyen do lan chay tao: xoa {}, bo qua {}", deleted, skipped);
+    }
+
+    /** Test do hệ thống sinh (bù checklist) và test gốc AI: mỗi test dùng tài nguyên cha RIÊNG để không cộng dồn trạng thái lên nhau. */
+    private static boolean isIsolatedConsumer(TestCase testCase) {
+        return testCase.getGenerationOrigin() == TestCaseGenerationOrigin.SYSTEM_FILLED
+                || testCase.getGenerationOrigin() == TestCaseGenerationOrigin.AI_BASELINE;
+    }
+
+    /**
+     * Gọi LẠI test POST tạo tài nguyên (nguồn của {{id}}) ngay trước test con, để test con chạy trên tài nguyên cha MỚI: tránh lỗi 409/cộng dồn khi
+     * nhiều test cùng tạo con trên 1 cha (vd tổng trọng số rubric) và tránh test DELETE xoá mất cha dùng chung của các test sau. Đây là bước chuẩn bị,
+     * KHÔNG lưu thành kết quả test và không đổi kết luận. Chỉ áp cho nguồn là POST không phụ thuộc test khác; nguồn gốc đã không PASSED thì bỏ qua
+     * (test con sẽ BLOCKED như cũ). Lỗi khi chuẩn bị thì giữ tài nguyên cũ, không giấu lỗi của test con.
+     */
+    private void refreshCreatedSources(
+            List<DependencyEdge> edges, Map<UUID, TestCase> testCaseById, Map<UUID, List<DependencyEdge>> edgesByConsumerId,
+            Project project, Map<UUID, TestResultStatus> statusByTestCaseId, Map<UUID, String> responseBodyByTestCaseId,
+            List<CreatedResource> createdResources
+    ) {
+        for (UUID sourceId : edges.stream().map(DependencyEdge::sourceTestCaseId).distinct().toList()) {
+            TestCase source = testCaseById.get(sourceId);
+            if (source == null || source.getEndpoint() == null || !"POST".equalsIgnoreCase(source.getEndpoint().getMethod())
+                    || !edgesByConsumerId.getOrDefault(sourceId, List.of()).isEmpty()
+                    || statusByTestCaseId.get(sourceId) != TestResultStatus.PASSED) {
+                continue;
+            }
+            Set<String> placeholders = new LinkedHashSet<>();
+            placeholders.addAll(testCasePathValidator.extractPlaceholders(source.getResolvedPath()));
+            placeholders.addAll(testCasePathValidator.extractPlaceholders(source.getRequestBody()));
+            placeholders.addAll(testCasePathValidator.extractPlaceholders(source.getRequestHeaders()));
+            Map<String, String> fallbacks = parseFallbacks(source.getPathParamFallbacks());
+            if (!fallbacks.keySet().containsAll(placeholders)) {
+                continue;
+            }
+            try {
+                RestAssuredTestRunner.RunResult fresh = restAssuredTestRunner.run(project, source, fallbacks);
+                if (fresh.statusCode() >= 200 && fresh.statusCode() < 300 && fresh.responseBody() != null) {
+                    responseBodyByTestCaseId.put(sourceId, fresh.responseBody());
+                    String jsonPath = edges.stream().filter(e -> e.sourceTestCaseId().equals(sourceId)).map(DependencyEdge::jsonPath).findFirst().orElse("$.id");
+                    createdResources.add(new CreatedResource(source.getEndpoint().getPath(), extractJsonPathValue(fresh.responseBody(), jsonPath)));
+                }
+            } catch (RuntimeException e) {
+                log.warn("Khong tao duoc tai nguyen cha moi cho test con (giu tai nguyen cu): {}", e.toString());
+            }
         }
     }
 
@@ -148,18 +277,29 @@ public class TestExecutionRunner {
         long startedNanos = System.nanoTime();
         try {
             RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
-            Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint);
-            boolean statusMatches = Objects.equals(result.statusCode(), testCase.getExpectedStatus());
+            // Test probe mass-assignment (17b-2) tự chấm theo phản hồi (400/422 = từ chối = đạt; phản chiếu field lạ = Fail); các mã khác
+            // (401/403/404...) không kết luận được nên rơi về luật mã trạng thái thường.
+            MassAssignmentProbe.Outcome probe = probeOutcomeOf(testCase, result);
+            boolean statusMatches = probe != null && probe.verdict() != MassAssignmentProbe.Verdict.INCONCLUSIVE
+                    ? probe.verdict() == MassAssignmentProbe.Verdict.PASS
+                    : Objects.equals(result.statusCode(), testCase.getExpectedStatus());
+            // Quét 1 lần trên body THÔ; body lưu/hiển thị là bản đã che. Assertion + dependency vẫn dùng body thô (bên dưới).
+            SensitiveDataScanner.Scan scan = scanSensitive(testCase, result.responseBody());
+            Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
+                    statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null,
+                    securityFindingsJsonOf(result.statusCode(), scan, probeFindingsOf(probe)));
 
             // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
             // status code đã sai.
             List<AssertionResultResponse> assertionResults = statusMatches
-                    ? evaluateAssertions(result.responseBody(), assertionSpecs)
+                    ? maskAssertionValues(evaluateAssertions(result.responseBody(), assertionSpecs), scan)
                     : List.of();
             boolean allAssertionsPassed = assertionResults.stream().allMatch(AssertionResultResponse::passed);
             TestResultStatus status = (statusMatches && allAssertionsPassed) ? TestResultStatus.PASSED : TestResultStatus.FAILED;
 
-            finish(execution, testCase, status, result.statusCode(), truncate(result.responseBody()), null,
+            // Che TRƯỚC khi cắt ngắn: cắt trước sẽ làm JSON hỏng và bí mật nằm lại trong text.
+            finish(execution, testCase, status, result.statusCode(),
+                    truncate(scan.maskedBody() != null ? scan.maskedBody() : result.responseBody()), null,
                     statusByTestCaseId, responseBodyByTestCaseId, result.responseBody(), autoIncluded,
                     writeAssertionResultsAsJson(assertionResults), meta, savedResults);
         } catch (Exception e) {
@@ -169,6 +309,102 @@ public class TestExecutionRunner {
                     "Không gọi được target API: " + e.getMessage(),
                     statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null,
                     new Meta(elapsedMillis(startedNanos), ErrorKindClassifier.classify(e), fingerprint), savedResults);
+        }
+    }
+
+    /**
+     * Cảnh báo phản hồi lệch schema của spec - CHỈ khi mã trạng thái đúng kỳ vọng và là 2xx có schema. Mọi lỗi ở bước này
+     * (schema hỏng, endpoint không đọc được) chỉ bỏ qua: tính năng cảnh báo không được làm hỏng lượt chạy.
+     */
+    /**
+     * Module 17 (17b) - quét dữ liệu nhạy cảm trong response (mọi mã trạng thái, để che body lưu lại). Mọi lỗi chỉ bỏ qua (ghi log): tính
+     * năng cảnh báo không được làm hỏng lượt chạy.
+     */
+    private SensitiveDataScanner.Scan scanSensitive(TestCase testCase, String responseBody) {
+        try {
+            if (testCase.getEndpoint() == null) {
+                return SensitiveDataScanner.Scan.EMPTY;
+            }
+            var endpoint = testCase.getEndpoint();
+            return SensitiveDataScanner.scanAndMask(endpoint.getPath(), endpoint.getMethod(), endpoint.effectiveRequiresAuth(),
+                    testCase.getRequestBody(), responseBody);
+        } catch (Exception e) {
+            log.warn("Khong quet duoc du lieu nhay cam cho test case {}: {}", testCase.getId(), e.toString());
+            return SensitiveDataScanner.Scan.EMPTY;
+        }
+    }
+
+    /** Cảnh báo quét dữ liệu nhạy cảm chỉ lấy từ response 2xx; phát hiện của probe (17b-2) luôn được ghi. CHỈ có đường dẫn/quy tắc/mô tả, không có giá trị. */
+    private String securityFindingsJsonOf(Integer statusCode, SensitiveDataScanner.Scan scan, List<SensitiveDataScanner.Finding> probeFindings) {
+        try {
+            List<SensitiveDataScanner.Finding> all = new ArrayList<>(probeFindings);
+            if (statusCode != null && statusCode >= 200 && statusCode <= 299) {
+                all.addAll(scan.findings());
+            }
+            return all.isEmpty() ? null : objectMapper.writeValueAsString(all);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Chấm probe mass-assignment; null nếu test case không phải probe hoặc không đọc được danh sách field đã tiêm. */
+    private MassAssignmentProbe.Outcome probeOutcomeOf(TestCase testCase, RestAssuredTestRunner.RunResult result) {
+        if (!MassAssignmentProbe.KIND.equals(testCase.getProbeKind()) || testCase.getProbeFieldsJson() == null) {
+            return null;
+        }
+        try {
+            List<MassAssignmentProbe.Field> fields = objectMapper.readValue(testCase.getProbeFieldsJson(),
+                    new com.fasterxml.jackson.core.type.TypeReference<List<MassAssignmentProbe.Field>>() {
+                    });
+            return MassAssignmentProbe.evaluate(result.statusCode(), result.responseBody(), fields);
+        } catch (Exception e) {
+            log.warn("Khong doc duoc field probe cua test case {}: {}", testCase.getId(), e.toString());
+            return null;
+        }
+    }
+
+    private List<SensitiveDataScanner.Finding> probeFindingsOf(MassAssignmentProbe.Outcome probe) {
+        if (probe == null || probe.verdict() != MassAssignmentProbe.Verdict.FAIL) {
+            return List.of();
+        }
+        if (probe.reflected().isEmpty()) {
+            return List.of(new SensitiveDataScanner.Finding("(request)", MassAssignmentProbe.RULE_SERVER_ERROR,
+                    SensitiveDataScanner.Severity.HIGH, probe.detail()));
+        }
+        return probe.reflected().stream()
+                .map(f -> new SensitiveDataScanner.Finding(f.name(), MassAssignmentProbe.RULE_ACCEPTED, SensitiveDataScanner.Severity.HIGH,
+                        "API nhận field '" + f.name() + "' không khai báo trong schema (giá trị đánh dấu xuất hiện lại trong phản hồi)"))
+                .toList();
+    }
+
+    /** Kết quả assertion lưu "giá trị thực tế": nếu đúng là giá trị nhạy cảm đã che thì thay bằng dấu che. */
+    private List<AssertionResultResponse> maskAssertionValues(List<AssertionResultResponse> results, SensitiveDataScanner.Scan scan) {
+        if (scan.sensitiveValues().isEmpty()) {
+            return results;
+        }
+        return results.stream().map(r -> r.actualValue() != null && scan.sensitiveValues().contains(r.actualValue())
+                ? new AssertionResultResponse(r.jsonPath(), r.operator(), r.expectedValue(), SensitiveDataScanner.MASK_MARKER, r.passed())
+                : r).toList();
+    }
+
+    private String schemaViolationsJsonOf(TestCase testCase, Integer statusCode, String responseBody) {
+        try {
+            if (statusCode == null || statusCode < 200 || statusCode > 299 || testCase.getEndpoint() == null) {
+                return null;
+            }
+            String allSchemas = testCase.getEndpoint().getResponseSchemas();
+            if (allSchemas == null || allSchemas.isBlank()) {
+                return null;
+            }
+            com.fasterxml.jackson.databind.JsonNode schema = objectMapper.readTree(allSchemas).get(String.valueOf(statusCode));
+            if (schema == null) {
+                return null;
+            }
+            List<String> violations = ResponseSchemaValidator.validate(schema.toString(), responseBody);
+            return violations.isEmpty() ? null : objectMapper.writeValueAsString(violations);
+        } catch (Exception e) {
+            log.warn("Khong doi chieu duoc schema response cua test case {}: {}", testCase.getId(), e.toString());
+            return null;
         }
     }
 
@@ -199,6 +435,8 @@ public class TestExecutionRunner {
                 .durationMs(meta.durationMs())
                 .errorKind(meta.errorKind())
                 .testCaseFingerprint(meta.fingerprint())
+                .schemaViolationsJson(meta.schemaViolationsJson())
+                .securityFindingsJson(meta.securityFindingsJson())
                 .build();
         testResultRepository.save(result);
         savedResults.add(result);

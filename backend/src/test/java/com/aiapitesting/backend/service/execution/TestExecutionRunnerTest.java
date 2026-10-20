@@ -55,6 +55,9 @@ class TestExecutionRunnerTest {
     @Mock
     private ExecutionFailureAnalyzer executionFailureAnalyzer;
 
+    @Mock
+    private com.aiapitesting.backend.repository.EndpointRepository endpointRepository;
+
     private TestExecutionRunner runner;
 
     private Project project;
@@ -65,7 +68,7 @@ class TestExecutionRunnerTest {
     void setUp() {
         runner = new TestExecutionRunner(
                 testExecutionRepository, testResultRepository, restAssuredTestRunner,
-                testCasePathValidator, bugReportStatusService, executionFailureAnalyzer);
+                testCasePathValidator, bugReportStatusService, executionFailureAnalyzer, endpointRepository);
         project = Project.builder().id(UUID.randomUUID()).targetBaseUrl("https://petstore.example.com").build();
         endpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("GET").path("/pet/{petId}").build();
         execution = TestExecution.builder().id(UUID.randomUUID()).project(project)
@@ -186,6 +189,73 @@ class TestExecutionRunnerTest {
     }
 
     @Test
+    void runInBackground_systemFilledConsumers_eachGetTheirOwnFreshParentResource() {
+        Endpoint createEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/pet").build();
+        TestCase source = TestCase.builder().id(UUID.randomUUID()).endpoint(createEndpoint)
+                .resolvedPath("/pet").requestBody("{}").expectedStatus(201).createdAt(Instant.now()).build();
+        TestCase first = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).resolvedPath("/pet/{{petId}}")
+                .pathParamFallbacks("{\"petId\":\"999\"}").expectedStatus(200).createdAt(Instant.now())
+                .generationOrigin(com.aiapitesting.backend.entity.TestCaseGenerationOrigin.SYSTEM_FILLED).build();
+        TestCase second = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).resolvedPath("/pet/{{petId}}")
+                .pathParamFallbacks("{\"petId\":\"999\"}").expectedStatus(200).createdAt(Instant.now())
+                .generationOrigin(com.aiapitesting.backend.entity.TestCaseGenerationOrigin.SYSTEM_FILLED).build();
+        // Mỗi lần gọi test nguồn trả 1 id mới: lần chạy chính thức -> 1, hai lần làm mới trước test con -> 2 và 3
+        when(restAssuredTestRunner.run(eq(project), eq(source), eq(Map.of())))
+                .thenReturn(new RestAssuredTestRunner.RunResult(201, "{\"id\":1}"), new RestAssuredTestRunner.RunResult(201, "{\"id\":2}"),
+                        new RestAssuredTestRunner.RunResult(201, "{\"id\":3}"));
+        when(restAssuredTestRunner.run(eq(project), any(TestCase.class), org.mockito.ArgumentMatchers.argThat(m -> m != null && !m.isEmpty())))
+                .thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+        DependencyEdge edge = new DependencyEdge(source.getId(), "Tao pet", "$.id", "petId");
+
+        runner.runInBackground(execution, List.of(source, first, second), project,
+                Map.of(first.getId(), List.of(edge), second.getId(), List.of(edge)), Set.of(source.getId()), Map.of());
+
+        verify(restAssuredTestRunner).run(eq(project), eq(first), eq(Map.of("petId", "2")));
+        verify(restAssuredTestRunner).run(eq(project), eq(second), eq(Map.of("petId", "3")));
+        // Chỉ 2 kết quả test + 1 kết quả nguồn được lưu: các lần làm mới là bước chuẩn bị, không thành kết quả
+        verify(testResultRepository, times(3)).save(any(TestResult.class));
+    }
+
+    private void runWithFreshParent(boolean cleanup) {
+        Endpoint createEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/pet").build();
+        Endpoint deleteEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("DELETE").path("/pet/{petId}").build();
+        TestCase source = TestCase.builder().id(UUID.randomUUID()).endpoint(createEndpoint)
+                .resolvedPath("/pet").requestBody("{}").expectedStatus(201).createdAt(Instant.now()).build();
+        TestCase child = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).resolvedPath("/pet/{{petId}}")
+                .pathParamFallbacks("{\"petId\":\"999\"}").expectedStatus(200).createdAt(Instant.now())
+                .generationOrigin(com.aiapitesting.backend.entity.TestCaseGenerationOrigin.SYSTEM_FILLED).build();
+        when(restAssuredTestRunner.run(eq(project), eq(source), eq(Map.of())))
+                .thenReturn(new RestAssuredTestRunner.RunResult(201, "{\"id\":1}"), new RestAssuredTestRunner.RunResult(201, "{\"id\":2}"));
+        when(restAssuredTestRunner.run(eq(project), eq(child), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+        org.mockito.Mockito.lenient().when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(createEndpoint, endpoint, deleteEndpoint));
+        org.mockito.Mockito.lenient().when(restAssuredTestRunner.run(eq(project), org.mockito.ArgumentMatchers.argThat(t -> t != null && t.getEndpoint() == deleteEndpoint), any()))
+                .thenReturn(new RestAssuredTestRunner.RunResult(204, ""));
+
+        runner.runInBackground(execution, List.of(source, child), project,
+                Map.of(child.getId(), List.of(new DependencyEdge(source.getId(), "Tao pet", "$.id", "petId"))), Set.of(source.getId()), Map.of(), cleanup);
+    }
+
+    @Test
+    void runInBackground_cleanupEnabled_deletesOnlyTheParentCreatedForTheChildTest() {
+        runWithFreshParent(true);
+
+        ArgumentCaptor<TestCase> captor = ArgumentCaptor.forClass(TestCase.class);
+        verify(restAssuredTestRunner, org.mockito.Mockito.atLeastOnce()).run(eq(project), captor.capture(), any());
+        List<TestCase> deletes = captor.getAllValues().stream().filter(t -> "DELETE".equals(t.getEndpoint().getMethod())).toList();
+        // Chỉ xoá cha do CHÍNH lần chạy này tạo: cha của test nguồn (id=1) và cha mới cho test con (id=2); không xoá gì khác
+        assertThat(deletes).extracting(TestCase::getResolvedPath).containsExactlyInAnyOrder("/pet/1", "/pet/2");
+    }
+
+    @Test
+    void runInBackground_cleanupDisabled_neverCallsDelete() {
+        runWithFreshParent(false);
+
+        ArgumentCaptor<TestCase> captor = ArgumentCaptor.forClass(TestCase.class);
+        verify(restAssuredTestRunner, org.mockito.Mockito.atLeastOnce()).run(eq(project), captor.capture(), any());
+        assertThat(captor.getAllValues()).noneMatch(t -> "DELETE".equals(t.getEndpoint().getMethod()));
+    }
+
+    @Test
     void runInBackground_dependencySourceNotPassed_marksConsumerBlockedWithoutCallingRunnerForIt() {
         Endpoint createEndpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/pet").build();
         TestCase source = TestCase.builder().id(UUID.randomUUID()).endpoint(createEndpoint)
@@ -294,6 +364,79 @@ class TestExecutionRunnerTest {
         assertThat(captor.getValue().getDurationMs()).isNotNull().isGreaterThanOrEqualTo(0);
         assertThat(captor.getValue().getErrorKind()).isNull();
         assertThat(captor.getValue().getTestCaseFingerprint()).hasSize(64);
+    }
+
+    // ---- Module 17 (17b) - quét dữ liệu nhạy cảm trong response ----
+
+    @Test
+    void runInBackground_responseWithSensitiveField_savesFindingWithoutTheRealValue_andDoesNotChangeStatus() {
+        TestCase testCase = simpleCase();
+        when(restAssuredTestRunner.run(any(), any(), any()))
+                .thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"id\":1,\"passwordHash\":\"$2a$10$REAL-HASH-VALUE-abcdefghijk\"}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.PASSED); // chỉ là cảnh báo, không Fail
+        assertThat(captor.getValue().getSecurityFindingsJson()).contains("passwordHash").doesNotContain("REAL-HASH-VALUE");
+        // body lưu/hiển thị đã che giá trị, các field khác còn nguyên
+        assertThat(captor.getValue().getResponseBody()).doesNotContain("REAL-HASH-VALUE").contains("\"id\":1")
+                .contains(SensitiveDataScanner.MASK_MARKER);
+    }
+
+    @Test
+    void runInBackground_cleanResponseOrNon2xx_hasNoFindings() {
+        TestCase ok = simpleCase();
+        TestCase notFound = simpleCase();
+        when(restAssuredTestRunner.run(any(), eq(ok), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"name\":\"x\"}"));
+        when(restAssuredTestRunner.run(any(), eq(notFound), any())).thenReturn(new RestAssuredTestRunner.RunResult(404, "{\"password\":\"abcdefgh\"}"));
+
+        runner.runInBackground(execution, List.of(ok, notFound), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(r -> assertThat(r.getSecurityFindingsJson()).isNull());
+    }
+
+    // ---- Module 17 (17b-2) - probe mass-assignment ----
+
+    private TestCase probeCase() {
+        TestCase testCase = simpleCase();
+        testCase.setProbeKind(MassAssignmentProbe.KIND);
+        testCase.setProbeFieldsJson("[{\"name\":\"role\",\"type\":\"STRING\",\"sentinel\":\"zz_probe_abcd1234\"}]");
+        return testCase;
+    }
+
+    @Test
+    void runInBackground_probeWhoseSentinelIsEchoed_failsWithFindingEvenThoughStatusMatches() {
+        TestCase testCase = probeCase();
+        when(restAssuredTestRunner.run(any(), any(), any()))
+                .thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"id\":1,\"role\":\"zz_probe_abcd1234\"}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.FAILED);
+        assertThat(captor.getValue().getSecurityFindingsJson()).contains(MassAssignmentProbe.RULE_ACCEPTED).contains("role");
+    }
+
+    @Test
+    void runInBackground_probeRejectedWith400_orIgnored_passesEvenThoughStatusDiffersFromExpected() {
+        TestCase rejected = probeCase();
+        TestCase ignored = probeCase();
+        when(restAssuredTestRunner.run(any(), eq(rejected), any())).thenReturn(new RestAssuredTestRunner.RunResult(400, "{\"error\":\"unknown field\"}"));
+        when(restAssuredTestRunner.run(any(), eq(ignored), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"id\":1,\"role\":\"member\"}"));
+
+        runner.runInBackground(execution, List.of(rejected, ignored), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(r -> {
+            assertThat(r.getStatus()).isEqualTo(TestResultStatus.PASSED);
+            assertThat(r.getSecurityFindingsJson()).isNull();
+        });
     }
 
     @Test

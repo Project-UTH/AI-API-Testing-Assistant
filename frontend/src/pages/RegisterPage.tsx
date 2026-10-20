@@ -22,6 +22,7 @@ export function RegisterPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [formError, setFormError] = useState<string | null>(null)
 
   const passwordMismatch =
     confirmPassword.length > 0 && password !== confirmPassword
@@ -36,9 +37,19 @@ export function RegisterPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    // noValidate + kiểm tra tay: thông báo native của trình duyệt bằng tiếng Anh, lẫn với giao diện tiếng Việt.
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setFormError("Vui lòng nhập email hợp lệ")
+      return
+    }
+    if (password.length < 8) {
+      setFormError("Mật khẩu cần tối thiểu 8 ký tự")
+      return
+    }
     if (password !== confirmPassword) {
       return
     }
+    setFormError(null)
     mutation.mutate()
   }
 
@@ -54,7 +65,7 @@ export function RegisterPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
             <div className="flex flex-col gap-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -93,7 +104,8 @@ export function RegisterPage() {
                 </p>
               )}
             </div>
-            {mutation.isError && (
+            {formError && <p className="text-sm text-destructive">{formError}</p>}
+            {!formError && mutation.isError && (
               <p className="text-sm text-destructive">
                 {mutation.error instanceof ApiError
                   ? mutation.error.message

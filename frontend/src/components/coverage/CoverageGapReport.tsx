@@ -1,19 +1,44 @@
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { CheckCircle2, CircleAlert, Loader2, MinusCircle, Wand2, X } from "lucide-react"
+import { CheckCircle2, CircleAlert, Loader2, MinusCircle, ShieldAlert, Wand2, X } from "lucide-react"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { cn } from "@/lib/utils"
 import {
+  CHECKLIST_CATEGORIES,
   coverageCounts,
   fillCoverageGaps,
+  isCountedCategory,
+  scopeIncludes,
+  scopeLabel,
+  updateCoverageScope,
+  type ChecklistCategory,
   type CoverageDimension,
   type CoverageFillResult,
   type CoverageRunStatus,
+  type CoverageScope,
   type EndpointCoverage,
+  setEndpointRequiresAuth,
 } from "@/lib/coverage"
+
+const SCOPE_NAMES: Record<ChecklistCategory, string> = {
+  POSITIVE: "Positive",
+  NEGATIVE: "Negative",
+  BOUNDARY: "Boundary",
+  SECURITY: "Security",
+}
 
 /** Thứ tự nhóm = thứ tự đọc tự nhiên: 4 loại checklist trước, rồi mã trạng thái, quan hệ endpoint, phân quyền. */
 const GROUPS = [
@@ -29,6 +54,16 @@ const GROUPS = [
     rule: "Biên khai rõ trong spec (đúng biên + ngay ngoài biên) · giới hạn int32/int64 · biên ngầm (0, số âm, chuỗi rỗng) · id không tồn tại.",
   },
   { category: "SECURITY", title: "Security", rule: "Gọi thiếu token · gọi với token sai." },
+  {
+    category: "AUTHZ",
+    title: "Phân quyền theo vai trò",
+    rule: "Mỗi ô (endpoint × vai trò) đã khai trong Ma trận phân quyền cần 1 test: vai trò được phép → 2xx, bị cấm → 403/401.",
+  },
+  {
+    category: "OWASP",
+    title: "Bảo mật OWASP: mass assignment",
+    rule: "Gửi thêm field đặc quyền không khai báo (role, isAdmin, status, price...). API phải bỏ qua hoặc từ chối; Fail nếu nhận và trả lại. Chỉ chạy khi bật, vì gửi request GHI thật.",
+  },
   { category: "STATUS_CODE", title: "Mã trạng thái spec khai báo", rule: "Mỗi mã cần ít nhất 1 test case kỳ vọng đúng mã đó." },
   {
     category: "RELATION",
@@ -79,6 +114,52 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
   const [showCovered, setShowCovered] = useState(false)
   const [fillResult, setFillResult] = useState<CoverageFillResult | null>(null)
   const counts = coverageCounts(endpoint)
+  // Nhóm theo spec (mã trạng thái/quan hệ/phân quyền) không thuộc loại test nào nên không tính vào % - ghi chú 1 lần
+  // ở nhóm đầu tiên để không bị đọc nhầm là phần của "Cần kiểm".
+  const firstSpecCategory = GROUPS.find(
+    (g) => !isCountedCategory(g.category) && endpoint.dimensions.some((d) => d.category === g.category)
+  )?.category
+
+  const scopeMutation = useMutation({
+    mutationFn: (scope: Pick<CoverageScope, "positive" | "negative" | "boundary" | "security"> & { owasp?: boolean }) =>
+      updateCoverageScope(projectId, endpoint.endpointId, scope),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
+      queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
+    },
+  })
+
+  const authMutation = useMutation({
+    mutationFn: (requiresAuth: boolean | null) => setEndpointRequiresAuth(projectId, endpoint.endpointId, requiresAuth),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
+      queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
+    },
+  })
+
+  const [owaspConfirm, setOwaspConfirm] = useState(false)
+
+  function setOwasp(value: boolean) {
+    scopeMutation.mutate({
+      positive: endpoint.scope.positive,
+      negative: endpoint.scope.negative,
+      boundary: endpoint.scope.boundary,
+      security: endpoint.scope.security,
+      owasp: value,
+    })
+  }
+
+  function toggleScope(category: ChecklistCategory) {
+    const next = {
+      positive: endpoint.scope.positive,
+      negative: endpoint.scope.negative,
+      boundary: endpoint.scope.boundary,
+      security: endpoint.scope.security,
+    }
+    const key = category.toLowerCase() as keyof typeof next
+    next[key] = !next[key]
+    scopeMutation.mutate(next)
+  }
 
   const mutation = useMutation({
     mutationFn: (itemKeys: string[]) => fillCoverageGaps(projectId, endpoint.endpointId, itemKeys),
@@ -97,9 +178,141 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
 
   return (
     <div className="flex flex-col gap-3 text-sm">
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Loại test case được đo độ bao phủ">
+        <span className="text-xs text-muted-foreground">Đo độ bao phủ cho:</span>
+        {CHECKLIST_CATEGORIES.map((category) => {
+          const on = scopeIncludes(endpoint.scope, category)
+          const onlyOne = on && CHECKLIST_CATEGORIES.filter((c) => scopeIncludes(endpoint.scope, c)).length === 1
+          return (
+            <button
+              key={category}
+              type="button"
+              aria-pressed={on}
+              disabled={scopeMutation.isPending || onlyOne}
+              onClick={() => toggleScope(category)}
+              title={
+                onlyOne
+                  ? "Phải giữ ít nhất 1 loại"
+                  : on
+                    ? "Bấm để bỏ loại này khỏi phạm vi đo (không xoá test case nào)"
+                    : "Bấm để đưa loại này vào phạm vi đo - các mục của loại này sẽ hiện là còn thiếu nếu chưa có test"
+              }
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                on
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-muted-foreground hover:bg-muted"
+              )}
+            >
+              {SCOPE_NAMES[category]}
+            </button>
+          )
+        })}
+        {scopeMutation.isError && (
+          <span className="text-xs text-destructive">
+            {scopeMutation.error instanceof Error ? scopeMutation.error.message : "Không đổi được phạm vi."}
+          </span>
+        )}
+      </div>
+
+      {["POST", "PUT", "PATCH"].includes(endpoint.method.toUpperCase()) && (
+        <div className="flex flex-col gap-1.5" role="group" aria-label="Probe bảo mật mass assignment">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Probe bảo mật:</span>
+            <button
+              type="button"
+              aria-pressed={endpoint.scope.owasp === true}
+              disabled={scopeMutation.isPending}
+              aria-label={`Bật probe bảo mật cho ${endpoint.method} ${endpoint.path}`}
+              onClick={() => (endpoint.scope.owasp === true ? setOwasp(false) : setOwaspConfirm(true))}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                endpoint.scope.owasp === true
+                  ? "border-destructive bg-destructive text-white"
+                  : "border-border bg-background text-muted-foreground hover:bg-muted"
+              )}
+            >
+              <ShieldAlert className="size-3" aria-hidden />
+              Mass assignment {endpoint.scope.owasp === true ? "(đang bật)" : "(tắt)"}
+            </button>
+            <span className="text-xs text-muted-foreground">Gửi request GHI thật tới hệ thống đích.</span>
+          </div>
+        </div>
+      )}
+      <AlertDialog open={owaspConfirm} onOpenChange={setOwaspConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bật probe bảo mật cho {endpoint.method} {endpoint.path}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Probe gửi request GHI thật ({endpoint.method}) kèm các field không khai báo như role, isAdmin, status, price. Dữ liệu trên hệ thống
+              đích có thể bị tạo hoặc sửa. Chỉ bật với môi trường test/staging, không bật với production.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel autoFocus>Huỷ</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                setOwaspConfirm(false)
+                setOwasp(true)
+              }}
+            >
+              Tôi hiểu, bật probe
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Endpoint có yêu cầu xác thực không">
+        <span className="text-xs text-muted-foreground">Yêu cầu xác thực:</span>
+        {(
+          [
+            { value: true, label: "Có", title: "Endpoint cần token - mục Security (thiếu/sai token) được đưa vào cần kiểm" },
+            { value: false, label: "Không", title: "Endpoint công khai - mục Security ghi là không áp dụng" },
+          ] as const
+        ).map((option) => {
+          const active = endpoint.requiresAuthSource === "MANUAL" && endpoint.requiresAuth === option.value
+          return (
+            <button
+              key={option.label}
+              type="button"
+              aria-pressed={active}
+              disabled={authMutation.isPending}
+              title={option.title}
+              onClick={() => authMutation.mutate(option.value)}
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-muted"
+              )}
+            >
+              {option.label}
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          aria-pressed={endpoint.requiresAuthSource === "SPEC"}
+          disabled={authMutation.isPending || endpoint.requiresAuthSource === "SPEC"}
+          title="Dùng giá trị theo spec OpenAPI (bỏ khai báo thủ công)"
+          onClick={() => authMutation.mutate(null)}
+          className={cn(
+            "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed",
+            endpoint.requiresAuthSource === "SPEC" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-muted"
+          )}
+        >
+          Theo spec ({endpoint.requiresAuthSource === "SPEC" ? (endpoint.requiresAuth ? "có" : "không") : "đang ghi đè"})
+        </button>
+        {authMutation.isError && (
+          <span className="text-xs text-destructive">
+            {authMutation.error instanceof Error ? authMutation.error.message : "Không đổi được."}
+          </span>
+        )}
+      </div>
+
       <div>
         <p>
-          Cần kiểm <span className="font-semibold">{counts.relevant}</span> mục · đã có test{" "}
+          Cần kiểm <span className="font-semibold">{counts.relevant}</span> mục
+          {scopeLabel(endpoint.scope) && " trong phạm vi"} · đã có test{" "}
           <span className="font-semibold">{counts.covered}</span> · đã chạy ra kết quả{" "}
           <span className="font-semibold">{counts.executed}</span> ·{" "}
           <span className={cn("font-semibold", counts.missing > 0 && "text-amber-600 dark:text-amber-400")}>
@@ -109,10 +322,11 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
             <span className="text-destructive"> · {counts.failing} mục đã chạy nhưng API lệch kỳ vọng</span>
           )}
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Danh sách mục cần kiểm do hệ thống tự tính từ đặc tả OpenAPI theo kỹ thuật EP/BVA - cùng checklist dùng khi sinh
-          test case. Một test case chỉ được tính cho 1 mục khi hệ thống đọc nội dung thật thấy đúng tình huống đó và chỉ vi
-          phạm đúng 1 ràng buộc (không dựa vào tên case hay lời AI tự khai).
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          title="EP/BVA: phân vùng tương đương và giá trị biên. Một test case chỉ được tính cho 1 mục khi hệ thống đọc nội dung thật thấy đúng tình huống đó và chỉ vi phạm đúng 1 ràng buộc (không dựa vào tên case hay lời AI tự khai)."
+        >
+          Mục cần kiểm do hệ thống tự tính từ spec OpenAPI (kỹ thuật EP/BVA) - cùng checklist dùng khi sinh test case.
         </p>
       </div>
 
@@ -164,16 +378,22 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
         const rows = endpoint.dimensions.filter((d) => d.category === group.category)
         if (rows.length === 0) return null
         return (
-          <GroupSection
-            key={group.category}
-            title={group.title}
-            rule={group.rule}
-            rows={rows}
-            showCovered={showCovered}
-            isFilling={isFilling}
-            onFill={(itemKey) => mutation.mutate([itemKey])}
-            fillDisabled={mutation.isPending}
-          />
+          <div key={group.category} className="flex flex-col gap-3">
+            {group.category === firstSpecCategory && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Đối chiếu theo spec · không tính vào số mục cần kiểm ở trên
+              </p>
+            )}
+            <GroupSection
+              title={group.title}
+              rule={group.rule}
+              rows={rows}
+              showCovered={showCovered}
+              isFilling={isFilling}
+              onFill={(itemKey) => mutation.mutate([itemKey])}
+              fillDisabled={mutation.isPending}
+            />
+          </div>
         )
       })}
     </div>
@@ -245,6 +465,8 @@ interface GapRowProps {
 }
 
 function GapRow({ row, filling, onFill, fillDisabled }: GapRowProps) {
+  // Mục còn thiếu: lý do/bằng chứng gập sẵn, mở khi cần - trước đây mỗi mục luôn chiếm 3-4 dòng nên 1 endpoint dài ~1500px.
+  const [showWhy, setShowWhy] = useState(false)
   const implicit = row.checklistType !== null && IMPLICIT_TYPES.has(row.checklistType) && row.label.includes("thành công")
   const StatusIcon = row.status === "COVERED" ? CheckCircle2 : row.status === "MISSING" ? CircleAlert : MinusCircle
 
@@ -277,6 +499,16 @@ function GapRow({ row, filling, onFill, fillDisabled }: GapRowProps) {
           >
             {RUN_STATUS_DISPLAY[row.runStatus].label}
           </span>
+        )}
+        {row.status === "MISSING" && (row.whyNeeded || row.detail || row.nearMisses.length > 0) && (
+          <button
+            type="button"
+            aria-expanded={showWhy}
+            className="shrink-0 text-primary underline-offset-4 hover:underline"
+            onClick={() => setShowWhy((v) => !v)}
+          >
+            {showWhy ? "Ẩn lý do" : "Vì sao?"}
+          </button>
         )}
         {row.status === "MISSING" && row.itemKey && (
           <Button
@@ -312,7 +544,7 @@ function GapRow({ row, filling, onFill, fillDisabled }: GapRowProps) {
             ))}
           </div>
         )}
-        {row.status === "MISSING" && (
+        {row.status === "MISSING" && showWhy && (
           <>
             {row.whyNeeded && (
               <p>

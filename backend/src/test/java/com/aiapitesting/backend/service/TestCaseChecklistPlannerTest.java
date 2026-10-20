@@ -63,10 +63,10 @@ class TestCaseChecklistPlannerTest {
         List<ChecklistItem> items = all();
 
         // Positive=3: dữ liệu hợp lệ + 2 giá trị enum của role (USER, ADMIN - mỗi giá trị enum 1 lớp tương đương);
-        // Negative=10: thiếu (email, age) + null (email, age) + sai kiểu (email, age, name, role, minPrice)
-        // + ngoài enum (role); Boundary=11: age min/max x2, name minLength/maxLength x2, minPrice min x2
+        // Negative=7: thiếu (email, age) + null (email, age) + sai kiểu (chỉ age, minPrice - số; KHÔNG có trường chuỗi vì
+        // Jackson ép số thành chuỗi, Module 17 1.2) + ngoài enum (role); Boundary=11: age min/max x2, name minLength/maxLength x2, minPrice min x2
         // + chuỗi rỗng cho email (string không khai minLength/format - biên ngầm 15i).
-        assertThat(items).hasSize(24);
+        assertThat(items).hasSize(21);
         assertThat(items).filteredOn(i -> i.type() == ChecklistItemType.POSITIVE_ENUM_VALUE)
                 .extracting(ChecklistItem::value).containsExactly("USER", "ADMIN");
         assertThat(items.get(0).type()).isEqualTo(ChecklistItemType.POSITIVE_BASELINE);
@@ -75,7 +75,7 @@ class TestCaseChecklistPlannerTest {
         assertThat(items).filteredOn(i -> i.type() == ChecklistItemType.NEGATIVE_NULL_FIELD)
                 .extracting(ChecklistItem::field).containsExactly("email", "age");
         assertThat(items).filteredOn(i -> i.type() == ChecklistItemType.NEGATIVE_WRONG_TYPE)
-                .extracting(ChecklistItem::field).containsExactlyInAnyOrder("email", "age", "name", "role", "minPrice");
+                .extracting(ChecklistItem::field).containsExactlyInAnyOrder("age", "minPrice");
         assertThat(item(items, ChecklistItemType.BOUNDARY_BELOW_MINIMUM, "age").value()).isEqualTo("17");
         assertThat(item(items, ChecklistItemType.BOUNDARY_ABOVE_MAXIMUM, "age").value()).isEqualTo("61");
         assertThat(item(items, ChecklistItemType.BOUNDARY_ABOVE_MAX_LENGTH, "name").value()).isEqualTo("aaaaaa");
@@ -94,7 +94,7 @@ class TestCaseChecklistPlannerTest {
 
     @Test
     void plan_onlyTickedGroups() {
-        assertThat(planner.plan(spec, false, true, false)).hasSize(10)
+        assertThat(planner.plan(spec, false, true, false)).hasSize(7)
                 .allMatch(i -> i.type().name().startsWith("NEGATIVE_"));
         assertThat(planner.plan(spec, true, false, false)).hasSize(3); // dữ liệu hợp lệ + 2 giá trị enum
     }
@@ -113,12 +113,23 @@ class TestCaseChecklistPlannerTest {
     void plan_nonJsonBody_bodyItemsNotApplicable_paramItemsStillApplicable() {
         Spec s = planner.readSpec(endpoint("""
                 {"parameters":[{"name":"page","in":"query","schema":{"type":"integer","minimum":1}}],
-                 "requestBody":{"content":{"multipart/form-data":{"schema":{"type":"object","required":["file"],
+                 "requestBody":{"content":{"application/xml":{"schema":{"type":"object","required":["file"],
                    "properties":{"file":{"type":"string"}}}}}}}"""));
 
         List<ChecklistItem> items = planner.plan(s, false, true, true);
         assertThat(item(items, ChecklistItemType.NEGATIVE_MISSING_FIELD, "file").notApplicableReason()).isNotNull();
         assertThat(item(items, ChecklistItemType.BOUNDARY_AT_MINIMUM, "page").notApplicableReason()).isNull();
+    }
+
+    @Test
+    void plan_formUrlEncodedBody_isFieldBased_soNegativeAndBoundaryItemsApply() {
+        Spec s = planner.readSpec(endpoint("""
+                {"requestBody":{"content":{"application/x-www-form-urlencoded":{"schema":{"type":"object","required":["title"],
+                  "properties":{"title":{"type":"string","maxLength":50}}}}}}}"""));
+
+        List<ChecklistItem> items = planner.plan(s, false, true, true);
+        assertThat(item(items, ChecklistItemType.NEGATIVE_MISSING_FIELD, "title").notApplicableReason()).isNull();
+        assertThat(items).anyMatch(i -> i.type() == ChecklistItemType.BOUNDARY_ABOVE_MAX_LENGTH);
     }
 
     @Test
@@ -521,6 +532,26 @@ class TestCaseChecklistPlannerTest {
                   "properties":{"bio":{"type":"string","maxLength":500}}}}}}}"""));
         ChecklistItem above = item(planner.plan(longText, false, false, true), ChecklistItemType.BOUNDARY_ABOVE_MAX_LENGTH, "bio");
         assertThat(TestCaseChecklistPlanner.key(above)).isEqualTo("BOUNDARY_ABOVE_MAX_LENGTH|BODY|bio|len:501");
+    }
+
+    /**
+     * Lỗi thật gặp khi import spec của 1 API Spring bên thứ ba: {@code @Size(min = 8)} không khai max được springdoc
+     * ghi thành {@code maxLength: 2147483647} → trước đây {@code "a".repeat(2147483647)} gây OutOfMemoryError (và
+     * {@code n + 1} tràn số), làm sập cả trang Coverage của project. Giờ ghi mục không áp dụng kèm lý do.
+     */
+    @Test
+    void plan_frameworkDefaultMaxLengthIntMax_noOutOfMemory_markedNotApplicable() {
+        Spec huge = planner.readSpec(endpoint("""
+                {"requestBody":{"content":{"application/json":{"schema":{"type":"object",
+                  "properties":{"password":{"type":"string","minLength":8,"maxLength":2147483647}}}}}}}"""));
+
+        List<ChecklistItem> items = planner.plan(huge, false, false, true);
+
+        ChecklistItem max = item(items, ChecklistItemType.BOUNDARY_AT_MAX_LENGTH, "password");
+        assertThat(max.notApplicableReason()).contains("2147483647").contains("không giới hạn");
+        assertThat(items).noneMatch(i -> i.type() == ChecklistItemType.BOUNDARY_ABOVE_MAX_LENGTH);
+        // minLength = 8 hợp lệ vẫn được kiểm bình thường.
+        assertThat(item(items, ChecklistItemType.BOUNDARY_AT_MIN_LENGTH, "password").notApplicableReason()).isNull();
     }
 
     @Test

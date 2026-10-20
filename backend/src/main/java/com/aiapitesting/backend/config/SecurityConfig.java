@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.config;
 
+import com.aiapitesting.backend.security.ApiTokenAuthFilter;
 import com.aiapitesting.backend.security.JwtAccessDeniedHandler;
 import com.aiapitesting.backend.security.JwtAuthEntryPoint;
 import com.aiapitesting.backend.security.JwtAuthFilter;
@@ -30,6 +31,7 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final ApiTokenAuthFilter apiTokenAuthFilter;
     private final UserDetailsService userDetailsService;
     private final JwtAuthEntryPoint jwtAuthEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
@@ -61,7 +63,12 @@ public class SecurityConfig {
                         ).permitAll()
                         // role ADMIN chỉ có được qua cột User.role, không có API nào cấp/đổi quyền này.
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                        .anyRequest().authenticated())
+                        // Module 17 (17d) - route cho CI chỉ nhận token API (ROLE_CI), JWT thường vào đây nhận 403.
+                        .requestMatchers("/api/v1/ci/**").hasRole("CI")
+                        // Mọi route còn lại chỉ dành cho người dùng đăng nhập (ROLE_USER/ADMIN): token CI (chỉ có ROLE_CI) vào đây nhận 403.
+                        .anyRequest().hasAnyRole("USER", "ADMIN"))
+                // 2 filter loại trừ nhau theo đường dẫn (/api/v1/ci/** chỉ ApiTokenAuthFilter, còn lại chỉ JwtAuthFilter).
+                .addFilterBefore(apiTokenAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, ShieldAlert } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import type { FailureCause, FailureCauseCode, TestResult } from "@/lib/executions"
@@ -12,7 +12,15 @@ const CAUSE_STYLES: Record<FailureCauseCode, string> = {
   ASSERTION_FAILED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   DATA_STATE: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
   STABLE_FAILURE: "bg-destructive/10 text-destructive",
+  RESOURCE_NOT_FOUND: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  EXPECTATION_MISMATCH: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   UNDETERMINED: "bg-muted text-muted-foreground",
+  STATE_CONFLICT: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  AUTHZ_VIOLATION: "bg-destructive/10 text-destructive",
+  TEST_DATA_SUSPECT: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  MASS_ASSIGNMENT: "bg-destructive/10 text-destructive",
+  TOKEN_FORBIDDEN: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  API_WRONG_STATUS: "bg-destructive/10 text-destructive",
 }
 
 /** Gợi ý việc nên làm cho từng nguyên nhân - chỉ là gợi ý cho nghi ngờ, không phải kết luận. */
@@ -24,7 +32,23 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
   ASSERTION_FAILED: "Mã trạng thái đã đúng - mở Sửa test case, kiểm tra assertion (đường dẫn trường, giá trị kỳ vọng) có khớp nội dung phản hồi bên dưới không.",
   DATA_STATE: "Dữ liệu/trạng thái của hệ thống đích có thể đã đổi (tài nguyên bị xoá, dữ liệu trùng) - kiểm tra rồi chạy lại.",
   STABLE_FAILURE: "Fail lặp lại nhiều lần: xem lại kỳ vọng của test hoặc điều tra API - hệ thống không phân biệt được 2 khả năng này.",
+  RESOURCE_NOT_FOUND:
+    "Test gọi bằng id dự phòng nên có thể id này không tồn tại. Mở Sửa test case: ở mục \"Phụ thuộc dữ liệu\" (Test Data Chaining) lấy id từ kết quả của 1 test POST tạo tài nguyên, hoặc đổi giá trị dự phòng thành id có thật.",
+  EXPECTATION_MISMATCH:
+    "Kết quả vẫn là Fail. API trả mã khác kỳ vọng nhưng cùng nhóm nghĩa (vd 401/403, 400/422): nếu đồng ý với cách API chọn mã thì sửa kỳ vọng của test.",
   UNDETERMINED: "Chạy lại vài lần để có thêm bằng chứng trước khi kết luận.",
+  STATE_CONFLICT:
+    "API từ chối vì trạng thái dữ liệu (409: trùng/đã tồn tại). Xoá hoặc đổi dữ liệu trên hệ thống đích rồi chạy lại, hoặc đặt test tạo ở đầu chuỗi để mỗi test dùng dữ liệu riêng.",
+  AUTHZ_VIOLATION:
+    "Kết quả lệch ma trận phân quyền: vai trò được khai là bị cấm nhưng gọi được (thiếu kiểm quyền), hoặc được phép nhưng bị từ chối. Kiểm tra API, hoặc sửa ô tương ứng trong ma trận nếu khai sai.",
+  TEST_DATA_SUSPECT:
+    "API từ chối đầu vào (400/422) và phản hồi nói dữ liệu không hợp lệ (vd ngày quá khứ, giá trị không có trong danh mục). Ưu tiên Sửa test case: đổi dữ liệu thành giá trị hợp lệ rồi chạy lại. Chỉ tạo Bug Report nếu đã chắc dữ liệu hợp lệ mà API vẫn từ chối.",
+  MASS_ASSIGNMENT:
+    "Phát hiện bảo mật: API nhận field không khai báo trong schema (giá trị đánh dấu xuất hiện lại trong phản hồi) hoặc lỗi 5xx khi nhận chúng. Kiểm tra whitelist/DTO ở backend, rồi xoá dữ liệu probe đã ghi trên hệ thống đích. Đây là lỗ hổng, không phải lỗi test.",
+  API_WRONG_STATUS:
+    "API trả 401 cho request đầu vào sai (kỳ vọng 400/422) dù token đã được API chấp nhận ở test khác. Nhiều khả năng đây là lỗi của API đích (xử lý lỗi đầu vào sai mã): nên tạo Bug Report. Không sửa kỳ vọng cho khớp 401.",
+  TOKEN_FORBIDDEN:
+    "API trả 403 (đã xác thực nhưng không đủ quyền) trong khi token mặc định dùng được ở test khác. Mở Sửa test case và chọn profile vai trò đúng cho endpoint này (nút Vai trò của project). Chỉ coi là lỗi API nếu chắc vai trò mặc định phải được phép.",
 }
 
 /** Nhãn ngắn cạnh badge Fail/Lỗi - tooltip là bằng chứng đầy đủ. */
@@ -34,6 +58,7 @@ export function FailureCauseChip({ cause, className }: { cause: FailureCause; cl
       className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", CAUSE_STYLES[cause.code], className)}
       title={cause.evidence.join("\n")}
     >
+      {cause.code === "MASS_ASSIGNMENT" && <ShieldAlert className="mr-1 inline size-3 align-[-1px]" aria-hidden />}
       {cause.label}
     </span>
   )
@@ -73,6 +98,7 @@ const BANNER_TEXT: Partial<Record<FailureCauseCode, string>> = {
   AUTH_CONFIG: "cùng bị từ chối xác thực - nghi token của hệ thống đích sai hoặc hết hạn.",
   ENVIRONMENT: "cùng lỗi khi gọi hệ thống đích - nghi hệ thống đích không sẵn sàng hoặc không tới được.",
   TEST_SETUP: "không chạy được vì cấu hình test chưa đủ.",
+  RESOURCE_NOT_FOUND: "gọi bằng id dự phòng và nhận 404 - test chưa chạm tới logic cần kiểm.",
 }
 
 /**
@@ -111,8 +137,7 @@ export function FailureCauseBanner({ results, projectId }: { results: TestResult
         </p>
       ))}
       <p className="text-xs text-muted-foreground">
-        Các lượt fail này không bị tính là "API lệch kỳ vọng" ở trang Coverage và không làm tăng điểm rủi ro hay tự mở lại
-        Bug Report.
+        Các lượt fail này không bị tính là "API lệch kỳ vọng" ở trang Coverage và không tự tạo hay mở lại Bug Report.
       </p>
     </div>
   )

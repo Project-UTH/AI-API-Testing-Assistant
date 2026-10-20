@@ -1,11 +1,14 @@
 package com.aiapitesting.backend.service.execution;
 
+import com.aiapitesting.backend.entity.AuthProfile;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
+import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.security.AesEncryptionService;
 import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
+import com.aiapitesting.backend.service.DynamicPlaceholderResolver;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,13 +42,15 @@ public class RestAssuredTestRunner {
     private final TargetAuthHeaderResolver targetAuthHeaderResolver;
     private final AesEncryptionService aesEncryptionService;
     private final TestCasePathValidator testCasePathValidator;
+    private final AuthProfileRepository authProfileRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public record RunResult(int statusCode, String responseBody) {
     }
 
     public RunResult run(Project project, TestCase testCase, Map<String, String> resolvedValues) {
-        String path = testCasePathValidator.substitute(testCase.getResolvedPath(), resolvedValues);
+        DynamicPlaceholderResolver.RunScope scope = new DynamicPlaceholderResolver.RunScope();
+        String path = testCasePathValidator.substitute(testCase.getResolvedPath(), resolvedValues, scope);
 
         RequestSpecification request = RestAssured.given()
                 .baseUri(project.getTargetBaseUrl())
@@ -60,21 +65,38 @@ public class RestAssuredTestRunner {
         // requestBody sẽ khiến request có 2 header Authorization cùng lúc (giả + auth header thật ở
         // dưới) - target API nhận 2 giá trị Authorization sẽ từ chối luôn (403) dù giá trị thật vẫn
         // có mặt, làm sai lệch hẳn kết quả test case authOverride=DEFAULT (đã gặp thật khi verify).
-        String headersJson = testCasePathValidator.substitute(testCase.getRequestHeaders(), resolvedValues);
+        String headersJson = testCasePathValidator.substitute(testCase.getRequestHeaders(), resolvedValues, scope);
         Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         headers.putAll(parseHeaders(headersJson));
 
-        TargetAuthHeaderResolver.AuthHeader authHeader = resolveAuthHeader(project, testCase.getAuthOverride());
-        if (authHeader != null) {
+        TargetAuthHeaderResolver.AuthHeader authHeader = resolveAuthHeader(project, testCase);
+        if (authHeader != null && authHeader.query()) {
+            request = request.queryParam(authHeader.name(), authHeader.value());
+        } else if (authHeader != null) {
             headers.put(authHeader.name(), authHeader.value());
         }
+        // Content-Type do RestAssured gắn theo cách mã hoá body (json/form/multipart/raw): bỏ khỏi map để không gửi trùng 2 header.
+        String headerContentType = headers.remove("Content-Type");
         if (!headers.isEmpty()) {
             request = request.headers(headers);
         }
 
-        String body = testCasePathValidator.substitute(testCase.getRequestBody(), resolvedValues);
+        String body = testCasePathValidator.substitute(testCase.getRequestBody(), resolvedValues, scope);
         if (body != null && !body.isBlank()) {
-            request = request.contentType(ContentType.JSON).body(body);
+            RequestBodyEncoder.Plan plan = RequestBodyEncoder.plan(headerContentType, testCase.getEndpoint().getRequestContentType(), body);
+            request = switch (plan.kind()) {
+                case FORM -> request.contentType(plan.mediaType()).formParams(plan.fields());
+                case MULTIPART -> {
+                    RequestSpecification multipart = request.contentType(plan.mediaType());
+                    for (Map.Entry<String, String> field : plan.fields().entrySet()) {
+                        multipart = multipart.multiPart(field.getKey(), field.getValue());
+                    }
+                    yield multipart;
+                }
+                case JSON, RAW -> request.contentType(plan.mediaType()).body(body);
+            };
+        } else if (headerContentType != null) {
+            request = request.contentType(headerContentType);
         }
 
         Response response = request.request(Method.valueOf(testCase.getEndpoint().getMethod()), path);
@@ -82,23 +104,34 @@ public class RestAssuredTestRunner {
     }
 
     /**
-     * Giải mã targetAuthValueEncrypted và gắn header thật đúng lúc gọi target API - không giải mã
-     * hay dùng ở bất kỳ chỗ nào khác (đúng quy tắc CLAUDE.md "giải mã chỉ khi thực thi test").
-     * authOverride (Module 9a, case Security) có thể cố tình bỏ qua hoặc thay bằng giá trị sai -
-     * NONE/INVALID không bao giờ chạm tới targetAuthValueEncrypted thật.
+     * Giải mã token và gắn header thật đúng lúc gọi target API - không giải mã hay dùng ở bất kỳ chỗ nào khác (đúng quy tắc
+     * CLAUDE.md "giải mã chỉ khi thực thi test"). Thứ tự ưu tiên (Module 17 - 3.1): authOverride NONE/INVALID (case Security cố
+     * tình bỏ/sai token - không bao giờ chạm tới token thật) → profile xác thực của test case → token mặc định của Project.
+     * Profile không còn/không thuộc project thì BÁO LỖI thay vì âm thầm rơi về token mặc định (sẽ cho kết quả sai vai trò).
      */
-    private TargetAuthHeaderResolver.AuthHeader resolveAuthHeader(Project project, TestCaseAuthOverride authOverride) {
-        if (project.getTargetAuthType() == null || project.getTargetAuthType() == TargetAuthType.NONE) {
+    private TargetAuthHeaderResolver.AuthHeader resolveAuthHeader(Project project, TestCase testCase) {
+        TargetAuthType authType = project.getTargetAuthType();
+        String encryptedValue = project.getTargetAuthValueEncrypted();
+        if (testCase.getAuthProfileId() != null) {
+            AuthProfile profile = authProfileRepository.findByIdAndProjectId(testCase.getAuthProfileId(), project.getId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Profile xác thực của test case không còn tồn tại trong project - chọn lại profile ở Sửa test case"));
+            authType = profile.getAuthType();
+            encryptedValue = profile.getAuthValueEncrypted();
+        }
+        if (authType == null || authType == TargetAuthType.NONE) {
             return null;
         }
+        TestCaseAuthOverride authOverride = testCase.getAuthOverride();
         if (authOverride == TestCaseAuthOverride.NONE) {
             return null;
         }
         if (authOverride == TestCaseAuthOverride.INVALID) {
-            return targetAuthHeaderResolver.resolve(project.getTargetAuthType(), INVALID_AUTH_VALUE);
+            String real = authType == TargetAuthType.CUSTOM_HEADER ? aesEncryptionService.decrypt(encryptedValue) : null;
+            return targetAuthHeaderResolver.resolveInvalid(authType, real, INVALID_AUTH_VALUE);
         }
-        String decrypted = aesEncryptionService.decrypt(project.getTargetAuthValueEncrypted());
-        return targetAuthHeaderResolver.resolve(project.getTargetAuthType(), decrypted);
+        String decrypted = aesEncryptionService.decrypt(encryptedValue);
+        return targetAuthHeaderResolver.resolve(authType, decrypted);
     }
 
     private Map<String, String> parseHeaders(String requestHeadersJson) {

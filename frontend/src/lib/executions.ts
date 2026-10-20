@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api"
+import { apiFetch, downloadFile } from "@/lib/api"
 
 export type ExecutionStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
 export type TestResultStatus = "PASSED" | "FAILED" | "ERROR" | "BLOCKED" | "SKIPPED"
@@ -24,7 +24,15 @@ export type FailureCauseCode =
   | "ASSERTION_FAILED"
   | "DATA_STATE"
   | "STABLE_FAILURE"
+  | "RESOURCE_NOT_FOUND"
+  | "EXPECTATION_MISMATCH"
   | "UNDETERMINED"
+  | "STATE_CONFLICT"
+  | "AUTHZ_VIOLATION"
+  | "TEST_DATA_SUSPECT"
+  | "MASS_ASSIGNMENT"
+  | "TOKEN_FORBIDDEN"
+  | "API_WRONG_STATUS"
 
 export interface FailureCause {
   code: FailureCauseCode
@@ -77,6 +85,17 @@ export interface TestResult {
   endpointMethod: string
   /** null khi không đáng chú ý (ổn định/chưa đủ dữ liệu) hoặc lượt chạy chưa xong. */
   stability: Stability | null
+  /** Cảnh báo phản hồi thật lệch schema response của spec (kiểu/trường bắt buộc); rỗng = khớp hoặc không kiểm. Không đổi Pass/Fail. */
+  schemaViolations: string[]
+  /** Module 17 (17b) - cảnh báo dữ liệu nhạy cảm trong response (chỉ đường dẫn + quy tắc, không có giá trị). Không đổi Pass/Fail. */
+  securityFindings?: SecurityFinding[]
+}
+
+export interface SecurityFinding {
+  path: string
+  rule: string
+  severity: "HIGH" | "MEDIUM" | "LOW"
+  detail: string
 }
 
 export interface TestExecution {
@@ -88,11 +107,25 @@ export interface TestExecution {
   autoIncludedTestCaseIds: string[]
 }
 
-export function triggerExecution(projectId: string, testCaseIds: string[]): Promise<TestExecution> {
+export function triggerExecution(projectId: string, testCaseIds: string[], cleanupCreated = false): Promise<TestExecution> {
   return apiFetch<TestExecution>(`/projects/${projectId}/executions`, {
     method: "POST",
-    body: JSON.stringify({ testCaseIds }),
+    body: JSON.stringify({ testCaseIds, cleanupCreated }),
   })
+}
+
+export type ExecutionReportFormat = "junit" | "html"
+
+/**
+ * Module 17 (17d) - tải báo cáo 1 lượt chạy (JUnit XML cho CI / HTML để mở-in). Tải bằng fetch + blob để gắn JWT qua header
+ * (thẻ <a download> không gắn được header, và không đưa token lên URL). Báo cáo chỉ gồm dữ liệu đã làm sạch ở backend.
+ */
+export function exportExecution(projectId: string, executionId: string, format: ExecutionReportFormat): Promise<void> {
+  const extension = format === "junit" ? "xml" : "html"
+  return downloadFile(
+    `/projects/${projectId}/executions/${executionId}/report?format=${format}`,
+    `execution-${executionId.slice(0, 8)}.${extension}`
+  )
 }
 
 export function getExecution(projectId: string, executionId: string): Promise<TestExecution> {

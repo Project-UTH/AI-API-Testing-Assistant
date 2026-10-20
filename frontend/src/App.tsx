@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom"
 
 import { AppLayout } from "@/components/layout/AppLayout"
+import { ProjectLayout } from "@/components/layout/ProjectLayout"
 import { RequireAuth } from "@/components/RequireAuth"
 import { RequireAdmin } from "@/components/RequireAdmin"
 import { RequireNotAdmin } from "@/components/RequireNotAdmin"
@@ -15,6 +16,8 @@ import { ProjectsPage } from "@/pages/ProjectsPage"
 import { ProjectDetailPage } from "@/pages/ProjectDetailPage"
 import { TestCasesPage } from "@/pages/TestCasesPage"
 import { CoveragePage } from "@/pages/CoveragePage"
+import { CiIntegrationPage } from "@/pages/CiIntegrationPage"
+import { ExecutionComparePage } from "@/pages/ExecutionComparePage"
 import { TestExecutionPage } from "@/pages/TestExecutionPage"
 import { TestHistoryPage } from "@/pages/TestHistoryPage"
 import { GlobalHistoryPage } from "@/pages/GlobalHistoryPage"
@@ -38,12 +41,16 @@ function App() {
             <Route index element={<DashboardPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/history" element={<GlobalHistoryPage />} />
-            <Route path="/projects/:id" element={<ProjectDetailPage />} />
-            <Route path="/projects/:id/test-cases" element={<TestCasesPage />} />
-            <Route path="/projects/:id/coverage" element={<CoveragePage />} />
-            <Route path="/projects/:id/history" element={<TestHistoryPage />} />
-            <Route path="/projects/:id/bug-reports" element={<BugReportPage />} />
-            <Route path="/projects/:id/executions/:executionId" element={<TestExecutionPage />} />
+            <Route path="/projects/:id" element={<ProjectLayout />}>
+              <Route index element={<ProjectDetailPage />} />
+              <Route path="test-cases" element={<TestCasesPage />} />
+              <Route path="coverage" element={<CoveragePage />} />
+              <Route path="history" element={<TestHistoryPage />} />
+              <Route path="bug-reports" element={<BugReportPage />} />
+              <Route path="ci" element={<CiIntegrationPage />} />
+              <Route path="executions/:executionId" element={<TestExecutionPage />} />
+              <Route path="executions/:executionId/compare" element={<ExecutionComparePage />} />
+            </Route>
           </Route>
 
           <Route element={<RequireAdmin />}>

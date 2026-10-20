@@ -29,6 +29,8 @@ public final class TestCaseFingerprint {
         append(canonical, testCase.getRequestBody());
         append(canonical, testCase.getExpectedStatus());
         append(canonical, testCase.getAuthOverride());
+        // Module 17 (3.1) - đổi vai trò (profile) là đổi điều test kiểm tra: lịch sử cũ ở vai trò khác không được trộn vào.
+        append(canonical, testCase.getAuthProfileId());
         // Giá trị dự phòng của tham số cũng được gửi đi (thay token {{x}}) nên là 1 phần của phiên bản test.
         append(canonical, testCase.getPathParamFallbacks());
         assertions.stream()

@@ -43,6 +43,21 @@ class ProjectServiceTest {
     private EndpointRepository endpointRepository;
 
     @Mock
+    private com.aiapitesting.backend.repository.AuthProfileRepository authProfileRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.ApiTokenRepository apiTokenRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.GenerationJobRepository generationJobRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.GenerationJobStepRepository generationJobStepRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
+
+    @Mock
     private TestCaseRepository testCaseRepository;
 
     @Mock
@@ -103,7 +118,7 @@ class ProjectServiceTest {
         // bug_report_events.endpoint_id / endpoints.project_id)
         InOrder inOrder = inOrder(bugReportRepository, bugReportEventRepository, testExecutionEndpointRepository,
                 testResultRepository, testExecutionRepository, testCaseDependencyRepository, testCaseRepository,
-                testGenerationEventRepository, endpointRepository, projectRepository);
+                testGenerationEventRepository, endpointRepository, authProfileRepository, projectRepository);
         inOrder.verify(bugReportRepository).deleteAllByProject(project);
         inOrder.verify(bugReportEventRepository).deleteAllByEndpointProject(project);
         inOrder.verify(testExecutionEndpointRepository).deleteAllByExecutionProject(project);
@@ -113,6 +128,7 @@ class ProjectServiceTest {
         inOrder.verify(testCaseRepository).deleteAllByEndpointProject(project);
         inOrder.verify(testGenerationEventRepository).deleteAllByEndpointProject(project);
         inOrder.verify(endpointRepository).deleteAllByProject(project);
+        inOrder.verify(authProfileRepository).deleteAllByProject(project);
         inOrder.verify(projectRepository).delete(project);
     }
 

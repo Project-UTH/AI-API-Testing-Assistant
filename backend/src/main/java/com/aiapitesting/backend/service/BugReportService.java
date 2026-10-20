@@ -322,8 +322,19 @@ public class BugReportService {
         User currentUser = currentUserService.getCurrentUser();
         List<BugReportResponse> created = new ArrayList<>();
         int skipped = 0;
-        for (TestResult result : candidates) {
-            if (result.getStatus() != TestResultStatus.FAILED || bugReportRepository.existsBySourceTestResultId(result.getId())) {
+        // Mỗi TEST CASE tối đa 1 bug mỗi lần sinh, xét theo kết quả MỚI NHẤT: test fail qua 7 lượt chạy không được thành 7 bug
+        // cho cùng 1 lỗi. Test case đã có bug chưa đóng cũng không sinh thêm (bug đó đang theo dõi đúng lỗi này).
+        List<TestResult> newestFirst = candidates.stream()
+                .sorted(java.util.Comparator.comparing(TestResult::getCreatedAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .toList();
+        java.util.Set<UUID> handledTestCaseIds = new java.util.HashSet<>();
+        for (TestResult result : newestFirst) {
+            boolean firstResultOfTestCase = handledTestCaseIds.add(result.getTestCase().getId());
+            if (!firstResultOfTestCase
+                    || result.getStatus() != TestResultStatus.FAILED || bugReportRepository.existsBySourceTestResultId(result.getId())
+                    || isUnreliableFailure(result)
+                    || bugReportRepository.existsByTestCaseAndStatusNot(result.getTestCase(), BugStatus.CLOSED)) {
                 skipped++;
                 continue;
             }
@@ -335,6 +346,15 @@ public class BugReportService {
             created.add(BugReportResponse.from(bug));
         }
         return new BugReportBatchGenerateResponse(created, skipped);
+    }
+
+    /**
+     * Fail do môi trường/token/cấu hình test hoặc của test không ổn định không đủ tin cậy để thành bug - cùng tiêu
+     * chí với việc tự mở lại/đóng bug ở {@link BugReportStatusService}.
+     */
+    private boolean isUnreliableFailure(TestResult result) {
+        return (result.getFailureCause() != null && result.getFailureCause().suppressesBugAutomation())
+                || Boolean.TRUE.equals(result.getUnstable());
     }
 
     private BugReport buildAndSaveBugReport(

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Trash2 } from "lucide-react"
+import { CalendarClock, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,7 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ApiError } from "@/lib/api"
+import { DATE_PRESETS, findDatePlaceholderTypos, isDatePlaceholder } from "@/lib/dynamicDates"
+import { listAuthProfiles } from "@/lib/authProfiles"
 import {
   createTestCase,
   getDependencySuggestions,
@@ -60,7 +63,7 @@ const PLACEHOLDER_TOKEN = /\{\{(\w+)\}\}/g
 function extractPlaceholders(text: string): string[] {
   const names = new Set<string>()
   for (const match of text.matchAll(PLACEHOLDER_TOKEN)) {
-    names.add(match[1])
+    if (!isDatePlaceholder(match[1])) names.add(match[1]) // {{today}}/{{now}} là ngày động, không phải tham số
   }
   return Array.from(names)
 }
@@ -100,12 +103,18 @@ export function TestCaseFormDialog({
 }: TestCaseFormDialogProps) {
   const queryClient = useQueryClient()
   const isEdit = Boolean(testCase)
+  const { data: authProfiles = [] } = useQuery({
+    queryKey: ["auth-profiles", projectId],
+    queryFn: () => listAuthProfiles(projectId),
+    enabled: open,
+  })
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [requestHeaders, setRequestHeaders] = useState("")
   const [requestBody, setRequestBody] = useState("")
   const [expectedStatus, setExpectedStatus] = useState("200")
   const [authOverride, setAuthOverride] = useState<TestCaseAuthOverride>("DEFAULT")
+  const [authProfileId, setAuthProfileId] = useState("")
   const [resolvedPath, setResolvedPath] = useState("")
   const [pathParamFallbacks, setPathParamFallbacks] = useState("")
   const [dependencies, setDependencies] = useState<LocalDependency[]>([])
@@ -129,6 +138,7 @@ export function TestCaseFormDialog({
       setRequestBody(testCase?.requestBody ?? "")
       setExpectedStatus(testCase ? String(testCase.expectedStatus) : "200")
       setAuthOverride(testCase?.authOverride ?? "DEFAULT")
+      setAuthProfileId(testCase?.authProfileId ?? "")
       setResolvedPath(testCase?.resolvedPath ?? endpointPath)
       setPathParamFallbacks(testCase?.pathParamFallbacks ?? "")
       setDependencies(
@@ -184,6 +194,27 @@ export function TestCaseFormDialog({
     [resolvedPath, requestBody, requestHeaders]
   )
 
+  const dateTypos = useMemo(
+    () => [
+      ...findDatePlaceholderTypos(resolvedPath),
+      ...findDatePlaceholderTypos(requestBody),
+      ...findDatePlaceholderTypos(requestHeaders),
+    ],
+    [resolvedPath, requestBody, requestHeaders]
+  )
+
+  /** Chèn token ngày động tại vị trí con trỏ của ô Request Body (hoặc cuối chuỗi nếu chưa focus). */
+  function insertIntoBody(token: string) {
+    const el = document.getElementById("test-case-body") as HTMLTextAreaElement | null
+    const start = el?.selectionStart ?? requestBody.length
+    const end = el?.selectionEnd ?? requestBody.length
+    setRequestBody(requestBody.slice(0, start) + token + requestBody.slice(end))
+    requestAnimationFrame(() => {
+      el?.focus()
+      el?.setSelectionRange(start + token.length, start + token.length)
+    })
+  }
+
   const mutation = useMutation({
     mutationFn: () => {
       const input = {
@@ -193,6 +224,7 @@ export function TestCaseFormDialog({
         requestBody,
         expectedStatus: Number(expectedStatus),
         authOverride,
+        authProfileId: authProfileId || null,
         resolvedPath,
         pathParamFallbacks,
         dependencies: dependencies.map(({ dependsOnTestCaseId, jsonPath, placeholderName }) => ({
@@ -349,6 +381,28 @@ export function TestCaseFormDialog({
             />
           </div>
 
+          {authProfiles.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="test-case-auth-profile">Vai trò (profile xác thực)</Label>
+              <p className="text-xs text-muted-foreground">
+                Chọn vai trò để gọi target API bằng token của vai trò đó (vd HR, Candidate). Để mặc định = token chung của project.
+              </p>
+              <select
+                id="test-case-auth-profile"
+                className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
+                value={authProfileId}
+                onChange={(e) => setAuthProfileId(e.target.value)}
+              >
+                <option value="">Mặc định (token của project)</option>
+                {authProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.roleKey})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
             <Label htmlFor="test-case-auth-override">Xác thực khi gọi target API</Label>
             <p className="text-xs text-muted-foreground">
@@ -408,12 +462,44 @@ export function TestCaseFormDialog({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="test-case-body">Request Body (JSON, tuỳ chọn)</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="test-case-body">Request Body (JSON, tuỳ chọn)</Label>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button type="button" variant="outline" size="sm" aria-label="Chèn placeholder ngày động">
+                      <CalendarClock className="h-3.5 w-3.5" />
+                      Chèn ngày động
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end">
+                  {DATE_PRESETS.map((p) => (
+                    <DropdownMenuItem key={p.token} onClick={() => insertIntoBody(p.token)}>
+                      <code>{p.token}</code>
+                      <span className="ml-2 text-xs text-muted-foreground">{p.hint}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             <Textarea
               id="test-case-body"
               value={requestBody}
               onChange={(e) => setRequestBody(e.target.value)}
             />
+            <p className="text-xs text-muted-foreground">
+              Dùng <code>{"{{today+30d}}"}</code> cho ngày hạn/hiệu lực để test luôn hợp lệ khi chạy (hệ thống thay lúc chạy, giờ UTC).
+            </p>
+            {dateTypos.length > 0 && (
+              <div role="status" aria-live="polite" className="text-xs text-amber-700 dark:text-amber-400">
+                {dateTypos.map((t) => (
+                  <p key={t.token}>
+                    <code>{t.token}</code> có thể sai - ý bạn là <code>{t.suggestion}</code>? (cảnh báo, không chặn lưu)
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-2 rounded-lg border border-border p-3">

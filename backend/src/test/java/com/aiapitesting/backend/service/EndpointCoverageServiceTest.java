@@ -6,7 +6,6 @@ import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
 import com.aiapitesting.backend.dto.response.CoverageRunStatus;
 import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
 import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
-import com.aiapitesting.backend.dto.response.RiskLevel;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.FailureCause;
 import com.aiapitesting.backend.entity.Project;
@@ -62,6 +61,12 @@ class EndpointCoverageServiceTest {
 
     @Mock
     private TestResultRepository testResultRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.AuthProfileRepository authProfileRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
 
     // Module 15j - bản thật (không mock): coverage chấm bằng CHÍNH checklist của planner, mock thì test vô nghĩa.
     @Spy
@@ -203,6 +208,186 @@ class EndpointCoverageServiceTest {
         assertThat(result.dimensions()).anyMatch(d -> d.category().equals("STATUS_CODE") && d.label().contains("201"));
         assertThat(result.testCaseCount()).isZero();
         assertThat(result.coveragePercent()).isZero();
+    }
+
+    // ---- Phạm vi đo (loại test case người dùng chọn) ----
+
+    @Test
+    void getEndpointCoverage_scopeOnlyPositive_dropsOtherCategoriesAndSpecRowsDoNotCountTowardPercent() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201", "400")));
+        endpoint.setScopePositive(true);
+        endpoint.setScopeNegative(false);
+        endpoint.setScopeBoundary(false);
+        endpoint.setScopeSecurity(false);
+        TestCase positive = testCase(endpoint, "Tạo user hợp lệ", 201, "{\"email\":\"a@b.co\"}");
+        stubProject(List.of(endpoint), List.of(positive), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(result.scope().custom()).isTrue();
+        assertThat(result.dimensions()).noneMatch(d -> List.of("NEGATIVE", "BOUNDARY", "SECURITY").contains(d.category()));
+        assertThat(result.dimensions()).anyMatch(d -> d.category().equals("POSITIVE"));
+        // Mã 400 của spec chưa có test nhưng không thuộc loại nào nên không kéo % xuống.
+        assertThat(result.dimensions()).anyMatch(d -> d.category().equals("STATUS_CODE") && d.status() == CoverageDimensionStatus.MISSING);
+        assertThat(result.coveragePercent()).isEqualTo(100.0);
+    }
+
+    @Test
+    void getEndpointCoverage_neverChoseScope_treatedAsAllFourCategories() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(result.scope()).isEqualTo(com.aiapitesting.backend.dto.response.CoverageScope.FULL);
+        assertThat(result.dimensions()).extracting(CoverageDimensionResponse::category)
+                .contains("POSITIVE", "NEGATIVE", "SECURITY");
+    }
+
+    @Test
+    void updateScope_noCategoryChosen_rejected() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(Optional.of(endpoint));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> endpointCoverageService.updateScope(projectId, endpoint.getId(),
+                        new com.aiapitesting.backend.dto.request.UpdateCoverageScopeRequest(false, false, false, false)))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+    }
+
+    @Test
+    void updateScope_saved_andCoverageRecomputedWithNewScope() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+        when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(Optional.of(endpoint));
+
+        EndpointCoverageResponse result = endpointCoverageService.updateScope(projectId, endpoint.getId(),
+                new com.aiapitesting.backend.dto.request.UpdateCoverageScopeRequest(true, true, false, false));
+
+        assertThat(endpoint.getScopeNegative()).isTrue();
+        assertThat(endpoint.getScopeSecurity()).isFalse();
+        assertThat(result.dimensions()).noneMatch(d -> d.category().equals("SECURITY") || d.category().equals("BOUNDARY"));
+        assertThat(result.dimensions()).anyMatch(d -> d.category().equals("NEGATIVE"));
+    }
+
+    @Test
+    void getEndpointCoverage_manualRequiresAuth_turnsSecurityRowsFromNotApplicableToMissing() {
+        // Spec không khai security (requiresAuth=false) nhưng API thật chặn 401: người dùng khai tay -> mục Security phải hiện ra.
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+        assertThat(coverageOf(endpoint).dimensions())
+                .filteredOn(d -> d.category().equals("SECURITY"))
+                .isNotEmpty().allMatch(d -> d.status() == CoverageDimensionStatus.NOT_APPLICABLE);
+
+        endpoint.setRequiresAuthManual(true);
+        EndpointCoverageResponse after = coverageOf(endpoint);
+
+        assertThat(after.requiresAuth()).isTrue();
+        assertThat(after.requiresAuthSource()).isEqualTo("MANUAL");
+        assertThat(after.dimensions()).filteredOn(d -> d.category().equals("SECURITY"))
+                .isNotEmpty().allMatch(d -> d.status() == CoverageDimensionStatus.MISSING);
+    }
+
+    @Test
+    void getEndpointCoverage_declaredSuccess200_coveredByAnyTwoXxExpectation() {
+        // Spec khai 200 nhưng POST tạo thật trả 201: test đúng kỳ vọng 201 phải phủ được dòng "Mã trạng thái: 200".
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("200", "404")));
+        TestCase created = testCase(endpoint, "Tạo user", 201, "{\"email\":\"a@b.co\"}");
+        stubProject(List.of(endpoint), List.of(created), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(dimensionByCategory(result, "STATUS_CODE", "200").status()).isEqualTo(CoverageDimensionStatus.COVERED);
+        // Mã lỗi vẫn phải đúng mã: kỳ vọng 201 không phủ được 404.
+        assertThat(dimensionByCategory(result, "STATUS_CODE", "404").status()).isEqualTo(CoverageDimensionStatus.MISSING);
+    }
+
+    // ---- Module 17 (17a) - ma trận phân quyền ----
+
+    private com.aiapitesting.backend.entity.AuthProfile authProfile(String name, String roleKey) {
+        com.aiapitesting.backend.entity.AuthProfile p = com.aiapitesting.backend.entity.AuthProfile.builder()
+                .id(UUID.randomUUID()).project(project).name(name).roleKey(roleKey)
+                .authType(com.aiapitesting.backend.entity.TargetAuthType.BEARER_TOKEN).build();
+        when(authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(p));
+        return p;
+    }
+
+    private void declareRule(Endpoint endpoint, com.aiapitesting.backend.entity.AuthProfile profile,
+                             com.aiapitesting.backend.entity.AuthzExpectation expectation) {
+        com.aiapitesting.backend.entity.EndpointRole role = com.aiapitesting.backend.entity.EndpointRole.builder()
+                .id(UUID.randomUUID()).endpoint(endpoint).authProfileId(profile.getId()).expectation(expectation).build();
+        when(endpointRoleRepository.findAllByEndpointProject(project)).thenReturn(List.of(role));
+    }
+
+    @Test
+    void getEndpointCoverage_noRoleMatrix_authRowStillNotApplicableWithGuidance() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        stubProject(List.of(endpoint), List.of(), List.of());
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        assertThat(result.dimensions()).noneMatch(d -> d.category().equals("AUTHZ"));
+        assertThat(dimensionByCategory(result, "AUTH", "Phân quyền").detail()).contains("Vai trò");
+    }
+
+    @Test
+    void getEndpointCoverage_denyRuleWithoutTest_isMissingAndFillableWhenBaselineExists() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        TestCase baseline = testCase(endpoint, "Hợp lệ", 201, "{\"email\":\"a@b.co\"}");
+        stubProject(List.of(endpoint), List.of(baseline), List.of());
+        var candidate = authProfile("Ứng viên", "CANDIDATE");
+        declareRule(endpoint, candidate, com.aiapitesting.backend.entity.AuthzExpectation.DENY);
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        CoverageDimensionResponse row = result.dimensions().stream().filter(d -> d.category().equals("AUTHZ")).findFirst().orElseThrow();
+        assertThat(row.status()).isEqualTo(CoverageDimensionStatus.MISSING);
+        assertThat(row.itemKey()).isEqualTo("AUTHZ_DENIED|||CANDIDATE");
+        assertThat(row.fillable()).isTrue();
+        // Khi có ma trận thì dòng AUTH "không áp dụng" nhường chỗ cho các mục thật.
+        assertThat(result.dimensions()).noneMatch(d -> d.category().equals("AUTH"));
+    }
+
+    @Test
+    void getEndpointCoverage_denyRule_coveredOnlyByProfileTestExpecting403Or401() {
+        Endpoint endpoint = endpoint("/users", "POST", true, emailRequiredSchema(List.of("201")));
+        var candidate = authProfile("Ứng viên", "CANDIDATE");
+        declareRule(endpoint, candidate, com.aiapitesting.backend.entity.AuthzExpectation.DENY);
+
+        TestCase wrongProfile = testCase(endpoint, "Không profile, 403", 403, "{\"email\":\"a@b.co\"}");
+        TestCase wrongDirection = testCase(endpoint, "Profile nhưng kỳ vọng 200", 200, "{\"email\":\"a@b.co\"}");
+        wrongDirection.setAuthProfileId(candidate.getId());
+        TestCase securityOverride = testCase(endpoint, "Profile nhưng cố ý bỏ token", 401, "{\"email\":\"a@b.co\"}", TestCaseAuthOverride.NONE);
+        securityOverride.setAuthProfileId(candidate.getId());
+        stubProject(List.of(endpoint), List.of(wrongProfile, wrongDirection, securityOverride), List.of());
+
+        assertThat(dimensionByCategory(coverageOf(endpoint), "AUTHZ", "Ứng viên").status()).isEqualTo(CoverageDimensionStatus.MISSING);
+
+        TestCase good = testCase(endpoint, "Ứng viên bị 403", 403, "{\"email\":\"a@b.co\"}");
+        good.setAuthProfileId(candidate.getId());
+        stubProject(List.of(endpoint), List.of(wrongProfile, wrongDirection, securityOverride, good), List.of());
+
+        assertThat(dimensionByCategory(coverageOf(endpoint), "AUTHZ", "Ứng viên").status()).isEqualTo(CoverageDimensionStatus.COVERED);
+    }
+
+    @Test
+    void getEndpointCoverage_authzRowsCountTowardPercent_specRowsDoNot() {
+        Endpoint endpoint = endpoint("/users", "GET", false, "{\"responseStatusCodes\":[\"200\"]}");
+        var hr = authProfile("HR", "HR");
+        declareRule(endpoint, hr, com.aiapitesting.backend.entity.AuthzExpectation.ALLOW);
+        TestCase positive = testCase(endpoint, "Hợp lệ", 200, null);
+        TestCase hrCall = testCase(endpoint, "HR gọi", 200, null);
+        hrCall.setAuthProfileId(hr.getId());
+        stubProject(List.of(endpoint), List.of(positive, hrCall), List.of());
+        endpoint.setScopePositive(true);
+        endpoint.setScopeNegative(false);
+        endpoint.setScopeBoundary(false);
+        endpoint.setScopeSecurity(false);
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        // Positive + AUTHZ(HR) đều phủ -> 100%.
+        assertThat(result.coveragePercent()).isEqualTo(100.0);
+        assertThat(result.dimensions()).anyMatch(d -> d.category().equals("AUTHZ") && d.status() == CoverageDimensionStatus.COVERED);
     }
 
     // ---- Chấm mục checklist ----
@@ -558,24 +743,6 @@ class EndpointCoverageServiceTest {
         assertThat(dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null).runStatus()).isEqualTo(CoverageRunStatus.FAILED);
     }
 
-    @Test
-    void getEndpointCoverage_risk_excludesFailsNotCausedByApiAndExplainsIt() {
-        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
-        stubProject(List.of(endpoint), List.of(), List.of());
-        // 4 lượt: 1 Pass + 1 Fail do API (UNDETERMINED) + 2 Fail do token (loại). Tỷ lệ fail = 1/2, không phải 3/4.
-        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of(
-                endpointStatusCount(endpoint.getId(), TestResultStatus.PASSED, 1),
-                endpointStatusCount(endpoint.getId(), TestResultStatus.FAILED, FailureCause.UNDETERMINED, 1),
-                endpointStatusCount(endpoint.getId(), TestResultStatus.FAILED, FailureCause.AUTH_CONFIG, 2)));
-
-        EndpointCoverageResponse result = coverageOf(endpoint);
-
-        // POST (+10) + field nhạy cảm 'email' (+10) + fail 50% (+10) = 30; nếu KHÔNG loại thì fail 75% → +15 = 35.
-        assertThat(result.riskScore()).isEqualTo(30);
-        assertThat(result.riskReasons()).anyMatch(r -> r.contains("50%") && r.contains("1/2"))
-                .anyMatch(r -> r.contains("Đã loại 2 lượt fail"));
-    }
-
     // ---- Module 16 gđ2 - kết quả của test không ổn định không phải bằng chứng chắc chắn ----
 
     @Test
@@ -665,42 +832,17 @@ class EndpointCoverageServiceTest {
         assertThat(orphanResult.dimensions()).noneMatch(d -> d.category().equals("RELATION"));
     }
 
-    // ---- Risk Engine + tổng hợp project (giữ nguyên từ 15c) ----
+    // ---- Tổng hợp project ----
 
     @Test
-    void getEndpointCoverage_deleteMethodWithAuthAndDependentsAndFailHistory_scoresHigherRisk() {
-        Endpoint deleteEndpoint = endpoint("/users/{id}", "DELETE", true, buildSchemaJson(null, List.of("204")));
-        Endpoint dependentEndpoint = endpoint("/orders", "POST", false, buildSchemaJson(null, List.of("201")));
-        TestCase sourceCase = testCase(deleteEndpoint, "tc", 204, null);
-        TestCase consumerCase = testCase(dependentEndpoint, "tc", 201, null);
-        TestCaseDependency dependency = TestCaseDependency.builder()
-                .id(UUID.randomUUID()).testCase(consumerCase).dependsOnTestCase(sourceCase)
-                .jsonPath("$.id").placeholderName("userId").createdAt(Instant.now()).build();
-        stubProject(List.of(deleteEndpoint, dependentEndpoint), List.of(sourceCase, consumerCase), List.of(dependency));
-        when(testResultRepository.countGroupedByEndpointAndStatus(project)).thenReturn(List.of(
-                endpointStatusCount(deleteEndpoint.getId(), TestResultStatus.FAILED, 4),
-                endpointStatusCount(deleteEndpoint.getId(), TestResultStatus.PASSED, 6)));
-
-        EndpointCoverageResponse result = coverageOf(deleteEndpoint);
-
-        // DELETE(+20) + auth(+20) + 1 dependent(+10) + fail rate 40%(+8) = 58 -> HIGH
-        assertThat(result.riskScore()).isEqualTo(58);
-        assertThat(result.riskLevel()).isEqualTo(RiskLevel.HIGH);
-        assertThat(result.riskReasons()).isNotEmpty();
-    }
-
-    @Test
-    void getProjectCoverage_riskWeightedPercent_lowerThanFlatWhenHighRiskEndpointUncovered() {
-        // GET /products: risk thấp (GET = 0 điểm), đã có case hợp lệ khớp mã 200 -> 100%.
-        Endpoint lowRisk = endpoint("/products", "GET", false, buildSchemaJson(null, List.of("200")));
-        // DELETE /payment: risk cao (DELETE + auth) nhưng KHÔNG có test case nào -> 0%.
-        Endpoint highRisk = endpoint("/payment", "DELETE", true, buildSchemaJson(null, List.of("204")));
-        TestCase lowRiskCovered = testCase(lowRisk, "Positive", 200, null);
-        stubProject(List.of(lowRisk, highRisk), List.of(lowRiskCovered), List.of());
+    void getProjectCoverage_noRunYet_executedPercentIsZero() {
+        Endpoint covered = endpoint("/products", "GET", false, buildSchemaJson(null, List.of("200")));
+        Endpoint uncovered = endpoint("/payment", "DELETE", true, buildSchemaJson(null, List.of("204")));
+        TestCase coveredCase = testCase(covered, "Positive", 200, null);
+        stubProject(List.of(covered, uncovered), List.of(coveredCase), List.of());
 
         ProjectCoverageResponse result = endpointCoverageService.getProjectCoverage(projectId);
 
-        assertThat(result.overallRiskWeightedCoveragePercent()).isLessThan(result.overallCoveragePercent());
         // Chưa có lượt chạy nào: có test nhưng chưa kiểm thật.
         assertThat(result.overallExecutedPercent()).isZero();
     }
@@ -758,36 +900,6 @@ class EndpointCoverageServiceTest {
             @Override
             public FailureCause getFailureCause() {
                 return cause;
-            }
-        };
-    }
-
-    private TestResultRepository.EndpointStatusCount endpointStatusCount(UUID endpointId, TestResultStatus status, long count) {
-        return endpointStatusCount(endpointId, status, null, count);
-    }
-
-    private TestResultRepository.EndpointStatusCount endpointStatusCount(
-            UUID endpointId, TestResultStatus status, FailureCause cause, long count
-    ) {
-        return new TestResultRepository.EndpointStatusCount() {
-            @Override
-            public UUID getEndpointId() {
-                return endpointId;
-            }
-
-            @Override
-            public TestResultStatus getStatus() {
-                return status;
-            }
-
-            @Override
-            public FailureCause getFailureCause() {
-                return cause;
-            }
-
-            @Override
-            public long getCount() {
-                return count;
             }
         };
     }

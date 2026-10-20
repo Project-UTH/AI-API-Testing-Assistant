@@ -47,6 +47,17 @@ public class TestCasePathValidator {
         }
     }
 
+    /** Từ chối token ngày động sai cú pháp (vd {{today+5x}}) - nếu không sẽ bị gửi nguyên văn và gây lỗi 400 khó hiểu. */
+    public void validateDynamicTokens(Function<String, ? extends RuntimeException> exceptionFactory, String... texts) {
+        for (String text : texts) {
+            String bad = DynamicPlaceholderResolver.firstMalformed(text);
+            if (bad != null) {
+                throw exceptionFactory.apply("Placeholder ngày động sai cú pháp: " + bad
+                        + " - dùng {{today}}, {{today+30d}}, {{today-1d}}, {{now}}, {{now+1h}}, {{now-15m}}");
+            }
+        }
+    }
+
     /** Trích danh sách tên tham số từ các token {{tenThamSo}} trong 1 chuỗi. */
     public Set<String> extractPlaceholders(String text) {
         Set<String> result = new LinkedHashSet<>();
@@ -55,16 +66,24 @@ public class TestCasePathValidator {
         }
         Matcher matcher = DOUBLE_BRACE_TOKEN.matcher(text);
         while (matcher.find()) {
-            result.add(matcher.group(1));
+            if (!DynamicPlaceholderResolver.RESERVED_NAMES.contains(matcher.group(1))) { // {{today}}/{{now}} là ngày động, không phải tham số
+                result.add(matcher.group(1));
+            }
         }
         return result;
     }
 
     /** Thay mọi token {{tenThamSo}} trong text bằng giá trị thật tương ứng trong values. */
     public String substitute(String text, Map<String, String> values) {
+        return substitute(text, values, null);
+    }
+
+    /** scope != null: thay thêm {{uuid}}/{{rand}}/{{runId}} (giá trị sinh theo lần chạy, dùng chung scope cho path/header/body). */
+    public String substitute(String text, Map<String, String> values, DynamicPlaceholderResolver.RunScope scope) {
         if (text == null) {
             return null;
         }
+        text = DynamicPlaceholderResolver.resolveUnique(DynamicPlaceholderResolver.resolve(text), scope);
         Matcher matcher = DOUBLE_BRACE_TOKEN.matcher(text);
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Eye, History, Info, Loader2, Lock, Pencil, Play, Plus, Trash2, Unlock } from "lucide-react"
+import { Eye, History, Info, Loader2, Lock, Pencil, Play, Plus, ShieldAlert, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,7 +9,7 @@ import { cn, METHOD_STYLES, selectClassName } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
 import {
-  GENERATION_ORIGIN_DISPLAY,
+  originDisplay,
   getReliabilityDisplay,
   listTestCases,
   setTestCaseLocked,
@@ -24,12 +24,14 @@ const SOURCE_STYLES: Record<TestCase["source"], string> = {
   AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   MANUAL: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
   SECURITY: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  BUSINESS: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
 }
 
 const SOURCE_LABEL: Record<TestCase["source"], string> = {
   AI_GENERATED: "AI",
   MANUAL: "Tự thêm",
   SECURITY: "Security",
+  BUSINESS: "Nghiệp vụ (AI đoán)",
 }
 
 interface FormState {
@@ -72,6 +74,7 @@ export function TestCasesPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isRunning, setIsRunning] = useState(false)
+  const [cleanupCreated, setCleanupCreated] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
 
   const testCasesByEndpoint = useMemo(() => {
@@ -143,7 +146,7 @@ export function TestCasesPage() {
     setRunError(null)
     setIsRunning(true)
     try {
-      const execution = await triggerExecution(projectId, Array.from(selectedIds))
+      const execution = await triggerExecution(projectId, Array.from(selectedIds), cleanupCreated)
       navigate(`/projects/${projectId}/executions/${execution.id}`)
     } catch (error) {
       setRunError(error instanceof ApiError ? error.message : "Đã xảy ra lỗi, vui lòng thử lại")
@@ -154,13 +157,8 @@ export function TestCasesPage() {
 
   return (
     <div>
-      <Button variant="ghost" size="sm" nativeButton={false} render={<Link to={`/projects/${projectId}`} />}>
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại Project
-      </Button>
-
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-semibold">Test Case</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg font-semibold">Test Case</h2>
         <div className="flex flex-wrap items-center gap-2">
           <select
             className={selectClassName}
@@ -190,6 +188,13 @@ export function TestCasesPage() {
             <History className="h-4 w-4" />
             Lịch sử chạy test
           </Button>
+          <label
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            title="Sau khi chạy, xoá các bản ghi cha do CHÍNH lần chạy này tạo cho test con (cần API có endpoint DELETE tương ứng). Không xoá dữ liệu nào khác. Lỗi khi xoá không đổi kết quả test."
+          >
+            <Checkbox checked={cleanupCreated} onCheckedChange={(c) => setCleanupCreated(c === true)} disabled={isRunning} />
+            Dọn dữ liệu đã tạo
+          </label>
           <Button size="sm" disabled={selectedIds.size === 0 || isRunning} onClick={handleRun}>
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Chạy Test {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
@@ -259,6 +264,15 @@ export function TestCasesPage() {
                       >
                         {testCase.generationOrigin === "SYSTEM_FILLED" ? "Hệ thống" : SOURCE_LABEL[testCase.source]}
                       </span>
+                      {testCase.probeKind === "MASS_ASSIGNMENT" && (
+                        <span
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/40 px-2 py-0.5 text-xs font-medium text-destructive"
+                          title="Test bảo mật tự sinh: thêm field không khai báo vào body. Gửi request ghi thật."
+                        >
+                          <ShieldAlert className="size-3" aria-hidden />
+                          Probe bảo mật
+                        </span>
+                      )}
                       {reliability && (
                         <span
                           title={reliability.title}
@@ -275,15 +289,15 @@ export function TestCasesPage() {
                       {testCase.generationOrigin && (
                         <span
                           title={
-                            GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].title +
+                            originDisplay(testCase.generationOrigin).title +
                             (testCase.checklistItem ? `\nMục checklist: ${testCase.checklistItem}` : "")
                           }
                           className={cn(
                             "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-                            GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].className
+                            originDisplay(testCase.generationOrigin).className
                           )}
                         >
-                          {GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].label}
+                          {originDisplay(testCase.generationOrigin).label}
                         </span>
                       )}
                       {testCase.source !== "MANUAL" && testCase.rationale && (
@@ -304,8 +318,8 @@ export function TestCasesPage() {
                         disabled={lockPendingIds.has(testCase.id)}
                         title={
                           testCase.locked
-                            ? "Đang khoá - sẽ không bị xoá khi Sinh Test Case lại. Bấm để mở khoá."
-                            : "Bấm để khoá - giữ nguyên test case này khi Sinh Test Case lại"
+                            ? "Đang khoá - sẽ không bị xoá khi sinh test case lại. Bấm để mở khoá."
+                            : "Bấm để khoá - giữ nguyên test case này khi sinh test case lại"
                         }
                         onClick={() => handleToggleLock(testCase)}
                       >

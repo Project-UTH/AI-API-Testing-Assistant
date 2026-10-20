@@ -52,6 +52,20 @@ public class TestResult {
     @Column(columnDefinition = "TEXT")
     private String assertionResultsJson;
 
+    /**
+     * Cảnh báo phản hồi lệch schema response của spec (JSON array các câu mô tả vi phạm, tối đa vài dòng). Null = không
+     * kiểm (không có schema/mã không khớp kỳ vọng) hoặc khớp. CHỈ cảnh báo - không đổi status của kết quả.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String schemaViolationsJson;
+
+    /**
+     * Module 17 (17b) - cảnh báo dữ liệu nhạy cảm trong response (JSON array các {path, rule, severity, detail}). KHÔNG chứa giá trị thật.
+     * Null = không có phát hiện/không quét/kết quả cũ. Chỉ là cảnh báo đi kèm, không đổi Pass/Fail.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String securityFindingsJson;
+
     /** Module 16 - thời gian gọi target API (ms); null cho case không gọi target (ERROR cấu hình, BLOCKED) và dữ liệu cũ. */
     private Long durationMs;
 

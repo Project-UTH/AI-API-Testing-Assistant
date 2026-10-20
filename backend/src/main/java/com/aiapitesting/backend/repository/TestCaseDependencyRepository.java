@@ -16,6 +16,18 @@ public interface TestCaseDependencyRepository extends JpaRepository<TestCaseDepe
     // Dependency của riêng 1 test case - dùng để biết tham số nào đã có dependency, không gợi ý lại.
     List<TestCaseDependency> findAllByTestCase(TestCase testCase);
 
+    // Chỉ tên placeholder đã có dependency cấp giá trị, theo test case - ExecutionFailureAnalyzer cần để biết tham số đường
+    // dẫn nào phải dùng giá trị dự phòng (không kéo cả entity/proxy lên).
+    @Query("SELECT d.testCase.id AS testCaseId, d.placeholderName AS placeholderName FROM TestCaseDependency d "
+            + "WHERE d.testCase.id IN :testCaseIds")
+    List<PlaceholderRow> findPlaceholderRowsByTestCaseIds(@Param("testCaseIds") List<UUID> testCaseIds);
+
+    interface PlaceholderRow {
+        UUID getTestCaseId();
+
+        String getPlaceholderName();
+    }
+
     /**
      * @Modifying bắt buộc - saveDependencies() xoá rồi insert lại dependency cho cùng 1 placeholder
      * trong cùng transaction; Hibernate flush theo thứ tự cố định (insert trước, delete sau) khiến
@@ -40,7 +52,7 @@ public interface TestCaseDependencyRepository extends JpaRepository<TestCaseDepe
     // Toàn bộ dependency trong project (cả 2 phía FK), JOIN FETCH sâu tới dependsOnTestCase.endpoint
     // để TestExecutionService dùng ngay không cần query thêm. JOIN FETCH THÊM tcd.testCase.endpoint
     // (phía consumer, trước đây chỉ fetch phía dependsOnTestCase) - EndpointCoverageService (Module
-    // 15c, Risk Engine) đọc dep.getTestCase().getEndpoint().getId() SAU khi phương thức repository
+    // 15c) đọc dep.getTestCase().getEndpoint().getId() SAU khi phương thức repository
     // đã trả về (session đã đóng, spring.jpa.open-in-view=false) -> thiếu JOIN FETCH này gây
     // LazyInitializationException "no session" (đã xác nhận thật, bắt được khi verify bằng dữ liệu
     // thật qua Docker, không lộ ra ở unit test vì Mockito không mô phỏng đúng hành vi session/proxy

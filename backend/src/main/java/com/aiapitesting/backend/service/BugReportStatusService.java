@@ -52,14 +52,15 @@ public class BugReportStatusService {
 
         boolean changed = false;
         for (BugReport bug : bugs) {
-            changed |= applyRule(bug, result.getStatus());
+            changed |= applyRule(bug, result);
         }
         if (changed) {
             bugReportRepository.saveAll(bugs);
         }
     }
 
-    private boolean applyRule(BugReport bug, TestResultStatus status) {
+    private boolean applyRule(BugReport bug, TestResult result) {
+        TestResultStatus status = result.getStatus();
         if (status == TestResultStatus.PASSED) {
             if (ELIGIBLE_FOR_CLOSE_SUGGESTION.contains(bug.getStatus()) && !bug.isPendingCloseSuggestion()) {
                 bug.setPendingCloseSuggestion(true);
@@ -71,6 +72,16 @@ public class BugReportStatusService {
 
         // status == FAILED
         if (bug.getStatus() == BugStatus.CLOSED) {
+            if (testEditedSinceBug(bug, result)) {
+                // Test đã được sửa kể từ lần chạy sinh ra bug: Fail này có thể do chính lần sửa, không đủ bằng chứng để mở lại.
+                String line = "[hệ thống] Lần chạy mới Fail nhưng test case đã được sửa kể từ khi tạo bug, "
+                        + "không tự mở lại - cần xem lại thủ công";
+                if (bug.getNote() != null && bug.getNote().contains(line)) {
+                    return false;
+                }
+                appendNote(bug, line);
+                return true;
+            }
             bug.setStatus(BugStatus.REOPENED);
             bug.setPendingCloseSuggestion(false);
             appendNote(bug, "[hệ thống] Tự động chuyển sang Reopened do có lần chạy mới Fail");
@@ -83,6 +94,15 @@ public class BugReportStatusService {
             return true;
         }
         return false;
+    }
+
+    /** Fingerprint của lần chạy mới khác lần chạy sinh bug. Thiếu fingerprint ở 1 trong 2 phía thì không so được. */
+    private boolean testEditedSinceBug(BugReport bug, TestResult result) {
+        TestResult source = bug.getSourceTestResult();
+        if (source == null || source.getTestCaseFingerprint() == null || result.getTestCaseFingerprint() == null) {
+            return false;
+        }
+        return !source.getTestCaseFingerprint().equals(result.getTestCaseFingerprint());
     }
 
     private void appendNote(BugReport bug, String line) {

@@ -1,9 +1,10 @@
 package com.aiapitesting.backend.controller;
 
-import com.aiapitesting.backend.dto.request.GenerateTestCasesRequest;
+import com.aiapitesting.backend.dto.request.BaselineRequest;
 import com.aiapitesting.backend.dto.request.SetTestCaseLockedRequest;
 import com.aiapitesting.backend.dto.request.TestCaseRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
+import com.aiapitesting.backend.dto.response.BaselineResponse;
 import com.aiapitesting.backend.dto.response.ConfidenceCheckResponse;
 import com.aiapitesting.backend.dto.response.DependencySuggestionResponse;
 import com.aiapitesting.backend.dto.response.GenerateTestCasesResponse;
@@ -11,6 +12,7 @@ import com.aiapitesting.backend.dto.response.GenerationPlanSummary;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.service.DependencySuggestionService;
 import com.aiapitesting.backend.service.TestCaseService;
+import com.aiapitesting.backend.service.ai.BaselineVerificationService;
 import com.aiapitesting.backend.service.ai.TestCaseConfidenceCheckService;
 import com.aiapitesting.backend.service.ai.TestCaseGenerationService;
 import jakarta.validation.Valid;
@@ -39,15 +41,17 @@ public class TestCaseController {
     private final TestCaseConfidenceCheckService testCaseConfidenceCheckService;
     private final TestCaseService testCaseService;
     private final DependencySuggestionService dependencySuggestionService;
+    private final BaselineVerificationService baselineVerificationService;
 
-    @PostMapping("/generate-tests")
-    public CompletableFuture<ResponseEntity<ApiResponse<GenerateTestCasesResponse>>> generate(
+    /** AI sinh 1 test gốc hợp lệ, hệ thống CHẠY THẬT để xác nhận (có vòng AI sửa theo lỗi thật), rồi tuỳ chọn bổ sung checklist. Chạy lâu (20-120s). */
+    @PostMapping("/baseline")
+    public CompletableFuture<ResponseEntity<ApiResponse<BaselineResponse>>> baseline(
             @PathVariable UUID projectId,
             @PathVariable UUID endpointId,
-            @RequestBody(required = false) GenerateTestCasesRequest request
+            @RequestBody(required = false) BaselineRequest request
     ) {
-        return testCaseGenerationService.generate(projectId, endpointId, request)
-                .thenApply(result -> ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(result)));
+        return baselineVerificationService.run(projectId, endpointId, request)
+                .thenApply(result -> ResponseEntity.ok(ApiResponse.of(result)));
     }
 
     // Module 15h - báo cáo checklist lần sinh gần nhất; data = null nếu chưa có.

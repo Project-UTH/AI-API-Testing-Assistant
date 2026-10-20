@@ -8,10 +8,14 @@ import com.aiapitesting.backend.entity.TargetAuthType;
 import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.ForbiddenException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.security.TargetAuthHeaderResolver;
 import com.aiapitesting.backend.exception.ProjectNotFoundException;
+import com.aiapitesting.backend.repository.ApiTokenRepository;
+import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.repository.BugReportEventRepository;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.EndpointRoleRepository;
 import com.aiapitesting.backend.repository.ProjectRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -43,8 +47,13 @@ public class ProjectService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
+    private final com.aiapitesting.backend.repository.GenerationJobRepository generationJobRepository;
+    private final com.aiapitesting.backend.repository.GenerationJobStepRepository generationJobStepRepository;
     private final BugReportRepository bugReportRepository;
     private final BugReportEventRepository bugReportEventRepository;
+    private final AuthProfileRepository authProfileRepository;
+    private final ApiTokenRepository apiTokenRepository;
+    private final EndpointRoleRepository endpointRoleRepository;
     private final CurrentUserService currentUserService;
     private final AesEncryptionService aesEncryptionService;
 
@@ -103,12 +112,27 @@ public class ProjectService {
         if (authType != null && authType != TargetAuthType.NONE && (authValue == null || authValue.isBlank())) {
             throw new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn");
         }
+        if (authType == TargetAuthType.BASIC_AUTH && (authValue == null || authValue.indexOf(':') <= 0)) {
+            throw new InvalidRequestException("Basic Auth cần giá trị dạng tên:mật khẩu");
+        }
+        if (authType == TargetAuthType.QUERY_PARAM && !TargetAuthHeaderResolver.isValidQueryParamValue(authValue)) {
+            throw new InvalidRequestException("Khoá API qua query string cần giá trị dạng tên_tham_số=giá trị (vd api_key=abc123)");
+        }
+        if (authType == TargetAuthType.CUSTOM_HEADER && !TargetAuthHeaderResolver.isValidCustomHeaderValue(authValue)) {
+            throw new InvalidRequestException("Header tuỳ ý cần giá trị dạng Tên-Header: giá trị (vd X-Auth-Token: abc123)");
+        }
     }
 
     @Transactional
     public void delete(UUID id) {
         Project project = getOwnedProject(id);
         // Thứ tự bắt buộc để tránh vi phạm khoá ngoại: bảng tham chiếu sâu nhất xoá trước.
+        // Job sinh test (không có khoá ngoại): dọn bước rồi job của project
+        java.util.List<java.util.UUID> jobIds = generationJobRepository.findIdsByProjectId(project.getId());
+        if (!jobIds.isEmpty()) {
+            generationJobStepRepository.deleteAllByJobIdIn(jobIds);
+            generationJobRepository.deleteAllByProjectId(project.getId());
+        }
         bugReportRepository.deleteAllByProject(project);
         bugReportEventRepository.deleteAllByEndpointProject(project);
         testExecutionEndpointRepository.deleteAllByExecutionProject(project);
@@ -118,7 +142,10 @@ public class ProjectService {
         testCaseAssertionRepository.deleteAllByTestCaseEndpointProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
         testGenerationEventRepository.deleteAllByEndpointProject(project);
+        endpointRoleRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
+        authProfileRepository.deleteAllByProject(project);
+        apiTokenRepository.deleteAllByProject(project);
         projectRepository.delete(project);
     }
 

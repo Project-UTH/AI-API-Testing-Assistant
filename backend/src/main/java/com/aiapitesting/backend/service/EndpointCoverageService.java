@@ -1,28 +1,32 @@
 package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
+import com.aiapitesting.backend.dto.request.UpdateCoverageScopeRequest;
+import com.aiapitesting.backend.service.execution.MassAssignmentProbe;
 import com.aiapitesting.backend.dto.response.ChecklistItemType;
+import com.aiapitesting.backend.dto.response.CoverageScope;
 import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
 import com.aiapitesting.backend.dto.response.CoverageRunStatus;
 import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
 import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
-import com.aiapitesting.backend.dto.response.RiskLevel;
+import com.aiapitesting.backend.entity.AuthProfile;
+import com.aiapitesting.backend.entity.AuthzExpectation;
 import com.aiapitesting.backend.entity.Endpoint;
+import com.aiapitesting.backend.entity.EndpointRole;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseDependency;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
+import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.EndpointRoleRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.swagger.v3.oas.models.media.MediaType;
-import io.swagger.v3.oas.models.media.Schema;
-import io.swagger.v3.oas.models.parameters.Parameter;
-import io.swagger.v3.oas.models.parameters.RequestBody;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -42,7 +46,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Module 15c - Coverage Matrix + Risk Engine. TẤT ĐỊNH TUYỆT ĐỐI: mọi giá trị trả về tính từ
+ * Module 15c - Coverage Matrix. TẤT ĐỊNH TUYỆT ĐỐI: mọi giá trị trả về tính từ
  * {@code Endpoint.schema} (lưu lúc import) + {@code TestCase}/{@code TestCaseDependency}/
  * {@code TestResult} hiện có trong DB - KHÔNG gọi AI, KHÔNG parse {@code TestCase.rationale} (lời
  * AI tự khai) để suy coverage. Đây là nguồn sự thật độc lập, kiểm chứng được, tách bạch khỏi phần
@@ -59,9 +63,6 @@ import java.util.stream.Collectors;
 @Slf4j
 public class EndpointCoverageService {
 
-    private static final Set<String> SENSITIVE_FIELD_KEYWORDS = Set.of(
-            "password", "email", "token", "secret", "card", "cvv", "ssn", "apikey", "api_key", "credit");
-
     /** Bằng chứng "gần đạt" tối đa cho 1 mục - đủ để hiểu vì sao chưa tính, không làm response phình. */
     private static final int MAX_NEAR_MISSES = 3;
 
@@ -75,6 +76,8 @@ public class EndpointCoverageService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestResultRepository testResultRepository;
     private final TestCaseChecklistPlanner testCaseChecklistPlanner;
+    private final AuthProfileRepository authProfileRepository;
+    private final EndpointRoleRepository endpointRoleRepository;
     // FAIL_ON_UNKNOWN_PROPERTIES tắt vì StoredSchema chỉ khai báo đúng field cần dùng (parameters/
     // requestBody/responseStatusCodes) - buildSchemaJson() (EndpointImportService) còn ghi thêm
     // "summary" mà parser này không cần đọc lại. Thiếu dòng này gây UnrecognizedPropertyException
@@ -100,7 +103,7 @@ public class EndpointCoverageService {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
-        // Vẫn load context của CẢ project (không chỉ 1 endpoint) - dependency risk + dòng RELATION của 1
+        // Vẫn load context của CẢ project (không chỉ 1 endpoint) - dòng RELATION của 1
         // endpoint phụ thuộc vào test case/endpoint KHÁC trong cùng project.
         List<Endpoint> allEndpoints = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project);
         CoverageContext context = buildContext(project, allEndpoints);
@@ -111,22 +114,25 @@ public class EndpointCoverageService {
         long coveredTotal = 0;
         long executedTotal = 0;
         long dimensionTotal = 0;
-        double riskWeightedSum = 0;
-        double riskWeightTotal = 0;
+        // Gộp theo MỤC (không trung bình % từng endpoint) và mỗi endpoint chỉ góp các mục trong phạm vi của nó.
         for (EndpointCoverageResponse e : endpoints) {
-            coveredTotal += e.dimensions().stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
-            executedTotal += e.dimensions().stream().filter(this::isExecuted).count();
-            dimensionTotal += e.dimensions().stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
-            if (e.riskScore() > 0) {
-                riskWeightedSum += e.riskScore() * (e.coveragePercent() / 100.0);
-                riskWeightTotal += e.riskScore();
-            }
+            List<CoverageDimensionResponse> counted = e.dimensions().stream().filter(this::countsTowardPercent).toList();
+            coveredTotal += counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
+            executedTotal += counted.stream().filter(this::isExecuted).count();
+            dimensionTotal += counted.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
         }
         double overallCoveragePercent = dimensionTotal == 0 ? 100.0 : (coveredTotal * 100.0) / dimensionTotal;
         double overallExecutedPercent = dimensionTotal == 0 ? 100.0 : (executedTotal * 100.0) / dimensionTotal;
-        double overallRiskWeighted = riskWeightTotal == 0 ? overallCoveragePercent : (riskWeightedSum * 100.0) / riskWeightTotal;
         return new ProjectCoverageResponse(projectId, round1(overallCoveragePercent), round1(overallExecutedPercent),
-                round1(overallRiskWeighted), endpoints);
+                endpoints);
+    }
+
+    /**
+     * Chỉ 4 loại checklist EP/BVA (đã lọc theo phạm vi) tính vào %. STATUS_CODE/RELATION là độ phủ theo spec/luồng
+     * dữ liệu, không thuộc loại test nào - tính chung sẽ khiến người chỉ chọn Positive luôn "thiếu" mã 4xx/401/404.
+     */
+    private boolean countsTowardPercent(CoverageDimensionResponse d) {
+        return CoverageScope.isChecklistCategory(d.category());
     }
 
     /** Dòng đã có test VÀ test đó đã chạy ra kết luận thật (PASSED hoặc FAILED). */
@@ -141,37 +147,10 @@ public class EndpointCoverageService {
         Map<UUID, List<TestCase>> testCasesByEndpointId = testCaseRepository.findAllByEndpointProject(project).stream()
                 .collect(Collectors.groupingBy(tc -> tc.getEndpoint().getId()));
 
-        // Endpoint X là "nguồn" cho endpoint Y nếu có TestCaseDependency: case của Y phụ thuộc vào
-        // case của X. Dùng để tính Dependency risk: X càng có nhiều Y khác phụ thuộc, risk càng cao.
-        Map<UUID, Set<UUID>> dependentEndpointIdsBySourceEndpointId = new LinkedHashMap<>();
         Map<UUID, List<TestCaseDependency>> dependenciesByConsumerEndpointId = new LinkedHashMap<>();
         for (TestCaseDependency dep : testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)) {
-            UUID sourceEndpointId = dep.getDependsOnTestCase().getEndpoint().getId();
             UUID consumerEndpointId = dep.getTestCase().getEndpoint().getId();
             dependenciesByConsumerEndpointId.computeIfAbsent(consumerEndpointId, k -> new ArrayList<>()).add(dep);
-            if (sourceEndpointId.equals(consumerEndpointId)) {
-                continue;
-            }
-            dependentEndpointIdsBySourceEndpointId
-                    .computeIfAbsent(sourceEndpointId, k -> new LinkedHashSet<>())
-                    .add(consumerEndpointId);
-        }
-
-        Map<UUID, long[]> resultCountsByEndpointId = new LinkedHashMap<>(); // [0]=total, [1]=failed
-        Map<UUID, Long> excludedByEndpointId = new HashMap<>();
-        for (TestResultRepository.EndpointStatusCount row : testResultRepository.countGroupedByEndpointAndStatus(project)) {
-            // Module 16 - lượt fail do môi trường/token/cấu hình test không nói gì về API đang test: loại khỏi CẢ tử
-            // và mẫu của "tỷ lệ fail lịch sử" (không để token hết hạn làm endpoint trông rủi ro hơn), chỉ ghi lại số
-            // lượt đã loại để giải thích trong riskReasons.
-            if (row.getFailureCause() != null && row.getFailureCause().isNotApiFault()) {
-                excludedByEndpointId.merge(row.getEndpointId(), row.getCount(), Long::sum);
-                continue;
-            }
-            long[] counts = resultCountsByEndpointId.computeIfAbsent(row.getEndpointId(), k -> new long[2]);
-            counts[0] += row.getCount();
-            if (row.getStatus() == TestResultStatus.FAILED) {
-                counts[1] += row.getCount();
-            }
         }
 
         // Module 15j - lượt chạy MỚI NHẤT của từng test case (trạng thái chạy của dòng coverage).
@@ -198,22 +177,28 @@ public class EndpointCoverageService {
             }
         }
 
-        return new CoverageContext(testCasesByEndpointId, dependentEndpointIdsBySourceEndpointId, resultCountsByEndpointId,
-                dependenciesByConsumerEndpointId, latestResultByTestCaseId, postEndpointByPath,
-                excludedByEndpointId, latestNotApiFaultIds);
+        // Module 17 (17a) - ma trận phân quyền: kỳ vọng theo (endpoint, vai trò) + thông tin vai trò.
+        Map<UUID, List<EndpointRole>> rolesByEndpointId = new HashMap<>();
+        for (EndpointRole role : endpointRoleRepository.findAllByEndpointProject(project)) {
+            rolesByEndpointId.computeIfAbsent(role.getEndpoint().getId(), k -> new ArrayList<>()).add(role);
+        }
+        Map<UUID, AuthProfile> profilesById = new HashMap<>();
+        authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project).forEach(p -> profilesById.put(p.getId(), p));
+
+        return new CoverageContext(testCasesByEndpointId, dependenciesByConsumerEndpointId, latestResultByTestCaseId,
+                postEndpointByPath, latestNotApiFaultIds, rolesByEndpointId, profilesById);
     }
 
     private record CoverageContext(
             Map<UUID, List<TestCase>> testCasesByEndpointId,
-            Map<UUID, Set<UUID>> dependentEndpointIdsBySourceEndpointId,
-            Map<UUID, long[]> resultCountsByEndpointId,
             Map<UUID, List<TestCaseDependency>> dependenciesByConsumerEndpointId,
             Map<UUID, TestResultStatus> latestResultByTestCaseId,
             Map<String, Endpoint> postEndpointByPath,
-            /** Module 16 - số lượt fail đã loại khỏi tỷ lệ fail của từng endpoint (do môi trường/token/cấu hình test). */
-            Map<UUID, Long> excludedFailCountsByEndpointId,
             /** Module 16 - test case có lần chạy mới nhất KHÔNG phải bằng chứng chắc chắn về API: FAILED do môi trường/token, hoặc test không ổn định (kể cả Pass). */
-            Set<UUID> latestNotApiFaultTestCaseIds
+            Set<UUID> latestNotApiFaultTestCaseIds,
+            /** Module 17 (17a) - ma trận phân quyền đã khai, theo endpoint. */
+            Map<UUID, List<EndpointRole>> rolesByEndpointId,
+            Map<UUID, AuthProfile> profilesById
     ) {
     }
 
@@ -228,6 +213,7 @@ public class EndpointCoverageService {
         SchemaFacts facts = extractSchemaFacts(endpoint);
         TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
         List<Candidate> candidates = testCases.stream()
+                .filter(tc -> tc.getSource() != com.aiapitesting.backend.entity.TestCaseSource.BUSINESS) // nghiệp vụ không tính vào EP/BVA
                 .map(tc -> new Candidate(tc, testCaseChecklistPlanner.toCandidate(tc)))
                 .toList();
 
@@ -236,38 +222,72 @@ public class EndpointCoverageService {
         // thật sự bù được. Khác duy nhất: ở đây lấy case hợp lệ đầu tiên, còn lúc bù thật ưu tiên case đã chạy PASS.
         GeneratedTestCase baseline = candidates.stream()
                 .map(Candidate::generated)
-                .filter(g -> testCaseChecklistPlanner.isUsableBaseline(spec, g, endpoint.isRequiresAuth()))
+                .filter(g -> testCaseChecklistPlanner.isUsableBaseline(spec, g, endpoint.effectiveRequiresAuth()))
                 .findFirst().orElse(null);
         GeneratedTestCase securityBaseline = baseline != null ? baseline
                 : candidates.isEmpty() ? null : candidates.get(0).generated();
 
+        CoverageScope scope = CoverageScope.of(endpoint);
         List<CoverageDimensionResponse> dimensions = new ArrayList<>();
-        for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planAll(spec, endpoint.isRequiresAuth())) {
+        for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planScoped(spec, endpoint.effectiveRequiresAuth(), scope)) {
             GeneratedTestCase base = item.type().name().startsWith("SECURITY_") ? securityBaseline : baseline;
-            dimensions.add(checklistDimension(spec, item, candidates, endpoint.isRequiresAuth(), context, base));
+            dimensions.add(checklistDimension(spec, item, candidates, endpoint.effectiveRequiresAuth(), context, base));
         }
         for (String statusCode : facts.statusCodes()) {
             dimensions.add(statusCodeDimension(statusCode, testCases, context));
         }
         dimensions.addAll(relationDimensions(endpoint, context));
-        dimensions.add(new CoverageDimensionResponse(
-                "AUTH", "Phân quyền (403 Forbidden)", CoverageDimensionStatus.NOT_APPLICABLE,
-                "Không áp dụng - hệ thống chưa có mô hình vai trò/scope của target API để giả lập "
-                        + "'có đăng nhập nhưng không đủ quyền', xem Module 15 trong roadmap",
-                List.of(), null, null, null, null, List.of()));
+        // Module 17 (17a) - mục phân quyền theo vai trò từ ma trận người dùng khai; chưa khai thì giữ dòng AUTH "không áp dụng"
+        // kèm hướng dẫn. DENY cần 1 test gọi bằng vai trò đó (không phụ thuộc dữ liệu hợp lệ) nên dùng case gốc lỏng như Security.
+        List<CoverageDimensionResponse> authz = authzDimensions(endpoint, testCases, context, baseline != null, securityBaseline != null);
+        dimensions.addAll(authz);
+        if (authz.isEmpty()) {
+            dimensions.add(new CoverageDimensionResponse(
+                    "AUTH", "Phân quyền theo vai trò (403 Forbidden)", CoverageDimensionStatus.NOT_APPLICABLE,
+                    "Chưa khai ma trận phân quyền cho endpoint này - thêm vai trò ở nút \"Vai trò\" của project rồi khai vai trò nào "
+                            + "được phép/bị cấm trong \"Ma trận phân quyền\"",
+                    List.of(), null, null, null, null, List.of()));
+        }
 
-        long covered = dimensions.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
-        long executed = dimensions.stream().filter(this::isExecuted).count();
-        long relevant = dimensions.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
+        // Module 17 (17b-2) - mục OWASP mass-assignment (chỉ khi người dùng bật cho endpoint ghi). Không tính vào % coverage EP/BVA.
+        CoverageDimensionResponse owasp = owaspDimension(endpoint, spec, testCases, context, baseline != null);
+        if (owasp != null) {
+            dimensions.add(owasp);
+        }
+
+        List<CoverageDimensionResponse> counted = dimensions.stream().filter(this::countsTowardPercent).toList();
+        long covered = counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
+        long executed = counted.stream().filter(this::isExecuted).count();
+        long relevant = counted.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
         double coveragePercent = relevant == 0 ? 100.0 : (covered * 100.0) / relevant;
         double executedPercent = relevant == 0 ? 100.0 : (executed * 100.0) / relevant;
 
-        RiskResult risk = computeRisk(endpoint, facts, context);
-
         return new EndpointCoverageResponse(
                 endpoint.getId(), endpoint.getPath(), endpoint.getMethod(), testCases.size(),
-                round1(coveragePercent), round1(executedPercent), facts.parsed(),
-                risk.score(), risk.level(), risk.reasons(), dimensions);
+                round1(coveragePercent), round1(executedPercent), facts.parsed(), scope,
+                endpoint.effectiveRequiresAuth(), endpoint.getRequiresAuthManual() != null ? "MANUAL" : "SPEC", dimensions);
+    }
+
+    /**
+     * Chỉnh phạm vi đo của 1 endpoint ở trang Coverage. Không xoá test case nào: thu hẹp thì case ngoài phạm vi
+     * vẫn còn (chỉ không được tính), mở rộng thì các mục mới hiện là còn thiếu.
+     */
+    public EndpointCoverageResponse updateScope(UUID projectId, UUID endpointId, UpdateCoverageScopeRequest request) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        if (request == null || !(request.positive() || request.negative() || request.boundary() || request.security())) {
+            throw new InvalidRequestException("Phải chọn ít nhất 1 loại test case để đo độ bao phủ");
+        }
+        endpoint.setScopePositive(request.positive());
+        endpoint.setScopeNegative(request.negative());
+        endpoint.setScopeBoundary(request.boundary());
+        endpoint.setScopeSecurity(request.security());
+        if (request.owasp() != null) {
+            endpoint.setScopeOwasp(request.owasp()); // opt-in có chủ đích: chỉ đổi khi client gửi rõ
+        }
+        endpointRepository.save(endpoint);
+        return getEndpointCoverage(projectId, endpointId);
     }
 
     /**
@@ -319,6 +339,69 @@ public class EndpointCoverageService {
     }
 
     /**
+     * Module 17 (17a) - mỗi ô (endpoint, vai trò) trong ma trận là 1 mục: COVERED khi có test case gọi bằng đúng profile của vai trò,
+     * không cố ý bỏ/sai token, kỳ vọng đúng chiều (ALLOW → 2xx, DENY → 403/401). Thiếu thì kèm cờ {@code fillable} (có case gốc để
+     * mượn dữ liệu không) để nút Bổ sung chỉ sáng khi bù được.
+     */
+    static final String OWASP_CATEGORY = "OWASP";
+    static final String OWASP_KEY = "OWASP_MASS_ASSIGNMENT";
+
+    /** Chỉ endpoint ghi (POST/PUT/PATCH) có body dạng field đã bật cờ OWASP mới có mục này. */
+    private CoverageDimensionResponse owaspDimension(
+            Endpoint endpoint, TestCaseChecklistPlanner.Spec spec, List<TestCase> testCases, CoverageContext context, boolean usableBaseline
+    ) {
+        if (!Boolean.TRUE.equals(endpoint.getScopeOwasp()) || !MassAssignmentFields.isWriteMethod(endpoint.getMethod())) {
+            return null;
+        }
+        String label = "Mass assignment: gửi field đặc quyền không khai báo (role, isAdmin, status, price...) - API phải bỏ qua hoặc từ chối";
+        String why = "Phát hiện lỗi OWASP API3/API6: API tự gán field người dùng không được phép đặt (leo quyền, đổi giá/chủ sở hữu). "
+                + "Probe gửi request GHI thật tới hệ thống đích - chỉ dùng với môi trường test.";
+        List<TestCase> covering = testCases.stream().filter(tc -> MassAssignmentProbe.KIND.equals(tc.getProbeKind())).toList();
+        if (!covering.isEmpty()) {
+            return new CoverageDimensionResponse(OWASP_CATEGORY, label, CoverageDimensionStatus.COVERED, null,
+                    toRefs(covering, context), MassAssignmentProbe.KIND, OWASP_KEY, why, runStatus(covering, context), List.of());
+        }
+        boolean hasFields = spec.hasBody() && spec.bodyIsJson();
+        boolean fillable = usableBaseline && hasFields;
+        return new CoverageDimensionResponse(OWASP_CATEGORY, label, CoverageDimensionStatus.MISSING,
+                "Chưa có test probe mass-assignment cho endpoint này", List.of(), MassAssignmentProbe.KIND, OWASP_KEY, why, null,
+                List.of(), fillable,
+                fillable ? null : hasFields ? "Cần ít nhất 1 test case hợp lệ (kỳ vọng thành công) làm gốc để mượn body"
+                        : "Endpoint không có body dạng field (JSON/form) để tiêm field lạ");
+    }
+
+    private List<CoverageDimensionResponse> authzDimensions(
+            Endpoint endpoint, List<TestCase> testCases, CoverageContext context, boolean usableBaseline, boolean anyBaseline
+    ) {
+        List<CoverageDimensionResponse> result = new ArrayList<>();
+        for (EndpointRole rule : context.rolesByEndpointId().getOrDefault(endpoint.getId(), List.of())) {
+            AuthProfile profile = context.profilesById().get(rule.getAuthProfileId());
+            if (profile == null) {
+                continue; // vai trò đã bị xoá
+            }
+            AuthzExpectation expectation = rule.getExpectation();
+            String label = AuthzMatrix.label(expectation, profile.getName());
+            String key = AuthzMatrix.key(expectation, profile.getRoleKey());
+            String why = AuthzMatrix.why(expectation, profile.getName());
+            List<TestCase> covering = testCases.stream()
+                    .filter(tc -> AuthzMatrix.covers(expectation, profile.getId(), tc))
+                    .toList();
+            if (!covering.isEmpty()) {
+                result.add(new CoverageDimensionResponse(AuthzMatrix.CATEGORY, label, CoverageDimensionStatus.COVERED, null,
+                        toRefs(covering, context), AuthzMatrix.type(expectation), key, why, runStatus(covering, context), List.of()));
+                continue;
+            }
+            boolean fillable = expectation == AuthzExpectation.ALLOW ? usableBaseline : anyBaseline;
+            result.add(new CoverageDimensionResponse(AuthzMatrix.CATEGORY, label, CoverageDimensionStatus.MISSING,
+                    "Chưa có test case nào gọi bằng vai trò '" + profile.getName() + "' với kỳ vọng "
+                            + (expectation == AuthzExpectation.ALLOW ? "2xx" : "403/401"),
+                    List.of(), AuthzMatrix.type(expectation), key, why, null, List.of(), fillable,
+                    fillable ? null : "Cần ít nhất 1 test case làm gốc (kỳ vọng thành công) để mượn dữ liệu gọi endpoint này"));
+        }
+        return result;
+    }
+
+    /**
      * Mã trạng thái spec khai báo - COVERED khi có case kỳ vọng đúng mã. Hỗ trợ dạng khoảng "4XX" của
      * OpenAPI 3; "default" (= mọi mã còn lại) không phải mã cụ thể nên không đối chiếu được, ghi rõ thay
      * vì để MISSING vĩnh viễn.
@@ -334,8 +417,14 @@ public class EndpointCoverageService {
         }
         String why = "Spec khai báo endpoint có thể trả mã " + statusCode + "; cần ít nhất 1 test case kỳ vọng đúng mã "
                 + "này để biết API thật sự trả về như đặc tả.";
+        // Module 17 (1.4) - mã THÀNH CÔNG (2xx) so theo NHÓM 2xx: spec thường chỉ khai 200 trong khi API thật trả 201 (POST tạo)
+        // hoặc 204 (DELETE) - đo thật: 110 dòng "200" không dòng nào thoả được bằng test đúng. Mã lỗi (4xx/5xx) vẫn so đúng mã
+        // vì mỗi mã lỗi là 1 hành vi khác nhau. Lệch mã trong cùng nhóm 2xx vẫn được báo ở kết quả chạy (EXPECTATION_MISMATCH).
+        boolean successGroup = exact && statusCode.startsWith("2");
         List<TestCase> matches = testCases.stream()
-                .filter(tc -> tc.getExpectedStatus() != null && (exact
+                .filter(tc -> tc.getExpectedStatus() != null && (successGroup
+                        ? tc.getExpectedStatus() / 100 == 2
+                        : exact
                         ? tc.getExpectedStatus().toString().equals(statusCode)
                         : tc.getExpectedStatus() / 100 == Integer.parseInt(range.group(1))))
                 .toList();
@@ -437,88 +526,25 @@ public class EndpointCoverageService {
                 .toList();
     }
 
-    // ---- Risk Engine: tất định, mỗi thành phần 0-20 điểm, tổng tối đa 100 ----
-
-    private record RiskResult(int score, RiskLevel level, List<String> reasons) {
-    }
-
-    private RiskResult computeRisk(Endpoint endpoint, SchemaFacts facts, CoverageContext context) {
-        List<String> reasons = new ArrayList<>();
-        int score = 0;
-
-        int methodPoints = switch (endpoint.getMethod() == null ? "" : endpoint.getMethod().toUpperCase(Locale.ROOT)) {
-            case "GET" -> 0;
-            case "POST" -> 10;
-            case "PUT", "PATCH" -> 12;
-            case "DELETE" -> 20;
-            default -> 8;
-        };
-        score += methodPoints;
-        if (methodPoints > 0) {
-            reasons.add("Phương thức " + endpoint.getMethod() + " làm thay đổi dữ liệu (+" + methodPoints + ")");
-        }
-
-        if (endpoint.isRequiresAuth()) {
-            score += 20;
-            reasons.add("Yêu cầu xác thực theo spec (+20)");
-        }
-
-        int dependentCount = context.dependentEndpointIdsBySourceEndpointId()
-                .getOrDefault(endpoint.getId(), Set.of()).size();
-        int dependencyPoints = dependentCount == 0 ? 0 : dependentCount <= 2 ? 10 : 20;
-        score += dependencyPoints;
-        if (dependencyPoints > 0) {
-            reasons.add(dependentCount + " endpoint khác phụ thuộc dữ liệu từ endpoint này (+" + dependencyPoints + ")");
-        }
-
-        int sensitiveCount = facts.sensitiveFields().size();
-        int securityPoints = sensitiveCount == 0 ? 0 : sensitiveCount == 1 ? 10 : 20;
-        score += securityPoints;
-        if (securityPoints > 0) {
-            reasons.add("Có " + sensitiveCount + " field nhạy cảm trong dữ liệu (" + String.join(", ", facts.sensitiveFields()) + ") (+" + securityPoints + ")");
-        }
-
-        long[] counts = context.resultCountsByEndpointId().get(endpoint.getId());
-        int historyPoints = 0;
-        if (counts != null && counts[0] > 0) {
-            double failRate = (double) counts[1] / counts[0];
-            historyPoints = Math.round((float) (failRate * 20));
-            if (historyPoints > 0) {
-                reasons.add("Tỷ lệ fail lịch sử " + Math.round(failRate * 100) + "% (" + counts[1] + "/" + counts[0] + " lượt chạy) (+" + historyPoints + ")");
-            }
-        }
-        score += historyPoints;
-        long excluded = context.excludedFailCountsByEndpointId().getOrDefault(endpoint.getId(), 0L);
-        if (excluded > 0) {
-            reasons.add("Đã loại " + excluded + " lượt fail do môi trường/token/cấu hình test khỏi tỷ lệ fail lịch sử "
-                    + "(không phản ánh API đang test)");
-        }
-
-        RiskLevel level = score >= 75 ? RiskLevel.CRITICAL : score >= 50 ? RiskLevel.HIGH : score >= 25 ? RiskLevel.MEDIUM : RiskLevel.LOW;
-        return new RiskResult(score, level, reasons);
-    }
-
-    // ---- Parse Endpoint.schema (JSON lưu lúc import) - phần Risk Engine + mã trạng thái cần ----
+    // ---- Parse Endpoint.schema (JSON lưu lúc import) - lấy các mã trạng thái phản hồi khai báo trong spec ----
 
     /**
      * @param parsed false khi Endpoint.schema không đọc được (JSON hỏng/lỗi cấu trúc) - phân biệt với "parse
      *               được nhưng không có ràng buộc nào", để EndpointCoverageResponse.schemaReadable báo đúng,
      *               không ngầm hiểu số % là đầy đủ khi thực ra không biết gì cả.
      */
-    private record SchemaFacts(Set<String> sensitiveFields, Set<String> statusCodes, boolean parsed) {
+    private record SchemaFacts(Set<String> statusCodes, boolean parsed) {
         static SchemaFacts empty() {
-            return new SchemaFacts(Set.of(), Set.of(), true);
+            return new SchemaFacts(Set.of(), true);
         }
 
         static SchemaFacts unreadable() {
-            return new SchemaFacts(Set.of(), Set.of(), false);
+            return new SchemaFacts(Set.of(), false);
         }
     }
 
-    /** Khớp đúng shape đã lưu bởi {@code EndpointImportService.buildSchemaJson()} - dùng chính các lớp model của swagger-parser để parse lại thay vì tự dò JsonNode, tránh sai lệch cấu trúc. */
+    /** Khớp đúng shape đã lưu bởi {@code EndpointImportService.buildSchemaJson()} - chỉ đọc phần mã trạng thái phản hồi. */
     private static class StoredSchema {
-        public List<Parameter> parameters;
-        public RequestBody requestBody;
         public List<String> responseStatusCodes;
     }
 
@@ -533,33 +559,8 @@ public class EndpointCoverageService {
             log.warn("Khong parse duoc schema cua endpoint {} de tinh coverage: {}", endpoint.getId(), e.toString());
             return SchemaFacts.unreadable();
         }
-
-        Set<String> sensitiveFields = new LinkedHashSet<>();
-        if (stored.parameters != null) {
-            for (Parameter p : stored.parameters) {
-                addIfSensitive(p.getName(), sensitiveFields);
-            }
-        }
-        if (stored.requestBody != null && stored.requestBody.getContent() != null) {
-            for (MediaType mediaType : stored.requestBody.getContent().values()) {
-                Schema<?> bodySchema = mediaType.getSchema();
-                if (bodySchema != null && bodySchema.getProperties() != null) {
-                    bodySchema.getProperties().keySet().forEach(name -> addIfSensitive(name, sensitiveFields));
-                }
-            }
-        }
         Set<String> statusCodes = stored.responseStatusCodes == null ? Set.of() : new LinkedHashSet<>(stored.responseStatusCodes);
-        return new SchemaFacts(sensitiveFields, statusCodes, true);
-    }
-
-    private void addIfSensitive(String name, Set<String> sensitiveFields) {
-        if (name == null) {
-            return;
-        }
-        String lower = name.toLowerCase(Locale.ROOT);
-        if (SENSITIVE_FIELD_KEYWORDS.stream().anyMatch(lower::contains)) {
-            sensitiveFields.add(name);
-        }
+        return new SchemaFacts(statusCodes, true);
     }
 
     private double round1(double value) {

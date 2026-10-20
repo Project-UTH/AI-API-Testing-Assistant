@@ -37,6 +37,10 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
     // Tổng lượt chạy của owner - mẫu số tỷ lệ pass (mỗi lần chạy tính riêng, kể cả chạy lại).
     long countByTestCaseEndpointProjectOwner(User owner);
 
+    long countByTestCaseEndpointProject(Project project);
+
+    long countByTestCaseEndpointProjectAndStatus(Project project, TestResultStatus status);
+
     long countByTestCaseEndpointProjectOwnerAndStatus(User owner, TestResultStatus status);
 
     // Tổng lượt chạy toàn hệ thống (mọi owner) - dùng cho Dashboard Admin.
@@ -95,23 +99,6 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
             + "WHERE tr.id IN :ids AND tc.endpoint.project = :project")
     List<TestResult> findAllByIdInAndTestCaseEndpointProject(@Param("ids") List<UUID> ids, @Param("project") Project project);
 
-    // Risk Engine (Module 15c) - tỷ lệ fail lịch sử theo từng endpoint, dùng làm 1 thành phần risk
-    // score. 1 query GROUP BY cho cả project (tránh N+1 theo từng endpoint), cùng công thức
-    // countByEndpointIds/countGroupedByOwnerIds đã dùng ở TestCaseRepository.
-    // Module 16 - thêm failureCause vào GROUP BY để Risk loại được các lượt fail do môi trường/token/cấu hình test
-    // (không nói gì về API đang test) khỏi tỷ lệ fail. failureCause null = PASSED/BLOCKED/dữ liệu cũ.
-    @Query("SELECT tr.testCase.endpoint.id AS endpointId, tr.status AS status, tr.failureCause AS failureCause, COUNT(tr) AS count "
-            + "FROM TestResult tr WHERE tr.testCase.endpoint.project = :project "
-            + "GROUP BY tr.testCase.endpoint.id, tr.status, tr.failureCause")
-    List<EndpointStatusCount> countGroupedByEndpointAndStatus(@Param("project") Project project);
-
-    interface EndpointStatusCount {
-        UUID getEndpointId();
-        TestResultStatus getStatus();
-        FailureCause getFailureCause();
-        long getCount();
-    }
-
     // Module 15j - Coverage theo kết quả chạy: lượt chạy MỚI NHẤT của từng test case trong project, CHỈ vài
     // cột (không kéo responseBody/assertionResultsJson TEXT lên). 1 query cho cả project, không N+1.
     // Module 16 - thêm failureCause: FAILED do môi trường/token không được tính là "đã kiểm và thấy API lệch".
@@ -138,6 +125,37 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
             + "FROM TestResult tr WHERE tr.testCase.id IN :testCaseIds AND tr.testCaseFingerprint IS NOT NULL "
             + "ORDER BY tr.createdAt ASC")
     List<HistoryRow> findHistoryRowsByTestCaseIds(@Param("testCaseIds") List<UUID> testCaseIds);
+
+    // Module 17 (17c) - so sánh 2 lượt chạy: chỉ vài cột nhẹ (KHÔNG kéo responseBody), 1 query cho cả lượt, không N+1.
+    @Query("SELECT tr.testCase.id AS testCaseId, tr.testCase.name AS testCaseName, tr.testCase.endpoint.id AS endpointId, "
+            + "tr.testCase.endpoint.method AS endpointMethod, tr.testCase.endpoint.path AS endpointPath, tr.status AS status, "
+            + "tr.responseStatus AS responseStatus, tr.failureCause AS failureCause, tr.unstable AS unstable, "
+            + "tr.testCaseFingerprint AS fingerprint FROM TestResult tr WHERE tr.execution = :execution")
+    List<DiffRow> findDiffRowsByExecution(@Param("execution") TestExecution execution);
+
+    interface DiffRow {
+        UUID getTestCaseId();
+        String getTestCaseName();
+        UUID getEndpointId();
+        String getEndpointMethod();
+        String getEndpointPath();
+        TestResultStatus getStatus();
+        Integer getResponseStatus();
+        FailureCause getFailureCause();
+        Boolean getUnstable();
+        String getFingerprint();
+    }
+
+    // Module 17 (17c) - đếm kết quả theo (lượt chạy, trạng thái) cho nhiều lượt cùng lúc, 1 query.
+    @Query("SELECT tr.execution.id AS executionId, tr.status AS status, COUNT(tr) AS count FROM TestResult tr "
+            + "WHERE tr.execution IN :executions GROUP BY tr.execution.id, tr.status")
+    List<ExecutionStatusCount> countByExecutionsGroupedByStatus(@Param("executions") List<TestExecution> executions);
+
+    interface ExecutionStatusCount {
+        UUID getExecutionId();
+        TestResultStatus getStatus();
+        long getCount();
+    }
 
     interface HistoryRow {
         UUID getResultId();

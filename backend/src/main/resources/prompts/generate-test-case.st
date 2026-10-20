@@ -73,3 +73,15 @@ Quy tắc cho tham số query (parameters có "in": "query" trong định nghĩa
   pathParamFallbacks (cùng object với path param, ví dụ {"petId": "1", "status": "available"}). Nếu
   chính tham số query đó là thứ đang bị kiểm tra sai/biên, dùng thẳng giá trị cụ thể invalid/biên
   trong resolvedPath thay vì {{ }}.
+
+Quy tắc về ngày/giờ trong test data (rất quan trọng, tránh test bị cũ theo thời gian):
+- Với field có schema format "date" hoặc "date-time", hoặc tên gợi ý ngày hạn/ngày hiệu lực
+  (deadline, dueDate, expiresAt, expiryDate, startDate, endDate, scheduledAt...): MỌI test case mà
+  giá trị đó phải HỢP LỆ (Positive, và Negative/Boundary của field KHÁC) PHẢI dùng placeholder ngày
+  động, KHÔNG BAO GIỜ ghi cứng một ngày cụ thể (ngày cứng sẽ thành quá khứ và làm API từ chối).
+  - format "date" (yyyy-MM-dd): "{{today+30d}}" (ngày trong tương lai), "{{today}}" (hôm nay), "{{today-1d}}" (hôm qua).
+  - format "date-time" (ISO 8601, có Z): "{{now+1h}}" (tương lai), "{{now}}" (hiện tại), "{{now-15m}}" (quá khứ).
+  - Chỉ test Negative "ngày ở quá khứ" mới dùng "{{today-1d}}" / "{{now-15m}}" hoặc ngày cũ rất xa như "2000-01-01".
+  - Placeholder ngày động đặt trong requestBody (hoặc query của resolvedPath), KHÔNG phải tham số path:
+    KHÔNG thêm chúng vào pathParamFallbacks, KHÔNG gán dependency. Chỉ dùng đúng các dạng ở trên
+    (today/now, dấu + hoặc -, 1-4 chữ số, đơn vị d/h/m; today chỉ nhận d).

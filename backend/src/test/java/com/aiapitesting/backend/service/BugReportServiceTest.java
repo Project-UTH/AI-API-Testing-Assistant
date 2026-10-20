@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.request.CreateBugReportRequest;
 import com.aiapitesting.backend.dto.response.BugReportDraftResponse;
 import com.aiapitesting.backend.dto.response.BugReportPageResponse;
+import com.aiapitesting.backend.dto.response.BugReportBatchGenerateResponse;
 import com.aiapitesting.backend.dto.response.BugReportResponse;
 import com.aiapitesting.backend.entity.BugFrequency;
 import com.aiapitesting.backend.entity.BugPriority;
@@ -14,6 +15,7 @@ import com.aiapitesting.backend.entity.BugStatus;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TargetAuthType;
+import com.aiapitesting.backend.entity.FailureCause;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestResult;
@@ -154,6 +156,68 @@ class BugReportServiceTest {
         assertThat(response.build()).isEqualTo("v1.2.0");
         verify(projectRepository, never()).save(any());
         verify(projectRepository, never()).findMaxBugReportProjectSeqByOwner(any());
+    }
+
+    @Test
+    void generateForProject_skipsFailsThatAreEnvironmentTokenOrUnstable() {
+        TestResult authFail = resultWithCause(FailureCause.AUTH_CONFIG, false);
+        TestResult envFail = resultWithCause(FailureCause.ENVIRONMENT, false);
+        TestResult flakyFail = resultWithCause(FailureCause.FLAKY, false);
+        TestResult unstableFail = resultWithCause(FailureCause.STABLE_FAILURE, true);
+        failedResult.setFailureCause(FailureCause.ASSERTION_FAILED);
+        when(testResultRepository.findAllFailedByProject(project))
+                .thenReturn(List.of(failedResult, authFail, envFail, flakyFail, unstableFail));
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(projectRepository.findMaxBugReportProjectSeqByOwner(owner)).thenReturn(Optional.empty());
+        when(bugReportRepository.findMaxSeqInProjectByProject(project)).thenReturn(Optional.empty());
+
+        BugReportBatchGenerateResponse response = bugReportService.generateForProject(projectId, null);
+
+        assertThat(response.created()).hasSize(1);
+        assertThat(response.skippedCount()).isEqualTo(4);
+    }
+
+    private TestResult resultWithCause(FailureCause cause, boolean unstable) {
+        // Mỗi kết quả thuộc 1 test case riêng (generateFromCandidates chỉ sinh tối đa 1 bug cho mỗi test case).
+        TestCase own = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).name("Other " + UUID.randomUUID())
+                .expectedStatus(201).resolvedPath("/api/products").build();
+        return TestResult.builder().id(UUID.randomUUID()).testCase(own).execution(failedResult.getExecution())
+                .status(TestResultStatus.FAILED).responseStatus(500).failureCause(cause).unstable(unstable).build();
+    }
+
+    @Test
+    void generateForProject_sameTestCaseFailingInManyRuns_createsOnlyOneBugFromTheNewestResult() {
+        java.time.Instant now = java.time.Instant.now();
+        failedResult.setFailureCause(FailureCause.STABLE_FAILURE);
+        failedResult.setCreatedAt(now.minusSeconds(60)); // cũ hơn
+        TestResult newest = TestResult.builder().id(UUID.randomUUID()).testCase(testCase).execution(failedResult.getExecution())
+                .status(TestResultStatus.FAILED).responseStatus(500).failureCause(FailureCause.STABLE_FAILURE).createdAt(now).build();
+        when(testResultRepository.findAllFailedByProject(project)).thenReturn(List.of(failedResult, newest));
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(projectRepository.findMaxBugReportProjectSeqByOwner(owner)).thenReturn(Optional.empty());
+        when(bugReportRepository.findMaxSeqInProjectByProject(project)).thenReturn(Optional.empty());
+
+        BugReportBatchGenerateResponse response = bugReportService.generateForProject(projectId, null);
+
+        assertThat(response.created()).hasSize(1);
+        assertThat(response.skippedCount()).isEqualTo(1);
+        ArgumentCaptor<com.aiapitesting.backend.entity.BugReport> saved = ArgumentCaptor.forClass(com.aiapitesting.backend.entity.BugReport.class);
+        verify(bugReportRepository).save(saved.capture());
+        assertThat(saved.getValue().getSourceTestResult()).isSameAs(newest);
+    }
+
+    @Test
+    void generateForProject_testCaseAlreadyHasAnOpenBug_isSkipped() {
+        failedResult.setFailureCause(FailureCause.STABLE_FAILURE);
+        when(testResultRepository.findAllFailedByProject(project)).thenReturn(List.of(failedResult));
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(bugReportRepository.existsByTestCaseAndStatusNot(testCase, com.aiapitesting.backend.entity.BugStatus.CLOSED)).thenReturn(true);
+
+        BugReportBatchGenerateResponse response = bugReportService.generateForProject(projectId, null);
+
+        assertThat(response.created()).isEmpty();
+        assertThat(response.skippedCount()).isEqualTo(1);
+        verify(bugReportRepository, never()).save(any());
     }
 
     @Test

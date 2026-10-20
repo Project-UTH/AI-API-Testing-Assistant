@@ -14,6 +14,11 @@ public record GenerateTestCasesRequest(
         boolean includeSecurity,
         boolean includePositive,
         boolean includeNegative,
-        boolean includeBoundary
+        boolean includeBoundary,
+        /** Nhóm NGHIỆP VỤ (AI đoán luật không có trong spec). Mặc định false, nhóm này sinh/xoá độc lập với 4 loại còn lại. */
+        boolean includeBusiness
 ) {
+    public GenerateTestCasesRequest(boolean includeSecurity, boolean includePositive, boolean includeNegative, boolean includeBoundary) {
+        this(includeSecurity, includePositive, includeNegative, includeBoundary, false);
+    }
 }

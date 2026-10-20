@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
+import java.util.UUID;
 
 public record TestCaseRequest(
         @NotBlank(message = "Tên test case không được để trống")
@@ -37,6 +38,18 @@ public record TestCaseRequest(
         List<TestCaseDependencyInput> dependencies,
 
         @Valid
-        List<TestCaseAssertionInput> assertions
+        List<TestCaseAssertionInput> assertions,
+
+        /** Module 17 (3.1) - profile xác thực (vai trò); null = token mặc định của project. */
+        UUID authProfileId
 ) {
+    /** Dạng cũ (chưa có profile) - giữ cho các nơi không quan tâm tới vai trò. */
+    public TestCaseRequest(
+            String name, String description, String requestHeaders, String requestBody, Integer expectedStatus,
+            String resolvedPath, String pathParamFallbacks, TestCaseAuthOverride authOverride,
+            List<TestCaseDependencyInput> dependencies, List<TestCaseAssertionInput> assertions
+    ) {
+        this(name, description, requestHeaders, requestBody, expectedStatus, resolvedPath, pathParamFallbacks, authOverride,
+                dependencies, assertions, null);
+    }
 }

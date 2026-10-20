@@ -1,21 +1,23 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Bug, CheckCircle2, ChevronDown, ListChecks, Loader2, Pencil, XCircle } from "lucide-react"
+import { Bug, CheckCircle2, ChevronDown, Download, GitCompare, ListChecks, Loader2, Pencil, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { StatusBadge, RESULT_STATUS_STYLES, RESULT_STATUS_LABEL, RESULT_STATUS_ICON } from "@/components/shared/StatusBadge"
 import { BugStatusBadge } from "@/components/shared/BugStatusBadge"
 import { FailureCauseBanner, FailureCauseChip, FailureCauseDetail } from "@/components/shared/FailureCause"
 import { StabilityNote, UnstableBadge } from "@/components/shared/StabilityNote"
+import { SecurityBadge, SecurityDetail } from "@/components/shared/SecurityWarnings"
+import { ResponseBodyView } from "@/components/shared/ResponseBodyView"
 import { CreateBugReportDialog } from "@/components/bugreports/CreateBugReportDialog"
 import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog"
 import { ApiError } from "@/lib/api"
 import { generateBugReports, getBugReports, type BugReport, type GenerateBugReportsResult } from "@/lib/bugReports"
-import { cn, formatResponseBody } from "@/lib/utils"
-import { getExecution, type ExecutionStatus, type TestResult, type TestResultStatus } from "@/lib/executions"
+import { cn } from "@/lib/utils"
+import { exportExecution, getExecution, type ExecutionReportFormat, type ExecutionStatus, type TestResult, type TestResultStatus } from "@/lib/executions"
 
 // Thứ tự cố định (khớp RESULT_STATUS_LABEL bên dưới) - dùng để vẽ donut theo 1 thứ tự nhất quán,
 // không lệ thuộc thứ tự dữ liệu trả về.
@@ -76,6 +78,11 @@ export function TestExecutionPage() {
       .filter((bug) => resultIds.has(bug.sourceTestResultId))
   }, [bugReportsPage, execution])
 
+  // Module 17 (17d) - xuất báo cáo lượt chạy (JUnit XML cho CI / HTML để mở-in).
+  const exportMutation = useMutation({
+    mutationFn: (format: ExecutionReportFormat) => exportExecution(projectId, executionId!, format),
+  })
+
   const [lastGenerateResult, setLastGenerateResult] = useState<GenerateBugReportsResult | null>(null)
 
   // "Sinh tất cả" xét toàn bộ kết quả Fail của lần chạy - backend tự bỏ qua dòng không hợp lệ.
@@ -123,18 +130,8 @@ export function TestExecutionPage() {
 
   return (
     <div>
-      <Button
-        variant="ghost"
-        size="sm"
-        nativeButton={false}
-        render={<Link to={`/projects/${projectId}/test-cases`} />}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại Test Case
-      </Button>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Kết quả thực thi</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">Kết quả thực thi</h2>
         <div className="flex flex-wrap items-center gap-2">
           {execution && (
             <span
@@ -148,6 +145,29 @@ export function TestExecutionPage() {
               )}
               {EXECUTION_STATUS_LABEL[execution.status]}
             </span>
+          )}
+          {isFinished && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="outline" size="sm" disabled={exportMutation.isPending}>
+                    {exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                    Xuất báo cáo
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => exportMutation.mutate("junit")}>JUnit XML (.xml) - cho CI</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportMutation.mutate("html")}>Báo cáo HTML (.html) - để mở/in</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {isFinished && (
+            <Button variant="outline" size="sm" render={<Link to={`/projects/${projectId}/executions/${executionId}/compare`} />}>
+              <GitCompare className="h-4 w-4" />
+              So sánh với lượt trước
+            </Button>
           )}
           {isFinished && generatedBugs.length > 0 && (
             <DropdownMenu open={bugPanelOpen} onOpenChange={setBugPanelOpen}>
@@ -227,6 +247,11 @@ export function TestExecutionPage() {
               : "Không sinh được Bug Report, vui lòng thử lại"}
         </p>
       )}
+      {exportMutation.isError && (
+        <p className="mt-2 text-sm text-destructive" role="alert">
+          {exportMutation.error instanceof ApiError ? exportMutation.error.message : "Không xuất được báo cáo, vui lòng thử lại"}
+        </p>
+      )}
       {lastGenerateResult && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <span>
@@ -257,8 +282,33 @@ export function TestExecutionPage() {
         </p>
       )}
 
+      {execution && !isFinished && (
+        <div className="mt-6 flex items-center gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+          <span>
+            Đang chạy các test case, kết quả sẽ hiện khi chạy xong
+            {execution.results.length > 0 ? ` (đã chạy xong ${execution.results.length} test case)` : ""}.
+          </span>
+        </div>
+      )}
+
       {isFinished && filteredResults.length === 0 && (
-        <p className="mt-6 text-muted-foreground">Không có kết quả nào.</p>
+        <div className="mt-6 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          {endpointFilter && execution.results.length > 0 ? (
+            <p>
+              Lần chạy này không có kết quả nào của endpoint đã chọn
+              ({execution.results.length} kết quả thuộc các endpoint khác).
+            </p>
+          ) : (
+            <p>Lần chạy này không ghi nhận kết quả nào.</p>
+          )}
+          <Link
+            to={`/projects/${projectId}/${endpointFilter && execution.results.length > 0 ? `executions/${executionId}` : "test-cases"}`}
+            className="mt-2 inline-block text-primary underline underline-offset-4"
+          >
+            {endpointFilter && execution.results.length > 0 ? "Xem tất cả kết quả của lần chạy" : "Về danh sách Test case"}
+          </Link>
+        </div>
       )}
 
       {isFinished && filteredResults.length > 0 && <ExecutionSummaryDashboard results={filteredResults} />}
@@ -269,7 +319,6 @@ export function TestExecutionPage() {
       <ul className="mt-4 flex flex-col gap-2">
         {filteredResults.map((result) => {
           const isExpanded = expandedId === result.testCaseId
-          const formattedBody = formatResponseBody(result.responseBody)
           return (
             <li key={result.id} className="rounded-md border border-border">
               <div className="flex w-full items-start gap-2 p-3 sm:items-center">
@@ -296,6 +345,15 @@ export function TestExecutionPage() {
                   </span>
                   {result.failureCause && <FailureCauseChip cause={result.failureCause} />}
                   <UnstableBadge result={result} />
+                  {result.schemaViolations.length > 0 && (
+                    <span
+                      className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+                      title="Phản hồi lệch schema khai báo trong spec - kết quả Pass/Fail không đổi"
+                    >
+                      Lệch schema (cảnh báo)
+                    </span>
+                  )}
+                  <SecurityBadge findings={result.securityFindings} />
                   {result.errorMessage && (
                     <span className="shrink-0 truncate text-xs text-destructive sm:max-w-64" title={result.errorMessage}>
                       {result.errorMessage}
@@ -321,6 +379,22 @@ export function TestExecutionPage() {
                 <div className="flex flex-col gap-3 border-t border-border p-3">
                   <StabilityNote result={result} projectId={projectId} />
                   <FailureCauseDetail result={result} />
+                  {result.schemaViolations.length > 0 && (
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                      <p className="font-medium text-amber-700 dark:text-amber-400">
+                        Phản hồi lệch schema khai báo trong spec (chỉ cảnh báo, kết quả không đổi)
+                      </p>
+                      <ul className="mt-1.5 list-disc pl-5 text-foreground">
+                        {result.schemaViolations.map((violation) => (
+                          <li key={violation}>{violation}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-1.5 text-muted-foreground">
+                        Chỉ kiểm kiểu dữ liệu và trường bắt buộc. Có thể API sai so với spec, hoặc spec khai báo chưa đúng.
+                      </p>
+                    </div>
+                  )}
+                  <SecurityDetail findings={result.securityFindings} />
                   {result.errorMessage && (
                     <div>
                       <p className="mb-1 text-xs font-medium text-muted-foreground">Lỗi</p>
@@ -329,13 +403,7 @@ export function TestExecutionPage() {
                   )}
                   <div>
                     <p className="mb-1 text-xs font-medium text-muted-foreground">Nội dung phản hồi</p>
-                    {formattedBody ? (
-                      <pre className="max-h-80 overflow-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap break-all">
-                        {formattedBody}
-                      </pre>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Không có nội dung phản hồi.</p>
-                    )}
+                    <ResponseBodyView body={result.responseBody} />
                   </div>
                   {result.assertionResults.length > 0 && (
                     <div>

@@ -17,6 +17,8 @@ public interface EndpointRepository extends JpaRepository<Endpoint, UUID> {
     // Trang Tổng quan (Module 8) - tổng endpoint của toàn bộ project user sở hữu.
     long countByProjectOwner(User owner);
 
+    long countByProject(Project project);
+
     // Bản không phân trang - trang Lịch sử kiểm thử (Module 8) cần load hết endpoint của project.
     List<Endpoint> findAllByProjectOrderByCreatedAtAsc(Project project);
 

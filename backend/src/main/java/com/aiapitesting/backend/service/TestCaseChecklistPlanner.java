@@ -2,6 +2,7 @@ package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.response.ChecklistItemType;
+import com.aiapitesting.backend.dto.response.CoverageScope;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
@@ -57,7 +58,7 @@ public class TestCaseChecklistPlanner {
     public static final String INVALID_ENUM_VALUE = "__INVALID_ENUM__";
 
     /** Giá trị sai kiểu cho field số/boolean (gửi chuỗi chữ) và cho field chuỗi (gửi số). */
-    static final String WRONG_TYPE_TEXT = "khong-phai-so";
+    static final String WRONG_TYPE_TEXT = "not-a-number";
     static final String WRONG_TYPE_NUMBER = "12345";
 
     static final String NOT_JSON_REASON =
@@ -85,6 +86,8 @@ public class TestCaseChecklistPlanner {
 
     /** Giá trị dài hơn ngưỡng này (vd chuỗi maxLength = 5000 ký tự) ghi vào key dạng "len:N" thay vì nguyên văn. */
     private static final int MAX_VALUE_IN_KEY = 40;
+    /** Chuỗi dài hơn mức này không dựng thật (RAM + body request) - mục biên độ dài tương ứng ghi là không áp dụng. */
+    private static final int MAX_GENERATABLE_LENGTH = 100_000;
 
     private final ObjectMapper objectMapper = JsonMapper.builder()
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -178,7 +181,11 @@ public class TestCaseChecklistPlanner {
             hasBody = true;
             Schema<?> bodySchema = null;
             for (Map.Entry<String, MediaType> entry : stored.requestBody.getContent().entrySet()) {
-                boolean json = entry.getKey() != null && entry.getKey().toLowerCase(Locale.ROOT).contains("json");
+                // Body "dạng field": JSON, form-urlencoded, multipart - test case luôn là JSON object phẳng và RequestBodyEncoder
+                // chuyển thành form/multipart lúc gửi, nên checklist Negative/Boundary áp dụng được như JSON. XML/text thì không.
+                String mediaType = entry.getKey() == null ? "" : entry.getKey().toLowerCase(Locale.ROOT);
+                boolean json = mediaType.contains("json") || mediaType.startsWith("application/x-www-form-urlencoded")
+                        || mediaType.startsWith("multipart/");
                 if (json && !bodyIsJson) {
                     bodyIsJson = true;
                     bodySchema = entry.getValue() == null ? null : entry.getValue().getSchema();
@@ -316,7 +323,9 @@ public class TestCaseChecklistPlanner {
             for (FieldRule rule : spec.rules()) {
                 String na = rule.location() == ParamLocation.BODY ? bodyNotApplicable : null;
                 addDeclaredNumericBounds(rule, na, items);
-                if (rule.minLength() != null) {
+                if (rule.minLength() != null && rule.minLength() > MAX_GENERATABLE_LENGTH) {
+                    items.add(lengthTooLarge(ChecklistItemType.BOUNDARY_AT_MIN_LENGTH, rule, "minLength", rule.minLength()));
+                } else if (rule.minLength() != null) {
                     int n = rule.minLength();
                     items.add(boundary(ChecklistItemType.BOUNDARY_AT_MIN_LENGTH, rule, "a".repeat(n), true, na,
                             "dài đúng minLength = " + n + " ký tự" + literalHint(n), "dài " + n + " ký tự (đúng minLength)",
@@ -328,7 +337,9 @@ public class TestCaseChecklistPlanner {
                                 "có minLength=" + n + " trong spec; dùng chuỗi " + (n - 1) + " ký tự ngay dưới biên để kiểm tra API chặn."));
                     }
                 }
-                if (rule.maxLength() != null) {
+                if (rule.maxLength() != null && rule.maxLength() > MAX_GENERATABLE_LENGTH) {
+                    items.add(lengthTooLarge(ChecklistItemType.BOUNDARY_AT_MAX_LENGTH, rule, "maxLength", rule.maxLength()));
+                } else if (rule.maxLength() != null) {
                     int n = rule.maxLength();
                     items.add(boundary(ChecklistItemType.BOUNDARY_AT_MAX_LENGTH, rule, "a".repeat(n), true, na,
                             "dài đúng maxLength = " + n + " ký tự" + literalHint(n), "dài " + n + " ký tự (đúng maxLength)",
@@ -471,8 +482,10 @@ public class TestCaseChecklistPlanner {
         }
         return switch (rule.type()) {
             case "integer", "number", "boolean" -> WRONG_TYPE_TEXT;
-            // Tham số path/query/header luôn là chuỗi - không có giá trị nào "sai kiểu chuỗi".
-            case "string" -> rule.location() == ParamLocation.BODY ? WRONG_TYPE_NUMBER : null;
+            // Module 17 (1.2) - KHÔNG kiểm "sai kiểu" cho trường chuỗi: tham số path/query/header luôn là chuỗi, còn ở body JSON
+            // thì Jackson (Spring) ép số 12345 thành "12345" nên API nhận hợp lệ (đo thật: POST /register fullName=12345 trả 201)
+            // - kỳ vọng 400 là kỳ vọng sai, sinh ra test Fail oan. Chỉ giữ cho số/boolean, nơi gửi chữ thật sự bị từ chối.
+            case "string" -> null;
             default -> null;
         };
     }
@@ -497,8 +510,18 @@ public class TestCaseChecklistPlanner {
      * bao giờ hiểu "đủ" khác nhau.
      */
     public List<ChecklistItem> planAll(Spec spec, boolean requiresAuth) {
-        List<ChecklistItem> items = new ArrayList<>(plan(spec, true, true, true));
-        items.addAll(planSecurity(requiresAuth));
+        return planScoped(spec, requiresAuth, CoverageScope.FULL);
+    }
+
+    /**
+     * Checklist chỉ gồm các loại nằm trong phạm vi đo của endpoint. Coverage và nút Bổ sung cùng dùng hàm này nên
+     * mẫu số "Cần kiểm" và thứ được bù không bao giờ lệch nhau.
+     */
+    public List<ChecklistItem> planScoped(Spec spec, boolean requiresAuth, CoverageScope scope) {
+        List<ChecklistItem> items = new ArrayList<>(plan(spec, scope.positive(), scope.negative(), scope.boundary()));
+        if (scope.security()) {
+            items.addAll(planSecurity(requiresAuth));
+        }
         return items;
     }
 
@@ -582,6 +605,20 @@ public class TestCaseChecklistPlanner {
         return new GeneratedTestCase(testCase.getName(), testCase.getDescription(), readStringMap(testCase.getRequestHeaders()),
                 testCase.getRequestBody(), testCase.getExpectedStatus(), testCase.getResolvedPath(),
                 readStringMap(testCase.getPathParamFallbacks()), testCase.getAuthOverride(), testCase.getRationale());
+    }
+
+    /**
+     * minLength/maxLength quá lớn để gửi chuỗi thật (vd Spring/Jakarta ghi {@code maxLength: 2147483647} cho
+     * {@code @Size(min = 8)} không khai max = "không giới hạn"): không dựng chuỗi, ghi 1 mục không áp dụng kèm lý do.
+     * Trước đây {@code "a".repeat(2147483647)} làm OutOfMemoryError và sập cả trang Coverage của project.
+     */
+    private ChecklistItem lengthTooLarge(ChecklistItemType type, FieldRule rule, String keyword, int limit) {
+        return new ChecklistItem(type, rule.name(), rule.location(), "", true,
+                "'" + rule.name() + "' " + where(rule.location()) + " có " + keyword + " = " + limit,
+                "'" + rule.name() + "' có " + keyword + " = " + limit,
+                "Trường '" + rule.name() + "' " + where(rule.location()) + " khai " + keyword + " = " + limit + " trong spec.",
+                keyword + " = " + limit + " vượt " + MAX_GENERATABLE_LENGTH + " ký tự nên không gửi chuỗi dài như vậy được - "
+                        + "thường là giá trị mặc định 'không giới hạn' của framework (vd @Size(min = 8) không khai max), không phải biên thật.");
     }
 
     private ChecklistItem boundary(

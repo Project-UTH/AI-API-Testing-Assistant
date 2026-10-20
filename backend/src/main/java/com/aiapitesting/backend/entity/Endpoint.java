@@ -40,6 +40,14 @@ public class Endpoint {
     private String schema;
 
     /**
+     * Schema response (chỉ mã 2xx có nội dung JSON) theo mã trạng thái: {"200": {...schema OpenAPI đã inline $ref...}}.
+     * Lưu RIÊNG khỏi {@link #schema} vì {@code schema} được gửi cho AI (dung lượng/token) còn cột này chỉ dùng để đối chiếu
+     * phản hồi thật lúc chạy test. Null = spec không khai hoặc endpoint import trước khi có tính năng (cần import lại).
+     */
+    @Column(name = "response_schemas", columnDefinition = "TEXT")
+    private String responseSchemas;
+
+    /**
      * Suy ra từ operation.getSecurity() (hoặc security toàn cục khi operation không override) lúc
      * import - dùng cho chiều Auth của Coverage Matrix (Module 15c). columnDefinition cần khai rõ
      * DEFAULT vì đây là cột NOT NULL thêm vào bảng đã có dữ liệu (cùng gotcha VARCHAR/TINYINT đã rút
@@ -49,6 +57,62 @@ public class Endpoint {
     @Column(nullable = false, columnDefinition = "TINYINT(1) DEFAULT 0")
     @Builder.Default
     private boolean requiresAuth = false;
+
+    /**
+     * Phạm vi đo coverage: loại test case người dùng chọn kiểm cho endpoint này (ghi lại mỗi lần sinh test case,
+     * hoặc chỉnh ở trang Coverage). Cả 4 cột null = chưa từng chọn (endpoint cũ) → coi như đủ 4 loại. Dùng
+     * Boolean nullable (không DEFAULT) để {@code ddl-auto=update} thêm cột được lên bảng đã có dữ liệu.
+     */
+    @Column
+    private Boolean scopePositive;
+
+    @Column
+    private Boolean scopeNegative;
+
+    @Column
+    private Boolean scopeBoundary;
+
+    @Column
+    private Boolean scopeSecurity;
+
+    /**
+     * Module 17 (17b-2) - bật kiểm thử bảo mật mass-assignment cho endpoint ghi này. KHÁC các cờ scope khác: null/false = TẮT (opt-in), vì
+     * probe gửi request GHI thật tới hệ thống đích và có thể tạo/sửa dữ liệu.
+     */
+    private Boolean scopeOwasp;
+
+    /**
+     * Module 17 (1.3) - người dùng tự khai endpoint có yêu cầu xác thực hay không, GHI ĐÈ giá trị suy từ spec. Null = theo spec
+     * ({@link #requiresAuth}). Cần vì nhiều API (springdoc mặc định) không khai {@code security} dù thực tế chặn 401 - lúc đó
+     * mọi mục Security bị "không áp dụng" mà không có cách sửa. Cột riêng (không sửa {@code requiresAuth}) để import lại spec
+     * không xoá mất khai báo của người dùng và vẫn biết giá trị gốc từ spec.
+     */
+    @Column
+    private Boolean requiresAuthManual;
+
+    /**
+     * Generalization - Content-Type của request body theo spec (requestBody.content): ưu tiên application/json, không có thì loại đầu tiên
+     * (application/x-www-form-urlencoded, multipart/form-data, text/plain, application/xml...). Null = dữ liệu cũ/không có body -> JSON.
+     */
+    @Column(length = 100)
+    private String requestContentType;
+
+    /** Giá trị dùng cho mọi tính toán (checklist Security, phân loại Fail...): khai báo thủ công nếu có, không thì theo spec. */
+    public boolean effectiveRequiresAuth() {
+        return requiresAuthManual != null ? requiresAuthManual : requiresAuth;
+    }
+
+    /** Module 17 (17c) - SHA-256 của phần spec ảnh hưởng tới việc kiểm thử (schema + response schema + requiresAuth); null = chưa tính (dữ liệu cũ). */
+    @Column(length = 64)
+    private String specHash;
+
+    /** Module 17 (17c) - lần import gần nhất ĐÃ ĐỔI spec của endpoint này (test case của nó có thể lỗi thời). Null = chưa đổi lần nào. */
+    @Column
+    private Instant schemaChangedAt;
+
+    /** Module 17 (17c) - endpoint không còn trong spec ở lần import gần nhất (vẫn giữ test case/lịch sử; chỉ khi import kiểu thay thế mới xoá). */
+    @Column
+    private Boolean missingFromSpec;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;

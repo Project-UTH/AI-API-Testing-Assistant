@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -52,10 +53,18 @@ public class FailureCauseClassifier {
 
     /**
      * Số liệu "anh em" cùng 1 lượt chạy: dùng để nói "N/M test cùng lỗi" - bằng chứng mạnh hơn 1 kết quả riêng lẻ.
+     * {@code defaultAuthAcceptedCount}: số test dùng token mặc định đã nhận phản hồi KHÔNG phải 401/403 - bằng chứng token
+     * còn dùng được, nên 1 lần 403 riêng lẻ là hành vi của API (vd target trả 403 cho JSON hỏng) chứ không phải token hỏng.
      */
-    public record ExecutionContext(int sameKindErrorCount, int calledCount, int defaultAuthUnauthorizedCount, int defaultAuthCalledCount) {
+    public record ExecutionContext(int sameKindErrorCount, int calledCount, int defaultAuthUnauthorizedCount, int defaultAuthCalledCount,
+                                   int defaultAuthAcceptedCount) {
+        /** Dạng không có số liệu "token đã được chấp nhận" - giữ cho các nơi chưa cần. */
+        public ExecutionContext(int sameKindErrorCount, int calledCount, int defaultAuthUnauthorizedCount, int defaultAuthCalledCount) {
+            this(sameKindErrorCount, calledCount, defaultAuthUnauthorizedCount, defaultAuthCalledCount, 0);
+        }
+
         public static ExecutionContext none() {
-            return new ExecutionContext(0, 0, 0, 0);
+            return new ExecutionContext(0, 0, 0, 0, 0);
         }
     }
 
@@ -69,13 +78,44 @@ public class FailureCauseClassifier {
      *                          null nếu chưa từng chạy ở phiên bản nào khác - bằng chứng "fail ngay sau khi sửa test"
      * @param endpointRequiresAuth spec có khai endpoint yêu cầu xác thực không (null = không biết). FALSE thì 401/403 có thể
      *                          do thông tin đăng nhập trong request (vd endpoint đăng nhập) chứ không phải token của project
+     * @param fallbackPathParams tham số TRONG ĐƯỜNG DẪN (không tính query) mà lần chạy này dùng giá trị dự phòng vì không có
+     *                          dependency cấp giá trị: tên → giá trị đã gửi đi (rỗng = không có)
+     * @param hasAssertions     test case có assertion nội dung phản hồi không (đổi 200↔204 khi có assertion không còn vô hại)
      */
     public record Input(
             TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
             String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
             Instant authUpdatedAt, ExecutionContext context,
-            List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion, Boolean endpointRequiresAuth
+            List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion, Boolean endpointRequiresAuth,
+            Map<String, String> fallbackPathParams, boolean hasAssertions, boolean usesAuthProfile,
+            int profileAcceptedCount, String inputRejectionExcerpt
     ) {
+        /** Dạng 18 tham số (chưa có đoạn trích phản hồi từ chối đầu vào) - giữ cho các nơi/test chưa cần. */
+        public Input(
+                TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
+                String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
+                Instant authUpdatedAt, ExecutionContext context,
+                List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion, Boolean endpointRequiresAuth,
+                Map<String, String> fallbackPathParams, boolean hasAssertions, boolean usesAuthProfile,
+                int profileAcceptedCount
+        ) {
+            this(status, expectedStatus, responseStatus, errorKind, durationMs, errorMessage, authOverride, history,
+                    currentBaseUrl, authUpdatedAt, context, failedAssertions, lastOtherVersion, endpointRequiresAuth,
+                    fallbackPathParams, hasAssertions, usesAuthProfile, profileAcceptedCount, null);
+        }
+
+        /** Dạng không có thông tin về tham số đường dẫn dự phòng/assertion - giữ cho các nơi chưa cần. */
+        public Input(
+                TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
+                String errorMessage, TestCaseAuthOverride authOverride, List<HistoryPoint> history, String currentBaseUrl,
+                Instant authUpdatedAt, ExecutionContext context,
+                List<FailedAssertion> failedAssertions, HistoryPoint lastOtherVersion, Boolean endpointRequiresAuth
+        ) {
+            this(status, expectedStatus, responseStatus, errorKind, durationMs, errorMessage, authOverride, history,
+                    currentBaseUrl, authUpdatedAt, context, failedAssertions, lastOtherVersion, endpointRequiresAuth,
+                    Map.of(), false, false, 0);
+        }
+
         /** Dạng không có thông tin về spec xác thực - giữ cho các nơi chưa cần. */
         public Input(
                 TestResultStatus status, Integer expectedStatus, Integer responseStatus, ErrorKind errorKind, Long durationMs,
@@ -136,10 +176,44 @@ public class FailureCauseClassifier {
             return new Result(FailureCause.ENVIRONMENT, evidence);
         }
 
+        // 2c. 404 do dùng id dự phòng (chưa từng Pass): test chưa chạm tới logic cần kiểm - bằng chứng mạnh hơn mọi luật lịch sử.
+        Result resourceNotFound = resourceNotFound(in, history);
+        if (resourceNotFound != null) {
+            return resourceNotFound;
+        }
+        // 2c'. Test dùng profile vai trò: sai lệch phân quyền là phát hiện thật; 401 mà vai trò không có test nào được chấp nhận là
+        //      token của vai trò hỏng (Module 17 - 17a).
+        Result authz = authzOutcome(in);
+        if (authz != null) {
+            return authz;
+        }
+        // 2d. Mã lệch kỳ vọng nhưng cùng nhóm nghĩa (401/403, 400/422, 200/201/204): chỉ nhãn gợi ý, vẫn FAILED.
+        Result expectationMismatch = expectationMismatch(in);
+        if (expectationMismatch != null) {
+            return expectationMismatch;
+        }
+        // 2e. Kỳ vọng 2xx nhưng API từ chối đầu vào (400/422) và nói rõ dữ liệu không hợp lệ: nghi DỮ LIỆU TEST sai/cũ (Module 17 - S2).
+        //     Đặt trước luật lịch sử để 3 lần Fail cùng mã không bị kết luận oan là "lỗi ổn định của API".
+        Result testData = testDataSuspect(in);
+        if (testData != null) {
+            return testData;
+        }
+
         // 3. Xác thực: nhận 401/403 ngoài kỳ vọng khi test dùng token mặc định của project. Case Security cố ý
         //    bỏ/sai token (authOverride NONE/INVALID) thì 401 là CHỦ ĐÍCH - không bao giờ gắn nhãn này.
+        Result wrongStatus = apiWrongStatus(in);
+        if (wrongStatus != null) {
+            return wrongStatus;
+        }
         if (isUnexpectedAuthFailure(in)) {
             return new Result(FailureCause.AUTH_CONFIG, authEvidence(in, history, ctx));
+        }
+
+        // 3b. 403 (đã xác thực nhưng không đủ quyền) khi kỳ vọng thành công, mà token mặc định đã chứng minh dùng được ở test khác: nghi token/vai
+        //     trò thiếu quyền cho endpoint này. Đặt trước luật lịch sử để 403 lặp lại không bị gọi là "lỗi ổn định của API".
+        Result forbidden = tokenForbidden(in);
+        if (forbidden != null) {
+            return forbidden;
         }
 
         // 4-7. Phân loại theo mẫu kết quả qua các lần chạy cùng phiên bản test.
@@ -159,6 +233,10 @@ public class FailureCauseClassifier {
             Result dataState = dataState(in, verdicts);
             if (dataState != null) {
                 return dataState;
+            }
+            Result stateConflict = stateConflict(in);
+            if (stateConflict != null) {
+                return stateConflict;
             }
             Result stable = stableFailure(verdicts);
             if (stable != null) {
@@ -262,12 +340,144 @@ public class FailureCauseClassifier {
         }
     }
 
+    // ---- Tài nguyên không tồn tại (id dự phòng) + kỳ vọng lệch mã ----
+
+    /** Nhóm mã "thành công" được coi là cùng nghĩa với nhau - cố ý loại 202 (chấp nhận nhưng chưa xong), 206, 207. */
+    private static final Set<Integer> PLAIN_SUCCESS_STATUSES = Set.of(200, 201, 204);
+
+    private Result resourceNotFound(Input in, List<HistoryPoint> history) {
+        if (in.status() != TestResultStatus.FAILED || !Integer.valueOf(404).equals(in.responseStatus())
+                || Integer.valueOf(404).equals(in.expectedStatus())
+                || in.fallbackPathParams() == null || in.fallbackPathParams().isEmpty()) {
+            return null;
+        }
+        // Đã từng Pass cùng phiên bản test rồi mới 404 nghĩa là tài nguyên bị xoá/đổi GIỮA CHỪNG (DATA_STATE/FLAKY) -
+        // câu "id có thể chưa từng tồn tại" sẽ sai sự thật, nhường cho luật lịch sử.
+        if (history.stream().anyMatch(h -> h.status() == TestResultStatus.PASSED)) {
+            return null;
+        }
+        String params = in.fallbackPathParams().entrySet().stream()
+                .map(e -> "{" + e.getKey() + "}=" + e.getValue())
+                .collect(java.util.stream.Collectors.joining(", "));
+        List<String> evidence = new ArrayList<>();
+        evidence.add("Nhận 404 trong khi kỳ vọng " + in.expectedStatus() + "; test dùng giá trị dự phòng cho tham số đường dẫn "
+                + params + " (không có dependency cấp giá trị thật)");
+        evidence.add("Id dự phòng có thể không tồn tại trên hệ thống đích, hoặc đã bị test khác trong cùng lượt xoá - test "
+                + "chưa chạm tới logic cần kiểm (vd bước validate)");
+        evidence.add("Gợi ý: thêm Test Data Chaining (tạo tài nguyên bằng POST rồi lấy id), hoặc đổi giá trị dự phòng thành "
+                + "id có thật và ổn định. Nếu nhiều endpoint khác cũng 404, kiểm tra lại Target Base URL");
+        return new Result(FailureCause.RESOURCE_NOT_FOUND, evidence);
+    }
+
+    private Result expectationMismatch(Input in) {
+        Integer expected = in.expectedStatus();
+        Integer actual = in.responseStatus();
+        if (in.status() != TestResultStatus.FAILED || expected == null || actual == null || expected.equals(actual)) {
+            return null;
+        }
+        boolean securityWithoutValidToken = in.authOverride() == TestCaseAuthOverride.NONE || in.authOverride() == TestCaseAuthOverride.INVALID;
+        String why = null;
+        // Security bỏ/sai token: 401 và 403 cùng là từ chối xác thực. Chỉ khi spec khai endpoint yêu cầu xác thực - endpoint
+        // công khai trả 403 có thể là CSRF/WAF/quyền, không cùng nhóm. 2xx thì tuyệt đối không (bỏ qua xác thực) - không khớp.
+        // Test vai trò (Module 17 - 17a) kỳ vọng bị từ chối: 401 hay 403 đều là API chặn - cùng nhóm, không phụ thuộc spec khai xác thực.
+        boolean roleDenyCheck = in.usesAuthProfile() && !securityWithoutValidToken;
+        if (((securityWithoutValidToken && Boolean.TRUE.equals(in.endpointRequiresAuth())) || roleDenyCheck)
+                && AUTH_STATUSES.contains(expected) && AUTH_STATUSES.contains(actual)) {
+            why = "401 và 403 cùng là từ chối xác thực - API vẫn chặn truy cập, chỉ chọn mã khác kỳ vọng";
+        } else if ((expected == 400 && actual == 422) || (expected == 422 && actual == 400)) {
+            why = "400 và 422 cùng là từ chối dữ liệu đầu vào - API vẫn từ chối, chỉ chọn mã khác kỳ vọng";
+        } else if (PLAIN_SUCCESS_STATUSES.contains(expected) && PLAIN_SUCCESS_STATUSES.contains(actual) && !in.hasAssertions()) {
+            why = "cả hai đều là mã thành công (kỳ vọng theo spec là " + expected + ", API trả " + actual + ") - API xử lý "
+                    + "thành công nhưng lệch mã khai báo trong spec";
+        }
+        if (why == null) {
+            return null;
+        }
+        List<String> evidence = new ArrayList<>();
+        evidence.add("API trả " + actual + ", kỳ vọng " + expected + ": " + why);
+        evidence.add("Đây chỉ là nhãn gợi ý, kết quả vẫn FAILED. Nếu đồng ý với cách API chọn mã thì sửa kỳ vọng của test; nếu "
+                + "spec mới đúng thì đây là lệch hợp đồng của API");
+        return new Result(FailureCause.EXPECTATION_MISMATCH, evidence);
+    }
+
+    // ---- Phân quyền theo vai trò (Module 17 - 17a) ----
+
+    private Result authzOutcome(Input in) {
+        boolean profileCall = in.usesAuthProfile()
+                && (in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT);
+        if (!profileCall || in.status() != TestResultStatus.FAILED || in.expectedStatus() == null || in.responseStatus() == null) {
+            return null;
+        }
+        int expected = in.expectedStatus();
+        int actual = in.responseStatus();
+        boolean expectedDenied = AUTH_STATUSES.contains(expected);
+        boolean expectedSuccess = expected >= 200 && expected < 300;
+        if (expectedDenied && actual >= 200 && actual < 300) {
+            return new Result(FailureCause.AUTHZ_VIOLATION, List.of(
+                    "Ma trận khai vai trò này bị cấm (kỳ vọng " + expected + ") nhưng API trả " + actual + " - vai trò vẫn gọi được",
+                    "Nghi thiếu kiểm quyền hoặc leo quyền (vd gọi endpoint của vai trò khác); nếu thực tế vai trò này được phép thì sửa ma trận"));
+        }
+        if (expectedSuccess && actual == 403) {
+            return new Result(FailureCause.AUTHZ_VIOLATION, List.of(
+                    "Ma trận khai vai trò này được phép (kỳ vọng " + expected + ") nhưng API trả 403 - vai trò bị từ chối",
+                    "Nghi vai trò thiếu quyền trên API, hoặc ma trận khai sai - đối chiếu với tài liệu phân quyền của hệ thống"));
+        }
+        if (actual == 401 && !expectedDenied && in.profileAcceptedCount() == 0) {
+            return new Result(FailureCause.AUTH_CONFIG, List.of(
+                    "Nhận 401 khi gọi bằng token của vai trò này và chưa có test nào của vai trò đó được API chấp nhận trong lượt chạy",
+                    "Token của vai trò có thể sai/hết hạn - cập nhật ở nút \"Vai trò\" của project rồi chạy lại"));
+        }
+        return null;
+    }
+
     // ---- Xác thực ----
 
+    private Result tokenForbidden(Input in) {
+        boolean usesDefaultAuth = (in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT) && !in.usesAuthProfile();
+        Integer expected = in.expectedStatus();
+        if (in.status() != TestResultStatus.FAILED || !usesDefaultAuth || !Objects.equals(in.responseStatus(), 403)
+                || expected == null || expected < 200 || expected > 299
+                || in.context() == null || in.context().defaultAuthAcceptedCount() <= 0) {
+            return null;
+        }
+        return new Result(FailureCause.TOKEN_FORBIDDEN, List.of(
+                "API trả 403 (đã xác thực nhưng không đủ quyền) trong khi kỳ vọng " + expected + "; token mặc định của project được chấp nhận ở "
+                        + in.context().defaultAuthAcceptedCount() + " test khác trong cùng lượt chạy nên token còn dùng được",
+                "Nhiều khả năng token/vai trò mặc định không có quyền gọi endpoint này (vd endpoint của vai trò khác): gán profile vai trò đúng "
+                        + "ở Sửa test case. Cũng có thể API chặn nhầm (bug thật) - kiểm thử black-box không phân biệt được"));
+    }
+
+    /**
+     * 401 cho request mà test kỳ vọng 400/422 (đầu vào sai), trong khi token mặc định đã được API chấp nhận ở test khác cùng lượt: không thể quy cho
+     * token. Gắn nhãn là phát hiện của API (không che bằng "lỗi cấu hình xác thực"). Chỉ áp cho test dùng token mặc định, không áp cho case Security
+     * cố ý bỏ/sai token (401 khi đó là kết quả đúng).
+     */
+    private Result apiWrongStatus(Input in) {
+        boolean usesDefaultAuth = (in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT) && !in.usesAuthProfile();
+        Integer expected = in.expectedStatus();
+        if (in.status() != TestResultStatus.FAILED || !usesDefaultAuth || in.responseStatus() == null || in.responseStatus() != 401
+                || expected == null || (expected != 400 && expected != 422)
+                || in.context() == null || in.context().defaultAuthAcceptedCount() <= 0) {
+            return null;
+        }
+        return new Result(FailureCause.API_WRONG_STATUS, List.of(
+                "API trả 401 trong khi test kỳ vọng " + expected + " (đầu vào sai). Token mặc định đã được API chấp nhận ở "
+                        + in.context().defaultAuthAcceptedCount() + " test khác trong cùng lượt chạy nên không quy cho token.",
+                "Nhiều khả năng API xử lý lỗi đầu vào sai mã (vd lỗi đọc JSON/enum bị chuyển sang luồng xác thực). Nên báo cho đồ án đích, không sửa kỳ vọng "
+                        + "cho khớp 401.",
+                "Giới hạn black-box: chưa có request đối chứng riêng - có thể kiểm bằng cách gửi cùng token với body hợp lệ."));
+    }
+
     private boolean isUnexpectedAuthFailure(Input in) {
-        boolean usesDefaultAuth = in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT;
+        // Test chạy bằng 1 profile vai trò (Module 17 - 3.1) KHÔNG dùng token mặc định của project: 401/403 của nó nói về vai trò đó
+        // (có thể là kết quả phân quyền đúng/sai), không nói gì về token project - không gán nhãn "nghi token" bằng bằng chứng của token khác.
+        boolean usesDefaultAuth = (in.authOverride() == null || in.authOverride() == TestCaseAuthOverride.DEFAULT) && !in.usesAuthProfile();
+        // Token đã chứng minh còn dùng được (test dùng token mặc định khác trong cùng lượt nhận phản hồi không phải
+        // 401/403) thì 401/403 riêng lẻ KHÔNG được quy cho token - nếu không sẽ che đúng loại lỗi thật của API.
+        boolean tokenProvenValid = in.context() != null && in.context().defaultAuthAcceptedCount() > 0;
         return in.status() == TestResultStatus.FAILED
                 && usesDefaultAuth
+                && !tokenProvenValid
                 && in.responseStatus() != null && AUTH_STATUSES.contains(in.responseStatus())
                 && (in.expectedStatus() == null || !AUTH_STATUSES.contains(in.expectedStatus()));
     }
@@ -344,6 +554,35 @@ public class FailureCauseClassifier {
                         + "thống không tự mở lại hay đóng Bug Report dựa trên test này",
                 "Nguyên nhân có thể nằm ở chính test (phụ thuộc dữ liệu/thời gian) hoặc ở API đích hành xử không ổn định - "
                         + "kiểm thử black-box không phân biệt được 2 khả năng này");
+    }
+
+    /**
+     * 409 khi kỳ vọng mã khác: API từ chối vì trạng thái dữ liệu (vd "mỗi HR chỉ 1 công ty", "email đã tồn tại"), nên các test
+     * Negative/Boundary chạy sau test tạo đầu tiên đều nhận 409 mà chưa chạm tới ràng buộc cần kiểm. Đứng sau DATA_STATE
+     * (từng Pass rồi mới Fail là bằng chứng "dữ liệu đổi" mạnh hơn) và trước STABLE_FAILURE.
+     */
+    private Result testDataSuspect(Input in) {
+        Integer expected = in.expectedStatus();
+        Integer actual = in.responseStatus();
+        if (in.status() != TestResultStatus.FAILED || expected == null || expected < 200 || expected > 299
+                || actual == null || (actual != 400 && actual != 422) || in.inputRejectionExcerpt() == null) {
+            return null;
+        }
+        return new Result(FailureCause.TEST_DATA_SUSPECT, List.of(
+                "API trả " + actual + " từ chối dữ liệu đầu vào trong khi test kỳ vọng " + expected + ". Phản hồi: \"" + in.inputRejectionExcerpt() + "\"",
+                "Nhiều khả năng dữ liệu test không hợp lệ (ngày cũ, mã không tồn tại...): sửa giá trị trong request rồi chạy lại. "
+                        + "Cũng có thể API validate sai (bug thật) - kiểm thử black-box không phân biệt được 2 trường hợp"));
+    }
+
+    private Result stateConflict(Input in) {
+        if (!Objects.equals(in.responseStatus(), 409) || Objects.equals(in.expectedStatus(), 409)) {
+            return null;
+        }
+        return new Result(FailureCause.STATE_CONFLICT, List.of(
+                "API trả 409 (xung đột trạng thái) trong khi kỳ vọng " + in.expectedStatus() + " - trạng thái dữ liệu hiện tại "
+                        + "chặn request trước khi tới ràng buộc test này muốn kiểm",
+                "Thường gặp khi tài nguyên đã tồn tại hoặc mỗi tài khoản chỉ được tạo 1 lần: xoá/đổi dữ liệu rồi chạy lại, hoặc "
+                        + "đặt test tạo ở đầu chuỗi (Test Data Chaining) để mỗi test dùng dữ liệu riêng"));
     }
 
     private Result stableFailure(List<HistoryPoint> verdicts) {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Bug, CheckCircle2, ChevronDown, Download, ListChecks, Pencil, Trash2, XCircle } from "lucide-react"
+import { Bug, CheckCircle2, ChevronDown, Download, ListChecks, Pencil, Trash2, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -11,7 +11,8 @@ import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog
 import { CreateBugReportDialog } from "@/components/bugreports/CreateBugReportDialog"
 import { DeleteBugReportDialog } from "@/components/bugreports/DeleteBugReportDialog"
 import { ApiError } from "@/lib/api"
-import { cn, formatDateTime, formatResponseBody, METHOD_STYLES } from "@/lib/utils"
+import { cn, formatDateTime, METHOD_STYLES } from "@/lib/utils"
+import { ResponseBodyView } from "@/components/shared/ResponseBodyView"
 import {
   confirmCloseBugReport,
   dismissCloseSuggestion,
@@ -193,13 +194,8 @@ export function BugReportPage() {
 
   return (
     <div>
-      <Button variant="ghost" size="sm" nativeButton={false} render={<Link to={`/projects/${projectId}`} />}>
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại Project
-      </Button>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Bug Report</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold">Bug Report</h2>
         <div className="flex flex-wrap items-center gap-2">
           {!selectionMode &&
             (generateSelectionMode ? (
@@ -386,6 +382,14 @@ function StatCard({ label, value }: { label: string; value: number }) {
 
 function BugDashboard({ summary }: { summary: BugDashboardSummary }) {
   const maxPriorityCount = Math.max(1, ...PRIORITY_ORDER.map((p) => summary.countByPriority[p] ?? 0))
+
+  if (summary.totalCount === 0) {
+    return (
+      <div className="mt-4 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+        Chưa có bug report nào. Chạy test, rồi bấm "Sinh Bug Report" (hoặc "Tạo Bug" ở dòng test fail bên dưới) để tạo.
+      </div>
+    )
+  }
 
   return (
     <div className="mt-4 flex flex-col gap-4">
@@ -795,13 +799,7 @@ function RunHistoryList({
                 {run.errorMessage && <p className="text-destructive">{run.errorMessage}</p>}
                 <div>
                   <p className="mb-1 font-medium text-muted-foreground">Nội dung phản hồi</p>
-                  {formatResponseBody(run.responseBody) ? (
-                    <pre className="max-h-80 overflow-auto rounded-md bg-muted p-2 whitespace-pre-wrap break-all">
-                      {formatResponseBody(run.responseBody)}
-                    </pre>
-                  ) : (
-                    <p className="text-muted-foreground">Không có nội dung phản hồi.</p>
-                  )}
+                  <ResponseBodyView body={run.responseBody} />
                 </div>
                 {run.assertionResults.length > 0 && (
                   <div>

@@ -284,6 +284,96 @@ class FailureCauseClassifierTest {
         assertThat(classifier.classify(failed(200, 404, history)).cause()).isEqualTo(FailureCause.DATA_STATE);
     }
 
+    // ---- Test dùng profile vai trò (Module 17 - 3.1) ----
+
+    @Test
+    void forbiddenOnTestUsingAnAuthProfile_isNeverBlamedOnTheProjectToken() {
+        // 403 của vai trò Candidate khi gọi endpoint của HR: có thể là phân quyền đúng/sai, không nói gì về token của project.
+        Input in = new Input(TestResultStatus.FAILED, 200, 403, null, 50L, null, TestCaseAuthOverride.DEFAULT, history(fail(0, 403)),
+                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, true, 0);
+
+        assertThat(classifier.classify(in).cause()).isNotEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
+    void sameForbiddenOnProjectDefaultToken_stillBlamedOnTheToken() {
+        Input in = new Input(TestResultStatus.FAILED, 200, 403, null, 50L, null, TestCaseAuthOverride.DEFAULT, history(fail(0, 403)),
+                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, false, 0);
+
+        assertThat(classifier.classify(in).cause()).isEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    // ---- AUTHZ_VIOLATION (Module 17 - 17a) ----
+
+    private Input profileCall(Integer expected, Integer actual, int profileAcceptedCount) {
+        return new Input(TestResultStatus.FAILED, expected, actual, null, 50L, null, TestCaseAuthOverride.DEFAULT, history(fail(0, actual)),
+                "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, true, profileAcceptedCount);
+    }
+
+    @Test
+    void profileExpectedDeniedButCallSucceeds_isAuthzViolationEscalation() {
+        Result result = classifier.classify(profileCall(403, 200, 5));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.AUTHZ_VIOLATION);
+        assertThat(result.evidence().get(0)).contains("bị cấm").contains("200");
+        // Phát hiện thật: không bị loại khỏi tự động hoá Bug Report như lỗi môi trường/token.
+        assertThat(FailureCause.AUTHZ_VIOLATION.isNotApiFault()).isFalse();
+        assertThat(FailureCause.AUTHZ_VIOLATION.suppressesBugAutomation()).isFalse();
+    }
+
+    @Test
+    void profileExpectedAllowedButForbidden_isAuthzViolation() {
+        assertThat(classifier.classify(profileCall(200, 403, 5)).cause()).isEqualTo(FailureCause.AUTHZ_VIOLATION);
+    }
+
+    @Test
+    void profile401WithNoAcceptedTestForThatProfile_isAuthConfigOfTheProfile() {
+        Result result = classifier.classify(profileCall(200, 401, 0));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.AUTH_CONFIG);
+        assertThat(result.evidence()).anyMatch(e -> e.contains("vai trò"));
+    }
+
+    @Test
+    void profile401WhileOtherTestsOfThatProfileAreAccepted_isNotBlamedOnToken() {
+        assertThat(classifier.classify(profileCall(200, 401, 3)).cause()).isNotEqualTo(FailureCause.AUTH_CONFIG);
+    }
+
+    @Test
+    void deniedExpectedAnd401Received_staysAnExpectationMismatchNotAViolation() {
+        // Kỳ vọng 403 mà API trả 401: cùng nhóm "từ chối" - API vẫn chặn đúng, chỉ khác mã.
+        assertThat(classifier.classify(profileCall(403, 401, 2)).cause()).isEqualTo(FailureCause.EXPECTATION_MISMATCH);
+    }
+
+    // ---- STATE_CONFLICT (Module 17 - 1.5) ----
+
+    @Test
+    void conflict409_whenExpectingOther_isStateConflictEvenOnFirstRun() {
+        // Ca thật: POST tạo công ty (mỗi HR chỉ 1) - 20/30 test Negative nhận 409 ở lần chạy đầu, trước đây UNDETERMINED.
+        Result result = classifier.classify(failed(400, 409, history(fail(0, 409))));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.STATE_CONFLICT);
+        assertThat(result.evidence().get(0)).contains("409");
+        assertThat(FailureCause.STATE_CONFLICT.isNotApiFault()).isFalse();
+        assertThat(FailureCause.STATE_CONFLICT.suppressesBugAutomation()).isTrue();
+    }
+
+    @Test
+    void conflict409_whenExpecting409_isNotStateConflict() {
+        // Kỳ vọng 409 mà nhận 409 là PASS (không tới được classifier); nhận 200 khi kỳ vọng 409 là nhãn khác.
+        Result result = classifier.classify(failed(409, 200, history(fail(0, 200))));
+
+        assertThat(result.cause()).isNotEqualTo(FailureCause.STATE_CONFLICT);
+    }
+
+    @Test
+    void conflict409_afterPassing_isDataStateNotStateConflict() {
+        // Từng Pass rồi mới 409 liên tiếp là bằng chứng "dữ liệu đổi" mạnh hơn - giữ DATA_STATE như trước.
+        Result result = classifier.classify(failed(200, 409, history(pass(0), pass(1), fail(2, 409), fail(3, 409))));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.DATA_STATE);
+    }
+
     // ---- STABLE_FAILURE ----
 
     @Test
@@ -516,6 +606,108 @@ class FailureCauseClassifierTest {
     @Test
     void onlyStrongEvidenceCausesAreExcludedFromApiMetrics() {
         assertThat(List.of(FailureCause.values())).filteredOn(FailureCause::isNotApiFault)
-                .containsExactlyInAnyOrder(FailureCause.TEST_SETUP, FailureCause.ENVIRONMENT, FailureCause.AUTH_CONFIG);
+                .containsExactlyInAnyOrder(FailureCause.TEST_SETUP, FailureCause.ENVIRONMENT, FailureCause.AUTH_CONFIG,
+                        FailureCause.RESOURCE_NOT_FOUND);
+    }
+
+    // ---- Module 17 (S2) - nghi dữ liệu test không hợp lệ ----
+
+    private Input rejected(Integer expected, Integer actual, String responseBody, List<HistoryPoint> history) {
+        return new Input(TestResultStatus.FAILED, expected, actual, null, 120L, null, TestCaseAuthOverride.DEFAULT,
+                history, "http://target", null, ExecutionContext.none(), List.of(), null, true, java.util.Map.of(), false, false, 0,
+                InputRejectionDetector.excerptIfRejected(responseBody));
+    }
+
+    @Test
+    void positiveRejectedWithInvalidInputMessage_isTestDataSuspect_evenAfterThreeSameFails() {
+        String past = "{\"error\":\"INVALID_JOB_DEADLINE\",\"message\":\"Hạn nộp không được ở trong quá khứ. Vui lòng chọn từ hôm nay trở đi.\"}";
+        String catalog = "{\"error\":\"INVALID_CATALOG_CODE\",\"message\":\"Ngành nghề không có trong danh mục.\"}";
+        for (String body : List.of(past, catalog)) {
+            Result result = classifier.classify(rejected(200, 400, body, history(fail(1, 400), fail(2, 400), fail(3, 400))));
+            assertThat(result.cause()).isEqualTo(FailureCause.TEST_DATA_SUSPECT);
+            assertThat(result.evidence()).anyMatch(line -> line.contains("400") && line.contains("kỳ vọng 200"));
+            assertThat(FailureCause.TEST_DATA_SUSPECT.isNotApiFault()).isFalse();
+            assertThat(FailureCause.TEST_DATA_SUSPECT.suppressesBugAutomation()).isTrue();
+        }
+        assertThat(classifier.classify(rejected(201, 422, "{\"message\":\"Validation failed\"}", history(fail(1, 422)))).cause())
+                .isEqualTo(FailureCause.TEST_DATA_SUSPECT);
+    }
+
+    @Test
+    void testDataSuspect_doesNotFireWhenBodyIsUnrelatedMaskedOrStatusDiffers() {
+        // 400 nhưng nội dung không nói về dữ liệu không hợp lệ: vẫn là lỗi ổn định như trước
+        assertThat(classifier.classify(rejected(200, 400, "{\"error\":\"BAD\"}", history(fail(1, 400), fail(2, 400), fail(3, 400)))).cause())
+                .isEqualTo(FailureCause.STABLE_FAILURE);
+        // body chỉ còn dấu che -> không khớp
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"message\":\"***ĐÃ CHE***\"}")).isNull();
+        // 500, 404 hoặc test kỳ vọng lỗi: không bao giờ
+        assertThat(classifier.classify(rejected(200, 500, "{\"message\":\"invalid\"}", history(fail(1, 500)))).cause())
+                .isNotEqualTo(FailureCause.TEST_DATA_SUSPECT);
+        assertThat(classifier.classify(rejected(400, 200, "{\"message\":\"invalid\"}", history(fail(1, 200)))).cause())
+                .isNotEqualTo(FailureCause.TEST_DATA_SUSPECT);
+        // không có đoạn trích -> dạng cũ không đổi hành vi
+        assertThat(classifier.classify(failed(200, 400, history(fail(1, 400)))).cause()).isNotEqualTo(FailureCause.TEST_DATA_SUSPECT);
+    }
+
+    @Test
+    void inputRejectionDetector_isDiacriticTolerantAndQuotesOnlyAShortExcerpt() {
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"message\":\"Giá trị KHÔNG HỢP LỆ\"}")).contains("KHÔNG HỢP LỆ");
+        assertThat(InputRejectionDetector.excerptIfRejected("deadline must not be in the past")).isNotNull();
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"message\":\"" + "invalid ".repeat(100) + "\"}").length()).isLessThan(200);
+        assertThat(InputRejectionDetector.excerptIfRejected(null)).isNull();
+        // định dạng lỗi khác (RFC 7807 / Spring / không có field quen thuộc) vẫn nhận ra
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"violations\":[{\"field\":\"email\",\"message\":\"must be a well-formed address\"}]}")).isNotNull();
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"errors\":[{\"defaultMessage\":\"must not be blank\"}]}")).isNotNull();
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"outcome\":\"Field price is required\"}")).isNotNull(); // quét cả body
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"error\":\"Internal failure\"}")).isNull();
+        assertThat(InputRejectionDetector.excerptIfRejected("{\"id\":1}")).isNull();
+    }
+
+    // ---- 401 thay vì 400 dù token hợp lệ ----
+
+    private Input wrongStatus401(Integer expected, int acceptedCount, TestCaseAuthOverride override) {
+        return new Input(TestResultStatus.FAILED, expected, 401, null, 50L, null, override, history(fail(1, 401)),
+                "http://target", null, new ExecutionContext(0, 10, 0, 10, acceptedCount), List.of(), null, true, java.util.Map.of(), false, false, 0);
+    }
+
+    @Test
+    void unauthorizedWhereBadInputExpected_withTokenProvenValid_isApiWrongStatus_notAuthConfig() {
+        Result result = classifier.classify(wrongStatus401(400, 5, TestCaseAuthOverride.DEFAULT));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.API_WRONG_STATUS);
+        assertThat(FailureCause.API_WRONG_STATUS.isNotApiFault()).isFalse();
+        assertThat(FailureCause.API_WRONG_STATUS.suppressesBugAutomation()).isFalse(); // phát hiện thật, không bị loại khỏi Bug Report
+    }
+
+    @Test
+    void apiWrongStatus_doesNotApplyWhenTokenUnprovenOrIntentionalSecurityOrNon400Expectation() {
+        assertThat(classifier.classify(wrongStatus401(400, 0, TestCaseAuthOverride.DEFAULT)).cause()).isNotEqualTo(FailureCause.API_WRONG_STATUS);
+        assertThat(classifier.classify(wrongStatus401(400, 5, TestCaseAuthOverride.NONE)).cause()).isNotEqualTo(FailureCause.API_WRONG_STATUS);
+        assertThat(classifier.classify(wrongStatus401(200, 5, TestCaseAuthOverride.DEFAULT)).cause()).isNotEqualTo(FailureCause.API_WRONG_STATUS);
+    }
+
+    // ---- 403 với token mặc định đã chứng minh dùng được ----
+
+    private Input forbidden(Integer expected, int acceptedCount, TestCaseAuthOverride override, boolean profile) {
+        return new Input(TestResultStatus.FAILED, expected, 403, null, 50L, null, override, history(fail(1, 403), fail(2, 403), fail(3, 403)),
+                "http://target", null, new ExecutionContext(0, 10, 0, 10, acceptedCount), List.of(), null, true, java.util.Map.of(), false, profile, 0);
+    }
+
+    @Test
+    void forbiddenWithDefaultTokenProvenValid_isTokenForbidden_evenAfterRepeatedFails() {
+        Result result = classifier.classify(forbidden(200, 6, TestCaseAuthOverride.DEFAULT, false));
+
+        assertThat(result.cause()).isEqualTo(FailureCause.TOKEN_FORBIDDEN);
+        assertThat(result.evidence()).anyMatch(l -> l.contains("403") && l.contains("6 test khác"));
+        assertThat(FailureCause.TOKEN_FORBIDDEN.suppressesBugAutomation()).isTrue();
+        assertThat(FailureCause.TOKEN_FORBIDDEN.isNotApiFault()).isFalse();
+    }
+
+    @Test
+    void tokenForbidden_doesNotApplyToProfilesIntentionalSecurityTestsUnprovenTokensOrNon2xxExpectation() {
+        assertThat(classifier.classify(forbidden(200, 6, TestCaseAuthOverride.DEFAULT, true)).cause()).isNotEqualTo(FailureCause.TOKEN_FORBIDDEN);
+        assertThat(classifier.classify(forbidden(200, 6, TestCaseAuthOverride.NONE, false)).cause()).isNotEqualTo(FailureCause.TOKEN_FORBIDDEN);
+        assertThat(classifier.classify(forbidden(200, 0, TestCaseAuthOverride.DEFAULT, false)).cause()).isNotEqualTo(FailureCause.TOKEN_FORBIDDEN);
+        assertThat(classifier.classify(forbidden(404, 6, TestCaseAuthOverride.DEFAULT, false)).cause()).isNotEqualTo(FailureCause.TOKEN_FORBIDDEN);
     }
 }

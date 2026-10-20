@@ -287,8 +287,14 @@ function ExecutionFeedRow({ item }: { item: HistoryFeedItem }) {
         </Button>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        {item.selectedCount} test case · {item.passCount} pass
-        {(item.failCount ?? 0) > 0 && <> · {item.failCount} fail</>}
+        {item.selectedCount === 0 ? (
+          "Không có test case nào của endpoint này được chạy"
+        ) : (
+          <>
+            {item.selectedCount} test case · {item.passCount} pass
+            {(item.failCount ?? 0) > 0 && <> · {item.failCount} fail</>}
+          </>
+        )}
       </p>
       {(item.otherEndpointCount ?? 0) > 0 && (
         <p className="mt-0.5 text-xs text-muted-foreground italic">

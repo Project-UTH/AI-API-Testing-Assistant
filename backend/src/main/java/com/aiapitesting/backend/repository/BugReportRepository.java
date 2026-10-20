@@ -22,6 +22,12 @@ public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
     // Tổng bug report của 1 user (không lọc status) - dùng ở danh sách/chi tiết user Admin.
     long countByProjectOwner(User owner);
 
+    long countByProject(Project project);
+
+    boolean existsByTestCaseAndStatusNot(TestCase testCase, BugStatus status);
+
+    long countByProjectAndStatusNot(Project project, BugStatus status);
+
     long countByStatusNot(BugStatus status);
 
     @Query("SELECT b.project.owner.id AS ownerId, COUNT(b) AS count FROM BugReport b "
@@ -54,7 +60,10 @@ public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
     Optional<BugReport> findByIdAndProject(@Param("id") UUID id, @Param("project") Project project);
 
     // Dùng bởi BugReportStatusService để dò bug cần tự động chuyển trạng thái khi có TestResult mới.
-    List<BugReport> findAllByTestCase(TestCase testCase);
+    // JOIN FETCH sourceTestResult: service đọc fingerprint của nó SAU khi repository trả về (không có session, vì
+    // TestExecutionRunner chạy @Async ngoài transaction) - thiếu thì LazyInitializationException làm hỏng cả execution.
+    @Query("SELECT b FROM BugReport b JOIN FETCH b.sourceTestResult WHERE b.testCase = :testCase")
+    List<BugReport> findAllByTestCase(@Param("testCase") TestCase testCase);
 
     boolean existsBySourceTestResultId(UUID sourceTestResultId);
 
