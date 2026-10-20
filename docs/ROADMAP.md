@@ -1379,6 +1379,13 @@ Kết luận đo được:
 - **Giảm nhấn mạnh/không làm thêm:** role matrix, diff import, so sánh run, CI token, export (chỉ nhắc ngắn mục 'engineering'); contract testing kiểu Pact; UI mới; tối ưu prompt vô hạn; loại test mới.
 - **Rủi ro chấm điểm cần chủ động nêu:** 670 test backend chứng minh chất lượng code, không chứng minh hiệu quả bắt lỗi; mẫu nhỏ nên các con số '5/5', '2/4' chỉ minh hoạ, không phải kết luận thống kê; checklist phụ thuộc spec (spec sai thì checklist sai); gap-fill phụ thuộc chất lượng test đúng do người dùng cấp.
 
+#### 17k. Đề xuất: MỘT nút 'Sinh đầy đủ' kết hợp hệ thống + AI (chờ duyệt, chưa code)
+
+Ý tưởng: 1 nút chạy theo thứ tự rẻ→đắt, mỗi bước chỉ làm phần bước trước không làm được. **(1) Gốc hợp lệ:** dùng test đúng sẵn có (ưu tiên đã Pass, rồi test người dùng khoá/tự thêm); nếu chưa có thì hỏi người dùng giá trị thật cho tham số đường dẫn (id) rồi AI chỉ sinh ĐÚNG 1 test Positive làm gốc (tránh UUID mẫu: bắt buộc xác nhận id thật trước khi dùng làm gốc). **(2) Hệ thống bổ sung** toàn bộ checklist EP/BVA/Security + phân quyền + (nếu bật) probe mass-assignment: 0 token, ~0,1s. **(3) AI nghiệp vụ** (tuỳ chọn, mặc định tắt, hiện ước tính token trước khi chạy): nhóm `BUSINESS`, mượn đường dẫn/id thật từ gốc (AI-2), loại trùng với checklist (AI-3). **(4) Chạy thử + phân loại nguyên nhân Fail**, hiện báo cáo gộp: bao nhiêu test từ hệ thống/AI, coverage, Fail theo nguyên nhân.
+Lý do: số đo 17h/17i cho thấy hệ thống nhanh/rẻ/ít nhiễu ở phần checklist, AI chỉ thêm giá trị ở nghiệp vụ; gộp 1 nút khớp quy trình khuyến nghị và tránh lỗi 'sinh theo nhóm xoá nhóm trước'.
+Rủi ro/điều kiện: thiếu gốc hợp lệ thì chất lượng mọi test suy ra bị lệch (cần bước xác nhận id/dữ liệu); AI nghiệp vụ tốn token (cần xem trước chi phí, hạn mức); sinh dài > 100s nên cần chạy nền có tiến độ (P0-4); khi gọi lại không được xoá test người dùng đã khoá/tự thêm; kết quả AI phải có nhãn 'GIẢ ĐỊNH' và vẫn qua người duyệt.
+- [ ] **U1:** hỏi chuyên gia backend+frontend rồi code: endpoint `generate-complete` (+ cờ `includeBusiness`, `includeProbe`), dùng lại `CoverageGapFillService` và nhóm BUSINESS; UI 1 nút + hộp xác nhận (id thật, ước tính token); báo cáo gộp. Kiểm chứng trên API tuyển dụng (so với 2 nút rời).
+
 #### 17g. Phần còn thiếu theo rà soát 2 chuyên gia (backend/QA + frontend/UX), 2026-10-20
 
 Đối chiếu code thật; mục nào đã làm thì không liệt kê lại. Kích thước S/M/L. **Thứ tự đề xuất: P0 trước.**
