@@ -1,17 +1,27 @@
 package com.aiapitesting.backend.dto.request;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import java.util.Map;
 
 /**
- * Yêu cầu 'AI sinh test gốc + chạy thử xác nhận' cho 1 endpoint.
- *
- * @param confirmWrite    bắt buộc true với method ghi (POST/PUT/PATCH/DELETE): test gốc được CHẠY THẬT trên API đích và có thể tạo/sửa dữ liệu
- * @param maxRepairRounds số vòng AI sửa tối đa sau lần sinh đầu (mặc định 2, tối đa 3)
- * @param pathParamValues giá trị thật cho tham số đường dẫn (vd id) - luôn thắng giá trị AI đoán
- * @param fillCoverage    sau khi gốc được xác nhận, tự bổ sung toàn bộ checklist (0 token). Mặc định true
- * @param force           vẫn sinh gốc mới dù endpoint đã có test gốc đã Pass
+ * Yêu cầu AI sinh test gốc + chạy thử xác nhận cho 1 endpoint. Là lớp thường (không phải record) để client gửi THIẾU trường vẫn hợp lệ
+ * (record bị Jackson bắt buộc đủ mọi trường).
+ * confirmWrite: bắt buộc true với method ghi vì test gốc được CHẠY THẬT trên API đích; maxRepairRounds: số vòng AI sửa (mặc định 2, tối đa 3);
+ * pathParamValues: giá trị thật cho tham số đường dẫn, luôn thắng giá trị AI đoán; fillCoverage: sau khi xác nhận tự bổ sung checklist
+ * (mặc định true); force: vẫn sinh gốc mới dù đã có test gốc đã Pass.
  */
-public record BaselineRequest(
-        boolean confirmWrite, Integer maxRepairRounds, Map<String, String> pathParamValues, Boolean fillCoverage, boolean force
-) {
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class BaselineRequest {
+    private boolean confirmWrite;
+    private Integer maxRepairRounds;
+    private Map<String, String> pathParamValues;
+    private Boolean fillCoverage;
+    private boolean force;
 }

@@ -95,19 +95,19 @@ public class BaselineVerificationService {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
-        if (isWriteMethod(endpoint.getMethod()) && !req.confirmWrite()) {
+        if (isWriteMethod(endpoint.getMethod()) && !req.isConfirmWrite()) {
             throw new InvalidRequestException("Test gốc sẽ được CHẠY THẬT trên API đích và có thể ghi dữ liệu (" + endpoint.getMethod()
                     + "): cần xác nhận (confirmWrite) trước");
         }
-        boolean fill = req.fillCoverage() == null || req.fillCoverage();
-        if (!req.force() && coverageGapFillService.hasConfirmedBaseline(projectId, endpointId)) {
+        boolean fill = req.getFillCoverage() == null || req.getFillCoverage();
+        if (!req.isForce() && coverageGapFillService.hasConfirmedBaseline(projectId, endpointId)) {
             int filled = fill ? coverageGapFillService.fill(projectId, endpointId, new CoverageFillRequest(null)).createdCount() : 0;
             return new BaselineResponse("ALREADY_HAS_BASELINE", null, "Endpoint đã có test gốc hợp lệ đã Pass, không cần AI sinh lại.",
                     null, List.of(), 0, filled, null, null);
         }
 
-        int maxRepair = Math.max(0, Math.min(req.maxRepairRounds() == null ? DEFAULT_REPAIR_ROUNDS : req.maxRepairRounds(), MAX_REPAIR_ROUNDS));
-        Map<String, String> userValues = req.pathParamValues() == null ? Map.of() : req.pathParamValues();
+        int maxRepair = Math.max(0, Math.min(req.getMaxRepairRounds() == null ? DEFAULT_REPAIR_ROUNDS : req.getMaxRepairRounds(), MAX_REPAIR_ROUNDS));
+        Map<String, String> userValues = req.getPathParamValues() == null ? Map.of() : req.getPathParamValues();
 
         List<BaselineResponse.Round> rounds = new ArrayList<>();
         UUID testId = null;
