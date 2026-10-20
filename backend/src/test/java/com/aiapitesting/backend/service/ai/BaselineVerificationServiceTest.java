@@ -9,6 +9,7 @@ import com.aiapitesting.backend.dto.response.TestExecutionResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.ExecutionStatus;
 import com.aiapitesting.backend.entity.Project;
+import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
@@ -90,7 +91,7 @@ class BaselineVerificationServiceTest {
     }
 
     private void results(TestResultStatus status, Integer http, String body) {
-        TestResult r = TestResult.builder().status(status).responseStatus(http).responseBody(body).build();
+        TestResult r = TestResult.builder().testCase(TestCase.builder().id(testId).build()).status(status).responseStatus(http).responseBody(body).build();
         when(resultRepository.findAllByExecutionOrderByTestCaseCreatedAt(any())).thenReturn(List.of(r));
     }
 
@@ -113,9 +114,25 @@ class BaselineVerificationServiceTest {
     }
 
     @Test
+    void runWithAutoIncludedDependency_gradesTheBaselineOwnResult_notTheFirstResult() {
+        // Lần chạy có kèm POST tạo tài nguyên chạy trước (Passed 201): kết quả đầu tiên KHÔNG phải của test gốc. Test gốc thật sự trả 404.
+        TestResult dependency = TestResult.builder().testCase(TestCase.builder().id(UUID.randomUUID()).build())
+                .status(TestResultStatus.PASSED).responseStatus(201).responseBody("{}").build();
+        TestResult own = TestResult.builder().testCase(TestCase.builder().id(testId).build())
+                .status(TestResultStatus.FAILED).responseStatus(404).responseBody("{\"error\":\"NOT_FOUND\"}").build();
+        when(resultRepository.findAllByExecutionOrderByTestCaseCreatedAt(any())).thenReturn(List.of(dependency, own));
+
+        BaselineResponse response = service.execute(projectId, endpointId, confirmed(0));
+
+        assertThat(response.status()).isEqualTo("NEEDS_HUMAN");
+        assertThat(response.status()).isNotEqualTo("CONFIRMED");
+        verify(testCaseService, org.mockito.Mockito.never()).setLocked(projectId, endpointId, testId, true);
+    }
+
+    @Test
     void failThenPassOnRepair_sendsTheRealApiErrorBackToAi() {
-        TestResult bad = TestResult.builder().status(TestResultStatus.FAILED).responseStatus(400).responseBody("{\"error\":\"INVALID_CATALOG_CODE\"}").build();
-        TestResult good = TestResult.builder().status(TestResultStatus.PASSED).responseStatus(201).responseBody("{}").build();
+        TestResult bad = TestResult.builder().testCase(TestCase.builder().id(testId).build()).status(TestResultStatus.FAILED).responseStatus(400).responseBody("{\"error\":\"INVALID_CATALOG_CODE\"}").build();
+        TestResult good = TestResult.builder().testCase(TestCase.builder().id(testId).build()).status(TestResultStatus.PASSED).responseStatus(201).responseBody("{}").build();
         when(resultRepository.findAllByExecutionOrderByTestCaseCreatedAt(any())).thenReturn(List.of(bad), List.of(good));
 
         BaselineResponse response = service.execute(projectId, endpointId, confirmed(2));
@@ -165,8 +182,8 @@ class BaselineVerificationServiceTest {
 
     @Test
     void success2xxWithDifferentCode_isAdoptedBySystem_withoutAnotherAiCall() {
-        TestResult mismatch = TestResult.builder().status(TestResultStatus.FAILED).responseStatus(201).responseBody("{}").build();
-        TestResult passed = TestResult.builder().status(TestResultStatus.PASSED).responseStatus(201).responseBody("{}").build();
+        TestResult mismatch = TestResult.builder().testCase(TestCase.builder().id(testId).build()).status(TestResultStatus.FAILED).responseStatus(201).responseBody("{}").build();
+        TestResult passed = TestResult.builder().testCase(TestCase.builder().id(testId).build()).status(TestResultStatus.PASSED).responseStatus(201).responseBody("{}").build();
         when(resultRepository.findAllByExecutionOrderByTestCaseCreatedAt(any())).thenReturn(List.of(mismatch), List.of(passed));
 
         BaselineResponse response = service.execute(projectId, endpointId, confirmed(2));

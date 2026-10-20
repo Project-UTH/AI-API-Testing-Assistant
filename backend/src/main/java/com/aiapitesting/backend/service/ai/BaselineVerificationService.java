@@ -329,7 +329,11 @@ public class BaselineVerificationService {
         if (results.isEmpty()) {
             return new RunOutcome(TestResultStatus.ERROR, null, null, "Lần chạy không có kết quả", false);
         }
-        TestResult r = results.get(0);
+        // Lần chạy có thể kèm test phụ thuộc tự thêm (vd POST tạo tài nguyên chạy trước): PHẢI chấm đúng kết quả của test gốc, không lấy kết quả đầu tiên.
+        TestResult r = results.stream().filter(x -> x.getTestCase() != null && testId.equals(x.getTestCase().getId())).findFirst().orElse(null);
+        if (r == null) {
+            return new RunOutcome(TestResultStatus.ERROR, null, null, "Lần chạy không có kết quả của test gốc", false);
+        }
         return new RunOutcome(r.getStatus(), r.getResponseStatus(), r.getResponseBody(), r.getErrorMessage(), false);
     }
 
