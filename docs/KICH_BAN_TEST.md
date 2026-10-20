@@ -2,7 +2,7 @@
 
 > Mục đích: bộ kịch bản test tay (manual/API-level) phủ hết các module trong `docs/ROADMAP.md`, dùng để tự kiểm tra trước khi bảo vệ đồ án hoặc sau mỗi lần sửa code lớn. Đã được chạy 1 lần thật (2026-10-15) qua Docker — kết quả + bug phát hiện ghi ở mục "Kết quả lần chạy thật gần nhất" cuối file.
 >
-> **Nguyên tắc khi chạy:** KHÔNG dùng AI sinh test case mới trừ khi thật sự cần verify shape response (tốn token thật) — ưu tiên dùng lại dữ liệu có sẵn (`freshtest@aiapi.local`/`freshtest123`). Mọi bước có gọi AI đều đánh dấu rõ **[TỐN TOKEN AI THẬT]**.
+> **Nguyên tắc khi chạy:** KHÔNG dùng cách "AI sinh test gốc" trừ khi thật sự cần verify (tốn token thật) — ưu tiên dùng lại dữ liệu có sẵn (`freshtest@aiapi.local`/`freshtest123`). Mọi bước có gọi AI đều đánh dấu rõ **[TỐN TOKEN AI THẬT]**.
 
 ## 0. Chuẩn bị môi trường
 
@@ -29,14 +29,24 @@
 - [ ] Import lại CÙNG 1 spec (re-import) → kiểm tra hành vi (tạo trùng hay update) đúng như thiết kế, không tăng gấp đôi endpoint.
 - [ ] `GET /api/v1/projects/{id}/endpoints` → `requiresAuth` đúng với endpoint có/không có `security` trong spec (Module 15c phụ thuộc field này).
 
-## 4. AI sinh Test Case — **[TỐN TOKEN AI THẬT - cân nhắc kỹ trước khi chạy]**
+## 4. Sinh test case (job nền) — **[cách "AI sinh test gốc" TỐN TOKEN AI THẬT - cân nhắc kỹ trước khi chạy]**
 
-> Theo nguyên tắc đã chốt trong dự án: KHÔNG sinh test case AI mới trừ khi cần verify cụ thể. Nếu chạy, dùng project/endpoint TẠM, xoá ngay sau khi xong.
+> Cập nhật 2026-10-20: đường "AI sinh toàn bộ" (`POST .../generate-tests`, nút "Sinh Test Case" cũ) ĐÃ BỎ. Dùng nút "Sinh test case" (job nền `POST /api/v1/projects/{id}/generation-jobs`). Nguyên tắc: dùng project/endpoint TẠM, bật "Chạy thử" hoặc cách "chỉ bổ sung 0 token" khi không cần AI; môi trường đích phải là môi trường TEST (test gốc và test bù chạy GHI THẬT).
 
-- [ ] `POST /api/v1/projects/{id}/endpoints/{endpointId}/generate-tests` với `{"includePositive":true,"includeNegative":true,"includeBoundary":true,"includeSecurity":false}` → `201`, mỗi case có `rationale` không rỗng (Module 15a), `reliabilityStatus` là `RELIABLE` hoặc `NEEDS_REVIEW` (Module 15b).
-- [ ] Case `NEEDS_REVIEW` (nếu có) → sau ít giây, `GET` lại test case thấy `reliabilityAiConfirmed` không còn `null` (Tier 2 đã chạy, Module 15d) — **trừ khi quota đã hết**.
-- [ ] Sinh lại (`generate-tests`) lần 2 cho CÙNG endpoint, nhóm case cũ (không `locked`) bị xoá và thay bằng case mới — case đã khoá (`locked=true`) vẫn còn.
-- [ ] Vượt quota AI/ngày (`ai.quota.daily-token-limit`, set override thấp qua Admin để test nhanh) → gọi `generate-tests` trả `429 AI_QUOTA_EXCEEDED`, **không tốn request AI nào** (xem log backend không có lệnh gọi `chatClient` nào phát sinh).
+- [ ] Tick 1 endpoint → "Sinh test case" → hộp thoại có: nhóm test (Positive khoá + bật; Negative, Boundary bật; Security, Nghiệp vụ tắt), cách thực hiện (2 lựa chọn), số lần AI sửa 0–5, trần token, chạy thử, ô xác nhận GHI THẬT khi là POST/PUT/PATCH/DELETE (nút Bắt đầu bị khoá cho tới khi tick).
+- [ ] **Chạy thử (dry-run)** → job SUCCEEDED/NEEDS_HUMAN với các bước SKIPPED, 0 token, không có test mới nào được tạo.
+- [ ] **[TỐN TOKEN]** Cách "AI sinh test gốc" trên 1 endpoint chưa có test: khung giám sát hiện các bước PRECHECK → AI_BASELINE → CHAIN → RUN → LOCK → FILL; test gốc Pass và bị khoá; token hiển thị khớp lịch sử; test hệ thống bù có nhãn "Hệ thống bổ sung", test gốc nhãn "Test gốc".
+- [ ] Cách "chỉ bổ sung 0 token" trên endpoint đã có test gốc Pass → 0 token, có bước PRECHECK + FILL.
+- [ ] Thu nhỏ khung giám sát, chuyển sang trang khác, mở lại: vẫn theo dõi được; tải lại trang: job vẫn hiện (id lưu localStorage).
+- [ ] Bấm Huỷ → hộp xác nhận → "Đang huỷ" rồi "Đã huỷ"; các bước đã làm được giữ; không còn biểu tượng xoay.
+- [ ] Tick nhiều endpoint → "Sinh test case (N)": POST chạy trước, DELETE sau cùng; project đã có job đang chạy → `409`.
+- [ ] Vượt quota AI/ngày (set override thấp qua Admin) → job báo lỗi quota, **không tốn request AI nào**.
+- [ ] Sinh lại cho endpoint đã có test: test do người dùng tự thêm và test đã khoá được giữ nguyên; test gốc đã Pass không gọi lại AI.
+- [ ] Tắt Security trong hộp thoại → Coverage của endpoint ghi `security: false` và không bù test Security/phân quyền.
+- [ ] **Cô lập trạng thái:** chạy các test con (test bù) của endpoint có `{id}` cha → mỗi test dùng 1 bản ghi cha mới (số bản ghi trên API đích tăng theo số test con); tick "Dọn dữ liệu đã tạo" → số bản ghi trên API đích về như trước lần chạy.
+- [ ] **Phân loại Fail:** test body sai kiểu mà API đích trả 401 dù token hợp lệ → nhãn "API trả sai mã lỗi (401 thay vì 400)" (vẫn Fail, không bị loại khỏi Bug Report); 409 lặp lại → nhãn xung đột trạng thái, nằm trong nhóm "cần xem xét" của kết luận.
+- [ ] (Cũ, còn dùng được cho dữ liệu đã có) mỗi case có `rationale` không rỗng (Module 15a), `reliabilityStatus` là `RELIABLE` hoặc `NEEDS_REVIEW` (Module 15b); case `NEEDS_REVIEW` sau ít giây có `reliabilityAiConfirmed` (Tier 2, trừ khi hết quota).
+
 
 ## 5. Review Test Case
 
@@ -68,10 +78,10 @@
 
 ## 9. Nâng cao Test Case AI sinh (Security/Assertion/Test Data) — **[có bước tốn token AI thật]**
 
-- [ ] `generate-tests` với `includeSecurity:true` **[TỐN TOKEN]** → case nhóm `SECURITY` có `authOverride` (`NONE`/`INVALID`) khác `DEFAULT`, `expectedStatus>=400`.
+- [ ] "Sinh test case" với Security bật (hoặc "Bổ sung" ở Coverage) → case nhóm `SECURITY` có `authOverride` (`NONE`/`INVALID`) khác `DEFAULT`, `expectedStatus>=400`.
 - [ ] Case Security dù dữ liệu "sai định dạng" (payload injection) → `reliabilityStatus` LUÔN `RELIABLE` (Module 15f/15g loại trừ Security khỏi Tier 1) — kiểm bằng cách xem `reliabilityNotes` rỗng dù payload rõ ràng không hợp lệ.
 - [ ] Tự tay thêm assertion (Module 9b - cách DUY NHẤT, AI không còn tự sinh assertion): mở form sửa 1 test case kỳ vọng 2xx → thêm `jsonPath`/`operator`/`expectedValue` → lưu → chạy execution rồi xem `assertionResults` khớp đúng `jsonPath`/`operator`; đổi `expectedValue` sai cố ý → status tổng `FAILED` dù status code khớp.
-- [ ] Trang project KHÔNG còn ô "+ Assertion" cạnh nút "Sinh Test Case"; trang Lịch sử (của project + Lịch sử tổng) vẫn mở bình thường với sự kiện "Sinh test case" cũ tạo trước Module 9b (snapshot cũ còn key `assertions`).
+- [ ] Trang project KHÔNG còn ô "+ Assertion" cạnh nút "Sinh test case"; trang Lịch sử (của project + Lịch sử tổng) vẫn mở bình thường với sự kiện "Sinh test case" cũ tạo trước Module 9b (snapshot cũ còn key `assertions`).
 
 ## 10. Bug Report
 
@@ -85,7 +95,7 @@
 - [ ] Login bằng `admintest@aiapi.local` → role `ADMIN`.
 - [ ] `GET /api/v1/admin/users` bằng token **USER thường** → `403` (đã xác nhận thật ở lần test 2026-10-15).
 - [ ] `PUT /api/v1/admin/users/{id}/status` khoá tài khoản user khác → user đó login thất bại ngay (401/403 tuỳ thiết kế) dù mật khẩu đúng.
-- [ ] `PUT /api/v1/admin/users/{id}/ai-quota` set override thấp (vd 100) → user đó `generate-tests` bị chặn sớm đúng theo override, không theo mặc định hệ thống.
+- [ ] `PUT /api/v1/admin/users/{id}/ai-quota` set override thấp (vd 100) → user đó bấm "Sinh test case" (cách có AI) bị chặn sớm đúng theo override, không theo mặc định hệ thống.
 - [ ] `GET /api/v1/admin/audit-log` → có đúng dòng `USER_LOCKED`/`AI_QUOTA_CHANGED` vừa tạo ở 2 bước trên, kèm `adminEmail` đúng.
 - [ ] Admin xem `TestCaseDetailDialog` của user khác (qua `AdminProjectDataPage` hoặc tương đương) → **KHÔNG** thấy nút "Đối chiếu độ tin cậy sâu hơn bằng AI" (Tier 3) — nút này chỉ hiện khi có prop `projectId` ở luồng chính chủ.
 
@@ -116,7 +126,7 @@
 - [ ] Ràng buộc `minimum`/`maximum` khai báo ở QUERY/PATH param (không phải `requestBody`): case test biên → dimension `BOUNDARY` `COVERED` - cả khi giá trị nằm ở `pathParamFallbacks` (sửa ở 15g) LẪN khi ghi thẳng trong `resolvedPath`, vd `?quantity=0` (sửa ở 15h). Case biên query/path đúng ý đồ (kỳ vọng 400, giá trị vượt biên ghi trong URL) → Tier 1 `RELIABLE`, không còn bị gắn "Cần xem lại" oan.
 - [ ] Case `expectedStatus>=400` không thuộc Security, dữ liệu KHÔNG vi phạm ràng buộc nào → `reliabilityStatus=NEEDS_REVIEW` (Module 15f/15g). Case tương tự nhưng `source=SECURITY` → luôn `RELIABLE`.
 - [ ] `POST .../test-cases/{id}/confidence-check` **[TỐN TOKEN AI THẬT]** trên 1 case đã có sẵn → `agreementLevel` trả về, KHÔNG ghi đè `reliabilityStatus` đã có, KHÔNG tạo dòng `TestGenerationEvent` mới (`GET history` trước/sau phải giống nhau về số sự kiện).
-- [ ] **15h - checklist EP/BVA [TỐN TOKEN AI THẬT, 1 lần gọi]:** chọn 1 endpoint có body JSON nhiều ràng buộc (vd `POST /api/products`), tick Positive + Negative + Boundary (KHÔNG tick Security), bấm "Sinh Test Case" → dưới dòng endpoint hiện báo cáo "Đã sinh N test case: AI sinh X (đạt Y/Z mục checklist được giao...), hệ thống bổ sung M mục"; Z = 1 + số field required + 2 × số ràng buộc min/max/minLength/maxLength + số field enum (đếm tay từ spec phải khớp); bấm "Xem chi tiết checklist" thấy đủ từng mục kèm trạng thái.
+- [ ] **15h - checklist EP/BVA [TỐN TOKEN AI THẬT, 1 lần gọi]:** chọn 1 endpoint có body JSON nhiều ràng buộc (vd `POST /api/products`), tick Positive + Negative + Boundary (KHÔNG tick Security), (đường AI sinh toàn bộ đã bỏ; mục này chỉ còn áp dụng cho dữ liệu sinh trước 2026-10-20 hoặc báo cáo checklist ở Coverage) → báo cáo "Đã sinh N test case: AI sinh X (đạt Y/Z mục checklist được giao...), hệ thống bổ sung M mục"; Z = 1 + số field required + 2 × số ràng buộc min/max/minLength/maxLength + số field enum (đếm tay từ spec phải khớp); bấm "Xem chi tiết checklist" thấy đủ từng mục kèm trạng thái.
 - [ ] 15h - trang Test Case: mỗi case nhóm Basic vừa sinh có đúng 1 nhãn "AI · theo checklist" / "AI đề xuất thêm" / "Hệ thống bổ sung"; mở "Xem chi tiết" 1 case "Hệ thống bổ sung" → requestBody chỉ khác case hợp lệ đúng 1 chỗ, mục "Vì sao hệ thống tạo case này" có lý do viết từ spec. Case Security/tự thêm/case cũ trước 15h KHÔNG có nhãn này.
 - [ ] 15h - khoá 1 case đạt mục checklist (vd case biên trên maximum) → sinh lại → báo cáo ghi "1 mục đã có sẵn từ case khoá/tự thêm", không sinh trùng case cho mục đó.
 - [ ] 15h - chỉ tick Negative → mọi case lưu đều là case thiếu field/sai dữ liệu, KHÔNG lưu case Positive hợp lệ (case gốc AI sinh chỉ dùng làm nền bù).
