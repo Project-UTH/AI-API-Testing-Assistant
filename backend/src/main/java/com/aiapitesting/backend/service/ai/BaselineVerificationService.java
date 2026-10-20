@@ -252,7 +252,8 @@ public class BaselineVerificationService {
             throw e;
         }
         String detail = outcome.timedOut() ? "Quá thời gian chờ kết quả"
-                : "HTTP " + (outcome.httpStatus() == null ? "—" : outcome.httpStatus()) + (outcome.status() == TestResultStatus.PASSED ? " - Pass" : " - chưa Pass");
+                : outcome.httpStatus() == null ? "Không nhận được phản hồi từ API đích" + (outcome.errorMessage() == null ? "" : ": " + outcome.errorMessage())
+                : "HTTP " + outcome.httpStatus() + (outcome.status() == TestResultStatus.PASSED ? " - Pass" : " - chưa Pass");
         run.finish(outcome.status() == TestResultStatus.PASSED ? "OK" : "FAILED", detail, outcome.httpStatus(), null);
         return outcome;
     }

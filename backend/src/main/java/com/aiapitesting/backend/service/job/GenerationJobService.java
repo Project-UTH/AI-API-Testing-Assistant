@@ -206,6 +206,8 @@ public class GenerationJobService {
             finalStatus = GenerationJob.FAILED;
             error = e.getMessage();
         }
+        recorder.closeRunningSteps(jobId, GenerationJob.CANCELLED.equals(finalStatus) ? "SKIPPED" : "FAILED",
+                GenerationJob.CANCELLED.equals(finalStatus) ? "Đã huỷ khi bước này đang chạy" : "Bước bị dừng do job kết thúc");
         GenerationJob done = jobs.findById(jobId).orElse(job);
         done.setStatus(finalStatus);
         done.setFinishedAt(Instant.now());
@@ -282,16 +284,12 @@ public class GenerationJobService {
         JobProgress.Step s = ctx.start(endpointId, label, "AI_GAPS", "AI", "AI đoán thêm test nghiệp vụ còn thiếu (nhãn GIẢ ĐỊNH, không tính vào độ bao phủ)");
         try {
             java.time.Instant since = java.time.Instant.now().minusSeconds(1);
-            GenerateTestCasesResponse r = awaitCancellable(generation.generate(projectId, endpointId, new GenerateTestCasesRequest(false, false, false, false, true)), ctx);
+            GenerateTestCasesResponse r = generation.generateBusinessOnly(projectId, endpointId);
             int tokens = generation.tokensSince(endpointId, since);
             ctx.addTokens(tokens);
             s.finish("OK", "Thêm " + r.testCases().size() + " test nghiệp vụ GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả", null, tokens);
-        } catch (java.util.concurrent.ExecutionException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            Throwable cause = e.getCause() == null ? e : e.getCause();
-            s.fail(cause.getMessage());
+        } catch (RuntimeException e) {
+            s.fail(e.getMessage());
         }
     }
 

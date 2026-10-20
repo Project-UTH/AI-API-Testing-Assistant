@@ -234,7 +234,7 @@ export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDi
             </p>
             <ol className="flex flex-col gap-1.5 border-l border-border pl-3">
               {steps.map((s) => (
-                <StepRow key={s.seq} step={s} now={now} />
+                <StepRow key={s.seq} step={!active && s.status === "RUNNING" ? { ...s, status: "SKIPPED" } : s} now={now} />
               ))}
             </ol>
           </div>

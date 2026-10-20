@@ -162,6 +162,22 @@ class GenerationJobServiceTest {
     }
 
     @Test
+    void runJob_aiGapsStep_usesBusinessOnlyGeneration_neverTheFullRegenerate() {
+        when(baseline.run(eq(projectId), any(), any(), any())).thenReturn(
+                new BaselineResponse("CONFIRMED", null, "ok", UUID.randomUUID(), List.of(), 1000, 20, 200, null));
+        when(generation.generateBusinessOnly(eq(projectId), any())).thenReturn(
+                new com.aiapitesting.backend.dto.response.GenerateTestCasesResponse(List.of(), null));
+        StartGenerationJobRequest req = request(e1.getId());
+        req.setIncludeBusiness(true);
+
+        runWith(GenerationJob.TYPE_FULL, req, e1.getId());
+
+        // generate() khai báo lại toàn bộ tập test và xoá test cơ bản/Security chưa khoá (gồm test hệ thống vừa bù)
+        verify(generation).generateBusinessOnly(eq(projectId), eq(e1.getId()));
+        verify(generation, never()).generate(any(), any(), any());
+    }
+
+    @Test
     void runJob_anyNeedsHuman_isNeedsHuman_onePerEndpointFailureDoesNotStopOthers() {
         when(baseline.run(eq(projectId), eq(e1.getId()), any(), any())).thenThrow(new IllegalStateException("boom"));
         when(baseline.run(eq(projectId), eq(e2.getId()), any(), any())).thenReturn(

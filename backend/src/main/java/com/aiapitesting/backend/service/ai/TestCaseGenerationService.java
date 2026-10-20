@@ -169,6 +169,21 @@ public class TestCaseGenerationService {
         return CompletableFuture.completedFuture(new GenerateTestCasesResponse(saved, planSummary));
     }
 
+    /**
+     * CHỈ sinh nhóm nghiệp vụ (GIẢ ĐỊNH), KHÔNG đụng nhóm AI_GENERATED/SECURITY và phạm vi coverage. Dùng cho bước AI "còn thiếu" của job: gọi generate()
+     * với chỉ includeBusiness sẽ xoá sạch test cơ bản/Security chưa khoá (kể cả test hệ thống vừa bù) vì generate() khai báo lại toàn bộ tập test.
+     */
+    @Transactional
+    public GenerateTestCasesResponse generateBusinessOnly(UUID projectId, UUID endpointId) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        ensureWithinDailyQuota(project);
+        GroupResult group = generateBusinessGroup(endpoint);
+        List<TestCaseResponse> saved = group.saved().stream().map(TestCaseResponse::from).toList();
+        return new GenerateTestCasesResponse(saved, group.planSummary());
+    }
+
     /** Token của lần sinh gần nhất của endpoint nếu xảy ra sau {@code since} (job dùng để cộng vào trần token); 0 nếu không có. */
     @Transactional(readOnly = true)
     public int tokensSince(UUID endpointId, java.time.Instant since) {

@@ -24,7 +24,7 @@ import {
 import { ApiError } from "@/lib/api"
 import {
   confidenceCheck,
-  GENERATION_ORIGIN_DISPLAY,
+  originDisplay,
   getReliabilityDisplay,
   type AssertionOperator,
   type ConfidenceCheckResponse,
@@ -172,12 +172,12 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
                 <span
                   className={cn(
                     "mr-2 rounded-full px-2 py-0.5 text-xs font-medium",
-                    GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].className
+                    originDisplay(testCase.generationOrigin).className
                   )}
                 >
-                  {GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].label}
+                  {originDisplay(testCase.generationOrigin).label}
                 </span>
-                <span className="text-muted-foreground">{GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].title}</span>
+                <span className="text-muted-foreground">{originDisplay(testCase.generationOrigin).title}</span>
               </p>
               {testCase.checklistItem && (
                 <p className="mt-1 text-sm text-muted-foreground">Mục checklist: {testCase.checklistItem}</p>

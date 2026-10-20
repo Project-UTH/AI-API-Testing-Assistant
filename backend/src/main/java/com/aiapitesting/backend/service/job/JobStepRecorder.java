@@ -53,6 +53,22 @@ public class JobStepRecorder {
         });
     }
 
+    /** Job kết thúc mà còn bước RUNNING (huỷ/lỗi giữa chừng) thì đóng lại, để giao diện không quay mãi. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int closeRunningSteps(UUID jobId, String status, String detail) {
+        int n = 0;
+        for (GenerationJobStep step : steps.findForPolling(jobId, Integer.MAX_VALUE)) {
+            if (GenerationJobStep.RUNNING.equals(step.getStatus())) {
+                step.setStatus(status);
+                step.setDetail(truncate(step.getDetail() == null || step.getDetail().isBlank() ? detail : step.getDetail(), DETAIL_LIMIT));
+                step.setFinishedAt(Instant.now());
+                steps.save(step);
+                n++;
+            }
+        }
+        return n;
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public boolean isCancelRequested(UUID jobId) {
         return jobs.findById(jobId).map(GenerationJob::isCancelRequested).orElse(false);

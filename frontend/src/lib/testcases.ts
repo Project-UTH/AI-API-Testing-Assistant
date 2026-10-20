@@ -9,7 +9,7 @@ export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
  * AI_CHECKLIST = AI sinh, đạt mục checklist; AI_EXTRA = AI đề xuất thêm ngoài checklist;
  * SYSTEM_FILLED = hệ thống tự bù mục AI làm thiếu/sai.
  */
-export type TestCaseGenerationOrigin = "AI_CHECKLIST" | "AI_EXTRA" | "SYSTEM_FILLED"
+export type TestCaseGenerationOrigin = "AI_CHECKLIST" | "AI_EXTRA" | "SYSTEM_FILLED" | "AI_BUSINESS" | "AI_BASELINE"
 
 export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label: string; className: string; title: string }> = {
   AI_CHECKLIST: {
@@ -27,6 +27,21 @@ export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label
     className: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
     title: "AI làm thiếu/sai mục checklist này, hệ thống tự tạo từ 1 case hợp lệ AI đã sinh (sửa đúng 1 chỗ)",
   },
+  AI_BUSINESS: {
+    label: "AI đoán nghiệp vụ",
+    className: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    title: "Luật nghiệp vụ do AI đoán, không có trong spec. Là GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả, không tính vào độ bao phủ",
+  },
+  AI_BASELINE: {
+    label: "Test gốc",
+    className: "bg-green-500/10 text-green-700 dark:text-green-400",
+    title: "Test gốc hợp lệ do AI sinh và đã được chạy thật xác nhận Pass, dùng làm nền để hệ thống bổ sung checklist",
+  },
+}
+
+/** Giá trị nguồn gốc lạ (backend thêm mới mà frontend chưa biết) không được làm trắng cả trang. */
+export function originDisplay(origin: TestCaseGenerationOrigin) {
+  return GENERATION_ORIGIN_DISPLAY[origin] ?? { label: origin, className: "bg-muted text-muted-foreground", title: "Nguồn gốc test case" }
 }
 
 export type ChecklistItemStatus = "ALREADY_COVERED" | "AI_SATISFIED" | "SYSTEM_FILLED" | "NOT_FILLABLE" | "NOT_APPLICABLE"

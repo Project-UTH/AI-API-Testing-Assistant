@@ -9,7 +9,7 @@ import { cn, METHOD_STYLES, selectClassName } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
 import {
-  GENERATION_ORIGIN_DISPLAY,
+  originDisplay,
   getReliabilityDisplay,
   listTestCases,
   setTestCaseLocked,
@@ -281,15 +281,15 @@ export function TestCasesPage() {
                       {testCase.generationOrigin && (
                         <span
                           title={
-                            GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].title +
+                            originDisplay(testCase.generationOrigin).title +
                             (testCase.checklistItem ? `\nMục checklist: ${testCase.checklistItem}` : "")
                           }
                           className={cn(
                             "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-                            GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].className
+                            originDisplay(testCase.generationOrigin).className
                           )}
                         >
-                          {GENERATION_ORIGIN_DISPLAY[testCase.generationOrigin].label}
+                          {originDisplay(testCase.generationOrigin).label}
                         </span>
                       )}
                       {testCase.source !== "MANUAL" && testCase.rationale && (
