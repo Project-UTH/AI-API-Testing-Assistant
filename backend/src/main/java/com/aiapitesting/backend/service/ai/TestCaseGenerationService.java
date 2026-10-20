@@ -20,6 +20,7 @@ import com.aiapitesting.backend.exception.AiGenerationFailedException;
 import com.aiapitesting.backend.exception.AiQuotaExceededException;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.exception.TestCaseNotFoundException;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
@@ -91,6 +92,7 @@ public class TestCaseGenerationService {
     private final TestCaseService testCaseService;
     private final TestCaseChecklistPlanner testCaseChecklistPlanner;
     private final TestGenerationEventRepository testGenerationEventRepository;
+    private final com.aiapitesting.backend.service.DependencySuggestionService dependencySuggestionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("classpath:prompts/generate-test-case.st")
@@ -222,6 +224,138 @@ public class TestCaseGenerationService {
 
     private Prompt buildBusinessPrompt(Endpoint endpoint) {
         String groupRules = render(readTemplate("prompts/generate/business.st"), new HashMap<>());
+        String templateText;
+        try {
+            templateText = promptResource.getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Không đọc được prompt template generate-test-case.st", e);
+        }
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("method", endpoint.getMethod());
+        variables.put("path", endpoint.getPath());
+        variables.put("summary", endpoint.getSummary() == null ? "(không có mô tả)" : endpoint.getSummary());
+        variables.put("schemaJson", endpoint.getSchema());
+        variables.put("groupRules", groupRules.stripTrailing());
+        return template(templateText).create(variables);
+    }
+
+    // ---- Test GỐC do AI sinh + xác nhận bằng chạy thử (BaselineVerificationService) ----
+
+    /** 1 lần thử gốc trước đó, dùng để AI sửa: test, mã trạng thái thật và nội dung phản hồi ĐÃ CHE. */
+    public record BaselineAttempt(GeneratedTestCase test, Integer httpStatus, String maskedBody) {
+    }
+
+    /** @param tokens token thật của lần gọi AI này (đã ghi vào lịch sử/quota) */
+    public record BaselineProposal(GeneratedTestCase test, int tokens) {
+    }
+
+    @Transactional(readOnly = true)
+    public void assertQuota(UUID projectId) {
+        ensureWithinDailyQuota(projectService.getOwnedProject(projectId));
+    }
+
+    /** Gọi AI đúng 1 lần: lần đầu (previous = null) sinh test gốc; lần sau sửa dựa trên kết quả thật của API. Ghi token vào lịch sử/quota. */
+    @Transactional
+    public BaselineProposal askBaseline(UUID projectId, UUID endpointId, BaselineAttempt previous) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        ensureWithinDailyQuota(project);
+
+        Map<String, Object> vars = new HashMap<>();
+        String resource = "prompts/generate/baseline.st";
+        if (previous != null) {
+            resource = "prompts/generate/baseline-repair.st";
+            vars.put("previousTest", writeSnapshotAsJson(List.of(previous.test())));
+            vars.put("httpStatus", previous.httpStatus() == null ? "(không có phản hồi)" : String.valueOf(previous.httpStatus()));
+            String body = previous.maskedBody() == null ? "" : previous.maskedBody();
+            vars.put("maskedBody", body.length() > 2000 ? body.substring(0, 2000) + "..." : body);
+        }
+        Prompt prompt = buildSinglePrompt(endpoint, render(readTemplate(resource), vars));
+
+        List<GeneratedTestCase> generated;
+        Usage usage;
+        try {
+            ResponseEntity<ChatResponse, List<GeneratedTestCase>> response = chatClient.prompt(prompt).call()
+                    .responseEntity(new ParameterizedTypeReference<List<GeneratedTestCase>>() {
+                    });
+            generated = response.entity();
+            usage = response.response().getMetadata().getUsage();
+        } catch (Exception e) {
+            log.warn("Goi AI that bai khi sinh test goc cho endpoint {}: {}", endpoint.getId(), e.toString());
+            throw new AiGenerationFailedException("Không thể sinh test gốc từ AI, vui lòng thử lại");
+        }
+        validate(generated);
+        GeneratedTestCase first = generated.get(0);
+
+        testGenerationEventRepository.save(TestGenerationEvent.builder()
+                .endpoint(endpoint)
+                .testCaseCount(1)
+                .snapshotJson(writeSnapshotAsJson(List.of(first)))
+                .planSummaryJson(writePlanSummaryAsJson(new GenerationPlanSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, List.of(), List.of())))
+                .promptTokens(usage == null ? null : usage.getPromptTokens())
+                .completionTokens(usage == null ? null : usage.getCompletionTokens())
+                .totalTokens(usage == null ? null : usage.getTotalTokens())
+                .build());
+        int tokens = usage == null || usage.getTotalTokens() == null ? 0 : usage.getTotalTokens();
+        return new BaselineProposal(first, tokens);
+    }
+
+    /** Lưu test gốc (lần đầu) hoặc ghi đè nội dung test gốc đang thử (lần sửa) - tránh để lại nhiều bản thử hỏng. Trả id test. */
+    @Transactional
+    public UUID saveBaselineTest(UUID projectId, UUID endpointId, GeneratedTestCase generated, UUID existingTestCaseId) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        TestCase fresh = toEntity(endpoint, generated, TestCaseSource.AI_GENERATED, TestCaseGenerationOrigin.AI_BASELINE, "Test gốc hợp lệ", true);
+        if (existingTestCaseId == null) {
+            return testCaseRepository.save(fresh).getId();
+        }
+        TestCase existing = testCaseRepository.findByIdAndEndpoint(existingTestCaseId, endpoint)
+                .orElseThrow(() -> new TestCaseNotFoundException("Không tìm thấy test case với id đã cho"));
+        existing.setName(fresh.getName());
+        existing.setDescription(fresh.getDescription());
+        existing.setRequestHeaders(fresh.getRequestHeaders());
+        existing.setRequestBody(fresh.getRequestBody());
+        existing.setRationale(fresh.getRationale());
+        existing.setExpectedStatus(fresh.getExpectedStatus());
+        existing.setResolvedPath(fresh.getResolvedPath());
+        existing.setPathParamFallbacks(fresh.getPathParamFallbacks());
+        existing.setReliabilityStatus(fresh.getReliabilityStatus());
+        existing.setReliabilityNotes(fresh.getReliabilityNotes());
+        return testCaseRepository.save(existing).getId();
+    }
+
+    /** Gắn Test Data Chaining tự động (POST tạo tài nguyên -> {id}) cho các tham số đường dẫn chưa có nguồn. Trả số liên kết đã gắn. */
+    @Transactional
+    public int applyChaining(UUID projectId, UUID endpointId, UUID testCaseId) {
+        int applied = 0;
+        TestCase target = testCaseRepository.getReferenceById(testCaseId);
+        for (var suggestion : dependencySuggestionService.suggest(projectId, endpointId, testCaseId)) {
+            testCaseDependencyRepository.save(com.aiapitesting.backend.entity.TestCaseDependency.builder()
+                    .testCase(target)
+                    .dependsOnTestCase(testCaseRepository.getReferenceById(suggestion.sourceTestCaseId()))
+                    .jsonPath(suggestion.suggestedJsonPath())
+                    .placeholderName(suggestion.paramName())
+                    .build());
+            applied++;
+        }
+        return applied;
+    }
+
+    /** Hệ thống tự đổi kỳ vọng sang đúng mã 2xx API trả (vd 200 -> 201) mà không tốn AI. */
+    @Transactional
+    public void setBaselineExpectedStatus(UUID projectId, UUID endpointId, UUID testCaseId, int expectedStatus) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        TestCase testCase = testCaseRepository.findByIdAndEndpoint(testCaseId, endpoint)
+                .orElseThrow(() -> new TestCaseNotFoundException("Không tìm thấy test case với id đã cho"));
+        testCase.setExpectedStatus(expectedStatus);
+        testCaseRepository.save(testCase);
+    }
+
+    private Prompt buildSinglePrompt(Endpoint endpoint, String groupRules) {
         String templateText;
         try {
             templateText = promptResource.getContentAsString(StandardCharsets.UTF_8);

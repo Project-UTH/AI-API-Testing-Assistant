@@ -11,6 +11,7 @@ import { listEndpoints } from "@/lib/endpoints"
 import { generateTestCases, type GenerateTestCasesResponse } from "@/lib/testcases"
 import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
 import { AuthHintBanner } from "@/components/projects/AuthHintBanner"
+import { BaselineGenerateDialog } from "@/components/projects/BaselineGenerateDialog"
 import { getDashboardSummary } from "@/lib/dashboard"
 import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
 
@@ -55,6 +56,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
   const [includeNegative, setIncludeNegative] = useState(true)
   const [includeBoundary, setIncludeBoundary] = useState(true)
   const [includeBusiness, setIncludeBusiness] = useState(false)
+  const [baselineEndpointId, setBaselineEndpointId] = useState<string | null>(null)
 
   const endpoints = data?.data ?? []
   // Không có gì để sinh nếu không tích ít nhất 1 trong 4 loại - khớp validate phía backend
@@ -279,6 +281,17 @@ export function EndpointList({ projectId }: EndpointListProps) {
                     "Chưa có test case"
                   )}
                 </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  aria-label={`Sinh đầy đủ ${endpoint.method} ${endpoint.path}`}
+                  onClick={() => setBaselineEndpointId(endpoint.id)}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Sinh đầy đủ
+                </Button>
                 {endpoint.testCaseCount > 0 && (
                   <>
                     <Link
@@ -311,6 +324,16 @@ export function EndpointList({ projectId }: EndpointListProps) {
           )
         })}
       </ul>
+
+      {baselineEndpointId && endpoints.find((e) => e.id === baselineEndpointId) && (
+        <BaselineGenerateDialog
+          key={baselineEndpointId}
+          projectId={projectId}
+          endpoint={endpoints.find((e) => e.id === baselineEndpointId)!}
+          open
+          onOpenChange={(open) => !open && setBaselineEndpointId(null)}
+        />
+      )}
 
       {(selectedIds.size > 0 || pendingCount > 0) && (
         <div className="sticky bottom-4 z-20 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-lg">

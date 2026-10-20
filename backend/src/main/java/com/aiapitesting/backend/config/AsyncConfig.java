@@ -28,4 +28,19 @@ public class AsyncConfig {
         executor.initialize();
         return new DelegatingSecurityContextAsyncTaskExecutor(executor);
     }
+
+    /**
+     * Executor RIÊNG cho 'AI sinh test gốc + chạy thử': luồng này CHỜ runner (chạy trên taskExecutor) nên nếu dùng chung pool thì 2 yêu cầu
+     * cùng lúc có thể chiếm hết thread core, runner nằm chờ trong hàng đợi và cả 2 bế tắc tới hết thời gian chờ.
+     */
+    @Bean(name = "baselineExecutor")
+    public Executor baselineExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(10);
+        executor.setThreadNamePrefix("baseline-");
+        executor.initialize();
+        return new DelegatingSecurityContextAsyncTaskExecutor(executor);
+    }
 }

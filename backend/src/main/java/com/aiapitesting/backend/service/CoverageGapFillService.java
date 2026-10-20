@@ -196,6 +196,23 @@ public class CoverageGapFillService {
                 fromSpecCount);
     }
 
+    /** Endpoint đã có test gốc hợp lệ VÀ lần chạy mới nhất của nó PASS (đủ tin để dùng làm nền bù) - bước 'AI sinh gốc' có thể bỏ qua. */
+    @Transactional(readOnly = true)
+    public boolean hasConfirmedBaseline(UUID projectId, UUID endpointId) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
+        Map<UUID, TestResultStatus> latest = new HashMap<>();
+        for (TestResultRepository.TestCaseLatestResult row : testResultRepository.findLatestResultsByProject(project)) {
+            latest.putIfAbsent(row.getTestCaseId(), row.getStatus());
+        }
+        return testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint).stream()
+                .filter(tc -> tc.getSource() != TestCaseSource.BUSINESS)
+                .filter(tc -> latest.get(tc.getId()) == TestResultStatus.PASSED)
+                .anyMatch(tc -> testCaseChecklistPlanner.isUsableBaseline(spec, testCaseChecklistPlanner.toCandidate(tc), endpoint.effectiveRequiresAuth()));
+    }
+
     /**
      * Case gốc = case kỳ vọng thành công, không vi phạm ràng buộc nào. Ưu tiên case đã chạy PASS thật (dữ
      * liệu chắc chắn dùng được với hệ thống đích, vd tài khoản đăng nhập thật), rồi case người dùng đã khoá
