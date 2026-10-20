@@ -18,12 +18,12 @@
 ## B. Vai trò của AI
 
 **3. AI đóng góp gì thật sự? Có cần AI không?**
-- Phần checklist (bắt buộc, null, biên, enum, bảo mật): **không cần AI**. Đã đo trên `PUT /jobs/{id}`: hệ thống 0,1 giây/0 token/19–25 test; AI 97–121 giây/20–39 nghìn token và sinh nhiều Fail giả (13/25 và 20/24) vì dùng UUID mẫu làm id.
+- Phần checklist (bắt buộc, null, biên, enum, bảo mật): **không cần AI**. Đã đo trên `PUT /jobs/{id}`: hệ thống 0,1 giây/0 token/19–25 test; AI 97–121 giây/20–39 nghìn token và khi chạy tách riêng test `PUT /{id}` thì có nhiều Fail giả (13/25 và 20/34 là 404) do thiếu id. **Đính chính:** lỗi này do thiếu chuỗi (không có test tạo id), không phải AI không sinh được test hợp lệ; khi nối chuỗi từ test POST thì 0 Fail 404 (7 Pass/4 Fail thật hoặc đoán sai mã).
 - Phần nghiệp vụ (luật spec không khai): AI có giá trị. Đo trên 1 endpoint: 10 test, 17.472 token, chạm 5/5 luật đã biết, 2/4 Fail là lỗi API thật (min>max trả 401; tiền tệ không validate), 2/4 đoán sai mã (404 vs 400).
 - Mẫu nhỏ (1 endpoint nghiệp vụ): chỉ là bằng chứng gợi ý, chưa phải kết luận thống kê.
 
 **4. Tại sao tin kết quả AI? AI có bịa không?**
-- Không tin mặc định: mọi test AI nghiệp vụ có nhãn "GIẢ ĐỊNH", người duyệt, không tính vào độ bao phủ; AI không được là oracle duy nhất (2/4 Fail do đoán sai mã). Ví dụ AI bịa: mã danh mục `IT`, `HN` (mã thật `IT_SOFTWARE`, `HA_NOI`), id = UUID mẫu.
+- Không tin mặc định: mọi test AI nghiệp vụ có nhãn "GIẢ ĐỊNH", người duyệt, không tính vào độ bao phủ; AI không được là oracle duy nhất (2/4 Fail do đoán sai mã). Ví dụ AI bịa/đoán sai: mã danh mục `IT`, `HN` (mã thật `IT_SOFTWARE`, `HA_NOI`), ngày hạn cứng. (UUID mẫu cho id chỉ là vấn đề khi thiếu chuỗi; hệ thống nối id bằng Test Data Chaining.)
 
 **5. Kết quả AI có lặp lại được không?**
 - Phần tất định: có (cùng spec, cùng test gốc → cùng kết quả). Phần AI: chưa chạy lặp, chưa ghi nhiệt độ/seed → cần E1 (chạy lặp 3 lần, ghi phiên bản model và prompt).
@@ -35,7 +35,7 @@
 - Đã bắt được lỗi thật trên API tuyển dụng (ví dụ lỗi trả 401 khi `salaryMin > salaryMax`) nhưng đây là ví dụ, không phải đo hệ thống.
 
 **7. Tỉ lệ Fail giả (false failure) là bao nhiêu?**
-- Đã có số trên 2 endpoint: hệ thống 2/23 và 2/19 (cả hai là lệch spec thật, gắn `TEST_DATA_SUSPECT`); AI sinh checklist 13/25 và 20/34 giả do id. Chưa đo trên mẫu lớn.
+- Đã có số trên 2 endpoint: hệ thống 2/23 và 2/19 (cả hai là lệch spec thật, gắn `TEST_DATA_SUSPECT`); AI sinh checklist: 13/25 và 20/34 là 404 do chạy tách riêng, thiếu chuỗi id (không còn khi nối chuỗi - đã kiểm trên 1 chuỗi). Chưa đo trên mẫu lớn.
 
 **8. Hệ thống có dùng được cho API khác không?**
 - Đã chạy trên 4 API khác miền (tuyển dụng 110 endpoint, thư viện giả lập, shop Spring, Swagger 2.0 XML). Mỗi API chỉ 1–2 endpoint phân tích kỹ; đã sửa 7+ lỗi tổng quát hoá (enum MySQL, Swagger 2.0, basePath, form/XML, Basic/header/query auth...). Chưa thử GraphQL/gRPC.
