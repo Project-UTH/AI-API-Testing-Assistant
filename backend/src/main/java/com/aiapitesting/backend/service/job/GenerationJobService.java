@@ -2,13 +2,11 @@ package com.aiapitesting.backend.service.job;
 
 import com.aiapitesting.backend.dto.request.BaselineRequest;
 import com.aiapitesting.backend.dto.request.CoverageFillRequest;
-import com.aiapitesting.backend.dto.request.GenerateTestCasesRequest;
 import com.aiapitesting.backend.dto.request.StartGenerationJobRequest;
 import com.aiapitesting.backend.dto.response.BaselineResponse;
 import com.aiapitesting.backend.dto.response.CoverageFillResponse;
 import com.aiapitesting.backend.dto.response.GenerateTestCasesResponse;
 import com.aiapitesting.backend.dto.response.GenerationJobResponse;
-import com.aiapitesting.backend.dto.response.GenerationPlanSummary;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.GenerationJob;
 import com.aiapitesting.backend.entity.GenerationJobStep;
@@ -113,8 +111,11 @@ public class GenerationJobService {
             throw new InvalidRequestException("Có endpoint không thuộc project này");
         }
         String type = request.getType() == null ? (ids.size() == 1 ? GenerationJob.TYPE_FULL : GenerationJob.TYPE_SYSTEM) : request.getType().toUpperCase();
-        if (!Set.of(GenerationJob.TYPE_FULL, GenerationJob.TYPE_SYSTEM, GenerationJob.TYPE_LEGACY).contains(type)) {
+        if (!Set.of(GenerationJob.TYPE_FULL, GenerationJob.TYPE_SYSTEM).contains(type)) {
             throw new InvalidRequestException("Loại job không hợp lệ: " + type);
+        }
+        if (!hasAnyGroup(request)) {
+            throw new InvalidRequestException("Phải chọn ít nhất 1 nhóm test để sinh (Positive/Negative/Boundary/Security)");
         }
 
         GenerationJob job;
@@ -238,6 +239,9 @@ public class GenerationJobService {
         Endpoint endpoint = endpointRepository.findById(endpointId).orElseThrow();
         String label = endpoint.getMethod() + " " + endpoint.getPath();
         try {
+            if (!job.isDryRun()) {
+                applyScope(endpoint, req);
+            }
             return switch (job.getType()) {
                 case GenerationJob.TYPE_FULL -> {
                     BaselineRequest br = new BaselineRequest(Boolean.TRUE.equals(req.getConfirmWrite()), req.getMaxRepairRounds(),
@@ -252,7 +256,7 @@ public class GenerationJobService {
                     yield base;
                 }
                 case GenerationJob.TYPE_SYSTEM -> runSystemTier(projectId, endpointId, label, ctx);
-                default -> runLegacy(projectId, endpointId, label, req, ctx);
+                default -> throw new IllegalStateException("Loại job không hợp lệ: " + job.getType());
             };
         } catch (JobCancelledException e) {
             throw e;
@@ -309,48 +313,21 @@ public class GenerationJobService {
         }
     }
 
-    /** Chờ kết quả AI nhưng kiểm tra huỷ mỗi 2 giây: job dừng ngay khi người dùng huỷ (lần gọi AI đang dở tự kết thúc ở nền, không bỏ dữ liệu nửa chừng). */
-    private static <T> T awaitCancellable(java.util.concurrent.CompletableFuture<T> future, JobProgress ctx)
-            throws java.util.concurrent.ExecutionException, InterruptedException {
-        while (true) {
-            try {
-                return future.get(2, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (java.util.concurrent.TimeoutException e) {
-                ctx.checkCancelled();
-            }
-        }
+    /** Nhóm test được chọn (Positive/Negative/Boundary mặc định bật, Security mặc định tắt). Cần ít nhất 1 nhóm. */
+    private static boolean hasAnyGroup(StartGenerationJobRequest r) {
+        return !Boolean.FALSE.equals(r.getIncludePositive()) || !Boolean.FALSE.equals(r.getIncludeNegative())
+                || !Boolean.FALSE.equals(r.getIncludeBoundary()) || Boolean.TRUE.equals(r.getIncludeSecurity());
     }
 
-    private GenerationJobResponse.EndpointResult runLegacy(UUID projectId, UUID endpointId, String label, StartGenerationJobRequest req, JobContext ctx) {
-        GenerateTestCasesRequest g = new GenerateTestCasesRequest(
-                Boolean.TRUE.equals(req.getIncludeSecurity()), !Boolean.FALSE.equals(req.getIncludePositive()),
-                !Boolean.FALSE.equals(req.getIncludeNegative()), !Boolean.FALSE.equals(req.getIncludeBoundary()),
-                Boolean.TRUE.equals(req.getIncludeBusiness()));
-        if (ctx.isDryRun()) {
-            ctx.start(endpointId, label, "AI_GENERATE", "AI", "Sẽ gọi AI sinh test theo các nhóm đã chọn (~20.000-40.000 token)").skipped("Chạy thử: chưa gọi AI");
-            return new GenerationJobResponse.EndpointResult(endpointId, label, "DRY_RUN", null, "Chạy thử", 0, 0);
-        }
-        ctx.checkCancelled();
-        JobProgress.Step s = ctx.start(endpointId, label, "AI_GENERATE", "AI", "AI sinh test theo checklist, hệ thống chấm theo nội dung và tự bù mục thiếu");
-        try {
-            java.time.Instant since = java.time.Instant.now().minusSeconds(1);
-            GenerateTestCasesResponse r = awaitCancellable(generation.generate(projectId, endpointId, g), ctx);
-            int tokens = generation.tokensSince(endpointId, since);
-            ctx.addTokens(tokens);
-            GenerationPlanSummary plan = r.planSummary();
-            String detail = "Đã tạo " + r.testCases().size() + " test"
-                    + (plan == null ? "" : " (AI đạt " + plan.aiSatisfiedCount() + " mục, hệ thống bù " + plan.systemFilledCount() + ", đề xuất thêm " + plan.aiExtraCount() + ")");
-            s.finish("OK", detail, null, tokens);
-            return new GenerationJobResponse.EndpointResult(endpointId, label, "GENERATED", null, detail, tokens, plan == null ? 0 : plan.systemFilledCount());
-        } catch (java.util.concurrent.ExecutionException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            Throwable cause = e.getCause() == null ? e : e.getCause();
-            s.fail(cause.getMessage());
-            throw cause instanceof RuntimeException re ? re : new IllegalStateException(cause);
-        }
+    /** Ghi phạm vi nhóm test lên endpoint: gap-fill và trang Coverage chỉ tính/bù đúng các nhóm người dùng đã chọn. */
+    private void applyScope(Endpoint endpoint, StartGenerationJobRequest r) {
+        endpoint.setScopePositive(!Boolean.FALSE.equals(r.getIncludePositive()));
+        endpoint.setScopeNegative(!Boolean.FALSE.equals(r.getIncludeNegative()));
+        endpoint.setScopeBoundary(!Boolean.FALSE.equals(r.getIncludeBoundary()));
+        endpoint.setScopeSecurity(Boolean.TRUE.equals(r.getIncludeSecurity()));
+        endpointRepository.save(endpoint);
     }
+
 
     // ---- Chuyển đổi ----
 

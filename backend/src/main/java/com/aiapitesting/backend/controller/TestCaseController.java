@@ -1,7 +1,6 @@
 package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.request.BaselineRequest;
-import com.aiapitesting.backend.dto.request.GenerateTestCasesRequest;
 import com.aiapitesting.backend.dto.request.SetTestCaseLockedRequest;
 import com.aiapitesting.backend.dto.request.TestCaseRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
@@ -43,16 +42,6 @@ public class TestCaseController {
     private final TestCaseService testCaseService;
     private final DependencySuggestionService dependencySuggestionService;
     private final BaselineVerificationService baselineVerificationService;
-
-    @PostMapping("/generate-tests")
-    public CompletableFuture<ResponseEntity<ApiResponse<GenerateTestCasesResponse>>> generate(
-            @PathVariable UUID projectId,
-            @PathVariable UUID endpointId,
-            @RequestBody(required = false) GenerateTestCasesRequest request
-    ) {
-        return testCaseGenerationService.generate(projectId, endpointId, request)
-                .thenApply(result -> ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(result)));
-    }
 
     /** AI sinh 1 test gốc hợp lệ, hệ thống CHẠY THẬT để xác nhận (có vòng AI sửa theo lỗi thật), rồi tuỳ chọn bổ sung checklist. Chạy lâu (20-120s). */
     @PostMapping("/baseline")

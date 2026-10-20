@@ -63,7 +63,7 @@ function resolveStep(impact: ImportImpact, authType: TargetAuthType, authSkipped
     return {
       number: 3,
       title: "Tạo test case",
-      description: "Tick endpoint ở danh sách bên dưới rồi bấm Sinh Test Case.",
+      description: "Tick endpoint ở danh sách bên dưới rồi bấm Sinh test case.",
     }
   }
   if (impact.testResultCount === 0 && impact.executionCount === 0) {

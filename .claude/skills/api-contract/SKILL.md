@@ -173,7 +173,7 @@ Admin xem được dữ liệu Project/Endpoint/TestCase/BugReport của MỌI u
 
 ## 4g. Sinh test case theo checklist EP/BVA (Module 15h)
 
-`POST /api/v1/projects/{projectId}/endpoints/{endpointId}/generate-tests` — body `{ includeSecurity, includePositive, includeNegative, includeBoundary }` (KHÔNG còn `includeAssertions` từ Module 9b — assertion chỉ thêm tay qua `TestCaseRequest.assertions`). **Breaking change có chủ đích:** response đổi từ `ApiResponse<TestCaseResponse[]>` sang `ApiResponse<GenerateTestCasesResponse>`:
+(**ĐÃ BỎ 2026-10-20** - thay bằng job nền `POST /api/v1/projects/{projectId}/generation-jobs`, nhóm test chọn qua includePositive/Negative/Boundary/Security/Business) `POST /api/v1/projects/{projectId}/endpoints/{endpointId}/generate-tests` — body `{ includeSecurity, includePositive, includeNegative, includeBoundary }` (KHÔNG còn `includeAssertions` từ Module 9b — assertion chỉ thêm tay qua `TestCaseRequest.assertions`). **Breaking change có chủ đích:** response đổi từ `ApiResponse<TestCaseResponse[]>` sang `ApiResponse<GenerateTestCasesResponse>`:
 
 ```json
 {

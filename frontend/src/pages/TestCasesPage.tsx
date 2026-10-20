@@ -310,8 +310,8 @@ export function TestCasesPage() {
                         disabled={lockPendingIds.has(testCase.id)}
                         title={
                           testCase.locked
-                            ? "Đang khoá - sẽ không bị xoá khi Sinh Test Case lại. Bấm để mở khoá."
-                            : "Bấm để khoá - giữ nguyên test case này khi Sinh Test Case lại"
+                            ? "Đang khoá - sẽ không bị xoá khi sinh test case lại. Bấm để mở khoá."
+                            : "Bấm để khoá - giữ nguyên test case này khi sinh test case lại"
                         }
                         onClick={() => handleToggleLock(testCase)}
                       >

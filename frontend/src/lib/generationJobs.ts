@@ -86,9 +86,9 @@ export function isTerminal(status: JobStatus): boolean {
 }
 
 export const JOB_TYPE_LABEL: Record<JobType, string> = {
-  FULL: "Sinh đầy đủ (AI sinh gốc + hệ thống bổ sung)",
-  SYSTEM: "Bổ sung bằng hệ thống (0 token)",
-  LEGACY: "Sinh Test Case (AI theo checklist)",
+  FULL: "Sinh test case (AI sinh test gốc + hệ thống bổ sung)",
+  SYSTEM: "Sinh test case: chỉ bổ sung từ test gốc có sẵn (0 token)",
+  LEGACY: "Sinh toàn bộ bằng AI (chức năng cũ đã bỏ)",
 }
 
 export const JOB_STATUS_LABEL: Record<JobStatus, string> = {
@@ -112,7 +112,7 @@ export const REASON_HELP: Record<string, string> = {
   TOKEN_BUDGET: "Đã chạm trần token cho lần chạy này. Sửa tay test gốc rồi bấm Bổ sung.",
   EXECUTION_TIMEOUT: "Lần chạy thử quá thời gian chờ. Kiểm tra API đích có chạy không rồi thử lại.",
   EXECUTION_ERROR: "Không gọi được API đích: kiểm tra Target URL và mạng rồi thử lại.",
-  NO_BASELINE: "Endpoint chưa có test gốc hợp lệ: bấm 'Sinh đầy đủ' để AI sinh, hoặc tự thêm 1 test đúng.",
+  NO_BASELINE: "Endpoint chưa có test gốc hợp lệ: bấm 'Sinh test case' để AI sinh, hoặc tự thêm 1 test đúng.",
 }
 
 /** Làm mới mọi dữ liệu bị ảnh hưởng khi job có thay đổi test case. */

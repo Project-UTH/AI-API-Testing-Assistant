@@ -235,23 +235,6 @@ export function getLatestGenerationPlan(projectId: string, endpointId: string) {
   return apiFetch<GenerationPlanSummary | null>(`/projects/${projectId}/endpoints/${endpointId}/generation-plan`)
 }
 
-export function generateTestCases(
-  projectId: string,
-  endpointId: string,
-  options?: GenerateTestCasesOptions
-): Promise<GenerateTestCasesResponse> {
-  return apiFetch<GenerateTestCasesResponse>(`/projects/${projectId}/endpoints/${endpointId}/generate-tests`, {
-    method: "POST",
-    body: JSON.stringify({
-      includeSecurity: options?.includeSecurity ?? false,
-      includePositive: options?.includePositive ?? false,
-      includeNegative: options?.includeNegative ?? false,
-      includeBoundary: options?.includeBoundary ?? false,
-      includeBusiness: options?.includeBusiness ?? false,
-    }),
-  })
-}
-
 export function setTestCaseLocked(
   projectId: string,
   endpointId: string,

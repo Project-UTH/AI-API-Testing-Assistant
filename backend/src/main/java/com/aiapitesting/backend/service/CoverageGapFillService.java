@@ -94,7 +94,8 @@ public class CoverageGapFillService {
 
         // Chấm lại NGAY lúc bù (không tin trạng thái frontend đang hiển thị) - mục đã có case đạt thì bỏ qua,
         // tránh tạo trùng khi người dùng bấm 2 lần hoặc vừa tự thêm case ở tab khác.
-        List<TestCaseChecklistPlanner.ChecklistItem> missing = testCaseChecklistPlanner.planScoped(spec, requiresAuth, CoverageScope.of(endpoint)).stream()
+        CoverageScope scope = CoverageScope.of(endpoint);
+        List<TestCaseChecklistPlanner.ChecklistItem> missing = testCaseChecklistPlanner.planScoped(spec, requiresAuth, scope).stream()
                 .filter(item -> item.notApplicableReason() == null)
                 .filter(item -> requested == null || requested.contains(TestCaseChecklistPlanner.key(item)))
                 .filter(item -> candidates.stream().noneMatch(c -> testCaseChecklistPlanner.covers(spec, item, c.generated(), requiresAuth)))
@@ -103,6 +104,7 @@ public class CoverageGapFillService {
         Map<UUID, AuthProfile> profilesById = new HashMap<>();
         authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project).forEach(p -> profilesById.put(p.getId(), p));
         List<EndpointRole> missingAuthz = endpointRoleRepository.findAllByEndpoint(endpoint).stream()
+                .filter(rule -> scope.security()) // ma trận phân quyền thuộc nhóm Security
                 .filter(rule -> profilesById.containsKey(rule.getAuthProfileId()))
                 .filter(rule -> requested == null
                         || requested.contains(AuthzMatrix.key(rule.getExpectation(), profilesById.get(rule.getAuthProfileId()).getRoleKey())))

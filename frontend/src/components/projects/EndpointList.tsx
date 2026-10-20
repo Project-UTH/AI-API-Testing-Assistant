@@ -1,18 +1,15 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { useMutation, useQuery } from "@tanstack/react-query"
-import { ChevronDown, Coins, Loader2, Sparkles } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { ChevronDown, Coins, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn, METHOD_STYLES } from "@/lib/utils"
-import { ApiError } from "@/lib/api"
 import { listEndpoints } from "@/lib/endpoints"
 import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
 import { AuthHintBanner } from "@/components/projects/AuthHintBanner"
 import { GenerateWizardDialog } from "@/components/generation/GenerateWizardDialog"
-import { useGenerationJobs } from "@/components/generation/GenerationJobsProvider"
-import { startJob } from "@/lib/generationJobs"
 import { getDashboardSummary } from "@/lib/dashboard"
 import { coverageCounts, getProjectCoverage } from "@/lib/coverage"
 
@@ -23,7 +20,6 @@ interface EndpointListProps {
 type GenerationState = { status: "success"; count: number }
 
 export function EndpointList({ projectId }: EndpointListProps) {
-  const { track } = useGenerationJobs()
   const { data, isLoading, isError } = useQuery({
     queryKey: ["endpoints", projectId],
     queryFn: () => listEndpoints(projectId),
@@ -45,19 +41,11 @@ export function EndpointList({ projectId }: EndpointListProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   // Endpoint đang mở phần chi tiết (coverage + báo cáo lần sinh) - mặc định gập để danh sách gọn, 1 dòng/endpoint.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
-  const [includeSecurity, setIncludeSecurity] = useState(false)
   // Mặc định cả 3 đều bật - giữ đúng hành vi cũ (luôn sinh đủ Positive/Negative/Boundary) cho tới
   // khi người dùng chủ động bỏ tích bớt.
-  const [includePositive, setIncludePositive] = useState(true)
-  const [includeNegative, setIncludeNegative] = useState(true)
-  const [includeBoundary, setIncludeBoundary] = useState(true)
-  const [includeBusiness, setIncludeBusiness] = useState(false)
   const [wizardIds, setWizardIds] = useState<string[] | null>(null)
 
   const endpoints = data?.data ?? []
-  // Không có gì để sinh nếu không tích ít nhất 1 trong 4 loại - khớp validate phía backend
-  // (InvalidRequestException "Phải chọn ít nhất 1 loại test case để sinh").
-  const hasAnyCategorySelected = includePositive || includeNegative || includeBoundary || includeSecurity || includeBusiness
 
   function toggleSelect(endpointId: string, checked: boolean) {
     setSelectedIds((prev) => {
@@ -83,24 +71,6 @@ export function EndpointList({ projectId }: EndpointListProps) {
     })
   }
 
-  // Sinh chạy NỀN qua job: tiến trình hiện ở khung giám sát (thu nhỏ/huỷ được). Bỏ chọn ngay khi bấm để không gửi job trùng.
-  const startBatch = useMutation({
-    mutationFn: (type: "LEGACY" | "SYSTEM") =>
-      startJob(projectId, {
-        endpointIds: Array.from(selectedIds),
-        type,
-        includeSecurity,
-        includePositive,
-        includeNegative,
-        includeBoundary,
-        includeBusiness,
-      }),
-    onSuccess: (job) => {
-      setSelectedIds(new Set())
-      track(job)
-    },
-  })
-  const startError = startBatch.error instanceof ApiError ? startBatch.error.message : startBatch.isError ? "Không bắt đầu được job, vui lòng thử lại." : null
 
   if (isLoading) {
     return <p className="mt-4 text-muted-foreground">Đang tải danh sách endpoint...</p>
@@ -125,8 +95,6 @@ export function EndpointList({ projectId }: EndpointListProps) {
   // "Chọn tất cả" chỉ xét endpoint chọn được (không đang sinh) - so với toàn bộ thì khi có endpoint đang sinh nhãn kẹt ở "Chọn tất cả".
   const selectableEndpoints = endpoints
   const allSelectableSelected = selectableEndpoints.length > 0 && selectableEndpoints.every((e) => selectedIds.has(e.id))
-  // Số endpoint đã tick mà đã có test case: sinh lại sẽ thay test case AI chưa khoá của chúng.
-  const regenerateCount = endpoints.filter((e) => selectedIds.has(e.id) && e.testCaseCount > 0).length
   const todayTokens = summary?.aiTokensToday ?? 0
   const dailyLimit = summary?.aiDailyTokenLimit ?? 0
   const nearOrOverQuota = dailyLimit > 0 && todayTokens >= dailyLimit
@@ -156,13 +124,13 @@ export function EndpointList({ projectId }: EndpointListProps) {
             {todayTokens.toLocaleString("vi-VN")} / {dailyLimit.toLocaleString("vi-VN")}
           </span>
           {nearOrOverQuota && (
-            <span className="font-medium text-destructive">Đã đạt giới hạn hôm nay - Sinh Test Case sẽ bị chặn</span>
+            <span className="font-medium text-destructive">Đã đạt giới hạn hôm nay - Sinh test case có dùng AI sẽ bị chặn</span>
           )}
         </div>
       )}
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
-          Tick endpoint rồi chọn loại test case để sinh (Sinh Test Case dùng AI, tốn token).
+          Tick endpoint rồi bấm Sinh test case: AI sinh 1 test gốc hợp lệ (tốn token), hệ thống chạy thật xác nhận và bổ sung các nhóm test bạn chọn.
         </span>
         <button
           type="button"
@@ -248,11 +216,11 @@ export function EndpointList({ projectId }: EndpointListProps) {
                   size="sm"
                   variant="outline"
                   className="shrink-0"
-                  aria-label={`Sinh đầy đủ ${endpoint.method} ${endpoint.path}`}
+                  aria-label={`Sinh test case ${endpoint.method} ${endpoint.path}`}
                   onClick={() => setWizardIds([endpoint.id])}
                 >
                   <Sparkles className="h-3.5 w-3.5" />
-                  Sinh đầy đủ
+                  Sinh test case
                 </Button>
                 {endpoint.testCaseCount > 0 && (
                   <>
@@ -297,81 +265,19 @@ export function EndpointList({ projectId }: EndpointListProps) {
       )}
 
       {selectedIds.size > 0 && (
-        <div className="sticky bottom-4 z-20 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-lg">
-          {startError && (
-            <p role="alert" className="text-sm text-destructive">
-              {startError}
-            </p>
-          )}
-          {selectedIds.size > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm font-medium">Đã chọn {selectedIds.size} endpoint</span>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Checkbox checked={includePositive} onCheckedChange={(checked) => setIncludePositive(checked === true)} />
-                Positive
-              </label>
-              <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Checkbox checked={includeNegative} onCheckedChange={(checked) => setIncludeNegative(checked === true)} />
-                Negative
-              </label>
-              <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Checkbox checked={includeBoundary} onCheckedChange={(checked) => setIncludeBoundary(checked === true)} />
-                Boundary
-              </label>
-              <label
-                className="flex items-center gap-1.5 text-sm text-muted-foreground"
-                title="Test kiểm tra API chặn truy cập khi bỏ hoặc gửi sai token"
-              >
-                <Checkbox checked={includeSecurity} onCheckedChange={(checked) => setIncludeSecurity(checked === true)} />
-                + Security
-              </label>
-              <label
-                className="flex items-center gap-1.5 text-sm text-muted-foreground"
-                title="AI đoán luật nghiệp vụ không có trong spec (ngày hạn, min≤max, mã tham chiếu...). Là GIẢ ĐỊNH, tốn thêm token, không tính vào độ bao phủ."
-              >
-                <Checkbox checked={includeBusiness} onCheckedChange={(checked) => setIncludeBusiness(checked === true)} />
-                + Nghiệp vụ (AI đoán)
-              </label>
-              <Button
-                size="sm"
-                variant="outline"
-                title="AI sinh test gốc hợp lệ cho từng endpoint đã chọn, chạy thật xác nhận, rồi hệ thống bổ sung checklist (chạy nền, huỷ được)"
-                onClick={() => {
-                  setWizardIds(Array.from(selectedIds))
-                  setSelectedIds(new Set())
-                }}
-              >
-                <Sparkles className="h-4 w-4" />
-                Sinh đầy đủ ({selectedIds.size})
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={startBatch.isPending}
-                title="Bổ sung test theo checklist từ test gốc đã Pass, không gọi AI (0 token)"
-                onClick={() => startBatch.mutate("SYSTEM")}
-              >
-                Bổ sung bằng hệ thống (0 token)
-              </Button>
-              <Button size="sm" disabled={!hasAnyCategorySelected || startBatch.isPending} onClick={() => startBatch.mutate("LEGACY")}>
-                {startBatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Sinh Test Case
-              </Button>
-            </div>
-          </div>
-          )}
-          {selectedIds.size > 0 && regenerateCount > 0 && (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              {regenerateCount} endpoint đã có test case: sinh lại sẽ thay các test case AI chưa khoá 🔒 của chúng, kèm kết quả
-              chạy và bug report của các test case đó. Test case bạn tự thêm và test case đã khoá được giữ nguyên.
-            </p>
-          )}
-          {selectedIds.size > 0 && !hasAnyCategorySelected && (
-            <p className="text-xs text-destructive">
-              Phải tích ít nhất 1 trong Positive/Negative/Boundary/Security để có thứ sinh ra.
-            </p>
-          )}
+        <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-lg">
+          <span className="text-sm font-medium">Đã chọn {selectedIds.size} endpoint</span>
+          <Button
+            size="sm"
+            title="AI sinh test gốc hợp lệ, hệ thống chạy thật xác nhận rồi bổ sung các nhóm test bạn chọn (chạy nền, xem từng bước, huỷ được)"
+            onClick={() => {
+              setWizardIds(Array.from(selectedIds))
+              setSelectedIds(new Set())
+            }}
+          >
+            <Sparkles className="h-4 w-4" />
+            Sinh test case ({selectedIds.size})
+          </Button>
         </div>
       )}
     </div>
