@@ -108,6 +108,7 @@ export const REASON_HELP: Record<string, string> = {
   MISSING_PARAM_VALUE: "Nhập giá trị thật cho tham số đường dẫn rồi thử lại.",
   AUTH: "Kiểm tra token/vai trò của project (nút Sửa xác thực hoặc Vai trò). AI không sửa được lỗi này.",
   SERVER_ERROR: "API đích lỗi với test hợp lệ: nhiều khả năng là lỗi phía API.",
+  STATE_CONFLICT: "API đích báo xung đột dữ liệu (409) lặp lại, AI không sửa được: dọn hoặc đổi dữ liệu ở môi trường test (vd bản ghi đã tồn tại) rồi thử lại.",
   REPAIR_EXHAUSTED: "AI đã sửa nhưng chưa Pass: xem phản hồi của API và sửa tay test gốc ở trang Test case.",
   TOKEN_BUDGET: "Đã chạm trần token cho lần chạy này. Sửa tay test gốc rồi bấm Bổ sung.",
   EXECUTION_TIMEOUT: "Lần chạy thử quá thời gian chờ. Kiểm tra API đích có chạy không rồi thử lại.",

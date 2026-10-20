@@ -130,6 +130,17 @@ class BaselineVerificationServiceTest {
     }
 
     @Test
+    void repeated409_stopsAsStateConflict_insteadOfBurningAllRepairRounds() {
+        results(TestResultStatus.FAILED, 409, "{\"error\":\"COMPANY_ALREADY_EXISTS\"}");
+
+        BaselineResponse response = service.execute(projectId, endpointId, confirmed(3));
+
+        assertThat(response.status()).isEqualTo("NEEDS_HUMAN");
+        assertThat(response.reason()).isEqualTo("STATE_CONFLICT");
+        assertThat(askCount).isEqualTo(2); // 1 lần sinh + đúng 1 lần sửa, không đốt hết 3 lần sửa
+    }
+
+    @Test
     void failThenPassOnRepair_sendsTheRealApiErrorBackToAi() {
         TestResult bad = TestResult.builder().testCase(TestCase.builder().id(testId).build()).status(TestResultStatus.FAILED).responseStatus(400).responseBody("{\"error\":\"INVALID_CATALOG_CODE\"}").build();
         TestResult good = TestResult.builder().testCase(TestCase.builder().id(testId).build()).status(TestResultStatus.PASSED).responseStatus(201).responseBody("{}").build();

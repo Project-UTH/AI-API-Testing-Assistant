@@ -298,17 +298,23 @@ public class TestCaseGenerationService {
         }
         Prompt prompt = buildSinglePrompt(endpoint, render(readTemplate(resource), vars));
 
-        List<GeneratedTestCase> generated;
-        Usage usage;
-        try {
-            ResponseEntity<ChatResponse, List<GeneratedTestCase>> response = chatClient.prompt(prompt).call()
-                    .responseEntity(new ParameterizedTypeReference<List<GeneratedTestCase>>() {
-                    });
-            generated = response.entity();
-            usage = response.response().getMetadata().getUsage();
-        } catch (Exception e) {
-            log.warn("Goi AI that bai khi sinh test goc cho endpoint {}: {}", endpoint.getId(), e.toString());
-            throw new AiGenerationFailedException("Không thể sinh test gốc từ AI, vui lòng thử lại");
+        List<GeneratedTestCase> generated = null;
+        Usage usage = null;
+        // AI thỉnh thoảng trả JSON hỏng (thiếu dấu phẩy...): hỏi lại tối đa 3 lần cho riêng lỗi đọc JSON, lỗi khác (mạng, xác thực) dừng ngay.
+        for (int attempt = 1; generated == null; attempt++) {
+            try {
+                ResponseEntity<ChatResponse, List<GeneratedTestCase>> response = chatClient.prompt(prompt).call()
+                        .responseEntity(new ParameterizedTypeReference<List<GeneratedTestCase>>() {
+                        });
+                generated = response.entity();
+                usage = response.response().getMetadata().getUsage();
+            } catch (Exception e) {
+                boolean malformedJson = e.toString().contains("jackson") || (e.getCause() != null && e.getCause().toString().contains("jackson"));
+                log.warn("Goi AI that bai khi sinh test goc cho endpoint {} (lan {}): {}", endpoint.getId(), attempt, e.toString());
+                if (!malformedJson || attempt >= 3) {
+                    throw new AiGenerationFailedException("Không thể sinh test gốc từ AI, vui lòng thử lại");
+                }
+            }
         }
         validate(generated);
         GeneratedTestCase first = generated.get(0);

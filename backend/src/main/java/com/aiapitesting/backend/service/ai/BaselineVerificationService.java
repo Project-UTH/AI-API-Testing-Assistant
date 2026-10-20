@@ -207,6 +207,12 @@ public class BaselineVerificationService {
             last = outcome;
             boolean hasPathParams = test.resolvedPath() != null && PATH_PLACEHOLDER.matcher(test.resolvedPath()).find();
             Diagnosis diagnosis = diagnose(outcome, hasPathParams);
+            // 409 lặp lại sau khi AI đã sửa: xung đột trạng thái dữ liệu (bản ghi đã tồn tại...), sửa nội dung test không giải quyết được - dừng, đỡ tốn token.
+            if (diagnosis.decision() == Decision.REPAIR && Integer.valueOf(409).equals(outcome.httpStatus())
+                    && !rounds.isEmpty() && Integer.valueOf(409).equals(rounds.get(rounds.size() - 1).httpStatus())) {
+                diagnosis = new Diagnosis(Decision.HUMAN, "STATE_CONFLICT",
+                        "API trả 409 lặp lại dù AI đã sửa: dữ liệu đích đang xung đột (bản ghi đã tồn tại, giới hạn 1 bản ghi...). Dọn hoặc đổi dữ liệu ở môi trường test rồi thử lại.");
+            }
 
             if (diagnosis.decision() == Decision.ADOPT_2XX) {
                 // API trả 2xx khác mã AI kỳ vọng (vd 201 thay vì 200): hệ thống tự sửa kỳ vọng, chạy lại, KHÔNG tốn AI.
