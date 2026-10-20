@@ -57,6 +57,13 @@ function formatElapsed(ms: number): string {
 export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDismiss }: Props) {
   const queryClient = useQueryClient()
   const [now, setNow] = useState(() => Date.now())
+  const panelRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!expanded) return
+    // chờ hộp thoại vừa đóng trả focus xong rồi mới chuyển focus vào panel
+    const t = setTimeout(() => panelRef.current?.focus({ preventScroll: true }), 150)
+    return () => clearTimeout(t)
+  }, [expanded])
 
   const { data: job, error, isError: pollFailed, dataUpdatedAt } = useQuery({
     queryKey: ["gen-job", jobId],
@@ -175,6 +182,8 @@ export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDi
 
   return (
     <section
+      ref={panelRef}
+      tabIndex={-1}
       className={cn("pointer-events-auto flex max-h-[75vh] w-[560px] max-w-full flex-col rounded-lg border bg-card shadow-xl", STATUS_TONE[job.status])}
       aria-label="Giám sát sinh test"
       onKeyDown={(e) => e.key === "Escape" && onMinimize()}
@@ -241,13 +250,13 @@ function StepRow({ step, now }: { step: GenerationStep; now: number }) {
   const stepMs = step.status === "RUNNING" && step.startedAt ? now - new Date(step.startedAt).getTime() : 0
   const icon =
     step.status === "RUNNING" ? (
-      <Loader2 className="size-3.5 animate-spin text-primary motion-reduce:animate-none" aria-label="Đang chạy" />
+      <Loader2 className="size-3.5 animate-spin text-primary motion-reduce:animate-none" role="img" aria-label="Đang chạy" />
     ) : step.status === "OK" ? (
-      <CheckCircle2 className="size-3.5 text-green-600 dark:text-green-400" aria-label="Xong" />
+      <CheckCircle2 className="size-3.5 text-green-600 dark:text-green-400" role="img" aria-label="Xong" />
     ) : step.status === "FAILED" ? (
-      <XCircle className="size-3.5 text-destructive" aria-label="Lỗi/dừng" />
+      <XCircle className="size-3.5 text-destructive" role="img" aria-label="Lỗi/dừng" />
     ) : (
-      <MinusCircle className="size-3.5 text-muted-foreground" aria-label="Bỏ qua" />
+      <MinusCircle className="size-3.5 text-muted-foreground" role="img" aria-label="Bỏ qua" />
     )
   const httpOk = step.httpStatus !== null && step.httpStatus >= 200 && step.httpStatus < 300
   return (

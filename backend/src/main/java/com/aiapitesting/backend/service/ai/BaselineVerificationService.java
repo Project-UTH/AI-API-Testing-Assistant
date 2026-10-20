@@ -199,6 +199,8 @@ public class BaselineVerificationService {
             int chained = generationService.applyChaining(projectId, endpointId, testId);
             if (chained > 0) {
                 p.start(endpointId, label, "CHAIN", "SYSTEM", "Nối chuỗi dữ liệu").ok("Tự nối " + chained + " tham số đường dẫn với test POST tạo tài nguyên");
+            } else {
+                p.start(endpointId, label, "CHAIN", "SYSTEM", "Nối chuỗi dữ liệu").skipped("Không có tham số nào cần nối với test tạo tài nguyên");
             }
 
             RunOutcome outcome = runStep(p, endpointId, label, projectId, testId, "Chạy thử test gốc trên API đích");
@@ -208,7 +210,7 @@ public class BaselineVerificationService {
 
             if (diagnosis.decision() == Decision.ADOPT_2XX) {
                 // API trả 2xx khác mã AI kỳ vọng (vd 201 thay vì 200): hệ thống tự sửa kỳ vọng, chạy lại, KHÔNG tốn AI.
-                p.start(endpointId, label, "DIAGNOSE", "SYSTEM", "Sửa kỳ vọng sang " + outcome.httpStatus()).ok(diagnosis.message());
+                p.start(endpointId, label, "ADJUST_EXPECTED", "SYSTEM", "Sửa kỳ vọng sang " + outcome.httpStatus()).ok(diagnosis.message());
                 generationService.setBaselineExpectedStatus(projectId, endpointId, testId, outcome.httpStatus());
                 RunOutcome second = runStep(p, endpointId, label, projectId, testId, "Chạy lại test gốc sau khi sửa kỳ vọng");
                 last = second;

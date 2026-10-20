@@ -282,7 +282,7 @@ public class GenerationJobService {
         JobProgress.Step s = ctx.start(endpointId, label, "AI_GAPS", "AI", "AI đoán thêm test nghiệp vụ còn thiếu (nhãn GIẢ ĐỊNH, không tính vào độ bao phủ)");
         try {
             java.time.Instant since = java.time.Instant.now().minusSeconds(1);
-            GenerateTestCasesResponse r = generation.generate(projectId, endpointId, new GenerateTestCasesRequest(false, false, false, false, true)).get();
+            GenerateTestCasesResponse r = awaitCancellable(generation.generate(projectId, endpointId, new GenerateTestCasesRequest(false, false, false, false, true)), ctx);
             int tokens = generation.tokensSince(endpointId, since);
             ctx.addTokens(tokens);
             s.finish("OK", "Thêm " + r.testCases().size() + " test nghiệp vụ GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả", null, tokens);
@@ -292,6 +292,18 @@ public class GenerationJobService {
             }
             Throwable cause = e.getCause() == null ? e : e.getCause();
             s.fail(cause.getMessage());
+        }
+    }
+
+    /** Chờ kết quả AI nhưng kiểm tra huỷ mỗi 2 giây: job dừng ngay khi người dùng huỷ (lần gọi AI đang dở tự kết thúc ở nền, không bỏ dữ liệu nửa chừng). */
+    private static <T> T awaitCancellable(java.util.concurrent.CompletableFuture<T> future, JobProgress ctx)
+            throws java.util.concurrent.ExecutionException, InterruptedException {
+        while (true) {
+            try {
+                return future.get(2, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                ctx.checkCancelled();
+            }
         }
     }
 
@@ -308,7 +320,7 @@ public class GenerationJobService {
         JobProgress.Step s = ctx.start(endpointId, label, "AI_GENERATE", "AI", "AI sinh test theo checklist, hệ thống chấm theo nội dung và tự bù mục thiếu");
         try {
             java.time.Instant since = java.time.Instant.now().minusSeconds(1);
-            GenerateTestCasesResponse r = generation.generate(projectId, endpointId, g).get();
+            GenerateTestCasesResponse r = awaitCancellable(generation.generate(projectId, endpointId, g), ctx);
             int tokens = generation.tokensSince(endpointId, since);
             ctx.addTokens(tokens);
             GenerationPlanSummary plan = r.planSummary();

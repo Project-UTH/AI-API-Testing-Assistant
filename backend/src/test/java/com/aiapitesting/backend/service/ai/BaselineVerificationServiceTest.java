@@ -298,7 +298,7 @@ class BaselineVerificationServiceTest {
         BaselineResponse response = service.execute(projectId, endpointId, confirmed(2), rec);
 
         assertThat(response.status()).isEqualTo("CONFIRMED");
-        assertThat(rec.phases).containsExactly("PRECHECK:SYSTEM", "AI_BASELINE:AI", "RUN:SYSTEM", "LOCK:SYSTEM", "FILL:SYSTEM");
+        assertThat(rec.phases).containsExactly("PRECHECK:SYSTEM", "AI_BASELINE:AI", "CHAIN:SYSTEM", "RUN:SYSTEM", "LOCK:SYSTEM", "FILL:SYSTEM");
         assertThat(rec.tokens).isEqualTo(5000);
     }
 
