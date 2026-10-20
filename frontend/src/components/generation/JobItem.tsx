@@ -273,12 +273,21 @@ function StepRow({ step }: { step: GenerationStep }) {
 function Summary({ job, projectId }: { job: GenerationJob; projectId: string }) {
   const needsHuman = job.results.filter((r) => r.status === "NEEDS_HUMAN" || r.status === "FAILED")
   const total = job.results.reduce((sum, r) => sum + r.filled, 0)
+  const writeCalls = job.steps.filter(
+    (st) => st.phase === "RUN" && st.httpStatus !== null && st.httpStatus >= 200 && st.httpStatus < 300 && /^(POST|PUT|PATCH|DELETE) /.test(st.endpointLabel ?? "")
+  ).length
   return (
     <footer className="border-t border-border px-4 py-3 text-xs" aria-live="polite">
       <p className="font-medium">
         {job.results.length} endpoint · bổ sung {total} test · {job.tokensUsed.toLocaleString("vi-VN")} token AI
       </p>
       {job.errorMessage && <p className="mt-1 text-destructive">{job.errorMessage}</p>}
+      {writeCalls > 0 && (
+        <p className="mt-1.5 rounded-md border border-border bg-muted/40 p-2 text-muted-foreground">
+          Đã có {writeCalls} lần chạy GHI THẬT thành công lên API đích (POST/PUT/PATCH/DELETE). Hệ thống chưa tự xoá dữ liệu này: nếu cần, dọn thủ công ở môi trường
+          test.
+        </p>
+      )}
       {needsHuman.map((r) => (
         <div key={r.endpointId} className="mt-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2">
           <p className="font-mono">{r.label}</p>
