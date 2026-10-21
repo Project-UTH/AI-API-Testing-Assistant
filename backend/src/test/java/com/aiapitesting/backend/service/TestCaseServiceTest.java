@@ -1,12 +1,14 @@
 package com.aiapitesting.backend.service;
 
 import com.aiapitesting.backend.dto.request.TestCaseRequest;
+import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
+import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
 import com.aiapitesting.backend.repository.BugReportRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
@@ -21,6 +23,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,7 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -91,6 +99,93 @@ class TestCaseServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(testCaseId);
         assertThat(result.get(0).endpointPath()).isEqualTo("/users");
+    }
+
+    // ---- Module 17 (G4) - danh sách theo trang ----
+
+    private TestCaseListQuery query(Integer page, Integer size, String method, String sort) {
+        return new TestCaseListQuery(page, size, null, method, null, null, null, null, null, sort);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void listByProjectPaged_loadsDependenciesAndAssertionsOnlyForPageIds_andNeverTheWholeProject() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        TestCase testCase = TestCase.builder().id(testCaseId).endpoint(endpoint).name("Positive").expectedStatus(200)
+                .source(TestCaseSource.AI_GENERATED).build();
+        when(testCaseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(testCase), PageRequest.of(2, 50), 101));
+
+        PageResponse<TestCaseResponse> result = testCaseService.listByProjectPaged(projectId, query(2, null, null, null));
+
+        assertThat(result.data()).hasSize(1);
+        assertThat(result.page()).isEqualTo(2);
+        assertThat(result.size()).isEqualTo(50);
+        assertThat(result.totalElements()).isEqualTo(101);
+        assertThat(result.totalPages()).isEqualTo(3);
+        verify(testCaseDependencyRepository).findAllByTestCaseIdIn(List.of(testCaseId));
+        verify(testCaseAssertionRepository).findAllByTestCaseIdIn(List.of(testCaseId));
+        verify(testCaseRepository, never()).findAllByEndpointProject(any());
+        verify(testCaseDependencyRepository, never()).findAllByTestCaseEndpointProject(any());
+        verify(testCaseAssertionRepository, never()).findAllByTestCaseEndpointProject(any());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void listByProjectPaged_emptyPage_skipsDependencyAndAssertionLookups() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(testCaseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(5, 50), 0));
+
+        PageResponse<TestCaseResponse> result = testCaseService.listByProjectPaged(projectId, query(5, 50, null, null));
+
+        assertThat(result.data()).isEmpty();
+        assertThat(result.totalElements()).isZero();
+        assertThat(result.totalPages()).isZero();
+        verifyNoInteractions(testCaseDependencyRepository, testCaseAssertionRepository);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void listByProjectPaged_clampsSizeTo200_andKeepsOrderingInsideTheSpecification() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(testCaseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 200), 0));
+
+        testCaseService.listByProjectPaged(projectId, query(0, 500, null, null));
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(testCaseRepository).findAll(any(Specification.class), captor.capture());
+        assertThat(captor.getValue().getPageSize()).isEqualTo(200);
+        assertThat(captor.getValue().getPageNumber()).isZero();
+        assertThat(captor.getValue().getSort().isSorted()).isFalse();
+    }
+
+    @Test
+    void listByProjectPaged_rejectsBadParameters() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+
+        assertThatThrownBy(() -> testCaseService.listByProjectPaged(projectId, query(-1, 50, null, null)))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> testCaseService.listByProjectPaged(projectId, query(0, 0, null, null)))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> testCaseService.listByProjectPaged(projectId, query(0, 50, "FETCH", null)))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> testCaseService.listByProjectPaged(projectId, query(0, 50, null, "password,asc")))
+                .isInstanceOf(InvalidRequestException.class);
+        verifyNoInteractions(testCaseRepository);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void listByProjectPaged_acceptsLowerCaseMethodAndWhitelistedSort() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(testCaseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 50), 0));
+
+        testCaseService.listByProjectPaged(projectId, query(0, 50, "post", "createdAt,desc"));
+
+        verify(testCaseRepository).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
@@ -233,7 +328,7 @@ class TestCaseServiceTest {
         assertThatThrownBy(() -> testCaseService.delete(projectId, endpointId, testCaseId))
                 .isInstanceOf(com.aiapitesting.backend.exception.TestCaseHasDependentsException.class);
 
-        verify(testCaseRepository, org.mockito.Mockito.never()).delete(any());
+        verify(testCaseRepository, org.mockito.Mockito.never()).delete(any(TestCase.class));
     }
 
     @Test

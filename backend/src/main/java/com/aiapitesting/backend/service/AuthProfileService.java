@@ -48,7 +48,12 @@ public class AuthProfileService {
     @Transactional
     public AuthProfileResponse create(UUID projectId, AuthProfileRequest request) {
         Project project = projectService.getOwnedProject(projectId);
-        projectService.validateTargetAuthValue(request.authType(), request.authValue());
+        boolean loginMode = request.loginPath() != null && !request.loginPath().isBlank();
+        if (loginMode) {
+            validateLogin(request, request.loginBody());
+        } else {
+            projectService.validateTargetAuthValue(request.authType(), request.authValue());
+        }
         String roleKey = normalizeRoleKey(request.roleKey() != null && !request.roleKey().isBlank() ? request.roleKey() : request.name());
         if (authProfileRepository.existsByProjectAndRoleKey(project, roleKey)) {
             throw new InvalidRequestException("Khoá vai trò '" + roleKey + "' đã có trong project này");
@@ -57,10 +62,13 @@ public class AuthProfileService {
                 .project(project)
                 .name(request.name().trim())
                 .roleKey(roleKey)
-                .authType(request.authType())
-                .authValueEncrypted(request.authType() == TargetAuthType.NONE ? null : aesEncryptionService.encrypt(request.authValue()))
+                .authType(loginMode ? TargetAuthType.BEARER_TOKEN : request.authType())
+                .authValueEncrypted(loginMode || request.authType() == TargetAuthType.NONE ? null : aesEncryptionService.encrypt(request.authValue()))
                 .authUpdatedAt(Instant.now())
                 .build();
+        if (loginMode) {
+            applyLogin(profile, request, request.loginBody());
+        }
         return AuthProfileResponse.from(authProfileRepository.save(profile), 0);
     }
 
@@ -71,14 +79,29 @@ public class AuthProfileService {
         profile.setName(request.name().trim());
         // roleKey bất biến: các mục ma trận phân quyền/khoá checklist dựa vào nó.
         boolean valueGiven = request.authValue() != null && !request.authValue().isBlank();
-        if (request.authType() == TargetAuthType.NONE) {
+        boolean loginMode = request.loginPath() != null && !request.loginPath().isBlank();
+        if (loginMode) {
+            boolean bodyGiven = request.loginBody() != null && !request.loginBody().isBlank();
+            if (!bodyGiven && !(profile.isLoginMode() && profile.getLoginBodyEncrypted() != null)) {
+                throw new InvalidRequestException("Thiếu body đăng nhập (tài khoản/mật khẩu)");
+            }
+            validateLogin(request, bodyGiven ? request.loginBody() : "{}");
+            profile.setAuthType(TargetAuthType.BEARER_TOKEN);
+            profile.setAuthValueEncrypted(null);
+            applyLogin(profile, request, bodyGiven ? request.loginBody() : null);
+            profile.setAuthUpdatedAt(Instant.now());
+        } else if (request.authType() == TargetAuthType.NONE) {
+            clearLogin(profile);
             profile.setAuthType(TargetAuthType.NONE);
             profile.setAuthValueEncrypted(null);
             profile.setAuthUpdatedAt(Instant.now());
         } else if (valueGiven) {
+            clearLogin(profile);
             profile.setAuthType(request.authType());
             profile.setAuthValueEncrypted(aesEncryptionService.encrypt(request.authValue()));
             profile.setAuthUpdatedAt(Instant.now());
+        } else if (profile.isLoginMode()) {
+            throw new InvalidRequestException("Profile đang ở chế độ đăng nhập tự động - nhập đường dẫn đăng nhập, hoặc nhập token để chuyển sang token tĩnh");
         } else if (profile.getAuthValueEncrypted() == null || profile.getAuthValueEncrypted().isBlank()) {
             throw new InvalidRequestException("Thiếu giá trị xác thực cho loại xác thực đã chọn");
         } else {
@@ -102,6 +125,41 @@ public class AuthProfileService {
         // Khai báo ma trận phân quyền của vai trò này là cấu hình (không phải công sức người dùng) nên xoá theo.
         endpointRoleRepository.deleteAllByAuthProfileId(profileId);
         authProfileRepository.delete(profile);
+    }
+
+    /** Chế độ đăng nhập (G5/P1-4): loginPath chỉ là đường dẫn tương đối trên base URL của project, body là JSON object, có JSONPath tới token. */
+    private void validateLogin(AuthProfileRequest request, String loginBody) {
+        String path = request.loginPath().trim();
+        if (!path.startsWith("/") || path.startsWith("//") || path.contains("://") || path.chars().anyMatch(Character::isWhitespace)) {
+            throw new InvalidRequestException("Đường dẫn đăng nhập phải là đường dẫn tương đối bắt đầu bằng '/' (vd /auth/login)");
+        }
+        if (request.tokenJsonPath() == null || request.tokenJsonPath().isBlank()) {
+            throw new InvalidRequestException("Thiếu JSONPath tới token trong response đăng nhập (vd data.accessToken)");
+        }
+        if (!com.aiapitesting.backend.service.execution.AuthTokenService.isSafePath(request.tokenJsonPath().trim())) {
+            throw new InvalidRequestException("JSONPath tới token chỉ gồm tên field, dấu chấm và chỉ số mảng (vd data.accessToken, tokens[0].value)");
+        }
+        try {
+            if (!new com.fasterxml.jackson.databind.ObjectMapper().readTree(loginBody).isObject()) {
+                throw new InvalidRequestException("Body đăng nhập phải là JSON object");
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException e) {
+            throw new InvalidRequestException("Body đăng nhập không phải JSON hợp lệ");
+        }
+    }
+
+    private void applyLogin(AuthProfile profile, AuthProfileRequest request, String loginBody) {
+        profile.setLoginPath(request.loginPath().trim());
+        profile.setTokenJsonPath(request.tokenJsonPath().trim());
+        if (loginBody != null && !loginBody.isBlank()) {
+            profile.setLoginBodyEncrypted(aesEncryptionService.encrypt(loginBody));
+        }
+    }
+
+    private void clearLogin(AuthProfile profile) {
+        profile.setLoginPath(null);
+        profile.setLoginBodyEncrypted(null);
+        profile.setTokenJsonPath(null);
     }
 
     private AuthProfile getOwned(Project project, UUID profileId) {

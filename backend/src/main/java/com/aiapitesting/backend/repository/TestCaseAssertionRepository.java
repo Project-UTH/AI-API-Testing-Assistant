@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.UUID;
 
 public interface TestCaseAssertionRepository extends JpaRepository<TestCaseAssertion, java.util.UUID> {
 
@@ -39,4 +40,8 @@ public interface TestCaseAssertionRepository extends JpaRepository<TestCaseAsser
     // Toàn bộ assertion trong project.
     @Query("SELECT tca FROM TestCaseAssertion tca WHERE tca.testCase.endpoint.project = :project")
     List<TestCaseAssertion> findAllByTestCaseEndpointProject(@Param("project") Project project);
+
+    // Assertion của đúng các test case trong 1 trang (danh sách phân trang).
+    @Query("SELECT tca FROM TestCaseAssertion tca WHERE tca.testCase.id IN :ids")
+    List<TestCaseAssertion> findAllByTestCaseIdIn(@Param("ids") java.util.Collection<UUID> ids);
 }

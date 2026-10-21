@@ -140,6 +140,41 @@ class CoverageGapFillServiceTest {
                 .containsExactlyInAnyOrder("{}", "{\"email\":null}");
     }
 
+    @Test
+    void fill_inheritsAuthProfileOfBaseline_soCasesDontGet403ForTheWrongRole() {
+        Endpoint endpoint = endpoint("/users", "POST", false, EMAIL_SCHEMA);
+        UUID candidateProfile = UUID.randomUUID();
+        TestCase positive = testCase(endpoint, "Positive - hop le", 201, "{\"email\":\"an@gmail.com\"}");
+        positive.setAuthProfileId(candidateProfile);
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of(positive));
+
+        coverageGapFillService.fill(projectId, endpoint.getId(), null);
+
+        assertThat(savedCases()).isNotEmpty().allSatisfy(tc -> assertThat(tc.getAuthProfileId()).isEqualTo(candidateProfile));
+    }
+
+    /** Đăng nhập: tài khoản + mật khẩu, không cần token. */
+    private static final String LOGIN_SCHEMA = """
+            {"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["email","password"],
+              "properties":{"email":{"type":"string","minLength":1},"password":{"type":"string","minLength":1}}}}}},
+             "responseStatusCodes":["200","400","401"]}""";
+
+    @Test
+    void fill_loginEndpoint_addsWrongPasswordCaseExpecting401_andNoFalseSuccessBoundaryCases() {
+        Endpoint endpoint = endpoint("/auth/login", "POST", false, LOGIN_SCHEMA);
+        TestCase positive = testCase(endpoint, "Dang nhap hop le", 200, "{\"email\":\"hr1@demo.local\",\"password\":\"Passw0rd!\"}");
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of(positive));
+
+        coverageGapFillService.fill(projectId, endpoint.getId(), null);
+
+        List<TestCase> saved = savedCases();
+        TestCase wrongPassword = saved.stream().filter(tc -> tc.getName().contains("Sai mật khẩu")).findFirst().orElseThrow();
+        assertThat(wrongPassword.getExpectedStatus()).isEqualTo(401);
+        assertThat(wrongPassword.getRequestBody()).contains("hr1@demo.local").doesNotContain("\"password\":\"Passw0rd!\"");
+        // Ca "email/password dài đúng 1 ký tự kỳ vọng 200" không còn được tạo (tài khoản như vậy không tồn tại -> 401 oan).
+        assertThat(saved).extracting(TestCase::getName).noneMatch(n -> n.contains("đúng minLength"));
+    }
+
     // ---- Module 17 (17a) - ma trận phân quyền ----
 
     private com.aiapitesting.backend.entity.AuthProfile profile(String name, String roleKey) {

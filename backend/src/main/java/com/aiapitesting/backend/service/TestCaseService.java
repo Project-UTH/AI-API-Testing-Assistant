@@ -3,6 +3,7 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.request.TestCaseAssertionInput;
 import com.aiapitesting.backend.dto.request.TestCaseDependencyInput;
 import com.aiapitesting.backend.dto.request.TestCaseRequest;
+import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.dto.response.TestCaseAssertionResponse;
 import com.aiapitesting.backend.dto.response.TestCaseDependencyResponse;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
@@ -24,8 +25,11 @@ import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestCaseSpecifications;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +37,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -74,6 +79,48 @@ public class TestCaseService {
                         dependenciesByTestCaseId.getOrDefault(tc.getId(), List.of()),
                         assertionsByTestCaseId.getOrDefault(tc.getId(), List.of())))
                 .toList();
+    }
+
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 200;
+    private static final int MAX_QUERY_LENGTH = 100;
+    private static final Map<String, TestCaseSpecifications.Sort> SORTS = Map.of(
+            "endpoint", TestCaseSpecifications.Sort.ENDPOINT,
+            "createdAt,asc", TestCaseSpecifications.Sort.CREATED_ASC,
+            "createdAt,desc", TestCaseSpecifications.Sort.CREATED_DESC,
+            "name,asc", TestCaseSpecifications.Sort.NAME_ASC,
+            "name,desc", TestCaseSpecifications.Sort.NAME_DESC);
+
+    /**
+     * Danh sách theo trang (Module 17 G4): lọc/sắp xếp ở DB, chỉ nạp phụ thuộc + assertion của đúng các dòng trong trang.
+     * {@link #listByProject} giữ nguyên cho các nơi cần toàn bộ danh sách.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<TestCaseResponse> listByProjectPaged(UUID projectId, TestCaseListQuery query) {
+        Project project = projectService.getOwnedProject(projectId);
+        PagingSupport.Paging paging = PagingSupport.resolve(query.page(), query.size(), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+        String sortKey = PagingSupport.requireAllowedSort(query.sort(), "endpoint", SORTS.keySet());
+        String method = PagingSupport.normalizeMethod(query.method());
+        TestCaseSpecifications.Filter filter = new TestCaseSpecifications.Filter(
+                PagingSupport.normalizeQuery(query.q(), MAX_QUERY_LENGTH), method, query.endpointId(), query.source(),
+                query.generationOrigin(), query.locked(), query.reliability(), SORTS.get(sortKey));
+
+        Page<TestCase> page = testCaseRepository.findAll(
+                TestCaseSpecifications.forProject(project, filter), PageRequest.of(paging.page(), paging.size()));
+
+        List<UUID> ids = page.getContent().stream().map(TestCase::getId).toList();
+        Map<UUID, List<TestCaseDependencyResponse>> dependenciesByTestCaseId = new HashMap<>();
+        Map<UUID, List<TestCaseAssertionResponse>> assertionsByTestCaseId = new HashMap<>();
+        if (!ids.isEmpty()) {
+            testCaseDependencyRepository.findAllByTestCaseIdIn(ids).forEach(d -> dependenciesByTestCaseId
+                    .computeIfAbsent(d.getTestCase().getId(), k -> new ArrayList<>()).add(TestCaseDependencyResponse.from(d)));
+            testCaseAssertionRepository.findAllByTestCaseIdIn(ids).forEach(a -> assertionsByTestCaseId
+                    .computeIfAbsent(a.getTestCase().getId(), k -> new ArrayList<>()).add(TestCaseAssertionResponse.from(a)));
+        }
+        return PageResponse.from(page, tc -> TestCaseResponse.from(
+                tc,
+                dependenciesByTestCaseId.getOrDefault(tc.getId(), List.of()),
+                assertionsByTestCaseId.getOrDefault(tc.getId(), List.of())));
     }
 
     @Transactional

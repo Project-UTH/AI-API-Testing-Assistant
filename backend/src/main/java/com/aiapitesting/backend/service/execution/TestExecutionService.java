@@ -1,5 +1,17 @@
 package com.aiapitesting.backend.service.execution;
 
+import com.aiapitesting.backend.dto.response.ExecutionResultsSummary;
+import com.aiapitesting.backend.dto.response.PageResponse;
+import com.aiapitesting.backend.dto.response.TestExecutionPageResponse;
+import com.aiapitesting.backend.dto.response.TestResultResponse;
+import com.aiapitesting.backend.entity.FailureCause;
+import com.aiapitesting.backend.entity.TestResultStatus;
+import com.aiapitesting.backend.repository.TestResultSpecifications;
+import com.aiapitesting.backend.service.PagingSupport;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.EnumMap;
 import com.aiapitesting.backend.dto.request.TestExecutionRequest;
 import com.aiapitesting.backend.dto.response.StabilityResponse;
 import com.aiapitesting.backend.dto.response.TestExecutionResponse;
@@ -174,6 +186,63 @@ public class TestExecutionService {
         boolean finished = execution.getStatus() == ExecutionStatus.COMPLETED || execution.getStatus() == ExecutionStatus.FAILED;
         Map<UUID, StabilityResponse> stability = finished ? executionFailureAnalyzer.stabilityOf(results) : Map.of();
         return TestExecutionResponse.from(execution, results, existingBugByResultId, stability);
+    }
+
+    private static final int RESULTS_DEFAULT_PAGE_SIZE = 50;
+    private static final int RESULTS_MAX_PAGE_SIZE = 200;
+
+    /**
+     * Kết quả theo trang (Module 17 G4): lọc/sắp xếp ở DB, độ ổn định + Bug Report chỉ tính cho các dòng của trang, còn tổng hợp
+     * (biểu đồ, nguyên nhân Fail, số kết quả chưa có bug) lấy bằng truy vấn GROUP BY trên cả lần chạy. {@link #getExecution} giữ nguyên.
+     */
+    @Transactional(readOnly = true)
+    public TestExecutionPageResponse getExecutionPage(
+            UUID projectId, UUID executionId, Integer page, Integer size, TestResultStatus status, FailureCause failureCause,
+            UUID endpointId, String q
+    ) {
+        Project project = projectService.getOwnedProject(projectId);
+        TestExecution execution = testExecutionRepository.findByIdAndProject(executionId, project)
+                .orElseThrow(() -> new TestExecutionNotFoundException("Không tìm thấy lần thực thi với id đã cho"));
+        PagingSupport.Paging paging = PagingSupport.resolve(page, size, RESULTS_DEFAULT_PAGE_SIZE, RESULTS_MAX_PAGE_SIZE);
+        TestResultSpecifications.Filter filter = new TestResultSpecifications.Filter(
+                status, failureCause, endpointId, PagingSupport.normalizeQuery(q, 100));
+
+        Page<TestResult> resultsPage = testResultRepository.findAll(
+                TestResultSpecifications.forExecution(execution, filter), PageRequest.of(paging.page(), paging.size()));
+        List<TestResult> pageResults = resultsPage.getContent();
+
+        List<UUID> pageResultIds = pageResults.stream().map(TestResult::getId).toList();
+        Map<UUID, BugReport> bugByResultId = pageResultIds.isEmpty() ? Map.of()
+                : bugReportRepository.findAllBySourceTestResultIdIn(pageResultIds).stream()
+                .collect(Collectors.toMap(b -> b.getSourceTestResult().getId(), Function.identity(), (first, second) -> first));
+        // Độ ổn định của 1 test phụ thuộc lịch sử của CHÍNH test đó, không phụ thuộc các dòng khác trong lượt chạy -
+        // tính riêng cho dòng của trang cho cùng kết quả mà nhẹ hơn nhiều; vẫn chỉ tính khi lượt chạy đã xong (không thêm truy vấn lúc poll).
+        boolean finished = execution.getStatus() == ExecutionStatus.COMPLETED || execution.getStatus() == ExecutionStatus.FAILED;
+        Map<UUID, StabilityResponse> stability = finished && !pageResults.isEmpty() ? executionFailureAnalyzer.stabilityOf(pageResults) : Map.of();
+
+        PageResponse<TestResultResponse> results = PageResponse.from(resultsPage,
+                r -> TestResultResponse.from(r, bugByResultId.get(r.getId()), stability.get(r.getId())));
+        return new TestExecutionPageResponse(
+                execution.getId(), execution.getStatus(), execution.getStartedAt(), execution.getFinishedAt(),
+                results, summarize(execution), testResultRepository.findAutoIncludedTestCaseIds(execution));
+    }
+
+    private ExecutionResultsSummary summarize(TestExecution execution) {
+        Map<TestResultStatus, Long> statusCounts = new EnumMap<>(TestResultStatus.class);
+        long total = 0;
+        for (TestResultRepository.ExecutionStatusCount row : testResultRepository.countByExecutionsGroupedByStatus(List.of(execution))) {
+            statusCounts.merge(row.getStatus(), row.getCount(), Long::sum);
+            total += row.getCount();
+        }
+        Map<FailureCause, Long> causeCounts = new EnumMap<>(FailureCause.class);
+        for (TestResultRepository.FailureCauseCount row : testResultRepository.countByExecutionGroupedByFailureCause(execution)) {
+            causeCounts.merge(row.getCause(), row.getCount(), Long::sum);
+        }
+        long failed = statusCounts.getOrDefault(TestResultStatus.FAILED, 0L);
+        long failedWithBug = bugReportRepository.countFailedResultsWithBugByExecution(execution);
+        return new ExecutionResultsSummary(total, statusCounts, causeCounts,
+                testResultRepository.countByExecutionAndUnstableTrue(execution), Math.max(0, failed - failedWithBug),
+                bugReportRepository.findSourceTestResultIdsByExecution(execution));
     }
 
     private List<TestCase> resolveOwnedTestCases(Project project, List<UUID> testCaseIds) {

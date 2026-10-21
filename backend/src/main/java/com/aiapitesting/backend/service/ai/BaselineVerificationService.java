@@ -16,6 +16,7 @@ import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
+import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
 import com.aiapitesting.backend.service.CoverageGapFillService;
 import com.aiapitesting.backend.service.ProjectService;
 import com.aiapitesting.backend.service.TestCaseService;
@@ -206,7 +207,9 @@ public class BaselineVerificationService {
             RunOutcome outcome = runStep(p, endpointId, label, projectId, testId, "Chạy thử test gốc trên API đích");
             last = outcome;
             boolean hasPathParams = test.resolvedPath() != null && PATH_PLACEHOLDER.matcher(test.resolvedPath()).find();
-            Diagnosis diagnosis = diagnose(outcome, hasPathParams);
+            boolean credentialEndpoint = isCredentialEndpoint(endpoint.effectiveRequiresAuth(), endpoint.getMethod(), endpoint.getPath(),
+                    endpoint.getSummary(), test.requestBody());
+            Diagnosis diagnosis = diagnose(outcome, hasPathParams, credentialEndpoint);
             // 409 lặp lại sau khi AI đã sửa: xung đột trạng thái dữ liệu (bản ghi đã tồn tại...), sửa nội dung test không giải quyết được - dừng, đỡ tốn token.
             if (diagnosis.decision() == Decision.REPAIR && Integer.valueOf(409).equals(outcome.httpStatus())
                     && !rounds.isEmpty() && Integer.valueOf(409).equals(rounds.get(rounds.size() - 1).httpStatus())) {
@@ -221,7 +224,7 @@ public class BaselineVerificationService {
                 RunOutcome second = runStep(p, endpointId, label, projectId, testId, "Chạy lại test gốc sau khi sửa kỳ vọng");
                 last = second;
                 outcome = second;
-                diagnosis = diagnose(second, hasPathParams);
+                diagnosis = diagnose(second, hasPathParams, credentialEndpoint);
             }
             rounds.add(new BaselineResponse.Round(attempt + 1, outcome.httpStatus(), diagnosis.decision() == Decision.PASSED,
                     proposal.tokens(), diagnosis.message()));
@@ -277,6 +280,23 @@ public class BaselineVerificationService {
     }
 
     static Diagnosis diagnose(RunOutcome o, boolean hasPathParams) {
+        return diagnose(o, hasPathParams, false);
+    }
+
+    /**
+     * Endpoint đăng nhập: không cần token và body có trường kiểu mật khẩu. 401 ở đây là sai email/mật khẩu trong test gốc,
+     * không phải "token hết hạn"; AI không biết tài khoản thật nên không tự sửa được (đỡ đốt token).
+     */
+    static boolean isCredentialEndpoint(boolean endpointRequiresAuth, String method, String path, String summary, String requestBody) {
+        if (endpointRequiresAuth || requestBody == null
+                || !TestCaseChecklistPlanner.looksLikeLogin(method, path, summary, true, true)) {
+            return false;
+        }
+        String body = requestBody.toLowerCase(Locale.ROOT);
+        return body.contains("\"password\"") || body.contains("\"passwd\"") || body.contains("\"pwd\"") || body.contains("\"secret\"");
+    }
+
+    static Diagnosis diagnose(RunOutcome o, boolean hasPathParams, boolean credentialEndpoint) {
         if (o.timedOut()) {
             return new Diagnosis(Decision.HUMAN, "EXECUTION_TIMEOUT", "Lần chạy thử không kết thúc kịp thời gian chờ.");
         }
@@ -293,6 +313,12 @@ public class BaselineVerificationService {
                 return new Diagnosis(Decision.HUMAN, "MISSING_PARAM_VALUE", "Thiếu giá trị cho tham số đường dẫn - nhập giá trị thật (vd id).");
             }
             return new Diagnosis(Decision.HUMAN, "EXECUTION_ERROR", "Không gọi được API đích: " + (err.isBlank() ? "không có phản hồi" : err));
+        }
+        if (credentialEndpoint && http == 401) {
+            return new Diagnosis(Decision.HUMAN, "CREDENTIALS",
+                    "API trả 401 ở endpoint đăng nhập: email/mật khẩu trong test gốc không đúng với tài khoản thật. "
+                            + "Tự thêm 1 test gốc với tài khoản thật rồi bấm 'Chỉ bổ sung từ test gốc' (0 token). "
+                            + "Nếu đây không phải endpoint đăng nhập, kiểm tra lại cài đặt 'Yêu cầu xác thực' của endpoint.");
         }
         if (http == 401 || http == 403) {
             return new Diagnosis(Decision.HUMAN, "AUTH", "API trả " + http + ": token mặc định không đủ quyền hoặc hết hạn - kiểm tra xác thực/vai trò, AI không sửa được.");

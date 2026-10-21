@@ -322,6 +322,134 @@ class TestExecutionServiceTest {
         org.mockito.Mockito.verifyNoInteractions(executionFailureAnalyzer);
     }
 
+    // ---- Module 17 (G4) - kết quả theo trang ----
+
+    private TestExecution execution(UUID executionId, ExecutionStatus status) {
+        return TestExecution.builder().id(executionId).project(project).status(status).startedAt(Instant.now()).build();
+    }
+
+    private com.aiapitesting.backend.entity.TestResult result(TestExecution execution, com.aiapitesting.backend.entity.TestResultStatus status) {
+        Endpoint endpoint = Endpoint.builder().id(UUID.randomUUID()).project(project).method("GET").path("/pets").build();
+        TestCase testCase = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).name("n").expectedStatus(200).build();
+        return com.aiapitesting.backend.entity.TestResult.builder().id(UUID.randomUUID()).testCase(testCase).execution(execution)
+                .status(status).build();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void getExecutionPage_finished_usesPageQuery_computesStabilityOnlyForPageRows_andSummaryFromAggregates() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        UUID executionId = UUID.randomUUID();
+        TestExecution execution = execution(executionId, ExecutionStatus.COMPLETED);
+        com.aiapitesting.backend.entity.TestResult failed = result(execution, com.aiapitesting.backend.entity.TestResultStatus.FAILED);
+        when(testExecutionRepository.findByIdAndProject(executionId, project)).thenReturn(Optional.of(execution));
+        when(testResultRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(failed),
+                        org.springframework.data.domain.PageRequest.of(1, 50), 120));
+        when(executionFailureAnalyzer.stabilityOf(List.of(failed))).thenReturn(Map.of());
+        TestResultRepository.ExecutionStatusCount failedRow = statusCount(com.aiapitesting.backend.entity.TestResultStatus.FAILED, 30);
+        TestResultRepository.ExecutionStatusCount passedRow = statusCount(com.aiapitesting.backend.entity.TestResultStatus.PASSED, 90);
+        when(testResultRepository.countByExecutionsGroupedByStatus(List.of(execution))).thenReturn(List.of(failedRow, passedRow));
+        TestResultRepository.FailureCauseCount causeRow = causeCount(com.aiapitesting.backend.entity.FailureCause.API_WRONG_STATUS, 7);
+        when(testResultRepository.countByExecutionGroupedByFailureCause(execution)).thenReturn(List.of(causeRow));
+        when(testResultRepository.countByExecutionAndUnstableTrue(execution)).thenReturn(2L);
+        when(bugReportRepository.countFailedResultsWithBugByExecution(execution)).thenReturn(10L);
+        UUID autoIncluded = UUID.randomUUID();
+        when(testResultRepository.findAutoIncludedTestCaseIds(execution)).thenReturn(List.of(autoIncluded));
+        UUID resultWithBug = UUID.randomUUID();
+        when(bugReportRepository.findSourceTestResultIdsByExecution(execution)).thenReturn(List.of(resultWithBug));
+
+        com.aiapitesting.backend.dto.response.TestExecutionPageResponse response =
+                testExecutionService.getExecutionPage(projectId, executionId, 1, null, null, null, null, null);
+
+        assertThat(response.results().data()).hasSize(1);
+        assertThat(response.results().page()).isEqualTo(1);
+        assertThat(response.results().totalElements()).isEqualTo(120);
+        assertThat(response.results().totalPages()).isEqualTo(3);
+        assertThat(response.summary().total()).isEqualTo(120);
+        assertThat(response.summary().statusCounts()).containsEntry(com.aiapitesting.backend.entity.TestResultStatus.FAILED, 30L)
+                .containsEntry(com.aiapitesting.backend.entity.TestResultStatus.PASSED, 90L);
+        assertThat(response.summary().failureCauseCounts()).containsEntry(com.aiapitesting.backend.entity.FailureCause.API_WRONG_STATUS, 7L);
+        assertThat(response.summary().unstableCount()).isEqualTo(2);
+        assertThat(response.summary().failedWithoutBugCount()).isEqualTo(20);
+        assertThat(response.summary().bugResultIds()).containsExactly(resultWithBug);
+        assertThat(response.autoIncludedTestCaseIds()).containsExactly(autoIncluded);
+        // Không bao giờ nạp cả lần chạy.
+        verify(testResultRepository, never()).findAllByExecutionOrderByTestCaseCreatedAt(any());
+        verify(executionFailureAnalyzer).stabilityOf(List.of(failed));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void getExecutionPage_stillRunning_doesNotComputeStability_andEmptyPageSkipsBugLookup() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        UUID executionId = UUID.randomUUID();
+        TestExecution execution = execution(executionId, ExecutionStatus.RUNNING);
+        when(testExecutionRepository.findByIdAndProject(executionId, project)).thenReturn(Optional.of(execution));
+        when(testResultRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(), org.springframework.data.domain.PageRequest.of(0, 50), 0));
+
+        com.aiapitesting.backend.dto.response.TestExecutionPageResponse response =
+                testExecutionService.getExecutionPage(projectId, executionId, 0, 50, null, null, null, null);
+
+        assertThat(response.results().data()).isEmpty();
+        assertThat(response.results().totalPages()).isZero();
+        assertThat(response.summary().total()).isZero();
+        assertThat(response.summary().failedWithoutBugCount()).isZero();
+        verifyNoInteractions(executionFailureAnalyzer);
+        verify(bugReportRepository, never()).findAllBySourceTestResultIdIn(anyList());
+    }
+
+    @Test
+    void getExecutionPage_rejectsBadPagingAndUnknownExecution() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        UUID executionId = UUID.randomUUID();
+        when(testExecutionRepository.findByIdAndProject(executionId, project)).thenReturn(Optional.of(execution(executionId, ExecutionStatus.COMPLETED)));
+
+        assertThatThrownBy(() -> testExecutionService.getExecutionPage(projectId, executionId, -1, 50, null, null, null, null))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> testExecutionService.getExecutionPage(projectId, executionId, 0, 0, null, null, null, null))
+                .isInstanceOf(InvalidRequestException.class);
+
+        UUID missing = UUID.randomUUID();
+        when(testExecutionRepository.findByIdAndProject(missing, project)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> testExecutionService.getExecutionPage(projectId, missing, 0, 50, null, null, null, null))
+                .isInstanceOf(TestExecutionNotFoundException.class);
+    }
+
+    private static TestResultRepository.ExecutionStatusCount statusCount(com.aiapitesting.backend.entity.TestResultStatus status, long count) {
+        return new TestResultRepository.ExecutionStatusCount() {
+            @Override
+            public UUID getExecutionId() {
+                return UUID.randomUUID();
+            }
+
+            @Override
+            public com.aiapitesting.backend.entity.TestResultStatus getStatus() {
+                return status;
+            }
+
+            @Override
+            public long getCount() {
+                return count;
+            }
+        };
+    }
+
+    private static TestResultRepository.FailureCauseCount causeCount(com.aiapitesting.backend.entity.FailureCause cause, long count) {
+        return new TestResultRepository.FailureCauseCount() {
+            @Override
+            public com.aiapitesting.backend.entity.FailureCause getCause() {
+                return cause;
+            }
+
+            @Override
+            public long getCount() {
+                return count;
+            }
+        };
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<UUID, List<DependencyEdge>> anyMap() {
         return org.mockito.ArgumentMatchers.any(Map.class);

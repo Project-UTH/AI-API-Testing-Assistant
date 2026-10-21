@@ -67,6 +67,14 @@ public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
 
     boolean existsBySourceTestResultId(UUID sourceTestResultId);
 
+    // Module 17 (G4) - số kết quả FAILED của 1 lần chạy đã có Bug Report (để biết còn bao nhiêu kết quả chưa có bug).
+    @Query("SELECT DISTINCT b.sourceTestResult.id FROM BugReport b WHERE b.sourceTestResult.execution = :execution")
+    List<UUID> findSourceTestResultIdsByExecution(@Param("execution") com.aiapitesting.backend.entity.TestExecution execution);
+
+    @Query("SELECT COUNT(DISTINCT b.sourceTestResult.id) FROM BugReport b "
+            + "WHERE b.sourceTestResult.execution = :execution AND b.sourceTestResult.status = com.aiapitesting.backend.entity.TestResultStatus.FAILED")
+    long countFailedResultsWithBugByExecution(@Param("execution") com.aiapitesting.backend.entity.TestExecution execution);
+
     // Cho trang Kết quả thực thi biết dòng nào đã có Bug Report rồi.
     @Query("SELECT b FROM BugReport b WHERE b.sourceTestResult.id IN :testResultIds")
     List<BugReport> findAllBySourceTestResultIdIn(@Param("testResultIds") List<UUID> testResultIds);

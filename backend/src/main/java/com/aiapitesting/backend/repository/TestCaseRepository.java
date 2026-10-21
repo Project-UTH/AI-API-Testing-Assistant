@@ -6,6 +6,7 @@ import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,7 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface TestCaseRepository extends JpaRepository<TestCase, UUID> {
+public interface TestCaseRepository extends JpaRepository<TestCase, UUID>, JpaSpecificationExecutor<TestCase> {
     long countByEndpointProjectOwner(User owner);
 
     // Đếm dữ liệu sẽ mất khi import lại OpenAPI (import-impact) - theo project.

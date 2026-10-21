@@ -308,7 +308,9 @@ public class TestExecutionRunner {
             finish(execution, testCase, TestResultStatus.ERROR, null, null,
                     "Không gọi được target API: " + e.getMessage(),
                     statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null,
-                    new Meta(elapsedMillis(startedNanos), ErrorKindClassifier.classify(e), fingerprint), savedResults);
+                    new Meta(elapsedMillis(startedNanos),
+                            e instanceof AuthLoginException login && login.isConfigProblem() ? null : ErrorKindClassifier.classify(e), fingerprint),
+                    savedResults);
         }
     }
 

@@ -48,5 +48,7 @@ public enum ChecklistItemType {
     /** 15i - gọi không kèm token (authOverride=NONE), kỳ vọng 401. */
     SECURITY_MISSING_TOKEN,
     /** 15i - gọi với token sai (authOverride=INVALID), kỳ vọng 401. */
-    SECURITY_INVALID_TOKEN
+    SECURITY_INVALID_TOKEN,
+    /** Module 17 (G2) - endpoint đăng nhập (không cần token, body có tài khoản + mật khẩu): gửi mật khẩu SAI, kỳ vọng 401. */
+    SECURITY_WRONG_CREDENTIALS
 }

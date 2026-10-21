@@ -4,7 +4,10 @@ import com.aiapitesting.backend.dto.ai.GeneratedTestCase;
 import com.aiapitesting.backend.dto.request.UpdateCoverageScopeRequest;
 import com.aiapitesting.backend.service.execution.MassAssignmentProbe;
 import com.aiapitesting.backend.dto.response.ChecklistItemType;
+import com.aiapitesting.backend.dto.response.CoverageEndpointRow;
+import com.aiapitesting.backend.dto.response.CoverageOverview;
 import com.aiapitesting.backend.dto.response.CoverageScope;
+import com.aiapitesting.backend.dto.response.CoverageSummaryResponse;
 import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
 import com.aiapitesting.backend.dto.response.CoverageRunStatus;
@@ -97,6 +100,106 @@ public class EndpointCoverageService {
                 .toList();
 
         return aggregateProject(project.getId(), endpointResponses);
+    }
+
+    private static final int COVERAGE_DEFAULT_PAGE_SIZE = 50;
+    private static final int COVERAGE_MAX_PAGE_SIZE = 200;
+    private static final java.util.Set<String> COVERAGE_SORTS =
+            java.util.Set.of("default", "path", "coverage,asc", "coverage,desc", "missing,desc");
+
+    /** Đếm mục của 1 endpoint theo đúng các vị từ dùng cho % (loại "không áp dụng", chỉ 4 loại checklist + phân quyền). */
+    private record Counts(long relevant, long covered, long executed, long failing, long missing) {
+    }
+
+    private Counts countsOf(List<CoverageDimensionResponse> dimensions) {
+        List<CoverageDimensionResponse> counted = dimensions.stream().filter(this::countsTowardPercent).toList();
+        return new Counts(
+                counted.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count(),
+                counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count(),
+                counted.stream().filter(this::isExecuted).count(),
+                counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED && d.runStatus() == CoverageRunStatus.FAILED).count(),
+                counted.stream().filter(d -> d.status() == CoverageDimensionStatus.MISSING).count());
+    }
+
+    private record LightEntry(Endpoint endpoint, EndpointCoverageResponse light, CoverageEndpointRow row) {
+    }
+
+    private List<LightEntry> lightEntries(List<Endpoint> endpoints, CoverageContext context) {
+        return endpoints.stream().map(endpoint -> {
+            EndpointCoverageResponse light = computeForEndpoint(endpoint, context, false);
+            Counts c = countsOf(light.dimensions());
+            CoverageEndpointRow row = new CoverageEndpointRow(endpoint.getId(), endpoint.getPath(), endpoint.getMethod(),
+                    light.requiresAuth(), light.testCaseCount(), c.relevant(), c.covered(), c.executed(), c.failing(), c.missing(),
+                    light.coveragePercent(), light.executedPercent());
+            return new LightEntry(endpoint, light, row);
+        }).toList();
+    }
+
+    private CoverageOverview overviewOf(List<LightEntry> entries) {
+        return new CoverageOverview(entries.size(),
+                (int) entries.stream().filter(e -> e.row().missingCount() > 0).count(),
+                (int) entries.stream().filter(e -> e.row().failingCount() > 0).count(),
+                entries.stream().mapToLong(e -> e.row().relevantCount()).sum(),
+                entries.stream().mapToLong(e -> e.row().coveredCount()).sum(),
+                entries.stream().mapToLong(e -> e.row().executedCount()).sum());
+    }
+
+    /**
+     * Coverage theo TRANG (Module 17 G4). Số tổng + số đếm luôn tính trên TOÀN project bằng chế độ nhẹ (cùng đường tính nên không
+     * lệch); chỉ các endpoint của trang mới tính đủ chi tiết. Lọc/sắp xếp dùng số đếm của chế độ nhẹ.
+     */
+    public ProjectCoverageResponse getProjectCoveragePaged(UUID projectId, CoverageListQuery query) {
+        Project project = projectService.getOwnedProject(projectId);
+        PagingSupport.Paging paging = PagingSupport.resolve(query.page(), query.size(), COVERAGE_DEFAULT_PAGE_SIZE, COVERAGE_MAX_PAGE_SIZE);
+        String sort = PagingSupport.requireAllowedSort(query.sort(), "default", COVERAGE_SORTS);
+        String q = PagingSupport.normalizeQuery(query.q(), 100);
+        String method = PagingSupport.normalizeMethod(query.method());
+
+        List<Endpoint> endpoints = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project);
+        CoverageContext context = buildContext(project, endpoints);
+        List<LightEntry> all = lightEntries(endpoints, context);
+        ProjectCoverageResponse overall = aggregateProject(project.getId(), all.stream().map(LightEntry::light).toList());
+
+        String needle = q == null ? null : q.toLowerCase(Locale.ROOT);
+        List<LightEntry> filtered = new ArrayList<>(all.stream()
+                .filter(e -> needle == null
+                        || (e.row().path() != null && e.row().path().toLowerCase(Locale.ROOT).contains(needle))
+                        || (e.row().method() != null && e.row().method().toLowerCase(Locale.ROOT).contains(needle)))
+                .filter(e -> method == null || method.equalsIgnoreCase(e.row().method()))
+                .filter(e -> !Boolean.TRUE.equals(query.onlyGaps()) || e.row().missingCount() > 0)
+                .filter(e -> !Boolean.TRUE.equals(query.onlyFailing()) || e.row().failingCount() > 0)
+                .toList());
+        java.util.Comparator<LightEntry> byPath = java.util.Comparator
+                .comparing((LightEntry e) -> e.row().path() == null ? "" : e.row().path())
+                .thenComparing(e -> e.row().method() == null ? "" : e.row().method());
+        switch (sort) {
+            case "path" -> filtered.sort(byPath);
+            case "coverage,asc" -> filtered.sort(java.util.Comparator.comparingDouble((LightEntry e) -> e.row().coveragePercent()).thenComparing(byPath));
+            case "coverage,desc" -> filtered.sort(java.util.Comparator.comparingDouble((LightEntry e) -> -e.row().coveragePercent()).thenComparing(byPath));
+            case "missing,desc" -> filtered.sort(java.util.Comparator.comparingLong((LightEntry e) -> -e.row().missingCount()).thenComparing(byPath));
+            default -> { /* giữ thứ tự tạo endpoint */ }
+        }
+
+        int from = (int) Math.min((long) paging.page() * paging.size(), filtered.size());
+        int to = Math.min(from + paging.size(), filtered.size());
+        List<EndpointCoverageResponse> pageEndpoints = filtered.subList(from, to).stream()
+                .map(e -> computeForEndpoint(e.endpoint(), context, true))
+                .toList();
+        int totalPages = filtered.isEmpty() ? 0 : (int) Math.ceil((double) filtered.size() / paging.size());
+        return new ProjectCoverageResponse(project.getId(), overall.overallCoveragePercent(), overall.overallExecutedPercent(),
+                pageEndpoints, new ProjectCoverageResponse.PageInfo(paging.page(), paging.size(), filtered.size(), totalPages),
+                overviewOf(all));
+    }
+
+    /** Coverage nhẹ của cả project: số tổng + 1 dòng tóm tắt mỗi endpoint (màn hình danh sách endpoint chỉ cần các số đếm này). */
+    public CoverageSummaryResponse getCoverageSummary(UUID projectId) {
+        Project project = projectService.getOwnedProject(projectId);
+        List<Endpoint> endpoints = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project);
+        CoverageContext context = buildContext(project, endpoints);
+        List<LightEntry> all = lightEntries(endpoints, context);
+        ProjectCoverageResponse overall = aggregateProject(project.getId(), all.stream().map(LightEntry::light).toList());
+        return new CoverageSummaryResponse(project.getId(), overall.overallCoveragePercent(), overall.overallExecutedPercent(),
+                overviewOf(all), all.stream().map(LightEntry::row).toList());
     }
 
     public EndpointCoverageResponse getEndpointCoverage(UUID projectId, UUID endpointId) {
@@ -209,8 +312,17 @@ public class EndpointCoverageService {
     // ---- Tính cho 1 endpoint ----
 
     private EndpointCoverageResponse computeForEndpoint(Endpoint endpoint, CoverageContext context) {
+        return computeForEndpoint(endpoint, context, true);
+    }
+
+    /**
+     * detail = false (Module 17 G4): chế độ NHẸ chỉ để đếm mục - chạy ĐÚNG cùng đường tính (covers, runStatus, ma trận quyền) nên
+     * số liệu không thể lệch với bản đầy đủ, nhưng bỏ phần chỉ phục vụ hiển thị chi tiết (case gần đạt, thử bù, dòng mã trạng thái,
+     * quan hệ, OWASP - các dòng này vốn không tính vào %).
+     */
+    private EndpointCoverageResponse computeForEndpoint(Endpoint endpoint, CoverageContext context, boolean detail) {
         List<TestCase> testCases = context.testCasesByEndpointId().getOrDefault(endpoint.getId(), List.of());
-        SchemaFacts facts = extractSchemaFacts(endpoint);
+        SchemaFacts facts = detail ? extractSchemaFacts(endpoint) : SchemaFacts.empty();
         TestCaseChecklistPlanner.Spec spec = testCaseChecklistPlanner.readSpec(endpoint);
         List<Candidate> candidates = testCases.stream()
                 .filter(tc -> tc.getSource() != com.aiapitesting.backend.entity.TestCaseSource.BUSINESS) // nghiệp vụ không tính vào EP/BVA
@@ -229,14 +341,16 @@ public class EndpointCoverageService {
 
         CoverageScope scope = CoverageScope.of(endpoint);
         List<CoverageDimensionResponse> dimensions = new ArrayList<>();
-        for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planScoped(spec, endpoint.effectiveRequiresAuth(), scope)) {
+        for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planScoped(spec, endpoint.effectiveRequiresAuth(), scope, testCaseChecklistPlanner.hintsOf(endpoint))) {
             GeneratedTestCase base = item.type().name().startsWith("SECURITY_") ? securityBaseline : baseline;
-            dimensions.add(checklistDimension(spec, item, candidates, endpoint.effectiveRequiresAuth(), context, base));
+            dimensions.add(checklistDimension(spec, item, candidates, endpoint.effectiveRequiresAuth(), context, base, detail));
         }
-        for (String statusCode : facts.statusCodes()) {
-            dimensions.add(statusCodeDimension(statusCode, testCases, context));
+        if (detail) {
+            for (String statusCode : facts.statusCodes()) {
+                dimensions.add(statusCodeDimension(statusCode, testCases, context));
+            }
+            dimensions.addAll(relationDimensions(endpoint, context));
         }
-        dimensions.addAll(relationDimensions(endpoint, context));
         // Module 17 (17a) - mục phân quyền theo vai trò từ ma trận người dùng khai; chưa khai thì giữ dòng AUTH "không áp dụng"
         // kèm hướng dẫn. DENY cần 1 test gọi bằng vai trò đó (không phụ thuộc dữ liệu hợp lệ) nên dùng case gốc lỏng như Security.
         List<CoverageDimensionResponse> authz = authzDimensions(endpoint, testCases, context, baseline != null, securityBaseline != null);
@@ -250,17 +364,14 @@ public class EndpointCoverageService {
         }
 
         // Module 17 (17b-2) - mục OWASP mass-assignment (chỉ khi người dùng bật cho endpoint ghi). Không tính vào % coverage EP/BVA.
-        CoverageDimensionResponse owasp = owaspDimension(endpoint, spec, testCases, context, baseline != null);
+        CoverageDimensionResponse owasp = detail ? owaspDimension(endpoint, spec, testCases, context, baseline != null) : null;
         if (owasp != null) {
             dimensions.add(owasp);
         }
 
-        List<CoverageDimensionResponse> counted = dimensions.stream().filter(this::countsTowardPercent).toList();
-        long covered = counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count();
-        long executed = counted.stream().filter(this::isExecuted).count();
-        long relevant = counted.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE).count();
-        double coveragePercent = relevant == 0 ? 100.0 : (covered * 100.0) / relevant;
-        double executedPercent = relevant == 0 ? 100.0 : (executed * 100.0) / relevant;
+        Counts counts = countsOf(dimensions);
+        double coveragePercent = counts.relevant() == 0 ? 100.0 : (counts.covered() * 100.0) / counts.relevant();
+        double executedPercent = counts.relevant() == 0 ? 100.0 : (counts.executed() * 100.0) / counts.relevant();
 
         return new EndpointCoverageResponse(
                 endpoint.getId(), endpoint.getPath(), endpoint.getMethod(), testCases.size(),
@@ -298,7 +409,8 @@ public class EndpointCoverageService {
      */
     private CoverageDimensionResponse checklistDimension(
             TestCaseChecklistPlanner.Spec spec, TestCaseChecklistPlanner.ChecklistItem item,
-            List<Candidate> candidates, boolean requiresAuth, CoverageContext context, GeneratedTestCase baseline
+            List<Candidate> candidates, boolean requiresAuth, CoverageContext context, GeneratedTestCase baseline,
+            boolean withDetail
     ) {
         String category = categoryOf(item.type());
         if (item.notApplicableReason() != null) {
@@ -312,7 +424,12 @@ public class EndpointCoverageService {
                 .toList();
         if (!covering.isEmpty()) {
             return new CoverageDimensionResponse(category, item.description(), CoverageDimensionStatus.COVERED, null,
-                    toRefs(covering, context), item.type().name(), key, item.rationale(), runStatus(covering, context), List.of());
+                    withDetail ? toRefs(covering, context) : List.of(), item.type().name(), key, item.rationale(),
+                    runStatus(covering, context), List.of());
+        }
+        if (!withDetail) {
+            return new CoverageDimensionResponse(category, item.description(), CoverageDimensionStatus.MISSING, null,
+                    List.of(), item.type().name(), key, item.rationale(), null, List.of());
         }
 
         List<CoverageDimensionResponse.NearMiss> nearMisses = new ArrayList<>();
