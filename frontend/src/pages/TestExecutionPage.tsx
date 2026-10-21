@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react"
-import { Link, useParams, useSearchParams } from "react-router-dom"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Link, useParams } from "react-router-dom"
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bug, CheckCircle2, ChevronDown, Download, GitCompare, ListChecks, Loader2, Pencil, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { StatusBadge, RESULT_STATUS_STYLES, RESULT_STATUS_LABEL, RESULT_STATUS_ICON } from "@/components/shared/StatusBadge"
 import { BugStatusBadge } from "@/components/shared/BugStatusBadge"
-import { FailureCauseBanner, FailureCauseChip, FailureCauseDetail } from "@/components/shared/FailureCause"
+import { FailureCauseChip, FailureCauseDetail, FailureCauseSummaryBanner } from "@/components/shared/FailureCause"
 import { StabilityNote, UnstableBadge } from "@/components/shared/StabilityNote"
 import { SecurityBadge, SecurityDetail } from "@/components/shared/SecurityWarnings"
 import { ResponseBodyView } from "@/components/shared/ResponseBodyView"
@@ -17,11 +17,27 @@ import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog
 import { ApiError } from "@/lib/api"
 import { generateBugReports, getBugReports, type BugReport, type GenerateBugReportsResult } from "@/lib/bugReports"
 import { cn } from "@/lib/utils"
-import { exportExecution, getExecution, type ExecutionReportFormat, type ExecutionStatus, type TestResult, type TestResultStatus } from "@/lib/executions"
+import { listEndpoints } from "@/lib/endpoints"
+import {
+  exportExecution,
+  FAILURE_CAUSE_LABEL,
+  getExecutionPage,
+  type ExecutionReportFormat,
+  type ExecutionStatus,
+  type FailureCauseCode,
+  type TestResultStatus,
+} from "@/lib/executions"
+import { useListFilters } from "@/hooks/useListFilters"
+import { ListToolbar, type ListFilterSelect } from "@/components/shared/ListToolbar"
+import { Pagination } from "@/components/shared/Pagination"
+import { ListEmptyState } from "@/components/shared/ListEmptyState"
 
 // Thứ tự cố định (khớp RESULT_STATUS_LABEL bên dưới) - dùng để vẽ donut theo 1 thứ tự nhất quán,
 // không lệ thuộc thứ tự dữ liệu trả về.
 const STATUS_ORDER: TestResultStatus[] = ["PASSED", "FAILED", "ERROR", "BLOCKED", "SKIPPED"]
+
+const FILTER_KEYS = ["status", "failureCause", "endpointId"] as const
+const PAGE_SIZE = 50
 
 const EXECUTION_STATUS_LABEL: Record<ExecutionStatus, string> = {
   PENDING: "Đang chờ",
@@ -40,8 +56,9 @@ const EXECUTION_STATUS_STYLES: Record<ExecutionStatus, string> = {
 export function TestExecutionPage() {
   const { id, executionId } = useParams<{ id: string; executionId: string }>()
   const projectId = id!
-  const [searchParams] = useSearchParams()
-  const endpointFilter = searchParams.get("endpointId")
+  const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
+  const topRef = useRef<HTMLDivElement>(null)
+  const [selectAllError, setSelectAllError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedResultIds, setSelectedResultIds] = useState<Set<string>>(new Set())
@@ -53,15 +70,30 @@ export function TestExecutionPage() {
   const executionQueryKey = ["executions", projectId, executionId]
   const bugReportsQueryKey = ["bug-reports", projectId]
 
-  const { data: execution, isLoading, isError } = useQuery({
-    queryKey: executionQueryKey,
-    queryFn: () => getExecution(projectId, executionId!),
+  // Kết quả theo trang (Module 17 G4). Khoá nằm dưới ["executions", projectId, executionId] nên mọi nơi invalidate theo tiền tố vẫn làm mới được.
+  const { data: execution, isLoading, isError, isFetching, isPlaceholderData } = useQuery({
+    queryKey: [...executionQueryKey, "page", lf.params],
+    queryFn: () => getExecutionPage(projectId, executionId!, lf.params),
+    placeholderData: keepPreviousData,
     enabled: Boolean(executionId),
     refetchInterval: (query) => {
       const status = query.state.data?.status
       return status === "PENDING" || status === "RUNNING" ? 1500 : false
     },
   })
+
+  // Danh sách endpoint chỉ để làm các lựa chọn của bộ lọc.
+  const { data: endpointsData } = useQuery({
+    queryKey: ["endpoints", projectId],
+    queryFn: () => listEndpoints(projectId),
+  })
+  const results = useMemo(() => execution?.results.data ?? [], [execution])
+  const summary = execution?.summary
+
+  const { clampPage } = lf
+  useEffect(() => {
+    if (execution && !isPlaceholderData) clampPage(execution.results.totalPages)
+  }, [execution, isPlaceholderData, clampPage])
 
   // Cùng queryKey với BugReportPage.tsx - dùng chung cache nếu đã ghé qua. Lọc ra đúng bug sinh từ
   // lần chạy này (theo sourceTestResultId) cho ô "Bug Report đã sinh".
@@ -70,13 +102,14 @@ export function TestExecutionPage() {
     queryFn: () => getBugReports(projectId),
   })
 
+  const bugResultIds = summary?.bugResultIds
   const generatedBugs = useMemo<BugReport[]>(() => {
-    if (!bugReportsPage || !execution) return []
-    const resultIds = new Set(execution.results.map((r) => r.id))
+    if (!bugReportsPage || !bugResultIds) return []
+    const resultIds = new Set(bugResultIds)
     return bugReportsPage.endpoints
       .flatMap((e) => e.testCases.flatMap((tc) => tc.bugs))
       .filter((bug) => resultIds.has(bug.sourceTestResultId))
-  }, [bugReportsPage, execution])
+  }, [bugReportsPage, bugResultIds])
 
   // Module 17 (17d) - xuất báo cáo lượt chạy (JUnit XML cho CI / HTML để mở-in).
   const exportMutation = useMutation({
@@ -123,13 +156,93 @@ export function TestExecutionPage() {
     setSelectedResultIds(new Set())
   }
 
-  const filteredResults =
-    execution?.results.filter((result) => !endpointFilter || result.endpointId === endpointFilter) ?? []
   const isFinished = execution && execution.status !== "PENDING" && execution.status !== "RUNNING"
-  const hasGeneratableFailedResults = filteredResults.some((r) => r.status === "FAILED" && !r.existingBugReportId)
+  // Tính trên TOÀN lượt chạy (server), không chỉ trang đang xem.
+  const hasGeneratableFailedResults = (summary?.failedWithoutBugCount ?? 0) > 0
+
+  const selectableOnPage = results.filter((r) => r.status === "FAILED" && !r.existingBugReportId).map((r) => r.id)
+  const selectedOnPage = selectableOnPage.filter((resultId) => selectedResultIds.has(resultId)).length
+  const hiddenSelected = selectedResultIds.size - results.filter((r) => selectedResultIds.has(r.id)).length
+  const [selectingAllFailed, setSelectingAllFailed] = useState(false)
+
+  function togglePageSelection(checked: boolean) {
+    setSelectedResultIds((prev) => {
+      const next = new Set(prev)
+      for (const resultId of selectableOnPage) {
+        if (checked) next.add(resultId)
+        else next.delete(resultId)
+      }
+      return next
+    })
+  }
+
+  /** Chọn mọi kết quả Fail chưa có Bug Report khớp bộ lọc hiện tại (mọi trang) - bấm rõ ràng, không tự chọn thứ người dùng chưa thấy. */
+  async function selectAllFailedMatching() {
+    setSelectingAllFailed(true)
+    setSelectAllError(null)
+    try {
+      const collected: string[] = []
+      let pageIndex = 0
+      let totalPages = 1
+      while (pageIndex < totalPages) {
+        const next = await getExecutionPage(projectId, executionId!, {
+          ...lf.params,
+          status: "FAILED",
+          page: pageIndex,
+          size: 200,
+        })
+        totalPages = next.results.totalPages
+        for (const r of next.results.data) {
+          if (!r.existingBugReportId) collected.push(r.id)
+        }
+        pageIndex += 1
+      }
+      setSelectedResultIds((prev) => new Set([...prev, ...collected]))
+    } catch (error) {
+      setSelectAllError(error instanceof ApiError ? error.message : "Không chọn được tất cả kết quả Fail, vui lòng thử lại")
+    } finally {
+      setSelectingAllFailed(false)
+    }
+  }
+
+  const failureCauseOptions = Object.entries(summary?.failureCauseCounts ?? {}).map(([code, count]) => ({
+    value: code,
+    label: `${FAILURE_CAUSE_LABEL[code as FailureCauseCode] ?? code} (${count})`,
+  }))
+  const selects: ListFilterSelect[] = [
+    {
+      key: "status",
+      label: "Lọc theo kết quả",
+      allLabel: "Mọi kết quả",
+      value: lf.filters.status,
+      className: "sm:w-40",
+      options: STATUS_ORDER.map((status) => ({ value: status, label: RESULT_STATUS_LABEL[status] })),
+    },
+    {
+      key: "failureCause",
+      label: "Lọc theo nguyên nhân Fail",
+      allLabel: "Mọi nguyên nhân",
+      value: lf.filters.failureCause,
+      className: "sm:w-56",
+      options: failureCauseOptions,
+    },
+    {
+      key: "endpointId",
+      label: "Lọc theo endpoint",
+      allLabel: "Tất cả endpoint",
+      value: lf.filters.endpointId,
+      className: "sm:w-64",
+      options: (endpointsData?.data ?? []).map((endpoint) => ({ value: endpoint.id, label: `${endpoint.method} ${endpoint.path}` })),
+    },
+  ]
+
+  function changePage(next: number) {
+    lf.setPage(next)
+    topRef.current?.scrollIntoView({ block: "start" })
+  }
 
   return (
-    <div>
+    <div ref={topRef}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">Kết quả thực thi</h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -203,7 +316,7 @@ export function TestExecutionPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          {isFinished && filteredResults.length > 0 && hasGeneratableFailedResults && (
+          {isFinished && hasGeneratableFailedResults && (
             selectionMode ? (
               <>
                 <Button variant="ghost" size="sm" onClick={exitSelectionMode}>
@@ -273,7 +386,18 @@ export function TestExecutionPage() {
       )}
 
       {isLoading && <p className="mt-6 text-muted-foreground">Đang tải...</p>}
-      {isError && <p className="mt-6 text-destructive">Không tải được kết quả thực thi.</p>}
+      {isError && (
+        <div className="mt-6 flex flex-col gap-3">
+          <p className="text-destructive">Không tải được kết quả thực thi.</p>
+          {lf.activeCount > 0 && (
+            <div>
+              <Button type="button" size="sm" variant="outline" onClick={lf.reset}>
+                Xoá bộ lọc ({lf.activeCount}) và thử lại
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {execution && execution.autoIncludedTestCaseIds.length > 0 && (
         <p className="mt-4 rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
@@ -287,37 +411,98 @@ export function TestExecutionPage() {
           <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
           <span>
             Đang chạy các test case, kết quả sẽ hiện khi chạy xong
-            {execution.results.length > 0 ? ` (đã chạy xong ${execution.results.length} test case)` : ""}.
+            {execution.summary.total > 0 ? ` (đã chạy xong ${execution.summary.total} test case)` : ""}.
           </span>
         </div>
       )}
 
-      {isFinished && filteredResults.length === 0 && (
-        <div className="mt-6 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-          {endpointFilter && execution.results.length > 0 ? (
-            <p>
-              Lần chạy này không có kết quả nào của endpoint đã chọn
-              ({execution.results.length} kết quả thuộc các endpoint khác).
-            </p>
-          ) : (
-            <p>Lần chạy này không ghi nhận kết quả nào.</p>
+      {isFinished && summary && summary.total > 0 && (
+        <ExecutionSummaryDashboard total={summary.total} countByStatus={summary.statusCounts} />
+      )}
+      {isFinished && summary && summary.total > 0 && (
+        <FailureCauseSummaryBanner counts={summary.failureCauseCounts} total={summary.total} projectId={projectId} />
+      )}
+
+      {execution && isFinished && summary && summary.total > 0 && (
+        <>
+          <ListToolbar
+            className="mt-4"
+            searchValue={lf.searchInput}
+            onSearchChange={lf.setSearchInput}
+            searchPlaceholder="Tìm theo tên test case hoặc đường dẫn..."
+            searchLabel="Tìm kết quả"
+            selects={selects}
+            onSelectChange={(key, value) => lf.setFilter(key as (typeof FILTER_KEYS)[number], value)}
+            activeFilterCount={lf.activeCount}
+            onReset={lf.reset}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">Biểu đồ và số liệu ở trên tính cho toàn bộ lần chạy, không đổi theo bộ lọc.</p>
+
+          {selectionMode && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md bg-muted px-3 py-2 text-sm" role="status">
+              <label className="flex items-center gap-2">
+                <Checkbox
+                  aria-label="Chọn các kết quả Fail chưa có Bug Report trên trang này"
+                  checked={selectableOnPage.length > 0 && selectedOnPage === selectableOnPage.length}
+                  indeterminate={selectedOnPage > 0 && selectedOnPage < selectableOnPage.length}
+                  disabled={selectableOnPage.length === 0}
+                  onCheckedChange={(checked) => togglePageSelection(checked === true)}
+                />
+                Chọn các kết quả Fail trên trang này
+              </label>
+              <button
+                type="button"
+                className="underline disabled:opacity-50"
+                disabled={selectingAllFailed || (lf.filters.status !== "" && lf.filters.status !== "FAILED")}
+                title={lf.filters.status !== "" && lf.filters.status !== "FAILED" ? "Đang lọc kết quả khác Fail - bỏ lọc trạng thái hoặc chọn Fail để dùng" : undefined}
+                onClick={selectAllFailedMatching}
+              >
+                {selectingAllFailed ? "Đang chọn..." : "Chọn tất cả Fail chưa có Bug Report khớp bộ lọc"}
+              </button>
+              {selectAllError && <span className="text-destructive">{selectAllError}</span>}
+              <span className="text-muted-foreground">
+                Đã chọn {selectedResultIds.size}
+                {hiddenSelected > 0 ? ` (${hiddenSelected} nằm ngoài trang này)` : ""}
+              </span>
+            </div>
           )}
-          <Link
-            to={`/projects/${projectId}/${endpointFilter && execution.results.length > 0 ? `executions/${executionId}` : "test-cases"}`}
-            className="mt-2 inline-block text-primary underline underline-offset-4"
-          >
-            {endpointFilter && execution.results.length > 0 ? "Xem tất cả kết quả của lần chạy" : "Về danh sách Test case"}
+
+          <Pagination
+            className="mt-3"
+            page={execution.results.page}
+            totalPages={execution.results.totalPages}
+            totalElements={execution.results.totalElements}
+            shownCount={results.length}
+            size={execution.results.size}
+            isFetching={isFetching}
+            itemLabel="kết quả"
+            onPageChange={changePage}
+          />
+        </>
+      )}
+
+      {isFinished && summary && summary.total > 0 && results.length === 0 && (
+        <div className="mt-4">
+          <ListEmptyState
+            filtered={lf.activeCount > 0}
+            emptyText="Lần chạy này không ghi nhận kết quả nào."
+            filteredText="Không có kết quả nào khớp bộ lọc."
+            onReset={lf.reset}
+          />
+        </div>
+      )}
+
+      {isFinished && summary && summary.total === 0 && (
+        <div className="mt-6 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          <p>Lần chạy này không ghi nhận kết quả nào.</p>
+          <Link to={`/projects/${projectId}/test-cases`} className="mt-2 inline-block text-primary underline underline-offset-4">
+            Về danh sách Test case
           </Link>
         </div>
       )}
 
-      {isFinished && filteredResults.length > 0 && <ExecutionSummaryDashboard results={filteredResults} />}
-      {isFinished && filteredResults.length > 0 && (
-        <FailureCauseBanner results={filteredResults} projectId={projectId} />
-      )}
-
-      <ul className="mt-4 flex flex-col gap-2">
-        {filteredResults.map((result) => {
+      <ul className={cn("mt-4 flex flex-col gap-2", isPlaceholderData && "opacity-60 transition-opacity")} aria-busy={isFetching}>
+        {results.map((result) => {
           const isExpanded = expandedId === result.testCaseId
           return (
             <li key={result.id} className="rounded-md border border-border">
@@ -448,6 +633,21 @@ export function TestExecutionPage() {
         })}
       </ul>
 
+      {execution && isFinished && results.length > 0 && (
+        <Pagination
+          className="mt-4"
+              announce={false}
+          page={execution.results.page}
+          totalPages={execution.results.totalPages}
+          totalElements={execution.results.totalElements}
+          shownCount={results.length}
+          size={execution.results.size}
+          isFetching={isFetching}
+          itemLabel="kết quả"
+          onPageChange={changePage}
+        />
+      )}
+
       <CreateBugReportDialog
         open={createBugResultId !== null}
         onOpenChange={(open) => !open && setCreateBugResultId(null)}
@@ -470,12 +670,7 @@ const RING_RADIUS = 66
 const RING_STROKE_WIDTH = 18
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 
-function ExecutionSummaryDashboard({ results }: { results: TestResult[] }) {
-  const total = results.length
-  const countByStatus = results.reduce<Partial<Record<TestResultStatus, number>>>((acc, result) => {
-    acc[result.status] = (acc[result.status] ?? 0) + 1
-    return acc
-  }, {})
+function ExecutionSummaryDashboard({ total, countByStatus }: { total: number; countByStatus: Partial<Record<TestResultStatus, number>> }) {
   const presentStatuses = STATUS_ORDER.filter((status) => (countByStatus[status] ?? 0) > 0)
   const passCount = countByStatus.PASSED ?? 0
   const passRate = total > 0 ? Math.round((passCount / total) * 100) : 0

@@ -48,7 +48,10 @@ export function RoleMatrixPanel({ projectId }: { projectId: string }) {
   /** Quy tắc đang chờ xác nhận sau khi xem trước (hộp thoại mở khi != null). */
   const [pending, setPending] = useState<{ rule: RoleRuleInput; preview: RoleRulesPreview } | null>(null)
 
-  const { data, isLoading } = useQuery({ queryKey: ["role-matrix", projectId], queryFn: () => getRoleMatrix(projectId) })
+  // Chỉ tải và vẽ bảng khi người dùng mở phần này (bảng endpoint × vai trò rất lớn với project nhiều endpoint).
+  const [open, setOpen] = useState(false)
+  const [visibleRows, setVisibleRows] = useState(50)
+  const { data, isLoading } = useQuery({ queryKey: ["role-matrix", projectId], queryFn: () => getRoleMatrix(projectId), enabled: open })
 
   const mutation = useMutation({
     mutationFn: (rule: Parameters<typeof updateRoleMatrix>[1][number]) => updateRoleMatrix(projectId, [rule]),
@@ -73,7 +76,7 @@ export function RoleMatrixPanel({ projectId }: { projectId: string }) {
   const effectiveProfile = profileId || profiles[0]?.id || ""
 
   return (
-    <details className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
+    <details className="rounded-lg border border-border bg-card px-4 py-3 text-sm" onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary className="cursor-pointer font-medium">Ma trận phân quyền (endpoint × vai trò)</summary>
       {isLoading && <p className="mt-2 text-xs text-muted-foreground">Đang tải...</p>}
       {data && profiles.length === 0 && (
@@ -151,7 +154,7 @@ export function RoleMatrixPanel({ projectId }: { projectId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {data.endpoints.map((row) => (
+                {data.endpoints.slice(0, visibleRows).map((row) => (
                   <tr key={row.endpointId} className="border-t border-border">
                     <td className="px-2 py-1 font-mono">
                       <span className="mr-1.5 text-muted-foreground">{row.method}</span>
@@ -179,6 +182,11 @@ export function RoleMatrixPanel({ projectId }: { projectId: string }) {
                 ))}
               </tbody>
             </table>
+            {data.endpoints.length > visibleRows && (
+              <button type="button" className="mt-2 text-xs text-primary underline underline-offset-4" onClick={() => setVisibleRows((n) => n + 50)}>
+                Hiện thêm 50 endpoint (đang hiện {visibleRows}/{data.endpoints.length})
+              </button>
+            )}
           </div>
         </>
       )}

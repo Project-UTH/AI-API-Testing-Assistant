@@ -1,8 +1,22 @@
-import { apiFetch } from "@/lib/api"
+import { apiFetch, apiFetchPaged, fetchAllPages, type PagedResult } from "@/lib/api"
 
 export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY" | "BUSINESS"
 
 export type TestCaseAuthOverride = "DEFAULT" | "NONE" | "INVALID"
+
+export const TEST_CASE_SOURCE_LABEL: Record<TestCaseSource, string> = {
+  AI_GENERATED: "AI",
+  MANUAL: "Tự thêm",
+  SECURITY: "Security",
+  BUSINESS: "Nghiệp vụ (AI đoán)",
+}
+
+export const TEST_CASE_SOURCE_STYLES: Record<TestCaseSource, string> = {
+  AI_GENERATED: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  MANUAL: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
+  SECURITY: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  BUSINESS: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+}
 
 /**
  * Module 15h - nguồn gốc case AI sinh (15i: cả nhóm Security), do hệ thống CHẤM NỘI DUNG (không dựa lời AI tự khai):
@@ -249,6 +263,52 @@ export function setTestCaseLocked(
 
 export function listTestCases(projectId: string): Promise<TestCase[]> {
   return apiFetch<TestCase[]>(`/projects/${projectId}/test-cases`)
+}
+
+/** Module 17 (G4) - bộ lọc + trang của danh sách test case ở server (giá trị rỗng/undefined = không lọc). */
+export interface TestCaseListParams {
+  page: number
+  size: number
+  q?: string
+  method?: string
+  endpointId?: string
+  source?: string
+  generationOrigin?: string
+  /** "true" | "false" */
+  locked?: string
+  reliability?: string
+}
+
+function buildTestCaseQuery(params: Omit<TestCaseListParams, "page" | "size">): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value) query.set(key, String(value))
+  }
+  return query.toString()
+}
+
+/**
+ * 1 trang test case, đã sắp theo endpoint (path, method) rồi thời gian tạo: các dòng cùng endpoint nằm liền nhau nên giao diện
+ * nhóm được. Hàm cũ {@link listTestCases} vẫn trả TOÀN BỘ danh sách cho các nơi cần đủ (vd chọn nguồn dữ liệu).
+ */
+export function listTestCasesPage(projectId: string, params: TestCaseListParams): Promise<PagedResult<TestCase>> {
+  const { page, size, ...filters } = params
+  const filterQuery = buildTestCaseQuery(filters)
+  return apiFetchPaged<TestCase>(
+    `/projects/${projectId}/test-cases?page=${page}&size=${size}${filterQuery ? `&${filterQuery}` : ""}`
+  )
+}
+
+/** Id của MỌI test case khớp bộ lọc (không phụ thuộc trang) - cho "Chọn tất cả N khớp bộ lọc". */
+export async function listAllMatchingTestCaseIds(
+  projectId: string,
+  filters: Omit<TestCaseListParams, "page" | "size">
+): Promise<string[]> {
+  const filterQuery = buildTestCaseQuery(filters)
+  const all = await fetchAllPages<TestCase>(
+    (page) => `/projects/${projectId}/test-cases?page=${page}&size=200${filterQuery ? `&${filterQuery}` : ""}`
+  )
+  return all.data.map((testCase) => testCase.id)
 }
 
 export function createTestCase(

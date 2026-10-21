@@ -21,7 +21,7 @@ export interface BaselineRound {
 
 export interface BaselineResult {
   status: BaselineStatus
-  /** Mã lý do khi NEEDS_HUMAN: RESOURCE_NOT_FOUND, AUTH, SERVER_ERROR, MISSING_PARAM_VALUE, REPAIR_EXHAUSTED, TOKEN_BUDGET, EXECUTION_TIMEOUT, EXECUTION_ERROR. */
+  /** Mã lý do khi NEEDS_HUMAN: RESOURCE_NOT_FOUND, AUTH, CREDENTIALS, SERVER_ERROR, MISSING_PARAM_VALUE, REPAIR_EXHAUSTED, TOKEN_BUDGET, EXECUTION_TIMEOUT, EXECUTION_ERROR. */
   reason: string | null
   message: string | null
   baselineTestCaseId: string | null

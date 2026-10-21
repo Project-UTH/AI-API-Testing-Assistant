@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchPaged, type PagedResult } from "@/lib/api"
+import { apiFetch, apiFetchPaged, fetchAllPages, type PagedResult } from "@/lib/api"
 import type { UserRole } from "@/lib/auth"
 import type { Project } from "@/lib/projects"
 import type { Endpoint } from "@/lib/endpoints"
@@ -106,7 +106,9 @@ export function getAdminUserProject(userId: string, projectId: string): Promise<
 }
 
 export function listAdminUserEndpoints(userId: string, projectId: string): Promise<PagedResult<Endpoint>> {
-  return apiFetchPaged<Endpoint>(`/admin/users/${userId}/projects/${projectId}/endpoints?page=0&size=100`)
+  return fetchAllPages<Endpoint>(
+    (page) => `/admin/users/${userId}/projects/${projectId}/endpoints?page=${page}&size=100&sort=createdAt,asc&sort=id,asc`
+  )
 }
 
 export function listAdminUserTestCases(userId: string, projectId: string): Promise<TestCase[]> {

@@ -19,6 +19,8 @@ interface DeleteTestCaseDialogProps {
   onOpenChange: (open: boolean) => void
   projectId: string
   testCase: TestCase | null
+  /** Gọi sau khi xoá thành công (vd bỏ id khỏi danh sách đang chọn). */
+  onDeleted?: (testCaseId: string) => void
 }
 
 export function DeleteTestCaseDialog({
@@ -26,6 +28,7 @@ export function DeleteTestCaseDialog({
   onOpenChange,
   projectId,
   testCase,
+  onDeleted,
 }: DeleteTestCaseDialogProps) {
   const queryClient = useQueryClient()
 
@@ -37,6 +40,7 @@ export function DeleteTestCaseDialog({
       return deleteTestCase(projectId, testCase.endpointId, testCase.id)
     },
     onSuccess: () => {
+      if (testCase) onDeleted?.(testCase.id)
       queryClient.invalidateQueries({ queryKey: ["test-cases", projectId] })
       queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
       onOpenChange(false)

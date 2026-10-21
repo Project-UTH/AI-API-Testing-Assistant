@@ -106,13 +106,32 @@ const BANNER_TEXT: Partial<Record<FailureCauseCode, string>> = {
  * để người dùng tự đọc từng dòng Fail rồi điều tra từng test. Gom ở frontend từ nhãn backend đã chấm sẵn.
  */
 export function FailureCauseBanner({ results, projectId }: { results: TestResult[]; projectId: string }) {
-  const groups = new Map<FailureCauseCode, number>()
+  const counts: Partial<Record<FailureCauseCode, number>> = {}
   for (const r of results) {
     if (r.failureCause?.notApiFault) {
-      groups.set(r.failureCause.code, (groups.get(r.failureCause.code) ?? 0) + 1)
+      counts[r.failureCause.code] = (counts[r.failureCause.code] ?? 0) + 1
     }
   }
-  const notable = [...groups.entries()].filter(([, count]) => count >= BANNER_MIN_RESULTS)
+  return <FailureCauseSummaryBanner counts={counts} total={results.length} projectId={projectId} />
+}
+
+/** Các nguyên nhân "không phải do API" (khớp FailureCause.notApiFault ở backend) - chỉ những mã này được gom vào banner. */
+const NOT_API_FAULT_CODES: FailureCauseCode[] = ["TEST_SETUP", "ENVIRONMENT", "AUTH_CONFIG", "RESOURCE_NOT_FOUND"]
+
+/**
+ * Cùng banner nhưng nhận số đếm theo nguyên nhân tính sẵn trên TOÀN lượt chạy (server): khi kết quả được tải theo trang thì không
+ * còn đếm được từ danh sách đang hiển thị.
+ */
+export function FailureCauseSummaryBanner({
+  counts,
+  total,
+  projectId,
+}: {
+  counts: Partial<Record<FailureCauseCode, number>>
+  total: number
+  projectId: string
+}) {
+  const notable = NOT_API_FAULT_CODES.map((code) => [code, counts[code] ?? 0] as const).filter(([, count]) => count >= BANNER_MIN_RESULTS)
   if (notable.length === 0) return null
 
   return (
@@ -122,7 +141,7 @@ export function FailureCauseBanner({ results, projectId }: { results: TestResult
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
           <span>
             <span className="font-semibold">
-              {count}/{results.length} test
+              {count}/{total} test
             </span>{" "}
             {BANNER_TEXT[code]} {CAUSE_HINT[code]}
             {code === "AUTH_CONFIG" && (

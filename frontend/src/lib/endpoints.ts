@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchPaged, type PagedResult } from "@/lib/api"
+import { apiFetch, fetchAllPages, type PagedResult } from "@/lib/api"
 
 export interface Endpoint {
   id: string
@@ -65,7 +65,9 @@ export function getImportImpact(projectId: string): Promise<ImportImpact> {
 }
 
 export function listEndpoints(projectId: string): Promise<PagedResult<Endpoint>> {
-  return apiFetchPaged<Endpoint>(`/projects/${projectId}/endpoints?page=0&size=100&sort=createdAt,asc`)
+  return fetchAllPages<Endpoint>(
+    (page) => `/projects/${projectId}/endpoints?page=${page}&size=100&sort=createdAt,asc&sort=id,asc`
+  )
 }
 
 function buildImportForm(input: ImportOpenApiInput): FormData {

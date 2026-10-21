@@ -106,6 +106,7 @@ export const JOB_STATUS_LABEL: Record<JobStatus, string> = {
 export const REASON_HELP: Record<string, string> = {
   RESOURCE_NOT_FOUND: "Nhập id thật của tài nguyên (hoặc tạo trước 1 test POST tạo tài nguyên để hệ thống tự nối chuỗi) rồi thử lại.",
   MISSING_PARAM_VALUE: "Nhập giá trị thật cho tham số đường dẫn rồi thử lại.",
+  CREDENTIALS: "Email/mật khẩu trong test gốc chưa đúng tài khoản thật. Tự thêm 1 test gốc với tài khoản thật (đã Pass) rồi sinh lại ở chế độ 0 token ('Chỉ bổ sung từ test gốc').",
   AUTH: "Kiểm tra token/vai trò của project (nút Sửa xác thực hoặc Vai trò). AI không sửa được lỗi này.",
   SERVER_ERROR: "API đích lỗi với test hợp lệ: nhiều khả năng là lỗi phía API.",
   STATE_CONFLICT: "API đích báo xung đột dữ liệu (409) lặp lại, AI không sửa được: dọn hoặc đổi dữ liệu ở môi trường test (vd bản ghi đã tồn tại) rồi thử lại.",
