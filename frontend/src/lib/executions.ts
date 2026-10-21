@@ -1,4 +1,4 @@
-import { apiFetch, downloadFile } from "@/lib/api"
+import { apiFetch, downloadFile, type PagedResult } from "@/lib/api"
 
 export type ExecutionStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
 export type TestResultStatus = "PASSED" | "FAILED" | "ERROR" | "BLOCKED" | "SKIPPED"
@@ -33,6 +33,26 @@ export type FailureCauseCode =
   | "MASS_ASSIGNMENT"
   | "TOKEN_FORBIDDEN"
   | "API_WRONG_STATUS"
+
+/** Nhãn tiếng Việt cho từng nguyên nhân (khớp FailureCause backend) - dùng cho bộ lọc; mọi mã backend phải có ở đây. */
+export const FAILURE_CAUSE_LABEL: Record<FailureCauseCode, string> = {
+  TEST_SETUP: "Lỗi cấu hình test",
+  ENVIRONMENT: "Nghi lỗi môi trường",
+  AUTH_CONFIG: "Nghi token/xác thực",
+  FLAKY: "Không ổn định",
+  ASSERTION_FAILED: "Assertion sai",
+  DATA_STATE: "Nghi dữ liệu/trạng thái đổi",
+  STABLE_FAILURE: "Lỗi ổn định",
+  RESOURCE_NOT_FOUND: "Có thể id không tồn tại",
+  EXPECTATION_MISMATCH: "Kỳ vọng có thể quá chặt",
+  UNDETERMINED: "Chưa đủ dữ liệu",
+  STATE_CONFLICT: "Xung đột trạng thái dữ liệu",
+  AUTHZ_VIOLATION: "Sai lệch phân quyền",
+  TEST_DATA_SUSPECT: "Nghi dữ liệu test không hợp lệ",
+  MASS_ASSIGNMENT: "Nhận field không khai báo (mass assignment)",
+  TOKEN_FORBIDDEN: "Nghi token thiếu quyền cho endpoint này",
+  API_WRONG_STATUS: "API trả sai mã lỗi (401 thay vì 400)",
+}
 
 export interface FailureCause {
   code: FailureCauseCode
@@ -130,4 +150,45 @@ export function exportExecution(projectId: string, executionId: string, format: 
 
 export function getExecution(projectId: string, executionId: string): Promise<TestExecution> {
   return apiFetch<TestExecution>(`/projects/${projectId}/executions/${executionId}`)
+}
+
+/** Tổng hợp trên TOÀN BỘ kết quả của lượt chạy (không đổi theo bộ lọc/trang). */
+export interface ExecutionResultsSummary {
+  total: number
+  statusCounts: Partial<Record<TestResultStatus, number>>
+  failureCauseCounts: Partial<Record<FailureCauseCode, number>>
+  unstableCount: number
+  /** Số kết quả FAILED chưa có Bug Report. */
+  failedWithoutBugCount: number
+  /** Id các kết quả của lượt chạy này đã có Bug Report (trang chỉ tải từng phần nên cần biết trước). */
+  bugResultIds: string[]
+}
+
+/** Module 17 (G4) - lượt chạy với kết quả theo trang. */
+export interface TestExecutionPage {
+  id: string
+  status: ExecutionStatus
+  startedAt: string
+  finishedAt: string | null
+  results: PagedResult<TestResult>
+  summary: ExecutionResultsSummary
+  autoIncludedTestCaseIds: string[]
+}
+
+export interface ExecutionResultsParams {
+  page: number
+  size: number
+  status?: string
+  failureCause?: string
+  endpointId?: string
+  q?: string
+}
+
+export function getExecutionPage(projectId: string, executionId: string, params: ExecutionResultsParams): Promise<TestExecutionPage> {
+  const query = new URLSearchParams({ page: String(params.page), size: String(params.size) })
+  if (params.status) query.set("status", params.status)
+  if (params.failureCause) query.set("failureCause", params.failureCause)
+  if (params.endpointId) query.set("endpointId", params.endpointId)
+  if (params.q) query.set("q", params.q)
+  return apiFetch<TestExecutionPage>(`/projects/${projectId}/executions/${executionId}?${query.toString()}`)
 }

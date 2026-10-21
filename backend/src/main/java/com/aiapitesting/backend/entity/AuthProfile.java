@@ -51,6 +51,22 @@ public class AuthProfile {
     @Column
     private Instant authUpdatedAt;
 
+    /** Chế độ "Đăng nhập" (G5/P1-4): khác null nghĩa là token do hệ thống tự lấy bằng cách gọi đường dẫn này (tương đối, trên base URL của project). */
+    @Column(length = 500)
+    private String loginPath;
+
+    /** Body đăng nhập (JSON, có tài khoản/mật khẩu) - mã hoá AES-256, không bao giờ trả ra API hay log. */
+    @Column(columnDefinition = "TEXT")
+    private String loginBodyEncrypted;
+
+    /** JSONPath tới token trong response đăng nhập, vd data.accessToken. */
+    @Column(length = 200)
+    private String tokenJsonPath;
+
+    public boolean isLoginMode() {
+        return loginPath != null && !loginPath.isBlank();
+    }
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

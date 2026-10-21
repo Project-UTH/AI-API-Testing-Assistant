@@ -1,5 +1,6 @@
 - Chỉ sinh ĐÚNG 1 test case Positive HỢP LỆ làm test GỐC cho endpoint này (mảng JSON chỉ có 1 phần tử). Hệ thống sẽ CHẠY THỬ test này trên API thật
   để xác nhận trả 2xx, rồi dùng nó làm nền để tự sinh các test còn lại - nên giá trị phải thật sự hợp lệ.
+- Field kiểu object lồng nhau: điền đủ cả object con (kể cả field bắt buộc bên trong); field kiểu mảng object: đưa ít nhất 1 phần tử đầy đủ field bắt buộc.
 - Điền ĐỦ mọi field bắt buộc; field tuỳ chọn chỉ điền khi chắc hợp lệ. Giá trị thực tế, hợp lý với tên field (email đúng dạng, số trong khoảng cho phép,
   chuỗi không rỗng, đúng enum/pattern/độ dài trong định nghĩa). Mọi ràng buộc trong OpenAPI phải được tôn trọng.
 - Ngày/giờ dùng placeholder ngày động, KHÔNG ghi cứng ngày: "{{today+30d}}", "{{now+1h}}".

@@ -63,6 +63,12 @@ public interface TestCaseDependencyRepository extends JpaRepository<TestCaseDepe
             + "WHERE tcd.testCase.endpoint.project = :project")
     List<TestCaseDependency> findAllByTestCaseEndpointProject(@Param("project") Project project);
 
+    // Dependency của đúng các test case trong 1 trang (danh sách phân trang) - không kéo cả project như truy vấn ở trên.
+    @Query("SELECT tcd FROM TestCaseDependency tcd "
+            + "JOIN FETCH tcd.dependsOnTestCase dotc JOIN FETCH dotc.endpoint "
+            + "WHERE tcd.testCase.id IN :ids")
+    List<TestCaseDependency> findAllByTestCaseIdIn(@Param("ids") java.util.Collection<UUID> ids);
+
     // Dọn trước khi bulk-xoá test case - cả 2 phía FK (consumer lẫn nguồn) đều có thể thuộc project đang xoá.
     @Modifying
     @Query("DELETE FROM TestCaseDependency tcd WHERE tcd.testCase.endpoint.project = :project "

@@ -1,5 +1,8 @@
 package com.aiapitesting.backend.controller;
 
+import com.aiapitesting.backend.dto.response.TestExecutionPageResponse;
+import com.aiapitesting.backend.entity.FailureCause;
+import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.dto.request.TestExecutionRequest;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.ExecutionCompareResponse;
@@ -81,6 +84,22 @@ public class TestExecutionController {
                 .header("Content-Disposition", "attachment; filename=\"" + file.filename() + "\"")
                 .header("X-Content-Type-Options", "nosniff")
                 .body(file.content());
+    }
+
+    /** Có tham số {@code page} thì trả kết quả theo trang (có lọc + tổng hợp); không có thì giữ hành vi cũ ở method dưới. */
+    @GetMapping(value = "/{executionId}", params = "page")
+    public ResponseEntity<ApiResponse<TestExecutionPageResponse>> getExecutionPage(
+            @PathVariable UUID projectId,
+            @PathVariable UUID executionId,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) TestResultStatus status,
+            @RequestParam(required = false) FailureCause failureCause,
+            @RequestParam(required = false) UUID endpointId,
+            @RequestParam(required = false) String q
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(
+                testExecutionService.getExecutionPage(projectId, executionId, page, size, status, failureCause, endpointId, q)));
     }
 
     @GetMapping("/{executionId}")

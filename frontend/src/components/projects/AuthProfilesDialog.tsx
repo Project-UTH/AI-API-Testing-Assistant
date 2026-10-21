@@ -13,6 +13,7 @@ import {
   listAuthProfiles,
   updateAuthProfile,
   type AuthProfile,
+  type AuthProfileInput,
 } from "@/lib/authProfiles"
 import type { TargetAuthType } from "@/lib/endpoints"
 import { AUTH_TYPE_LABEL, authValueHint, authValueLabel } from "@/lib/authTypes"
@@ -40,6 +41,10 @@ export function AuthProfilesDialog({ open, onOpenChange, projectId }: Props) {
   const [roleKey, setRoleKey] = useState("")
   const [authType, setAuthType] = useState<TargetAuthType>("BEARER_TOKEN")
   const [authValue, setAuthValue] = useState("")
+  const [loginMode, setLoginMode] = useState(false)
+  const [loginPath, setLoginPath] = useState("")
+  const [loginBody, setLoginBody] = useState("")
+  const [tokenJsonPath, setTokenJsonPath] = useState("")
 
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["auth-profiles", projectId],
@@ -53,6 +58,10 @@ export function AuthProfilesDialog({ open, onOpenChange, projectId }: Props) {
     setRoleKey("")
     setAuthType("BEARER_TOKEN")
     setAuthValue("")
+    setLoginMode(false)
+    setLoginPath("")
+    setLoginBody("")
+    setTokenJsonPath("")
   }
 
   function startEdit(profile: AuthProfile) {
@@ -61,11 +70,17 @@ export function AuthProfilesDialog({ open, onOpenChange, projectId }: Props) {
     setRoleKey(profile.roleKey)
     setAuthType(profile.authType)
     setAuthValue("")
+    setLoginMode(profile.loginMode)
+    setLoginPath(profile.loginPath ?? "")
+    setLoginBody("")
+    setTokenJsonPath(profile.tokenJsonPath ?? "")
   }
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const input = { name, authType, authValue: authType === "NONE" ? undefined : authValue || undefined }
+      const input: AuthProfileInput = loginMode
+        ? { name, authType: "BEARER_TOKEN", loginPath, loginBody: loginBody || undefined, tokenJsonPath }
+        : { name, authType, authValue: authType === "NONE" ? undefined : authValue || undefined }
       return editing
         ? updateAuthProfile(projectId, editing.id, input)
         : createAuthProfile(projectId, { ...input, roleKey: roleKey || undefined })
@@ -82,7 +97,7 @@ export function AuthProfilesDialog({ open, onOpenChange, projectId }: Props) {
   })
 
   const error = saveMutation.error ?? deleteMutation.error
-  const needsValue = authType !== "NONE" && !editing
+  const needsValue = authType !== "NONE" && !editing && !loginMode
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -106,8 +121,10 @@ export function AuthProfilesDialog({ open, onOpenChange, projectId }: Props) {
                 <span className="font-medium">{p.name}</span>
                 <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{p.roleKey}</code>
                 <span className="text-xs text-muted-foreground">
-                  {TYPE_LABEL[p.authType]}
-                  {p.authType !== "NONE" && (p.hasValue ? " · đã có token" : " · CHƯA có token")}
+                  {p.loginMode ? `Tự đăng nhập (${p.loginPath})` : TYPE_LABEL[p.authType]}
+                  {p.loginMode
+                    ? p.hasValue ? " · đã có tài khoản" : " · CHƯA có tài khoản"
+                    : p.authType !== "NONE" && (p.hasValue ? " · đã có token" : " · CHƯA có token")}
                   {" · "}
                   {p.testCaseCount} test case
                 </span>
@@ -154,6 +171,49 @@ export function AuthProfilesDialog({ open, onOpenChange, projectId }: Props) {
                 disabled={Boolean(editing)}
               />
             </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label htmlFor="profile-mode">Cách lấy token</Label>
+              <select
+                id="profile-mode"
+                className={selectClassName}
+                value={loginMode ? "LOGIN" : "STATIC"}
+                onChange={(e) => setLoginMode(e.target.value === "LOGIN")}
+              >
+                <option value="STATIC">Nhập token có sẵn</option>
+                <option value="LOGIN">Tự đăng nhập để lấy token (token hết hạn vẫn chạy đủ)</option>
+              </select>
+            </div>
+            {loginMode && (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="profile-login-path">Đường dẫn đăng nhập (POST)</Label>
+                  <Input id="profile-login-path" value={loginPath} onChange={(e) => setLoginPath(e.target.value)} placeholder="/auth/login" required />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="profile-token-path">JSONPath tới token trong response</Label>
+                  <Input id="profile-token-path" value={tokenJsonPath} onChange={(e) => setTokenJsonPath(e.target.value)} placeholder="data.accessToken" required />
+                </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <Label htmlFor="profile-login-body">
+                    {editing ? "Body đăng nhập mới (bỏ trống = giữ tài khoản cũ)" : "Body đăng nhập (JSON có tài khoản/mật khẩu)"}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Mã hoá AES-256, không hiển thị lại. Hệ thống gọi vào base URL của project, token chỉ giữ trong bộ nhớ vài phút và tự đăng nhập lại 1 lần khi gặp 401.
+                  </p>
+                  <textarea
+                    id="profile-login-body"
+                    autoComplete="off"
+                    value={loginBody}
+                    onChange={(e) => setLoginBody(e.target.value)}
+                    required={!editing}
+                    rows={3}
+                    placeholder={'{"email": "hr@example.com", "password": "..."}'}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-sm outline-none dark:bg-input/30"
+                  />
+                </div>
+              </>
+            )}
+            {!loginMode && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="profile-type">Loại xác thực</Label>
               <select id="profile-type" className={selectClassName} value={authType} onChange={(e) => setAuthType(e.target.value as TargetAuthType)}>
@@ -164,7 +224,8 @@ export function AuthProfilesDialog({ open, onOpenChange, projectId }: Props) {
                 ))}
               </select>
             </div>
-            {authType !== "NONE" && (
+            )}
+            {!loginMode && authType !== "NONE" && (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="profile-value">{editing ? "Giá trị mới (bỏ trống = giữ giá trị cũ)" : authValueLabel(authType)}</Label>
                 {authValueHint(authType) && <p className="text-xs text-muted-foreground">{authValueHint(authType)}</p>}

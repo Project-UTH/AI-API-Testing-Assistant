@@ -847,6 +847,124 @@ class EndpointCoverageServiceTest {
         assertThat(result.overallExecutedPercent()).isZero();
     }
 
+    // ---- Module 17 (G4) - coverage theo trang ----
+
+    private CoverageListQuery pageQuery(Integer page, Integer size, String q, String method, Boolean gaps, Boolean failing, String sort) {
+        return new CoverageListQuery(page, size, q, method, gaps, failing, sort);
+    }
+
+    /** 3 endpoint: /a có test hợp lệ, /b không có test nào, /c có test và test mới nhất FAILED. */
+    private List<Endpoint> stubThreeEndpoints() {
+        Endpoint a = endpoint("/a", "POST", false, emailRequiredSchema(List.of("201", "400")));
+        Endpoint b = endpoint("/b", "GET", false, buildSchemaJson(null, List.of("200")));
+        Endpoint c = endpoint("/c", "POST", false, emailRequiredSchema(List.of("201", "400")));
+        TestCase positiveA = testCase(a, "Positive A", 201, "{\"email\":\"an@gmail.com\"}");
+        TestCase positiveC = testCase(c, "Positive C", 201, "{\"email\":\"an@gmail.com\"}");
+        stubProject(List.of(a, b, c), List.of(positiveA, positiveC), List.of());
+        when(testResultRepository.findLatestResultsByProject(project))
+                .thenReturn(List.of(latest(positiveC.getId(), TestResultStatus.FAILED)));
+        return List.of(a, b, c);
+    }
+
+    @Test
+    void getProjectCoveragePaged_overallEqualsLegacy_andOnlyPageEndpointsHaveDetail() {
+        List<Endpoint> endpoints = stubThreeEndpoints();
+
+        ProjectCoverageResponse legacy = endpointCoverageService.getProjectCoverage(projectId);
+        ProjectCoverageResponse paged = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 2, null, null, null, null, null));
+
+        // Số tổng KHÔNG đổi theo trang/bộ lọc và bằng đúng bản không phân trang (cùng đường tính).
+        assertThat(paged.overallCoveragePercent()).isEqualTo(legacy.overallCoveragePercent());
+        assertThat(paged.overallExecutedPercent()).isEqualTo(legacy.overallExecutedPercent());
+        assertThat(paged.endpoints()).hasSize(2);
+        assertThat(paged.endpointsPage().totalElements()).isEqualTo(3);
+        assertThat(paged.endpointsPage().totalPages()).isEqualTo(2);
+        assertThat(paged.overview().endpointCount()).isEqualTo(endpoints.size());
+        // Endpoint của trang có đủ chi tiết như bản cũ (kể cả dòng mã trạng thái).
+        EndpointCoverageResponse legacyA = legacy.endpoints().get(0);
+        assertThat(paged.endpoints().get(0).dimensions()).hasSameSizeAs(legacyA.dimensions());
+        assertThat(paged.endpoints().get(0).coveragePercent()).isEqualTo(legacyA.coveragePercent());
+    }
+
+    @Test
+    void getCoverageSummary_rowsMatchFullComputationPerEndpoint() {
+        stubThreeEndpoints();
+
+        ProjectCoverageResponse legacy = endpointCoverageService.getProjectCoverage(projectId);
+        com.aiapitesting.backend.dto.response.CoverageSummaryResponse summary = endpointCoverageService.getCoverageSummary(projectId);
+
+        assertThat(summary.overallCoveragePercent()).isEqualTo(legacy.overallCoveragePercent());
+        assertThat(summary.overallExecutedPercent()).isEqualTo(legacy.overallExecutedPercent());
+        assertThat(summary.endpoints()).hasSameSizeAs(legacy.endpoints());
+        for (int i = 0; i < legacy.endpoints().size(); i++) {
+            // Chế độ nhẹ phải cho ĐÚNG % như chế độ đầy đủ của từng endpoint (không lệch).
+            assertThat(summary.endpoints().get(i).coveragePercent()).as(legacy.endpoints().get(i).path())
+                    .isEqualTo(legacy.endpoints().get(i).coveragePercent());
+            assertThat(summary.endpoints().get(i).executedPercent()).as(legacy.endpoints().get(i).path())
+                    .isEqualTo(legacy.endpoints().get(i).executedPercent());
+        }
+        assertThat(summary.overview().relevantCount()).isEqualTo(summary.endpoints().stream().mapToLong(r -> r.relevantCount()).sum());
+    }
+
+    @Test
+    void getProjectCoveragePaged_filtersByQueryMethodGapsAndFailing_withoutChangingOverall() {
+        stubThreeEndpoints();
+        ProjectCoverageResponse all = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 50, null, null, null, null, null));
+
+        ProjectCoverageResponse byPath = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 50, "/b", null, null, null, null));
+        ProjectCoverageResponse byMethod = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 50, null, "get", null, null, null));
+        ProjectCoverageResponse gaps = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 50, null, null, true, null, null));
+        ProjectCoverageResponse failing = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 50, null, null, null, true, null));
+
+        assertThat(byPath.endpoints()).extracting(EndpointCoverageResponse::path).containsExactly("/b");
+        assertThat(byMethod.endpoints()).extracting(EndpointCoverageResponse::method).containsOnly("GET");
+        assertThat(gaps.endpoints()).extracting(EndpointCoverageResponse::path).contains("/a", "/b", "/c");
+        assertThat(failing.endpoints()).extracting(EndpointCoverageResponse::path).containsExactly("/c");
+        for (ProjectCoverageResponse filtered : List.of(byPath, byMethod, gaps, failing)) {
+            assertThat(filtered.overallCoveragePercent()).isEqualTo(all.overallCoveragePercent());
+            assertThat(filtered.overview()).isEqualTo(all.overview());
+        }
+    }
+
+    @Test
+    void getProjectCoveragePaged_sortsAndHandlesPageBeyondLastAndEmptyProject() {
+        stubThreeEndpoints();
+
+        ProjectCoverageResponse byPathDesc = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 50, null, null, null, null, "path"));
+        assertThat(byPathDesc.endpoints()).extracting(EndpointCoverageResponse::path).containsExactly("/a", "/b", "/c");
+        ProjectCoverageResponse lowestFirst = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 50, null, null, null, null, "coverage,asc"));
+        assertThat(lowestFirst.endpoints().get(0).coveragePercent()).isLessThanOrEqualTo(lowestFirst.endpoints().get(2).coveragePercent());
+
+        ProjectCoverageResponse beyond = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(9, 2, null, null, null, null, null));
+        assertThat(beyond.endpoints()).isEmpty();
+        assertThat(beyond.endpointsPage().totalElements()).isEqualTo(3);
+    }
+
+    @Test
+    void getProjectCoveragePaged_emptyProject_returnsEmptyPageAndFullOverall() {
+        stubProject(List.of(), List.of(), List.of());
+
+        ProjectCoverageResponse result = endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 50, null, null, null, null, null));
+
+        assertThat(result.endpoints()).isEmpty();
+        assertThat(result.endpointsPage().totalElements()).isZero();
+        assertThat(result.endpointsPage().totalPages()).isZero();
+        assertThat(result.overallCoveragePercent()).isEqualTo(100.0);
+    }
+
+    @Test
+    void getProjectCoveragePaged_rejectsBadParameters() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(-1, 50, null, null, null, null, null)))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 0, null, null, null, null, null)))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> endpointCoverageService.getProjectCoveragePaged(projectId, pageQuery(0, 50, null, null, null, null, "drop table")))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+    }
+
     @Test
     void getEndpointCoverage_unparseableSchema_marksSchemaUnreadableInsteadOfVacuous100Percent() {
         // Module 15f - không đọc được schema thì phải báo rõ, không ngầm hiểu "không có gì cần kiểm".

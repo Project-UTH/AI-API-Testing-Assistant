@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Loader2 } from "lucide-react"
 
-import { coverageCounts, type EndpointCoverage } from "@/lib/coverage"
+import { coverageRowCounts, type CoverageEndpointRow } from "@/lib/coverage"
 import { getLatestGenerationPlan, type GenerationPlanSummary } from "@/lib/testcases"
 
 interface GenerationPlanReportProps {
@@ -11,8 +11,8 @@ interface GenerationPlanReportProps {
   endpointId: string
   /** Báo cáo vừa nhận khi sinh trong phiên này - có thì dùng luôn, không gọi API. */
   freshPlan?: GenerationPlanSummary
-  /** Coverage của endpoint (đã tải sẵn ở EndpointList) - không gọi thêm request. */
-  coverage?: EndpointCoverage
+  /** Tóm tắt coverage của endpoint (đã tải sẵn ở EndpointList) - không gọi thêm request. */
+  coverage?: CoverageEndpointRow
 }
 
 /**
@@ -31,7 +31,7 @@ export function GenerationPlanReport({ projectId, endpointId, freshPlan, coverag
     enabled: showPlan && !freshPlan,
   })
   const plan = freshPlan ?? savedPlan ?? null
-  const counts = coverage ? coverageCounts(coverage) : null
+  const counts = coverage ? coverageRowCounts(coverage) : null
 
   return (
     <div className="mt-3 flex flex-col gap-1 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs leading-relaxed">

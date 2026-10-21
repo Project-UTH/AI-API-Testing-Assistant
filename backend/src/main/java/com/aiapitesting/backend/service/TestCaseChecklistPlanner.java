@@ -9,6 +9,7 @@ import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.fasterxml.jackson.core.StreamWriteFeature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import io.swagger.v3.oas.models.media.MediaType;
@@ -22,6 +23,7 @@ import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -106,8 +108,22 @@ public class TestCaseChecklistPlanner {
             String name, ParamLocation location, boolean required, boolean numeric, String type, boolean nullAllowed,
             List<String> enumValues, BigDecimal minimum, BigDecimal maximum, Integer minLength, Integer maxLength,
             BigDecimal typeMinimum, BigDecimal typeMaximum, boolean hasFormatOrPattern,
-            boolean minimumExclusive, boolean maximumExclusive
+            boolean minimumExclusive, boolean maximumExclusive,
+            /** true khi là trường con của object/mảng object (tên dạng cha.con / cha[0].con); false cho khoá phẳng, kể cả khoá có dấu chấm. */
+            boolean nested
     ) {
+        public FieldRule(String name, ParamLocation location, boolean required, boolean numeric, String type, boolean nullAllowed,
+                         List<String> enumValues, BigDecimal minimum, BigDecimal maximum, Integer minLength, Integer maxLength,
+                         BigDecimal typeMinimum, BigDecimal typeMaximum, boolean hasFormatOrPattern,
+                         boolean minimumExclusive, boolean maximumExclusive) {
+            this(name, location, required, numeric, type, nullAllowed, enumValues, minimum, maximum, minLength, maxLength,
+                    typeMinimum, typeMaximum, hasFormatOrPattern, minimumExclusive, maximumExclusive, false);
+        }
+
+        FieldRule asNested() {
+            return new FieldRule(name, location, required, numeric, type, nullAllowed, enumValues, minimum, maximum, minLength, maxLength,
+                    typeMinimum, typeMaximum, hasFormatOrPattern, minimumExclusive, maximumExclusive, true);
+        }
     }
 
     /** Ràng buộc đã trích từ Endpoint.schema - đọc 1 lần, dùng cho plan/evaluate/fill. */
@@ -197,6 +213,7 @@ public class TestCaseChecklistPlanner {
                 List<String> required = bodySchema.getRequired() == null ? List.of() : bodySchema.getRequired();
                 for (Map.Entry<String, Schema> prop : bodySchema.getProperties().entrySet()) {
                     rules.add(toRule(prop.getKey(), ParamLocation.BODY, required.contains(prop.getKey()), prop.getValue()));
+                    addChildRules(rules, prop.getKey(), prop.getValue());
                 }
             }
         }
@@ -217,6 +234,34 @@ public class TestCaseChecklistPlanner {
             }
         }
         return new Spec(path, hasBody, bodyIsJson, rules);
+    }
+
+    /**
+     * Body lồng nhau (1 cấp): object con thành luật {@code cha.con}; mảng object thành {@code cha[0].con} (chỉ phần tử đầu).
+     * Luật con chỉ được chấm khi cha có mặt trong body (xem {@link #violations}).
+     */
+    private void addChildRules(List<FieldRule> rules, String parent, Schema<?> schema) {
+        if (schema == null) {
+            return;
+        }
+        Schema<?> objectSchema = schema;
+        String prefix = parent + ".";
+        if ("array".equals(SpecValueRules.typeOf(schema)) && schema.getItems() != null) {
+            objectSchema = schema.getItems();
+            prefix = parent + "[0].";
+        }
+        if (objectSchema.getProperties() == null || objectSchema.getProperties().isEmpty()) {
+            return;
+        }
+        List<String> required = objectSchema.getRequired() == null ? List.of() : objectSchema.getRequired();
+        for (Map.Entry<String, Schema> child : objectSchema.getProperties().entrySet()) {
+            Schema<?> childSchema = child.getValue();
+            String type = childSchema == null ? null : SpecValueRules.typeOf(childSchema);
+            if ("object".equals(type) || "array".equals(type)) {
+                continue; // chỉ 1 cấp
+            }
+            rules.add(toRule(prefix + child.getKey(), ParamLocation.BODY, required.contains(child.getKey()), childSchema).asNested());
+        }
     }
 
     private FieldRule toRule(String name, ParamLocation location, boolean required, Schema<?> schema) {
@@ -351,6 +396,7 @@ public class TestCaseChecklistPlanner {
                 }
                 addImplicitBoundaries(rule, na, items);
             }
+            return refineNestedNumericBounds(spec, refinePairedBounds(spec, items));
         }
         return items;
     }
@@ -518,9 +564,19 @@ public class TestCaseChecklistPlanner {
      * mẫu số "Cần kiểm" và thứ được bù không bao giờ lệch nhau.
      */
     public List<ChecklistItem> planScoped(Spec spec, boolean requiresAuth, CoverageScope scope) {
+        return planScoped(spec, requiresAuth, scope, null);
+    }
+
+    /** hints != null cho phép nhận ra endpoint đăng nhập (thêm mục "sai mật khẩu" và gỡ ca độ dài tài khoản/mật khẩu kỳ vọng thành công). */
+    public List<ChecklistItem> planScoped(Spec spec, boolean requiresAuth, CoverageScope scope, CredentialHints hints) {
         List<ChecklistItem> items = new ArrayList<>(plan(spec, scope.positive(), scope.negative(), scope.boundary()));
+        boolean login = hints != null && !requiresAuth && hints.loginLike() && hasCredentialShape(spec);
+        if (login) {
+            items = new ArrayList<>(refineCredentialBoundaries(items));
+        }
         if (scope.security()) {
             items.addAll(planSecurity(requiresAuth));
+            items.addAll(planCredentials(spec, requiresAuth, hints));
         }
         return items;
     }
@@ -668,6 +724,13 @@ public class TestCaseChecklistPlanner {
         if (item.type() == ChecklistItemType.SECURITY_INVALID_TOKEN) {
             return candidate.authOverride() == TestCaseAuthOverride.INVALID && candidate.expectedStatus() == 401;
         }
+        if (item.type() == ChecklistItemType.SECURITY_WRONG_CREDENTIALS) {
+            // Đăng nhập với thông tin sai: body hợp lệ theo spec (chỉ giá trị mật khẩu là sai), gọi bình thường, kỳ vọng 401.
+            Values credentialValues = values(spec, candidate);
+            return candidate.expectedStatus() == 401
+                    && credentialValues.body().get(item.field()) instanceof String
+                    && violations(spec, credentialValues).isEmpty();
+        }
         Values values = values(spec, candidate);
         List<Violation> violations = violations(spec, values);
         ViolationKind target = targetViolation(item.type());
@@ -704,6 +767,13 @@ public class TestCaseChecklistPlanner {
             return candidate.authOverride() == wanted
                     ? "gọi " + (wanted == TestCaseAuthOverride.NONE ? "không kèm token" : "với token sai")
                             + " nhưng kỳ vọng " + candidate.expectedStatus() + " thay vì 401"
+                    : null;
+        }
+        if (item.type() == ChecklistItemType.SECURITY_WRONG_CREDENTIALS) {
+            Values credentialValues = values(spec, candidate);
+            return credentialValues.body().get(item.field()) instanceof String && candidate.expectedStatus() != 401
+                    ? "case gửi '" + item.field() + "' nhưng kỳ vọng " + candidate.expectedStatus()
+                    + " thay vì 401 (mục này cần mật khẩu SAI và kỳ vọng 401)"
                     : null;
         }
         // Case đang thử thiếu/sai token: lỗi 401 che mất mọi thứ khác - không phải bằng chứng cho mục dữ liệu.
@@ -763,7 +833,7 @@ public class TestCaseChecklistPlanner {
             case POSITIVE_BASELINE, POSITIVE_ENUM_VALUE, BOUNDARY_AT_MINIMUM, BOUNDARY_AT_MAXIMUM,
                  BOUNDARY_AT_MIN_LENGTH, BOUNDARY_AT_MAX_LENGTH, BOUNDARY_AT_TYPE_MAXIMUM, BOUNDARY_AT_TYPE_MINIMUM,
                  BOUNDARY_ZERO, BOUNDARY_NEGATIVE_NUMBER, BOUNDARY_EMPTY_STRING,
-                 SECURITY_MISSING_TOKEN, SECURITY_INVALID_TOKEN -> null;
+                 SECURITY_MISSING_TOKEN, SECURITY_INVALID_TOKEN, SECURITY_WRONG_CREDENTIALS -> null;
         };
     }
 
@@ -811,7 +881,7 @@ public class TestCaseChecklistPlanner {
 
     private Object rawValue(Values values, ChecklistItem item) {
         return switch (item.location()) {
-            case BODY -> values.body().get(item.field());
+            case BODY -> BodyPath.get(values.body(), item.field());
             case PATH, QUERY -> values.params().get(item.field());
             case HEADER -> values.headers().get(item.field());
         };
@@ -847,13 +917,18 @@ public class TestCaseChecklistPlanner {
                 if (!spec.bodyIsJson()) {
                     continue;
                 }
-                if (!values.body().containsKey(rule.name())) {
+                String parentPath = rule.nested() && !values.body().containsKey(rule.name())
+                        ? BodyPath.parentPath(rule.name()) : null;
+                if (parentPath != null && !(BodyPath.get(values.body(), parentPath) instanceof Map)) {
+                    continue; // cha vắng: không có gì để chấm trường con
+                }
+                if (!BodyPath.contains(values.body(), rule.name())) {
                     if (rule.required()) {
                         result.add(new Violation(rule.name(), rule.location(), ViolationKind.MISSING_REQUIRED));
                     }
                     continue;
                 }
-                Object value = values.body().get(rule.name());
+                Object value = BodyPath.get(values.body(), rule.name());
                 if (value == null) {
                     // Cùng quy tắc Tier 1: null chỉ hợp lệ khi spec khai nullable (SpecValueRules).
                     if (!rule.nullAllowed()) {
@@ -942,6 +1017,9 @@ public class TestCaseChecklistPlanner {
         if (item.type() == ChecklistItemType.SECURITY_MISSING_TOKEN || item.type() == ChecklistItemType.SECURITY_INVALID_TOKEN) {
             return fillSecurity(spec, item, baseline);
         }
+        if (item.type() == ChecklistItemType.SECURITY_WRONG_CREDENTIALS) {
+            return fillWrongCredentials(spec, item, baseline);
+        }
         if (item.location() == null) {
             return null;
         }
@@ -954,9 +1032,9 @@ public class TestCaseChecklistPlanner {
             case BODY -> {
                 Map<String, Object> fields = new LinkedHashMap<>(parseObject(body));
                 if (item.type() == ChecklistItemType.NEGATIVE_MISSING_FIELD) {
-                    fields.remove(item.field());
-                } else {
-                    fields.put(item.field(), typedValue(spec, item));
+                    BodyPath.remove(fields, item.field());
+                } else if (!BodyPath.set(fields, item.field(), typedValue(spec, item))) {
+                    return null;
                 }
                 try {
                     body = objectMapper.writeValueAsString(fields);
@@ -996,6 +1074,262 @@ public class TestCaseChecklistPlanner {
                 item.expectSuccess() ? baseline.expectedStatus() : item.notFoundExpected() ? 404 : 400,
                 resolvedPath,
                 fallbacks,
+                baseline.authOverride(),
+                item.rationale());
+        return satisfies(spec, item, filled) ? filled : null;
+    }
+
+    /**
+     * Tín hiệu để nhận ra endpoint ĐĂNG NHẬP. Đăng ký / đặt lại mật khẩu cũng có email + mật khẩu nhưng KHÔNG được kỳ vọng 401
+     * khi sai mật khẩu, nên không thể chỉ dựa vào tên trường trong body.
+     */
+    public record CredentialHints(String method, String path, String summary, boolean declares401, boolean responseHasToken) {
+        public boolean loginLike() {
+            return looksLikeLogin(method, path, summary, declares401, responseHasToken);
+        }
+    }
+
+    public CredentialHints hintsOf(Endpoint endpoint) {
+        boolean declares401 = false;
+        try {
+            if (endpoint.getSchema() != null && !endpoint.getSchema().isBlank()) {
+                JsonNode codes = objectMapper.readTree(endpoint.getSchema()).get("responseStatusCodes");
+                if (codes != null && codes.isArray()) {
+                    for (JsonNode code : codes) {
+                        declares401 |= "401".equals(code.asText());
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // schema hỏng thì coi như không có tín hiệu 401
+        }
+        String responses = endpoint.getResponseSchemas() == null ? "" : endpoint.getResponseSchemas().toLowerCase(Locale.ROOT);
+        boolean hasToken = responses.contains("token") || responses.contains("jwt");
+        return new CredentialHints(endpoint.getMethod(), endpoint.getPath(), endpoint.getSummary(), declares401, hasToken);
+    }
+
+    private static final java.util.regex.Pattern LOGIN_PATH = java.util.regex.Pattern.compile(
+            "(^|/)(login|signin|sign-in|logon|authenticate|auth/token|oauth/token|sessions?)(/|$)");
+    private static final java.util.regex.Pattern LOGIN_SUMMARY = java.util.regex.Pattern.compile("login|sign in|đăng nhập|dang nhap");
+    private static final java.util.regex.Pattern NOT_LOGIN = java.util.regex.Pattern.compile(
+            "regist|sign-?up|forgot|reset|verify|confirm|change|activate|invite|refresh|logout|đăng ký|dang ky|đổi mật khẩu|quên mật khẩu");
+
+    /**
+     * Endpoint đăng nhập: POST, đường dẫn/mô tả nói là đăng nhập, KHÔNG phải đăng ký/đặt lại/đổi mật khẩu..., và có tín hiệu
+     * xác nhận (spec khai 401 hoặc response có token). Thà bỏ sót còn hơn sinh mục "sai mật khẩu → 401" sai cho endpoint đăng ký.
+     */
+    public static boolean looksLikeLogin(String method, String path, String summary, boolean declares401, boolean responseHasToken) {
+        if (method == null || !"POST".equalsIgnoreCase(method)) {
+            return false;
+        }
+        String p = path == null ? "" : path.toLowerCase(Locale.ROOT);
+        String s = summary == null ? "" : summary.toLowerCase(Locale.ROOT);
+        if (NOT_LOGIN.matcher(p).find() || NOT_LOGIN.matcher(s).find()) {
+            return false;
+        }
+        boolean named = LOGIN_PATH.matcher(p).find() || LOGIN_SUMMARY.matcher(s).find();
+        return named && (declares401 || responseHasToken);
+    }
+
+    /**
+     * Module 17 (G2) - endpoint đăng nhập (không cần token, body JSON có tài khoản + mật khẩu): kiểm tra API từ chối
+     * mật khẩu sai (kỳ vọng 401). Trước đây checklist chỉ có thiếu/sai token nên lỗi "sai mật khẩu vẫn đăng nhập được" lọt.
+     */
+    List<ChecklistItem> planCredentials(Spec spec, boolean requiresAuth, CredentialHints hints) {
+        if (hints == null || !hints.loginLike() || requiresAuth || !spec.hasBody() || !spec.bodyIsJson() || !hasCredentialShape(spec)) {
+            return List.of();
+        }
+        FieldRule password = spec.rules().stream()
+                .filter(r -> r.location() == ParamLocation.BODY && isPasswordField(r.name()) && !r.nested()).findFirst().orElseThrow();
+        return List.of(new ChecklistItem(ChecklistItemType.SECURITY_WRONG_CREDENTIALS, password.name(), ParamLocation.BODY, null, false,
+                "Đăng nhập với '" + password.name() + "' SAI (tài khoản đúng, mật khẩu sai) - kỳ vọng 401",
+                "Sai mật khẩu",
+                "Endpoint đăng nhập; gửi mật khẩu sai cho tài khoản có thật để kiểm tra API từ chối thay vì cho vào.", null));
+    }
+
+    private static boolean isPasswordField(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.equals("password") || n.equals("passwd") || n.equals("pwd") || n.equals("passcode");
+    }
+
+    private static boolean isIdentifierField(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.contains("email") || n.contains("username") || n.contains("login") || n.contains("phone") || n.contains("account");
+    }
+
+    /** Body có cả trường tài khoản lẫn mật khẩu. */
+    private static boolean hasCredentialShape(Spec spec) {
+        boolean password = spec.rules().stream().anyMatch(r -> r.location() == ParamLocation.BODY && !r.nested() && isPasswordField(r.name()));
+        boolean identifier = spec.rules().stream().anyMatch(r -> r.location() == ParamLocation.BODY && !r.nested() && isIdentifierField(r.name()));
+        return password && identifier;
+    }
+
+    private static final String WRONG_PASSWORD = "WrongPassw0rd!";
+    private static final String CREDENTIAL_BOUNDARY_REASON =
+            "Endpoint đăng nhập: giá trị đúng độ dài không chắc là tài khoản có thật (không có tài khoản như vậy nên API trả 401), "
+                    + "không phải biên hợp lệ thật - không tạo ca kỳ vọng thành công.";
+    private static final String NESTED_BOUND_REASON =
+            "Trường số nằm trong object/mảng lồng nhau: giá trị đúng biên có thể vi phạm ràng buộc chéo giữa các phần tử/trường anh em "
+                    + "(vd tổng weight của các tiêu chí phải bằng 100) mà spec không khai - không tạo ca biên kỳ vọng thành công. "
+                    + "Ca biên VI PHẠM (dưới min / trên max) vẫn được tạo.";
+
+    /** Biên số kỳ vọng thành công của trường lồng nhau dễ Fail giả vì ràng buộc chéo/tổng (phát hiện khi đo mutant-api: criteria[0].weight). */
+    private List<ChecklistItem> refineNestedNumericBounds(Spec spec, List<ChecklistItem> items) {
+        java.util.Set<String> nestedNumeric = new java.util.HashSet<>();
+        for (FieldRule rule : spec.rules()) {
+            if (rule.location() == ParamLocation.BODY && rule.nested() && rule.numeric()) {
+                nestedNumeric.add(rule.name());
+            }
+        }
+        if (nestedNumeric.isEmpty()) {
+            return items;
+        }
+        List<ChecklistItem> out = new ArrayList<>(items.size());
+        for (ChecklistItem item : items) {
+            ChecklistItemType t = item.type();
+            boolean successBoundary = t == ChecklistItemType.BOUNDARY_ZERO || t == ChecklistItemType.BOUNDARY_NEGATIVE_NUMBER
+                    || t == ChecklistItemType.BOUNDARY_AT_MINIMUM || t == ChecklistItemType.BOUNDARY_AT_MAXIMUM
+                    || t == ChecklistItemType.BOUNDARY_AT_TYPE_MINIMUM || t == ChecklistItemType.BOUNDARY_AT_TYPE_MAXIMUM;
+            boolean drop = item.notApplicableReason() == null && item.expectSuccess() && successBoundary
+                    && item.location() == ParamLocation.BODY && nestedNumeric.contains(item.field());
+            out.add(drop ? notApplicable(item, NESTED_BOUND_REASON) : item);
+        }
+        return out;
+    }
+
+    private static final String PAIRED_BOUND_REASON =
+            "Trường có cặp min/max với trường khác (vd salaryMin/salaryMax): đổi riêng 1 trường tới biên thấp/cao có thể vi phạm "
+                    + "ràng buộc chéo (min ≤ max) mà spec không khai - không tạo ca kỳ vọng thành công.";
+    private static final List<String[]> BOUND_PAIRS = List.of(
+            new String[]{"min", "max"}, new String[]{"from", "to"}, new String[]{"start", "end"},
+            new String[]{"lower", "upper"}, new String[]{"low", "high"});
+
+    private static ChecklistItem notApplicable(ChecklistItem item, String reason) {
+        return new ChecklistItem(item.type(), item.field(), item.location(), item.value(), item.expectSuccess(),
+                item.description(), item.shortLabel(), item.rationale(), reason);
+    }
+
+    /** CHỈ cho endpoint đăng nhập: gỡ ca độ dài "kỳ vọng thành công" ở trường tài khoản/mật khẩu (đăng ký thì GIỮ - biên mật khẩu là ca quý). */
+    private List<ChecklistItem> refineCredentialBoundaries(List<ChecklistItem> items) {
+        List<ChecklistItem> out = new ArrayList<>(items.size());
+        for (ChecklistItem item : items) {
+            ChecklistItemType t = item.type();
+            boolean lengthItem = t == ChecklistItemType.BOUNDARY_AT_MIN_LENGTH || t == ChecklistItemType.BOUNDARY_AT_MAX_LENGTH
+                    || t == ChecklistItemType.BOUNDARY_EMPTY_STRING;
+            boolean credentialField = item.field() != null && (isPasswordField(item.field()) || isIdentifierField(item.field()));
+            boolean drop = item.notApplicableReason() == null && item.expectSuccess() && item.location() == ParamLocation.BODY
+                    && lengthItem && credentialField;
+            out.add(drop ? notApplicable(item, CREDENTIAL_BOUNDARY_REASON) : item);
+        }
+        return out;
+    }
+
+    /**
+     * Gỡ ca biên thấp/cao "kỳ vọng thành công" của trường có cặp min/max (ràng buộc chéo field mà spec không khai, phát hiện khi đo 17o).
+     * Đánh không áp dụng kèm lý do thay vì xoá.
+     */
+    private List<ChecklistItem> refinePairedBounds(Spec spec, List<ChecklistItem> items) {
+        Map<String, Boolean> pairSide = pairedBoundSides(spec);
+        if (pairSide.isEmpty()) {
+            return items;
+        }
+        List<ChecklistItem> out = new ArrayList<>(items.size());
+        for (ChecklistItem item : items) {
+            String reason = null;
+            if (item.notApplicableReason() == null && item.expectSuccess() && item.location() == ParamLocation.BODY && item.field() != null) {
+                ChecklistItemType t = item.type();
+                boolean lowValue = t == ChecklistItemType.BOUNDARY_ZERO || t == ChecklistItemType.BOUNDARY_NEGATIVE_NUMBER
+                        || t == ChecklistItemType.BOUNDARY_AT_MINIMUM || t == ChecklistItemType.BOUNDARY_AT_TYPE_MINIMUM;
+                boolean highValue = t == ChecklistItemType.BOUNDARY_AT_MAXIMUM || t == ChecklistItemType.BOUNDARY_AT_TYPE_MAXIMUM;
+                Boolean isHighSide = pairSide.get(item.field());
+                if (isHighSide != null && ((isHighSide && lowValue) || (!isHighSide && highValue))) {
+                    reason = PAIRED_BOUND_REASON;
+                }
+            }
+            out.add(reason == null ? item : notApplicable(item, reason));
+        }
+        return out;
+    }
+
+    private static boolean isIdLike(String name) {
+        return name.equals("id") || name.endsWith("Id") || name.endsWith("_id") || name.endsWith("Ids");
+    }
+
+    /**
+     * Tên trường số có "anh em" (salaryMin/salaryMax, minAge/maxAge...) -> true nếu là phía CAO. Cặp from/to và start/end KHÔNG áp
+     * dụng cho trường kiểu id (fromAccountId/toAccountId là 2 id độc lập, không có ràng buộc min ≤ max).
+     */
+    private Map<String, Boolean> pairedBoundSides(Spec spec) {
+        Map<String, FieldRule> byLowerName = new HashMap<>();
+        for (FieldRule rule : spec.rules()) {
+            if (rule.location() == ParamLocation.BODY && rule.numeric() && !rule.nested()) {
+                byLowerName.put(rule.name().toLowerCase(Locale.ROOT), rule);
+            }
+        }
+        Map<String, Boolean> sides = new HashMap<>();
+        for (FieldRule rule : byLowerName.values()) {
+            String name = rule.name().toLowerCase(Locale.ROOT);
+            for (int i = 0; i < BOUND_PAIRS.size(); i++) {
+                if ((i == 1 || i == 2) && isIdLike(rule.name())) {
+                    continue;
+                }
+                String low = BOUND_PAIRS.get(i)[0];
+                String high = BOUND_PAIRS.get(i)[1];
+                if (name.startsWith(low) && byLowerName.containsKey(high + name.substring(low.length()))) {
+                    sides.putIfAbsent(rule.name(), false);
+                } else if (name.endsWith(low) && byLowerName.containsKey(name.substring(0, name.length() - low.length()) + high)) {
+                    sides.putIfAbsent(rule.name(), false);
+                } else if (name.startsWith(high) && byLowerName.containsKey(low + name.substring(high.length()))) {
+                    sides.putIfAbsent(rule.name(), true);
+                } else if (name.endsWith(high) && byLowerName.containsKey(name.substring(0, name.length() - high.length()) + low)) {
+                    sides.putIfAbsent(rule.name(), true);
+                }
+            }
+        }
+        return sides;
+    }
+
+    /** Mật khẩu sai nhưng vẫn hợp lệ theo độ dài mà spec khai (nếu không, chính ràng buộc độ dài sẽ làm case sai). */
+    private static String wrongPasswordFor(FieldRule rule) {
+        String value = WRONG_PASSWORD;
+        if (rule != null) {
+            if (rule.maxLength() != null && rule.maxLength() > 0 && rule.maxLength() < value.length()) {
+                value = value.substring(0, rule.maxLength());
+            }
+            if (rule.minLength() != null && value.length() < rule.minLength() && rule.minLength() <= MAX_GENERATABLE_LENGTH) {
+                value = value + "x".repeat(rule.minLength() - value.length());
+            }
+        }
+        return value;
+    }
+
+    /** Case bù đăng nhập sai: copy case gốc (tài khoản thật), chỉ đổi mật khẩu thành giá trị sai + kỳ vọng 401. */
+    private GeneratedTestCase fillWrongCredentials(Spec spec, ChecklistItem item, GeneratedTestCase baseline) {
+        Map<String, Object> fields = new LinkedHashMap<>(parseObject(baseline.requestBody()));
+        if (!fields.containsKey(item.field())) {
+            return null;
+        }
+        FieldRule rule = spec.rules().stream()
+                .filter(r -> r.location() == ParamLocation.BODY && r.name().equals(item.field())).findFirst().orElse(null);
+        String wrong = wrongPasswordFor(rule);
+        if (wrong.equals(fields.get(item.field()))) {
+            return null;
+        }
+        fields.put(item.field(), wrong);
+        String body;
+        try {
+            body = objectMapper.writeValueAsString(fields);
+        } catch (Exception e) {
+            return null;
+        }
+        GeneratedTestCase filled = new GeneratedTestCase(
+                "Security - " + item.shortLabel(),
+                "Hệ thống tự bổ sung vì chưa có case đạt mục checklist: " + item.description(),
+                baseline.requestHeaders() == null ? Map.of() : baseline.requestHeaders(),
+                body,
+                401,
+                baseline.resolvedPath() == null ? spec.endpointPath() : baseline.resolvedPath(),
+                baseline.pathParamFallbacks() == null ? Map.of() : baseline.pathParamFallbacks(),
                 baseline.authOverride(),
                 item.rationale());
         return satisfies(spec, item, filled) ? filled : null;

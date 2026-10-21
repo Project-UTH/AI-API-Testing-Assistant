@@ -1,149 +1,251 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { useQuery } from "@tanstack/react-query"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 
-import { cn, METHOD_STYLES } from "@/lib/utils"
-import { coverageCounts, getProjectCoverage, scopeLabel } from "@/lib/coverage"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { ApiError } from "@/lib/api"
+import { getEndpointCoverage, getProjectCoveragePage } from "@/lib/coverage"
+import { useListFilters } from "@/hooks/useListFilters"
+import { ListToolbar, type ListFilterSelect } from "@/components/shared/ListToolbar"
+import { Pagination } from "@/components/shared/Pagination"
+import { ListEmptyState } from "@/components/shared/ListEmptyState"
 import { CoverageSummary } from "@/components/shared/CoverageMatrixChart"
-import { CoverageGapReport } from "@/components/coverage/CoverageGapReport"
+import { CoverageEndpointRow } from "@/components/coverage/CoverageEndpointRow"
 import { BulkAuthBar } from "@/components/coverage/BulkAuthBar"
 import { RoleMatrixPanel } from "@/components/coverage/RoleMatrixPanel"
+
+const FILTER_KEYS = ["method", "status"] as const
+const PAGE_SIZE = 25
+const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 
 /**
  * Module 15c - Coverage Matrix. Toàn bộ số liệu tính tất định từ OpenAPI spec +
  * test case hiện có (không gọi AI) - xem EndpointCoverageService (backend).
  * Module 15j - Coverage Gap Analysis: mỗi endpoint chỉ rõ còn thiếu mục nào, vì sao cần, bằng chứng, và
  * bổ sung ngay (hệ thống tự tạo, 0 token).
+ * Module 17 (G4) - danh sách endpoint theo trang + tìm kiếm/lọc; số tổng vẫn tính trên TOÀN project.
  */
 export function CoveragePage() {
   const { id } = useParams<{ id: string }>()
-  // ?endpoint=<id> (link từ trang Project) - mở sẵn đúng endpoint đó và cuộn tới.
-  const focusEndpointId = useSearchParams()[0].get("endpoint")
-  const [expandedEndpointIds, setExpandedEndpointIds] = useState<Set<string>>(
-    new Set(focusEndpointId ? [focusEndpointId] : [])
-  )
+  const projectId = id!
+  const [searchParams, setSearchParams] = useSearchParams()
+  // ?endpoint=<id> (link từ trang Project) - ghim endpoint đó ở đầu danh sách, mở sẵn và cuộn tới (nó có thể không nằm ở trang hiện tại).
+  const focusEndpointId = searchParams.get("endpoint")
+  const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
+  const topRef = useRef<HTMLDivElement>(null)
+  const [expandedEndpointIds, setExpandedEndpointIds] = useState<Set<string>>(new Set(focusEndpointId ? [focusEndpointId] : []))
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["project-coverage", id],
-    queryFn: () => getProjectCoverage(id!),
-    enabled: Boolean(id),
+  const { data, isLoading, isError, isFetching, isPlaceholderData } = useQuery({
+    queryKey: ["project-coverage", projectId, "page", lf.params],
+    queryFn: () =>
+      getProjectCoveragePage(projectId, {
+        page: lf.page,
+        size: lf.size,
+        q: lf.q,
+        method: lf.filters.method,
+        onlyGaps: lf.filters.status === "gaps",
+        onlyFailing: lf.filters.status === "failing",
+      }),
+    placeholderData: keepPreviousData,
   })
 
-  const dataLoaded = Boolean(data)
-  useEffect(() => {
-    if (focusEndpointId && dataLoaded) {
-      document.getElementById(`coverage-endpoint-${focusEndpointId}`)?.scrollIntoView({ block: "start" })
-    }
-  }, [focusEndpointId, dataLoaded])
+  const { data: pinned, isError: pinnedError, error: pinnedErrorValue } = useQuery({
+    queryKey: ["project-coverage", projectId, "endpoint", focusEndpointId],
+    queryFn: () => getEndpointCoverage(projectId, focusEndpointId!),
+    enabled: Boolean(focusEndpointId),
+    retry: false,
+  })
 
-  function toggleExpanded(endpointId: string) {
+  const { clampPage } = lf
+  useEffect(() => {
+    if (data && !isPlaceholderData) clampPage(data.endpointsPage.totalPages)
+  }, [data, isPlaceholderData, clampPage])
+
+  // Cuộn tới thẻ được ghim đúng 1 lần cho mỗi endpoint (không cuộn lại mỗi lần dữ liệu làm mới).
+  const scrolledFor = useRef<string | null>(null)
+  const pageLoaded = Boolean(data)
+  useEffect(() => {
+    if (!focusEndpointId || !pinned || !pageLoaded || scrolledFor.current === focusEndpointId) return
+    const element = document.getElementById(`coverage-endpoint-${focusEndpointId}`)
+    if (element) {
+      scrolledFor.current = focusEndpointId
+      element.scrollIntoView({ block: "start" })
+    }
+  }, [focusEndpointId, pinned, pageLoaded])
+
+  const toggleExpanded = useCallback((endpointId: string) => {
     setExpandedEndpointIds((prev) => {
       const next = new Set(prev)
-      if (next.has(endpointId)) {
-        next.delete(endpointId)
-      } else {
-        next.add(endpointId)
-      }
+      if (next.has(endpointId)) next.delete(endpointId)
+      else next.add(endpointId)
       return next
+    })
+  }, [])
+
+  function unpin() {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev)
+      params.delete("endpoint")
+      return params
     })
   }
 
+  function changePage(next: number) {
+    lf.setPage(next)
+    topRef.current?.scrollIntoView({ block: "start" })
+  }
+
+  const endpoints = useMemo(
+    () => (focusEndpointId && pinned ? (data?.endpoints ?? []).filter((endpoint) => endpoint.endpointId !== focusEndpointId) : (data?.endpoints ?? [])),
+    [data, focusEndpointId, pinned]
+  )
+  const pinnedNotFound = pinnedError && pinnedErrorValue instanceof ApiError && pinnedErrorValue.code.includes("NOT_FOUND")
+
+  const selects: ListFilterSelect[] = [
+    {
+      key: "method",
+      label: "Lọc theo method",
+      allLabel: "Mọi method",
+      value: lf.filters.method,
+      className: "sm:w-32",
+      options: METHODS.map((method) => ({ value: method, label: method })),
+    },
+    {
+      key: "status",
+      label: "Lọc theo tình trạng",
+      allLabel: "Mọi tình trạng",
+      value: lf.filters.status,
+      className: "sm:w-52",
+      options: [
+        { value: "gaps", label: "Còn thiếu mục cần kiểm" },
+        { value: "failing", label: "Có mục đang Fail" },
+      ],
+    },
+  ]
+
   return (
-    <div>
+    <div ref={topRef}>
       <h2 className="text-lg font-semibold">Coverage Matrix</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Các tình huống cần kiểm tra được suy ra từ spec OpenAPI, đối chiếu với test case hiện có. Tính tất định, không dùng AI.
       </p>
 
       {isLoading && <p className="mt-6 text-muted-foreground">Đang tính coverage...</p>}
-      {isError && <p className="mt-6 text-destructive">Không tải được dữ liệu coverage, vui lòng thử lại.</p>}
+      {isError && (
+        <div className="mt-6 flex flex-col gap-3">
+          <p className="text-destructive">Không tải được dữ liệu coverage, vui lòng thử lại.</p>
+          {lf.activeCount > 0 && (
+            <div>
+              <Button type="button" size="sm" variant="outline" onClick={lf.reset}>
+                Xoá bộ lọc ({lf.activeCount}) và thử lại
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {data && (
         <div className="mt-6 flex flex-col gap-4">
-          <CoverageSummary
-            coveragePercent={data.overallCoveragePercent}
-            executedPercent={data.overallExecutedPercent}
+          <CoverageSummary coveragePercent={data.overallCoveragePercent} executedPercent={data.overallExecutedPercent} />
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Số liệu trên tính cho toàn project ({data.overview.endpointCount} endpoint, {data.overview.endpointsWithGaps} endpoint còn thiếu mục
+            cần kiểm), không đổi theo bộ lọc bên dưới.
+          </p>
+
+          <BulkAuthBar projectId={projectId} endpointCount={data.overview.endpointCount} />
+          <RoleMatrixPanel projectId={projectId} />
+
+          <ListToolbar
+            searchValue={lf.searchInput}
+            onSearchChange={lf.setSearchInput}
+            searchPlaceholder="Tìm endpoint theo đường dẫn hoặc method..."
+            searchLabel="Tìm endpoint"
+            selects={selects}
+            onSelectChange={(key, value) => lf.setFilter(key as (typeof FILTER_KEYS)[number], value)}
+            activeFilterCount={lf.activeCount}
+            onReset={lf.reset}
           />
+          {lf.filters.status === "gaps" && (
+            <p className="-mt-2 text-xs text-muted-foreground">
+              Bổ sung xong mục cuối cùng thì endpoint sẽ biến khỏi danh sách này ở lần tải lại.
+            </p>
+          )}
 
-          <BulkAuthBar projectId={id!} endpointCount={data.endpoints.length} />
-          <RoleMatrixPanel projectId={id!} />
-
-          {data.endpoints.length === 0 && (
-            <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              Project chưa có endpoint nào.
+          {focusEndpointId && (
+            <div className="flex flex-col gap-2">
+              {pinned ? (
+                <>
+                  <CoverageEndpointRow
+                    projectId={projectId}
+                    endpoint={pinned}
+                    expanded={expandedEndpointIds.has(pinned.endpointId)}
+                    onToggle={toggleExpanded}
+                    pinned
+                  />
+                  <div>
+                    <Button type="button" size="sm" variant="ghost" onClick={unpin}>
+                      Bỏ ghim endpoint này
+                    </Button>
+                  </div>
+                </>
+              ) : pinnedError ? (
+                <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                  {pinnedNotFound ? "Không tìm thấy endpoint được chọn (có thể đã bị xoá)." : "Không tải được endpoint được chọn, vui lòng thử lại."}{" "}
+                  <button type="button" className="underline" onClick={unpin}>
+                    Bỏ liên kết
+                  </button>
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Đang tải endpoint được chọn...</p>
+              )}
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
-            {data.endpoints.map((endpoint) => {
-              const isExpanded = expandedEndpointIds.has(endpoint.endpointId)
-              const counts = coverageCounts(endpoint)
-              return (
-                <div
-                  key={endpoint.endpointId}
-                  id={`coverage-endpoint-${endpoint.endpointId}`}
-                  className="scroll-mt-4 rounded-lg border border-border bg-card"
-                >
-                  <button
-                    type="button"
-                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 p-4 text-left"
-                    onClick={() => toggleExpanded(endpoint.endpointId)}
-                    aria-expanded={isExpanded}
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    )}
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold",
-                        METHOD_STYLES[endpoint.method] ?? "bg-muted text-muted-foreground"
-                      )}
-                    >
-                      {endpoint.method}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.path}</span>
-                    {endpoint.testCaseCount === 0 && (
-                      <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                        Chưa có test case nào
-                      </span>
-                    )}
-                    {scopeLabel(endpoint.scope) && (
-                      <span
-                        className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                        title="Chỉ các loại này được tính vào số mục cần kiểm. Mở endpoint để đổi phạm vi."
-                      >
-                        Phạm vi: {scopeLabel(endpoint.scope)}
-                      </span>
-                    )}
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">
-                        {counts.covered}/{counts.relevant} mục
-                      </span>{" "}
-                      · {counts.executed} đã chạy
-                      {counts.missing > 0 && (
-                        <span className="text-amber-600 dark:text-amber-400"> · thiếu {counts.missing}</span>
-                      )}
-                    </span>
-                  </button>
+          <Pagination
+            page={data.endpointsPage.page}
+            totalPages={data.endpointsPage.totalPages}
+            totalElements={data.endpointsPage.totalElements}
+            shownCount={data.endpoints.length}
+            size={data.endpointsPage.size}
+            isFetching={isFetching}
+            itemLabel="endpoint"
+            onPageChange={changePage}
+          />
 
-                  {isExpanded && (
-                    <div className="border-t border-border p-4">
-                      {!endpoint.schemaReadable && (
-                        <p className="mb-3 rounded-md bg-destructive/10 p-2 text-xs text-destructive">
-                          Không đọc được định nghĩa OpenAPI (schema) của endpoint này - danh sách mục cần kiểm bên dưới
-                          KHÔNG đầy đủ, không nên tin số % hiện tại.
-                        </p>
-                      )}
-                      <CoverageGapReport projectId={id!} endpoint={endpoint} />
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+          {data.endpointsPage.totalElements === 0 ? (
+            <ListEmptyState
+              filtered={lf.activeCount > 0}
+              emptyText="Project chưa có endpoint nào."
+              filteredText="Không có endpoint nào khớp bộ lọc."
+              onReset={lf.reset}
+            />
+          ) : (
+            <div className={cn("flex flex-col gap-2", isPlaceholderData && "opacity-60 transition-opacity")} aria-busy={isFetching}>
+              {endpoints.map((endpoint) => (
+                <CoverageEndpointRow
+                  key={endpoint.endpointId}
+                  projectId={projectId}
+                  endpoint={endpoint}
+                  expanded={expandedEndpointIds.has(endpoint.endpointId)}
+                  onToggle={toggleExpanded}
+                />
+              ))}
+            </div>
+          )}
+
+          {data.endpointsPage.totalElements > 0 && (
+            <Pagination
+              page={data.endpointsPage.page}
+              totalPages={data.endpointsPage.totalPages}
+              totalElements={data.endpointsPage.totalElements}
+              shownCount={data.endpoints.length}
+              size={data.endpointsPage.size}
+              isFetching={isFetching}
+              itemLabel="endpoint"
+              onPageChange={changePage}
+            />
+          )}
         </div>
       )}
     </div>

@@ -130,6 +130,20 @@ export interface PagedResult<T> {
   totalPages: number
 }
 
+/**
+ * Lấy MỌI trang của 1 danh sách phân trang (trước đây cố định size=100 nên API 110 endpoint mất 10 endpoint).
+ * Trả về cùng dạng PagedResult với data đã nối đủ, nên nơi gọi không phải đổi.
+ */
+export async function fetchAllPages<T>(buildPath: (page: number) => string): Promise<PagedResult<T>> {
+  const first = await apiFetchPaged<T>(buildPath(0))
+  if (first.totalPages <= 1) return first
+  const rest = await Promise.all(
+    Array.from({ length: first.totalPages - 1 }, (_, i) => apiFetchPaged<T>(buildPath(i + 1)))
+  )
+  const data = [first, ...rest].flatMap((p) => p.data)
+  return { ...first, data, size: data.length, totalPages: 1 }
+}
+
 export async function apiFetchPaged<T>(
   path: string,
   options: RequestInit = {}

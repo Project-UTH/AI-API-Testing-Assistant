@@ -20,6 +20,20 @@ public record AuthProfileRequest(
         @NotNull(message = "Phải chọn loại xác thực")
         TargetAuthType authType,
 
-        String authValue
+        String authValue,
+
+        /** Chế độ đăng nhập tự động (G5/P1-4): có loginPath thì token do hệ thống tự lấy, bỏ qua authValue. */
+        @Size(max = 500, message = "Đường dẫn đăng nhập tối đa 500 ký tự")
+        String loginPath,
+
+        /** Lúc sửa: null/rỗng = giữ body đăng nhập cũ. */
+        @Size(max = 5000, message = "Body đăng nhập tối đa 5000 ký tự")
+        String loginBody,
+
+        @Size(max = 200, message = "JSONPath token tối đa 200 ký tự")
+        String tokenJsonPath
 ) {
+    public AuthProfileRequest(String name, String roleKey, TargetAuthType authType, String authValue) {
+        this(name, roleKey, authType, authValue, null, null, null);
+    }
 }

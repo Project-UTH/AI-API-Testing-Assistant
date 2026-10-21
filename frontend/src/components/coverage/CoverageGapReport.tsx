@@ -53,7 +53,7 @@ const GROUPS = [
     title: "Boundary",
     rule: "Biên khai rõ trong spec (đúng biên + ngay ngoài biên) · giới hạn int32/int64 · biên ngầm (0, số âm, chuỗi rỗng) · id không tồn tại.",
   },
-  { category: "SECURITY", title: "Security", rule: "Gọi thiếu token · gọi với token sai." },
+  { category: "SECURITY", title: "Security", rule: "Gọi thiếu token · gọi với token sai · (endpoint đăng nhập) mật khẩu sai." },
   {
     category: "AUTHZ",
     title: "Phân quyền theo vai trò",

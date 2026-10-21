@@ -95,7 +95,7 @@ public class CoverageGapFillService {
         // Chấm lại NGAY lúc bù (không tin trạng thái frontend đang hiển thị) - mục đã có case đạt thì bỏ qua,
         // tránh tạo trùng khi người dùng bấm 2 lần hoặc vừa tự thêm case ở tab khác.
         CoverageScope scope = CoverageScope.of(endpoint);
-        List<TestCaseChecklistPlanner.ChecklistItem> missing = testCaseChecklistPlanner.planScoped(spec, requiresAuth, scope).stream()
+        List<TestCaseChecklistPlanner.ChecklistItem> missing = testCaseChecklistPlanner.planScoped(spec, requiresAuth, scope, testCaseChecklistPlanner.hintsOf(endpoint)).stream()
                 .filter(item -> item.notApplicableReason() == null)
                 .filter(item -> requested == null || requested.contains(TestCaseChecklistPlanner.key(item)))
                 .filter(item -> candidates.stream().noneMatch(c -> testCaseChecklistPlanner.covers(spec, item, c.generated(), requiresAuth)))
@@ -150,7 +150,7 @@ public class CoverageGapFillService {
             TestCase source = attempt.fromSpecOnly() ? null : base.entity();
             fromSpecCount += attempt.fromSpecOnly() ? 1 : 0;
             pending.add(new Pending(toEntity(endpoint, item, filled, fallbacksJson, source == null ? null : source.getName(),
-                    security), source));
+                    security, source == null ? null : source.getAuthProfileId()), source));
         }
 
         for (EndpointRole rule : missingAuthz) {
@@ -240,7 +240,7 @@ public class CoverageGapFillService {
 
     private TestCase toEntity(
             Endpoint endpoint, TestCaseChecklistPlanner.ChecklistItem item, GeneratedTestCase filled,
-            String fallbacksJson, String baselineName, boolean security
+            String fallbacksJson, String baselineName, boolean security, UUID authProfileId
     ) {
         TestCaseSource source = security ? TestCaseSource.SECURITY : TestCaseSource.AI_GENERATED;
         // Tier 1 (15b) chạy cho case bù giống mọi case khác; mục Tier 1 không nhìn thấy lý do lỗi (thiếu tham
@@ -269,6 +269,8 @@ public class CoverageGapFillService {
                 .generationOrigin(TestCaseGenerationOrigin.SYSTEM_FILLED)
                 .checklistItem(truncate(item.description()))
                 .authOverride(filled.authOverride() == null ? TestCaseAuthOverride.DEFAULT : filled.authOverride())
+                // Kế thừa vai (AuthProfile) của case gốc: endpoint cần vai khác (vd ứng viên) không bị 403 oan ở case bù.
+                .authProfileId(authProfileId)
                 .build();
     }
 
@@ -341,7 +343,7 @@ public class CoverageGapFillService {
      */
     private TestCase toMassAssignmentEntity(Endpoint endpoint, TestCaseChecklistPlanner.Spec spec, TestCase base) {
         java.util.Set<String> declared = spec.rules().stream()
-                .filter(r -> r.location() == TestCaseChecklistPlanner.ParamLocation.BODY).map(TestCaseChecklistPlanner.FieldRule::name)
+                .filter(r -> r.location() == TestCaseChecklistPlanner.ParamLocation.BODY && !r.nested()).map(TestCaseChecklistPlanner.FieldRule::name)
                 .collect(java.util.stream.Collectors.toSet());
         java.util.List<MassAssignmentProbe.Field> fields = MassAssignmentProbe.chooseFields(declared, endpoint.getId());
         String body = MassAssignmentProbe.inject(base.getRequestBody(), fields);

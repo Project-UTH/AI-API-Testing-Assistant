@@ -89,6 +89,19 @@ Ví dụ — tạo project thành công:
 
 Query params chuẩn khi gọi: `?page=0&size=20&sort=createdAt,desc`
 
+### 3.1 Phân trang TÙY CHỌN (Module 17 G4) - tương thích ngược
+
+Ba danh sách lớn chỉ phân trang khi có tham số `page`; **không có `page` thì giữ nguyên hành vi cũ** (trả toàn bộ, bỏ qua `size`/bộ lọc):
+
+| Endpoint | Tham số (ngoài `page`, `size`) | Dạng trả về |
+|---|---|---|
+| `GET /projects/{pid}/test-cases` | `q`, `method`, `endpointId`, `source`, `generationOrigin`, `locked`, `reliability`, `sort` (`endpoint` mặc định, `createdAt,asc\|desc`, `name,asc\|desc`) | `PageResponse` ở gốc (mục 3) |
+| `GET /projects/{pid}/executions/{id}` | `status`, `failureCause`, `endpointId`, `q` | `ApiResponse` với `results` là `PageResponse` + `summary` (số tổng cả lượt chạy: `total`, `statusCounts`, `failureCauseCounts`, `unstableCount`, `failedWithoutBugCount`, `bugResultIds`) |
+| `GET /projects/{pid}/coverage` | `q`, `method`, `onlyGaps`, `onlyFailing`, `sort` (`default`, `path`, `coverage,asc\|desc`, `missing,desc`) | `ApiResponse`: `endpoints` (chỉ trang, đủ chi tiết) + `endpointsPage` + `overview` + `overallCoveragePercent`/`overallExecutedPercent` **luôn tính trên toàn project** |
+| `GET /projects/{pid}/coverage/summary` | - | `ApiResponse`: số tổng + 1 dòng tóm tắt mỗi endpoint (không có từng mục) |
+
+Quy tắc: `size` mặc định 50, tối đa 200 (lớn hơn thì cắt xuống); `page` âm, `size` < 1, `sort`/`method` lạ → `400 VALIDATION_ERROR` (không có mã lỗi mới); `page=` rỗng coi là trang 0; trang vượt cuối trả danh sách rỗng kèm tổng đúng (không 404). Thứ tự luôn ổn định (có `id` làm khoá phụ) để các trang không chồng/lọt dòng. Lọc/tìm kiếm không phân biệt hoa thường, `%` `_` `\` được hiểu là ký tự thường.
+
 ## 4. Trạng thái bất đồng bộ (thực thi test)
 
 Vì thực thi test không block request, endpoint chạy test trả về ngay:

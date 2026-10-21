@@ -44,11 +44,38 @@ public class RestAssuredTestRunner {
     private final TestCasePathValidator testCasePathValidator;
     private final AuthProfileRepository authProfileRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final AuthTokenService authTokenService = new AuthTokenService();
 
     public record RunResult(int statusCode, String responseBody) {
     }
 
     public RunResult run(Project project, TestCase testCase, Map<String, String> resolvedValues) {
+        AuthProfile loginProfile = loginProfileInUse(project, testCase);
+        java.time.Instant tokenBefore = loginProfile == null ? null : authTokenService.fetchedAt(loginProfile.getId());
+        RunResult first = execute(project, testCase, resolvedValues, false);
+        // Token tự lấy (profile chế độ Đăng nhập) có thể hết hạn giữa lượt: gặp 401 thì đăng nhập lại và thử ĐÚNG 1 lần.
+        // Chỉ thử lại khi token đến từ cache (token vừa đăng nhập xong mà vẫn 401 thì không phải do hết hạn) và test không CHỦ ĐÍCH
+        // kỳ vọng 401/403 - tránh gửi lại request không idempotent vô ích. Test Security NONE/INVALID không có loginProfile nên bỏ qua.
+        Integer expected = testCase.getExpectedStatus();
+        boolean expectsDenial = expected != null && (expected == 401 || expected == 403);
+        if (first.statusCode() == 401 && !expectsDenial && loginProfile != null
+                && java.util.Objects.equals(tokenBefore, authTokenService.fetchedAt(loginProfile.getId()))) {
+            authTokenService.evict(loginProfile.getId());
+            return execute(project, testCase, resolvedValues, true);
+        }
+        return first;
+    }
+
+    private AuthProfile loginProfileInUse(Project project, TestCase testCase) {
+        if (testCase.getAuthProfileId() == null || testCase.getAuthOverride() == TestCaseAuthOverride.NONE
+                || testCase.getAuthOverride() == TestCaseAuthOverride.INVALID) {
+            return null;
+        }
+        return authProfileRepository.findByIdAndProjectId(testCase.getAuthProfileId(), project.getId())
+                .filter(AuthProfile::isLoginMode).orElse(null);
+    }
+
+    private RunResult execute(Project project, TestCase testCase, Map<String, String> resolvedValues, boolean refreshToken) {
         DynamicPlaceholderResolver.RunScope scope = new DynamicPlaceholderResolver.RunScope();
         String path = testCasePathValidator.substitute(testCase.getResolvedPath(), resolvedValues, scope);
 
@@ -69,7 +96,7 @@ public class RestAssuredTestRunner {
         Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         headers.putAll(parseHeaders(headersJson));
 
-        TargetAuthHeaderResolver.AuthHeader authHeader = resolveAuthHeader(project, testCase);
+        TargetAuthHeaderResolver.AuthHeader authHeader = resolveAuthHeader(project, testCase, refreshToken);
         if (authHeader != null && authHeader.query()) {
             request = request.queryParam(authHeader.name(), authHeader.value());
         } else if (authHeader != null) {
@@ -109,15 +136,17 @@ public class RestAssuredTestRunner {
      * tình bỏ/sai token - không bao giờ chạm tới token thật) → profile xác thực của test case → token mặc định của Project.
      * Profile không còn/không thuộc project thì BÁO LỖI thay vì âm thầm rơi về token mặc định (sẽ cho kết quả sai vai trò).
      */
-    private TargetAuthHeaderResolver.AuthHeader resolveAuthHeader(Project project, TestCase testCase) {
+    private TargetAuthHeaderResolver.AuthHeader resolveAuthHeader(Project project, TestCase testCase, boolean refreshToken) {
         TargetAuthType authType = project.getTargetAuthType();
         String encryptedValue = project.getTargetAuthValueEncrypted();
+        AuthProfile loginProfile = null;
         if (testCase.getAuthProfileId() != null) {
             AuthProfile profile = authProfileRepository.findByIdAndProjectId(testCase.getAuthProfileId(), project.getId())
                     .orElseThrow(() -> new IllegalStateException(
                             "Profile xác thực của test case không còn tồn tại trong project - chọn lại profile ở Sửa test case"));
             authType = profile.getAuthType();
             encryptedValue = profile.getAuthValueEncrypted();
+            loginProfile = profile.isLoginMode() ? profile : null;
         }
         if (authType == null || authType == TargetAuthType.NONE) {
             return null;
@@ -130,7 +159,9 @@ public class RestAssuredTestRunner {
             String real = authType == TargetAuthType.CUSTOM_HEADER ? aesEncryptionService.decrypt(encryptedValue) : null;
             return targetAuthHeaderResolver.resolveInvalid(authType, real, INVALID_AUTH_VALUE);
         }
-        String decrypted = aesEncryptionService.decrypt(encryptedValue);
+        String decrypted = loginProfile != null
+                ? authTokenService.token(project, loginProfile, aesEncryptionService.decrypt(loginProfile.getLoginBodyEncrypted()), refreshToken)
+                : aesEncryptionService.decrypt(encryptedValue);
         return targetAuthHeaderResolver.resolve(authType, decrypted);
     }
 

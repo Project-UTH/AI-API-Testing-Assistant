@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bug, CheckCircle2, ChevronDown, Download, ListChecks, Pencil, Trash2, XCircle } from "lucide-react"
@@ -6,7 +6,11 @@ import { Bug, CheckCircle2, ChevronDown, Download, ListChecks, Pencil, Trash2, X
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { StatusBadge } from "@/components/shared/StatusBadge"
-import { BUG_PRIORITY_LABEL, BugStatusBadge } from "@/components/shared/BugStatusBadge"
+import { BUG_PRIORITY_LABEL, BUG_SEVERITY_LABEL, BUG_STATUS_LABEL, BugStatusBadge } from "@/components/shared/BugStatusBadge"
+import { useListFilters } from "@/hooks/useListFilters"
+import { ListToolbar, type ListFilterSelect } from "@/components/shared/ListToolbar"
+import { Pagination } from "@/components/shared/Pagination"
+import { ListEmptyState } from "@/components/shared/ListEmptyState"
 import { BugReportFormDialog } from "@/components/bugreports/BugReportFormDialog"
 import { CreateBugReportDialog } from "@/components/bugreports/CreateBugReportDialog"
 import { DeleteBugReportDialog } from "@/components/bugreports/DeleteBugReportDialog"
@@ -30,6 +34,10 @@ import {
 } from "@/lib/bugReports"
 
 const PRIORITY_ORDER: BugPriority[] = ["BLOCKER", "CRITICAL", "MAJOR", "MINOR", "TRIVIAL"]
+
+const FILTER_KEYS = ["status", "priority", "severity", "endpointId"] as const
+// Mỗi trang 10 endpoint (mỗi endpoint là 1 khối gập có thể chứa nhiều test case/bug).
+const PAGE_SIZE = 10
 
 function toggleInSet(set: Set<string>, value: string): Set<string> {
   const next = new Set(set)
@@ -76,6 +84,61 @@ export function BugReportPage() {
     queryKey: bugReportsQueryKey,
     queryFn: () => getBugReports(projectId),
   })
+
+  const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
+  const { q, filters, page: currentPage, clampPage } = lf
+  const hasBugFilter = Boolean(filters.status || filters.priority || filters.severity)
+
+  // Dữ liệu cả project đã nằm trong bộ nhớ nên lọc ngay trên trình duyệt. Lọc theo trạng thái/priority/severity chỉ giữ test case có bug khớp
+  // (và chỉ hiện các bug khớp); tìm kiếm chữ khớp endpoint, tên test case, mã bug hoặc tiêu đề bug. Không lọc gì thì giữ nguyên toàn bộ dữ liệu
+  // (kể cả test case chưa có bug nhưng có lần chạy Fail để tạo bug).
+  // Đang ở chế độ "Sinh Bug Report": kết quả Fail CHƯA có bug thì không bao giờ khớp bộ lọc theo bug, nên không bỏ test case vì bộ lọc bug.
+  const applyBugFilter = hasBugFilter && !generateSelectionMode
+  const filteredEndpoints = useMemo<EndpointBugSummary[]>(() => {
+    if (!data) return []
+    const needle = q.toLowerCase()
+    if (!needle && !applyBugFilter && !filters.endpointId) return data.endpoints
+    const result: EndpointBugSummary[] = []
+    for (const endpoint of data.endpoints) {
+      if (filters.endpointId && endpoint.endpointId !== filters.endpointId) continue
+      const endpointText = `${endpoint.endpointMethod} ${endpoint.endpointPath} ${endpoint.endpointSummary ?? ""}`.toLowerCase()
+      const endpointMatches = needle !== "" && endpointText.includes(needle)
+      const cases: TestCaseBugSummary[] = []
+      for (const testCase of endpoint.testCases) {
+        const bugs = testCase.bugs.filter(
+          (bug) =>
+            (!filters.status || bug.status === filters.status) &&
+            (!filters.priority || bug.priority === filters.priority) &&
+            (!filters.severity || bug.severity === filters.severity)
+        )
+        if (applyBugFilter && bugs.length === 0) continue
+        if (needle) {
+          const matches =
+            endpointMatches ||
+            testCase.testCaseName.toLowerCase().includes(needle) ||
+            bugs.some((bug) => bug.bugId.toLowerCase().includes(needle) || bug.summary.toLowerCase().includes(needle))
+          if (!matches) continue
+        }
+        cases.push(applyBugFilter ? { ...testCase, bugs } : testCase)
+      }
+      if (cases.length > 0) result.push({ ...endpoint, testCases: cases })
+    }
+    return result
+  }, [data, q, filters, applyBugFilter])
+
+  const totalPages = Math.ceil(filteredEndpoints.length / PAGE_SIZE)
+  const safePage = Math.min(currentPage, Math.max(totalPages - 1, 0))
+  const pageEndpoints = useMemo(
+    () => filteredEndpoints.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE),
+    [filteredEndpoints, safePage]
+  )
+  useEffect(() => {
+    clampPage(totalPages)
+  }, [totalPages, clampPage])
+
+  // Chọn tất cả bug / kết quả Fail khớp bộ lọc (mọi trang) - dữ liệu có sẵn nên chọn thẳng, không cần gọi thêm.
+  const filteredBugIds = useMemo(() => filteredEndpoints.flatMap(bugIdsOfEndpoint), [filteredEndpoints])
+  const filteredGenerateIds = useMemo(() => filteredEndpoints.flatMap(generatableIdsOfEndpoint), [filteredEndpoints])
 
   const exportAllMutation = useMutation({
     mutationFn: () => exportAllBugReports(projectId, "BugReports.xlsx"),
@@ -174,11 +237,18 @@ export function BugReportPage() {
           setEditingBug(found)
           setExpandedEndpointIds((prev) => new Set(prev).add(endpoint.endpointId))
           setExpandedTestCaseIds((prev) => new Set(prev).add(testCase.testCaseId))
-          setSearchParams((prev) => {
-            const next = new URLSearchParams(prev)
-            next.delete("bugReportId")
-            return next
-          }, { replace: true })
+          // 1 lần cập nhật URL duy nhất: bỏ bugReportId + mọi bộ lọc đang bật (để chắc chắn nhìn thấy bug) và nhảy tới trang chứa endpoint.
+          const targetPage = Math.floor(data.endpoints.indexOf(endpoint) / PAGE_SIZE)
+          lf.applyParams(
+            (params) => {
+              params.delete("bugReportId")
+              params.delete("q")
+              for (const key of FILTER_KEYS) params.delete(key)
+              if (targetPage > 0) params.set("page", String(targetPage + 1))
+              else params.delete("page")
+            },
+            { replace: true }
+          )
           return
         }
       }
@@ -191,6 +261,51 @@ export function BugReportPage() {
     }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, isFetching])
+
+  function keepOnlySelectedInFilter() {
+    const keep = new Set(selectableIds.filter((selectableId) => activeSelection.has(selectableId)))
+    if (selectionMode) setSelectedBugIds(keep)
+    else setSelectedGenerateResultIds(keep)
+  }
+
+  const selectableIds = selectionMode ? filteredBugIds : filteredGenerateIds
+  const activeSelection = selectionMode ? selectedBugIds : selectedGenerateResultIds
+  const selectedInFilter = selectableIds.filter((selectableId) => activeSelection.has(selectableId)).length
+
+  const bugSelects: ListFilterSelect[] = [
+    {
+      key: "status",
+      label: "Lọc theo trạng thái bug",
+      allLabel: "Mọi trạng thái",
+      value: filters.status,
+      className: "sm:w-44",
+      options: Object.entries(BUG_STATUS_LABEL).map(([value, label]) => ({ value, label })),
+    },
+    {
+      key: "priority",
+      label: "Lọc theo priority",
+      allLabel: "Mọi priority",
+      value: filters.priority,
+      className: "sm:w-40",
+      options: PRIORITY_ORDER.map((priority) => ({ value: priority, label: BUG_PRIORITY_LABEL[priority] })),
+    },
+    {
+      key: "severity",
+      label: "Lọc theo severity",
+      allLabel: "Mọi severity",
+      value: filters.severity,
+      className: "sm:w-40",
+      options: Object.entries(BUG_SEVERITY_LABEL).map(([value, label]) => ({ value, label })),
+    },
+    {
+      key: "endpointId",
+      label: "Lọc theo endpoint",
+      allLabel: "Tất cả endpoint",
+      value: filters.endpointId,
+      className: "sm:w-64",
+      options: (data?.endpoints ?? []).map((endpoint) => ({ value: endpoint.endpointId, label: `${endpoint.endpointMethod} ${endpoint.endpointPath}` })),
+    },
+  ]
 
   return (
     <div>
@@ -321,30 +436,109 @@ export function BugReportPage() {
               Chưa có test case nào trong project này.
             </p>
           ) : (
-            <div className="mt-6 flex flex-col gap-4">
-              {data.endpoints.map((endpoint) => (
-                <EndpointRow
-                  key={endpoint.endpointId}
-                  endpoint={endpoint}
-                  projectId={projectId}
-                  isExpanded={expandedEndpointIds.has(endpoint.endpointId)}
-                  onToggle={() => setExpandedEndpointIds((prev) => toggleInSet(prev, endpoint.endpointId))}
-                  expandedTestCaseIds={expandedTestCaseIds}
-                  onToggleTestCase={(testCaseId) =>
-                    setExpandedTestCaseIds((prev) => toggleInSet(prev, testCaseId))
-                  }
-                  onEditBug={setEditingBug}
-                  onDeleteBug={setDeletingBug}
-                  onCreateBug={setCreateBugResultId}
-                  selectionMode={selectionMode}
-                  selectedBugIds={selectedBugIds}
-                  onToggleBugSelection={toggleBugSelection}
-                  generateSelectionMode={generateSelectionMode}
-                  selectedGenerateResultIds={selectedGenerateResultIds}
-                  onToggleGenerateSelection={toggleGenerateSelection}
+            <>
+              <ListToolbar
+                className="mt-6"
+                searchValue={lf.searchInput}
+                onSearchChange={lf.setSearchInput}
+                searchPlaceholder="Tìm theo mã bug, tiêu đề, tên test case hoặc đường dẫn..."
+                searchLabel="Tìm bug report"
+                selects={bugSelects}
+                onSelectChange={(key, value) => lf.setFilter(key as (typeof FILTER_KEYS)[number], value)}
+                activeFilterCount={lf.activeCount}
+                onReset={lf.reset}
+              />
+
+              {(selectionMode || generateSelectionMode) && (
+                <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md bg-muted px-3 py-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <Checkbox
+                      checked={selectableIds.length > 0 && selectedInFilter === selectableIds.length}
+                      indeterminate={selectedInFilter > 0 && selectedInFilter < selectableIds.length}
+                      disabled={selectableIds.length === 0}
+                      onCheckedChange={(checked) =>
+                        selectionMode
+                          ? toggleBugSelection(selectableIds, checked === true)
+                          : toggleGenerateSelection(selectableIds, checked === true)
+                      }
+                    />
+                    {selectionMode
+                      ? `Chọn tất cả ${selectableIds.length} bug khớp bộ lọc`
+                      : `Chọn tất cả ${selectableIds.length} kết quả Fail chưa có bug khớp bộ lọc`}
+                  </label>
+                  <span className="text-muted-foreground" aria-live="polite">
+                    Đã chọn {activeSelection.size}
+                    {activeSelection.size - selectedInFilter > 0 ? ` (${activeSelection.size - selectedInFilter} ngoài bộ lọc hiện tại)` : ""}
+                  </span>
+                  {activeSelection.size - selectedInFilter > 0 && (
+                    <button type="button" className="underline" onClick={keepOnlySelectedInFilter}>
+                      Bỏ chọn các mục ngoài bộ lọc
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <Pagination
+                className="mt-3"
+                page={safePage}
+                totalPages={totalPages}
+                totalElements={filteredEndpoints.length}
+                shownCount={pageEndpoints.length}
+                size={PAGE_SIZE}
+                itemLabel="endpoint"
+                onPageChange={lf.setPage}
+              />
+
+              {filteredEndpoints.length === 0 ? (
+                <div className="mt-4">
+                  <ListEmptyState
+                    filtered={lf.activeCount > 0}
+                    emptyText="Chưa có bug report nào."
+                    filteredText="Không có bug report nào khớp bộ lọc."
+                    onReset={lf.reset}
+                  />
+                </div>
+              ) : (
+                <div className="mt-4 flex flex-col gap-4">
+                  {pageEndpoints.map((endpoint) => (
+                    <EndpointRow
+                      key={endpoint.endpointId}
+                      endpoint={endpoint}
+                      projectId={projectId}
+                      isExpanded={expandedEndpointIds.has(endpoint.endpointId)}
+                      onToggle={() => setExpandedEndpointIds((prev) => toggleInSet(prev, endpoint.endpointId))}
+                      expandedTestCaseIds={expandedTestCaseIds}
+                      onToggleTestCase={(testCaseId) =>
+                        setExpandedTestCaseIds((prev) => toggleInSet(prev, testCaseId))
+                      }
+                      onEditBug={setEditingBug}
+                      onDeleteBug={setDeletingBug}
+                      onCreateBug={setCreateBugResultId}
+                      selectionMode={selectionMode}
+                      selectedBugIds={selectedBugIds}
+                      onToggleBugSelection={toggleBugSelection}
+                      generateSelectionMode={generateSelectionMode}
+                      selectedGenerateResultIds={selectedGenerateResultIds}
+                      onToggleGenerateSelection={toggleGenerateSelection}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {filteredEndpoints.length > 0 && (
+                <Pagination
+                  className="mt-4"
+              announce={false}
+                  page={currentPage}
+                  totalPages={totalPages}
+                  totalElements={filteredEndpoints.length}
+                  shownCount={pageEndpoints.length}
+                  size={PAGE_SIZE}
+                  itemLabel="endpoint"
+                  onPageChange={lf.setPage}
                 />
-              ))}
-            </div>
+              )}
+            </>
           )}
         </>
       )}

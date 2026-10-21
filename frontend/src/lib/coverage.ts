@@ -144,9 +144,96 @@ export function coverageCounts(endpoint: EndpointCoverage) {
   }
 }
 
+/** Đếm từ dòng tóm tắt (không có từng mục chi tiết) - cùng ý nghĩa với {@link coverageCounts}. */
+export function coverageRowCounts(row: CoverageEndpointRow) {
+  return {
+    relevant: row.relevantCount,
+    covered: row.coveredCount,
+    executed: row.executedCount,
+    failing: row.failingCount,
+    missing: row.missingCount,
+  }
+}
+
 /** Module 15c/15j - tất định (checklist EP/BVA + method/auth/dependency/lịch sử fail), không gọi AI. */
 export function getProjectCoverage(projectId: string): Promise<ProjectCoverage> {
   return apiFetch<ProjectCoverage>(`/projects/${projectId}/coverage`)
+}
+
+/** Số đo của TOÀN project (không bị thu hẹp bởi bộ lọc/trang). */
+export interface CoverageOverview {
+  endpointCount: number
+  endpointsWithGaps: number
+  endpointsFailing: number
+  relevantCount: number
+  coveredCount: number
+  executedCount: number
+}
+
+/** Module 17 (G4) - tóm tắt coverage 1 endpoint (không có từng dòng chi tiết), có đủ số đếm để gộp. */
+export interface CoverageEndpointRow {
+  endpointId: string
+  path: string
+  method: string
+  requiresAuth: boolean
+  testCaseCount: number
+  relevantCount: number
+  coveredCount: number
+  executedCount: number
+  failingCount: number
+  missingCount: number
+  coveragePercent: number
+  executedPercent: number
+}
+
+export interface CoveragePageInfo {
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}
+
+/** Coverage theo trang: `endpoints` chỉ gồm endpoint của trang (đủ chi tiết); % tổng và `overview` luôn tính trên toàn project. */
+export interface ProjectCoveragePage {
+  projectId: string
+  overallCoveragePercent: number
+  overallExecutedPercent: number
+  endpoints: EndpointCoverage[]
+  endpointsPage: CoveragePageInfo
+  overview: CoverageOverview
+}
+
+export interface CoveragePageParams {
+  page: number
+  size: number
+  q?: string
+  method?: string
+  onlyGaps?: boolean
+  onlyFailing?: boolean
+  sort?: string
+}
+
+export function getProjectCoveragePage(projectId: string, params: CoveragePageParams): Promise<ProjectCoveragePage> {
+  const query = new URLSearchParams({ page: String(params.page), size: String(params.size) })
+  if (params.q) query.set("q", params.q)
+  if (params.method) query.set("method", params.method)
+  if (params.onlyGaps) query.set("onlyGaps", "true")
+  if (params.onlyFailing) query.set("onlyFailing", "true")
+  if (params.sort) query.set("sort", params.sort)
+  return apiFetch<ProjectCoveragePage>(`/projects/${projectId}/coverage?${query.toString()}`)
+}
+
+export interface CoverageSummary {
+  projectId: string
+  overallCoveragePercent: number
+  overallExecutedPercent: number
+  overview: CoverageOverview
+  endpoints: CoverageEndpointRow[]
+}
+
+/** Nhẹ: số tổng + 1 dòng tóm tắt mỗi endpoint (danh sách endpoint chỉ cần các số đếm này, không cần từng dòng chi tiết). */
+export function getCoverageSummary(projectId: string): Promise<CoverageSummary> {
+  return apiFetch<CoverageSummary>(`/projects/${projectId}/coverage/summary`)
 }
 
 export function getEndpointCoverage(projectId: string, endpointId: string): Promise<EndpointCoverage> {

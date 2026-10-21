@@ -12,6 +12,10 @@ export interface AuthProfile {
   createdAt: string
   /** Số test case đang dùng profile này (chặn xoá khi > 0). */
   testCaseCount: number
+  /** Chế độ "Đăng nhập": token do hệ thống tự lấy (body đăng nhập không bao giờ trả lại). */
+  loginMode: boolean
+  loginPath: string | null
+  tokenJsonPath: string | null
 }
 
 export interface AuthProfileInput {
@@ -21,6 +25,11 @@ export interface AuthProfileInput {
   authType: TargetAuthType
   /** Lúc sửa: bỏ trống = giữ token cũ. */
   authValue?: string
+  /** Có loginPath = chế độ đăng nhập tự động (bỏ qua authValue). */
+  loginPath?: string
+  /** Lúc sửa: bỏ trống = giữ body đăng nhập cũ. */
+  loginBody?: string
+  tokenJsonPath?: string
 }
 
 export function listAuthProfiles(projectId: string): Promise<AuthProfile[]> {

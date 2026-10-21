@@ -8,6 +8,7 @@ import com.aiapitesting.backend.entity.TestResult;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,7 +18,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
+public interface TestResultRepository extends JpaRepository<TestResult, UUID>, JpaSpecificationExecutor<TestResult> {
     void deleteAllByTestCaseEndpointProject(Project project);
 
     void deleteAllByTestCase(TestCase testCase);
@@ -156,6 +157,22 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
         TestResultStatus getStatus();
         long getCount();
     }
+
+    // Module 17 (G4) - tổng hợp cho 1 lần chạy mà không nạp từng kết quả (trang kết quả phân trang).
+    @Query("SELECT tr.failureCause AS cause, COUNT(tr) AS count FROM TestResult tr "
+            + "WHERE tr.execution = :execution AND tr.failureCause IS NOT NULL GROUP BY tr.failureCause")
+    List<FailureCauseCount> countByExecutionGroupedByFailureCause(@Param("execution") TestExecution execution);
+
+    interface FailureCauseCount {
+        FailureCause getCause();
+        long getCount();
+    }
+
+    long countByExecutionAndUnstableTrue(TestExecution execution);
+
+    // Test case được tự động chạy kèm do dependency (Module 7) trong lần chạy này.
+    @Query("SELECT tr.testCase.id FROM TestResult tr WHERE tr.execution = :execution AND tr.autoIncluded = true")
+    List<UUID> findAutoIncludedTestCaseIds(@Param("execution") TestExecution execution);
 
     interface HistoryRow {
         UUID getResultId();

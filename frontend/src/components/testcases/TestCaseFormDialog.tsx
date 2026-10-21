@@ -170,7 +170,7 @@ export function TestCaseFormDialog({
   // Toàn bộ test case trong project - dùng làm danh sách chọn nguồn (không giới hạn theo endpoint
   // hiện tại) và để chặn phụ thuộc vòng phía client.
   const { data: allTestCases } = useQuery({
-    queryKey: ["test-cases", projectId],
+    queryKey: ["test-cases", projectId, "all"],
     queryFn: () => listTestCases(projectId),
     enabled: open,
   })
