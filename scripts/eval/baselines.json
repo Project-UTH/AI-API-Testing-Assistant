@@ -1,0 +1,263 @@
+{
+  "_comment": "Test gốc hợp lệ do NGƯỜI viết cho mutant-api (1 test đúng mỗi endpoint, đúng quy trình khuyến nghị: tự thêm 1 test đúng rồi để hệ thống bù). Dùng cho cấu hình A và tuỳ chọn --seed-baselines của B/C. dep = lấy giá trị từ response của test nguồn. profile: HR = token mặc định của project (hr1), CAND = profile ứng viên (cand1), NONE = không gửi token.",
+  "baselines": [
+    {
+      "key": "L1",
+      "name": "L1 Đăng nhập hợp lệ",
+      "method": "POST",
+      "specPath": "/auth/login",
+      "resolvedPath": "/auth/login",
+      "expected": 200,
+      "profile": "NONE",
+      "body": {
+        "email": "hr1@demo.local",
+        "password": "Passw0rd!"
+      }
+    },
+    {
+      "key": "U1",
+      "name": "U1 Xem tài khoản của mình",
+      "method": "GET",
+      "specPath": "/api/users/me",
+      "resolvedPath": "/api/users/me",
+      "expected": 200,
+      "profile": "HR"
+    },
+    {
+      "key": "J1",
+      "name": "J1 Tạo tin tuyển dụng hợp lệ",
+      "method": "POST",
+      "specPath": "/api/jobs",
+      "resolvedPath": "/api/jobs",
+      "expected": 201,
+      "profile": "HR",
+      "body": {
+        "title": "Backend Developer",
+        "description": "Phat trien API",
+        "salaryMin": 1000,
+        "salaryMax": 2000,
+        "salaryCurrency": "USD",
+        "jobType": "FULL_TIME",
+        "deadline": "{{today+30d}}"
+      }
+    },
+    {
+      "key": "J2",
+      "name": "J2 Xem tin vừa tạo",
+      "method": "GET",
+      "specPath": "/api/jobs/{id}",
+      "resolvedPath": "/api/jobs/{{id}}",
+      "expected": 200,
+      "profile": "HR",
+      "dep": {
+        "from": "J1",
+        "jsonPath": "$.id",
+        "placeholder": "id"
+      }
+    },
+    {
+      "key": "J3",
+      "name": "J3 Sửa tin vừa tạo",
+      "method": "PUT",
+      "specPath": "/api/jobs/{id}",
+      "resolvedPath": "/api/jobs/{{id}}",
+      "expected": 200,
+      "profile": "HR",
+      "body": {
+        "title": "Senior Backend Developer",
+        "description": "Phat trien API",
+        "salaryMin": 1500,
+        "salaryMax": 2500,
+        "salaryCurrency": "USD",
+        "jobType": "FULL_TIME",
+        "deadline": "{{today+30d}}"
+      },
+      "dep": {
+        "from": "J1",
+        "jsonPath": "$.id",
+        "placeholder": "id"
+      }
+    },
+    {
+      "key": "J4",
+      "name": "J4 Đặt rubric cho tin",
+      "method": "PUT",
+      "specPath": "/api/jobs/{id}/rubric",
+      "resolvedPath": "/api/jobs/{{id}}/rubric",
+      "expected": 200,
+      "profile": "HR",
+      "body": {
+        "criteria": [
+          {
+            "name": "Ky nang",
+            "weight": 60,
+            "maxScore": 5
+          },
+          {
+            "name": "Kinh nghiem",
+            "weight": 40,
+            "maxScore": 5
+          }
+        ]
+      },
+      "dep": {
+        "from": "J1",
+        "jsonPath": "$.id",
+        "placeholder": "id"
+      }
+    },
+    {
+      "key": "A1",
+      "name": "A1 Ứng viên nộp đơn",
+      "method": "POST",
+      "specPath": "/api/jobs/{jobId}/applications",
+      "resolvedPath": "/api/jobs/{{jobId}}/applications",
+      "expected": 201,
+      "profile": "CAND",
+      "body": {
+        "coverLetter": "Xin chao",
+        "consent": true
+      },
+      "dep": {
+        "from": "J1",
+        "jsonPath": "$.id",
+        "placeholder": "jobId"
+      }
+    },
+    {
+      "key": "A2",
+      "name": "A2 Ứng viên xem đơn của mình",
+      "method": "GET",
+      "specPath": "/api/applications/{id}",
+      "resolvedPath": "/api/applications/{{id}}",
+      "expected": 200,
+      "profile": "CAND",
+      "dep": {
+        "from": "A1",
+        "jsonPath": "$.id",
+        "placeholder": "id"
+      }
+    },
+    {
+      "key": "A3",
+      "name": "A3 HR mời phỏng vấn",
+      "method": "PATCH",
+      "specPath": "/api/applications/{id}/status",
+      "resolvedPath": "/api/applications/{{id}}/status",
+      "expected": 200,
+      "profile": "HR",
+      "body": {
+        "status": "INTERVIEW_INVITED"
+      },
+      "dep": {
+        "from": "A1",
+        "jsonPath": "$.id",
+        "placeholder": "id"
+      }
+    },
+    {
+      "key": "J5",
+      "name": "J5 Xoá tin vừa tạo",
+      "method": "DELETE",
+      "specPath": "/api/jobs/{id}",
+      "resolvedPath": "/api/jobs/{{id}}",
+      "expected": 204,
+      "profile": "HR",
+      "dep": {
+        "from": "J1",
+        "jsonPath": "$.id",
+        "placeholder": "id"
+      }
+    }
+  ],
+  "_roles_comment": "Ma trận phân quyền do NGƯỜI dùng khai theo đúng đặc tả (vai nào được/bị cấm gọi endpoint nào) - đầu vào của tính năng 'Ma trận phân quyền' của hệ thống. KHÔNG mô hình hoá quyền sở hữu dữ liệu (HR khác/ứng viên khác) vì hệ thống chưa có khái niệm này.",
+  "roles": [
+    {
+      "method": "GET",
+      "specPath": "/api/users/me",
+      "allow": [
+        "HR",
+        "CAND"
+      ],
+      "deny": []
+    },
+    {
+      "method": "POST",
+      "specPath": "/api/jobs",
+      "allow": [
+        "HR"
+      ],
+      "deny": [
+        "CAND"
+      ]
+    },
+    {
+      "method": "GET",
+      "specPath": "/api/jobs/{id}",
+      "allow": [
+        "HR",
+        "CAND"
+      ],
+      "deny": []
+    },
+    {
+      "method": "PUT",
+      "specPath": "/api/jobs/{id}",
+      "allow": [
+        "HR"
+      ],
+      "deny": [
+        "CAND"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "specPath": "/api/jobs/{id}",
+      "allow": [
+        "HR"
+      ],
+      "deny": [
+        "CAND"
+      ]
+    },
+    {
+      "method": "PUT",
+      "specPath": "/api/jobs/{id}/rubric",
+      "allow": [
+        "HR"
+      ],
+      "deny": [
+        "CAND"
+      ]
+    },
+    {
+      "method": "POST",
+      "specPath": "/api/jobs/{jobId}/applications",
+      "allow": [
+        "CAND"
+      ],
+      "deny": [
+        "HR"
+      ]
+    },
+    {
+      "method": "GET",
+      "specPath": "/api/applications/{id}",
+      "allow": [
+        "HR",
+        "CAND"
+      ],
+      "deny": []
+    },
+    {
+      "method": "PATCH",
+      "specPath": "/api/applications/{id}/status",
+      "allow": [
+        "HR"
+      ],
+      "deny": [
+        "CAND"
+      ]
+    }
+  ]
+}

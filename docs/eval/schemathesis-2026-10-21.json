@@ -1,0 +1,207 @@
+{
+  "tool": "schemathesis",
+  "examples": 25,
+  "baselineFailureCounts": [
+    15,
+    15
+  ],
+  "baselineUnion": 15,
+  "mutants": [
+    {
+      "id": "M01",
+      "category": "VALIDATION",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M02",
+      "category": "VALIDATION",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M03",
+      "category": "VALIDATION",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M04",
+      "category": "VALIDATION",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M05",
+      "category": "VALIDATION",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M06",
+      "category": "BOUNDARY",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M07",
+      "category": "BOUNDARY",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M08",
+      "category": "BOUNDARY",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M09",
+      "category": "BOUNDARY",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M10",
+      "category": "BOUNDARY",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M11",
+      "category": "STATUS_CODE",
+      "detected": true,
+      "newFailures": [
+        [
+          "Stateful tests",
+          "ST103, ST201"
+        ]
+      ]
+    },
+    {
+      "id": "M12",
+      "category": "STATUS_CODE",
+      "detected": true,
+      "newFailures": [
+        [
+          "Stateful tests",
+          "ST101, ST103"
+        ]
+      ]
+    },
+    {
+      "id": "M13",
+      "category": "STATUS_CODE",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M14",
+      "category": "AUTHORIZATION",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M15",
+      "category": "AUTHORIZATION",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M16",
+      "category": "AUTHORIZATION",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M17",
+      "category": "AUTHORIZATION",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M18",
+      "category": "AUTHORIZATION",
+      "detected": true,
+      "newFailures": [
+        [
+          "Stateful tests",
+          "ST108, ST401"
+        ]
+      ]
+    },
+    {
+      "id": "M19",
+      "category": "MASS_ASSIGNMENT",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M20",
+      "category": "MASS_ASSIGNMENT",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M21",
+      "category": "DATA_EXPOSURE",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M22",
+      "category": "DATA_EXPOSURE",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M23",
+      "category": "BUSINESS_RULE",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M24",
+      "category": "BUSINESS_RULE",
+      "detected": true,
+      "newFailures": [
+        [
+          "GET /api/jobs/{id}",
+          "ST108"
+        ],
+        [
+          "POST /api/jobs",
+          "ST108"
+        ],
+        [
+          "PUT /api/jobs/{id}",
+          "ST108"
+        ],
+        [
+          "PUT /api/jobs/{id}/rubric",
+          "ST202"
+        ]
+      ]
+    },
+    {
+      "id": "M25",
+      "category": "BUSINESS_RULE",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M26",
+      "category": "BUSINESS_RULE",
+      "detected": false,
+      "newFailures": []
+    },
+    {
+      "id": "M27",
+      "category": "BUSINESS_RULE",
+      "detected": false,
+      "newFailures": []
+    }
+  ],
+  "detected": 4,
+  "total": 27
+}
