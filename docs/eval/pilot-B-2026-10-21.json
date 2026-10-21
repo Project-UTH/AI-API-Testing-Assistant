@@ -1,0 +1,741 @@
+{
+  "environment": {
+    "date": "2026-10-21T10:40:54",
+    "gitCommit": "7cd347a111adfc1cd3ddcc150e7ff7d6f290c705",
+    "gitDirty": true,
+    "model": "claude-sonnet-5",
+    "promptFiles": 11,
+    "promptHash": "92e2dbe9a6970e46",
+    "args": {
+      "config": "B",
+      "runs": 1,
+      "api": "http://localhost:8080/api/v1",
+      "target_local": "http://localhost:8083",
+      "target_url": "http://host.docker.internal:8083",
+      "email": "eval@aiapi.local",
+      "mutants": "M01,M02,M19,M23,M24",
+      "skip_paths": [
+        "C:/Program Files/Git/auth/login",
+        "C:/Program Files/Git/api/users/me",
+        "C:/Program Files/Git/api/jobs/{id}",
+        "C:/Program Files/Git/api/jobs/{id}/rubric",
+        "C:/Program Files/Git/api/jobs/{jobId}/applications",
+        "C:/Program Files/Git/api/applications/{id}",
+        "C:/Program Files/Git/api/applications/{id}/status"
+      ],
+      "seed_baselines": false,
+      "token_cap": 60000,
+      "model": "claude-sonnet-5",
+      "dry_run": false,
+      "yes_spend": true,
+      "no_assign_profiles": false,
+      "no_coverage_fill": false,
+      "keep_projects": true,
+      "out": "docs/eval/pilot-B-2026-10-21.json"
+    }
+  },
+  "mutantCatalog": [
+    {
+      "id": "M01",
+      "category": "VALIDATION",
+      "categoryLabel": "Bo validate",
+      "endpoint": "POST /api/jobs",
+      "description": "Thieu title van tao duoc job (201)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M02",
+      "category": "VALIDATION",
+      "categoryLabel": "Bo validate",
+      "endpoint": "POST /api/jobs",
+      "description": "title chi gom khoang trang / rong van duoc nhan",
+      "expectChecklist": true
+    },
+    {
+      "id": "M03",
+      "category": "VALIDATION",
+      "categoryLabel": "Bo validate",
+      "endpoint": "POST /api/jobs",
+      "description": "title dai bat ky (khong gioi han toi da 200) van duoc nhan",
+      "expectChecklist": true
+    },
+    {
+      "id": "M04",
+      "category": "VALIDATION",
+      "categoryLabel": "Bo validate",
+      "endpoint": "POST /api/jobs",
+      "description": "salaryCurrency dai hon 3 ky tu van duoc nhan (bo gioi han toi da)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M05",
+      "category": "VALIDATION",
+      "categoryLabel": "Bo validate",
+      "endpoint": "POST /api/jobs",
+      "description": "jobType ngoai danh sach enum bi bo qua, mac dinh FULL_TIME (khong tra 400)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M06",
+      "category": "BOUNDARY",
+      "categoryLabel": "Sai bien",
+      "endpoint": "POST /api/jobs",
+      "description": "salaryMin = -1 van duoc nhan (bien duoi 0 thanh -1)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M07",
+      "category": "BOUNDARY",
+      "categoryLabel": "Sai bien",
+      "endpoint": "POST /api/jobs",
+      "description": "title dai dung 200 ky tu (bien tren hop le) bi tu choi nham (gioi han toi da 200 thanh 199)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M08",
+      "category": "BOUNDARY",
+      "categoryLabel": "Sai bien",
+      "endpoint": "PUT /api/jobs/{id}/rubric",
+      "description": "weight = 0 van duoc nhan (bien duoi 0.01 thanh 0; tong van phai 100 nen quan sat duoc)",
+      "expectChecklist": false
+    },
+    {
+      "id": "M09",
+      "category": "BOUNDARY",
+      "categoryLabel": "Sai bien",
+      "endpoint": "PUT /api/jobs/{id}/rubric",
+      "description": "maxScore = 0 van duoc nhan (bien duoi 1 thanh 0)",
+      "expectChecklist": false
+    },
+    {
+      "id": "M10",
+      "category": "BOUNDARY",
+      "categoryLabel": "Sai bien",
+      "endpoint": "POST /api/jobs",
+      "description": "salaryCurrency dai 2 ky tu van duoc nhan (bien duoi 3 thanh 2)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M11",
+      "category": "STATUS_CODE",
+      "categoryLabel": "Sai ma trang thai",
+      "endpoint": "POST /api/jobs",
+      "description": "Loi validate tra 200 kem than loi thay vi 400",
+      "expectChecklist": true
+    },
+    {
+      "id": "M12",
+      "category": "STATUS_CODE",
+      "categoryLabel": "Sai ma trang thai",
+      "endpoint": "GET /api/jobs/{id}",
+      "description": "Job khong ton tai tra 500 thay vi 404",
+      "expectChecklist": false
+    },
+    {
+      "id": "M13",
+      "category": "STATUS_CODE",
+      "categoryLabel": "Sai ma trang thai",
+      "endpoint": "PUT /api/jobs/{id}/rubric",
+      "description": "Du lieu sai tra 401 thay vi 400 (nhan dien nham la loi xac thuc)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M14",
+      "category": "AUTHORIZATION",
+      "categoryLabel": "Thieu phan quyen",
+      "endpoint": "POST /api/jobs",
+      "description": "CANDIDATE tao duoc job (thieu kiem tra vai tro HR)",
+      "expectChecklist": false
+    },
+    {
+      "id": "M15",
+      "category": "AUTHORIZATION",
+      "categoryLabel": "Thieu phan quyen",
+      "endpoint": "PUT /api/jobs/{id}",
+      "description": "HR khac sua duoc job cua HR khac (thieu kiem tra chu so huu)",
+      "expectChecklist": false
+    },
+    {
+      "id": "M16",
+      "category": "AUTHORIZATION",
+      "categoryLabel": "Thieu phan quyen",
+      "endpoint": "GET /api/applications/{id}",
+      "description": "CANDIDATE xem duoc don ung tuyen cua nguoi khac",
+      "expectChecklist": false
+    },
+    {
+      "id": "M17",
+      "category": "AUTHORIZATION",
+      "categoryLabel": "Thieu phan quyen",
+      "endpoint": "PATCH /api/applications/{id}/status",
+      "description": "HR khac doi duoc trang thai don cua job khong thuoc minh",
+      "expectChecklist": false
+    },
+    {
+      "id": "M18",
+      "category": "AUTHORIZATION",
+      "categoryLabel": "Thieu phan quyen",
+      "endpoint": "GET /api/jobs/{id}",
+      "description": "Khong can token van doc duoc job (bo kiem tra xac thuc)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M19",
+      "category": "MASS_ASSIGNMENT",
+      "categoryLabel": "Mass-assignment",
+      "endpoint": "POST /api/jobs",
+      "description": "Nhan ownerId tu body (gan chu so huu tuy y)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M20",
+      "category": "MASS_ASSIGNMENT",
+      "categoryLabel": "Mass-assignment",
+      "endpoint": "PUT /api/jobs/{id}",
+      "description": "Nhan status tu body (tu dong/mo job qua truong khong khai bao)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M21",
+      "category": "DATA_EXPOSURE",
+      "categoryLabel": "Lo du lieu nhay cam",
+      "endpoint": "GET /api/users/me",
+      "description": "Tra them passwordHash trong response",
+      "expectChecklist": true
+    },
+    {
+      "id": "M22",
+      "category": "DATA_EXPOSURE",
+      "categoryLabel": "Lo du lieu nhay cam",
+      "endpoint": "POST /api/jobs",
+      "description": "Response loi 400 kem thong tin noi bo (ten class, SQL)",
+      "expectChecklist": true
+    },
+    {
+      "id": "M23",
+      "category": "BUSINESS_RULE",
+      "categoryLabel": "Vi pham luat nghiep vu",
+      "endpoint": "POST /api/jobs",
+      "description": "salaryMin > salaryMax van duoc nhan",
+      "expectChecklist": false
+    },
+    {
+      "id": "M24",
+      "category": "BUSINESS_RULE",
+      "categoryLabel": "Vi pham luat nghiep vu",
+      "endpoint": "POST /api/jobs",
+      "description": "deadline o qua khu van duoc nhan",
+      "expectChecklist": false
+    },
+    {
+      "id": "M25",
+      "category": "BUSINESS_RULE",
+      "categoryLabel": "Vi pham luat nghiep vu",
+      "endpoint": "PUT /api/jobs/{id}/rubric",
+      "description": "Tong weight khac 100 van duoc nhan",
+      "expectChecklist": false
+    },
+    {
+      "id": "M26",
+      "category": "BUSINESS_RULE",
+      "categoryLabel": "Vi pham luat nghiep vu",
+      "endpoint": "PATCH /api/applications/{id}/status",
+      "description": "Nhay PENDING -> HIRED (bo qua INTERVIEW_INVITED) van duoc nhan",
+      "expectChecklist": false
+    },
+    {
+      "id": "M27",
+      "category": "BUSINESS_RULE",
+      "categoryLabel": "Vi pham luat nghiep vu",
+      "endpoint": "POST /api/jobs/{id}/applications",
+      "description": "Nop don trung (cung ung vien, cung job) van duoc nhan",
+      "expectChecklist": false
+    }
+  ],
+  "runs": [
+    {
+      "run": 1,
+      "projectId": "73a3c015-d5e2-4daf-890f-96ecdefb2b59",
+      "generation": {
+        "jobStatus": "NEEDS_HUMAN",
+        "tokens": 64593,
+        "seconds": 73.1,
+        "phaseTokens": {
+          "PRECHECK": 0,
+          "AI_BASELINE": 43295,
+          "CHAIN": 0,
+          "RUN": 0,
+          "DIAGNOSE": 0,
+          "LOCK": 0,
+          "FILL": 0,
+          "AI_GAPS": 21298
+        },
+        "endpointResults": [
+          {
+            "label": "POST /auth/login",
+            "status": "NEEDS_HUMAN",
+            "reason": "AUTH",
+            "tokens": 7352
+          },
+          {
+            "label": "POST /api/jobs",
+            "status": "CONFIRMED",
+            "reason": null,
+            "tokens": 10442
+          },
+          {
+            "label": "POST /api/jobs/{jobId}/applications",
+            "status": "NEEDS_HUMAN",
+            "reason": "AUTH",
+            "tokens": 8195
+          },
+          {
+            "label": "GET /api/jobs/{id}",
+            "status": "CONFIRMED",
+            "reason": null,
+            "tokens": 6133
+          },
+          {
+            "label": "PUT /api/jobs/{id}",
+            "status": "CONFIRMED",
+            "reason": null,
+            "tokens": 11173
+          },
+          {
+            "label": "PUT /api/jobs/{id}/rubric",
+            "status": "NEEDS_HUMAN",
+            "reason": "TOKEN_BUDGET",
+            "tokens": 0
+          },
+          {
+            "label": "PATCH /api/applications/{id}/status",
+            "status": "NEEDS_HUMAN",
+            "reason": "MISSING_PARAM_VALUE",
+            "tokens": 0
+          },
+          {
+            "label": "GET /api/users/me",
+            "status": "NEEDS_HUMAN",
+            "reason": "TOKEN_BUDGET",
+            "tokens": 0
+          },
+          {
+            "label": "GET /api/applications/{id}",
+            "status": "NEEDS_HUMAN",
+            "reason": "MISSING_PARAM_VALUE",
+            "tokens": 0
+          },
+          {
+            "label": "DELETE /api/jobs/{id}",
+            "status": "NEEDS_HUMAN",
+            "reason": "TOKEN_BUDGET",
+            "tokens": 0
+          }
+        ],
+        "coverageFill": null,
+        "profileAssignment": {
+          "assigned": 1,
+          "failed": 0
+        },
+        "businessTests": 15
+      },
+      "testsByOrigin": {
+        "SYSTEM_FILLED": 68,
+        "AI_BASELINE": 5,
+        "AI_BUSINESS": 15
+      },
+      "configs": {
+        "B": {
+          "label": "B",
+          "tests": 88,
+          "cleanPass": 84,
+          "falseFailures": 4,
+          "falseFailureCauses": {
+            "UNDETERMINED": 2,
+            "TEST_DATA_SUSPECT": 2
+          },
+          "falseFailureDetails": [
+            {
+              "test": "Positive - Test gốc hợp lệ",
+              "cause": "UNDETERMINED",
+              "expected": 200,
+              "actual": 401
+            },
+            {
+              "test": "Boundary Value - 'salaryMax' = 0 (đúng minimum)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 201,
+              "actual": 400
+            },
+            {
+              "test": "Nghiệp vụ - salaryCurrency không phải mã tiền tệ hợp lệ",
+              "cause": "UNDETERMINED",
+              "expected": 400,
+              "actual": 201
+            },
+            {
+              "test": "Boundary Value - 'salaryMax' = 0 (đúng minimum)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 200,
+              "actual": 400
+            }
+          ],
+          "mutants": [
+            {
+              "id": "M01",
+              "category": "VALIDATION",
+              "expectChecklist": true,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'title'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 201
+                },
+                {
+                  "test": "Negative - 'title' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 201
+                },
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'title'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 200
+                },
+                {
+                  "test": "Negative - 'title' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 4,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            },
+            {
+              "id": "M02",
+              "category": "VALIDATION",
+              "expectChecklist": true,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Boundary Value - 'title' dài 0 ký tự (dưới minLength 1)",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 201
+                },
+                {
+                  "test": "Nghiệp vụ - title chỉ gồm khoảng trắng",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 201
+                },
+                {
+                  "test": "Boundary Value - 'title' dài 0 ký tự (dưới minLength 1)",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 3,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            },
+            {
+              "id": "M19",
+              "category": "MASS_ASSIGNMENT",
+              "expectChecklist": true,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            },
+            {
+              "id": "M23",
+              "category": "BUSINESS_RULE",
+              "expectChecklist": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Nghiệp vụ - salaryMin lớn hơn salaryMax",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 201
+                }
+              ],
+              "suspectCount": 1,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            },
+            {
+              "id": "M24",
+              "category": "BUSINESS_RULE",
+              "expectChecklist": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Nghiệp vụ - deadline ở quá khứ",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 201
+                }
+              ],
+              "suspectCount": 1,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            }
+          ]
+        },
+        "C": {
+          "label": "C",
+          "tests": 15,
+          "cleanPass": 14,
+          "falseFailures": 1,
+          "falseFailureCauses": {
+            "UNDETERMINED": 1
+          },
+          "falseFailureDetails": [
+            {
+              "test": "Nghiệp vụ - salaryCurrency không phải mã tiền tệ hợp lệ",
+              "cause": "UNDETERMINED",
+              "expected": 400,
+              "actual": 201
+            }
+          ],
+          "mutants": [
+            {
+              "id": "M01",
+              "category": "VALIDATION",
+              "expectChecklist": true,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            },
+            {
+              "id": "M02",
+              "category": "VALIDATION",
+              "expectChecklist": true,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Nghiệp vụ - title chỉ gồm khoảng trắng",
+                  "cause": "FLAKY",
+                  "expected": 400,
+                  "actual": 201
+                }
+              ],
+              "suspectCount": 1,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            },
+            {
+              "id": "M19",
+              "category": "MASS_ASSIGNMENT",
+              "expectChecklist": true,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            },
+            {
+              "id": "M23",
+              "category": "BUSINESS_RULE",
+              "expectChecklist": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Nghiệp vụ - salaryMin lớn hơn salaryMax",
+                  "cause": "FLAKY",
+                  "expected": 400,
+                  "actual": 201
+                }
+              ],
+              "suspectCount": 1,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            },
+            {
+              "id": "M24",
+              "category": "BUSINESS_RULE",
+              "expectChecklist": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Nghiệp vụ - deadline ở quá khứ",
+                  "cause": "FLAKY",
+                  "expected": 400,
+                  "actual": 201
+                }
+              ],
+              "suspectCount": 1,
+              "securityFindings": [],
+              "securityFindingsCount": 0
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "summary": {
+    "B": {
+      "runs": 1,
+      "detection": {
+        "ALL": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 0.8,
+          "perRun": [
+            [
+              0,
+              5
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0
+          ]
+        },
+        "BUSINESS_RULE": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 1.0,
+          "perRun": [
+            [
+              0,
+              2
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0
+          ]
+        },
+        "MASS_ASSIGNMENT": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 0.0,
+          "perRun": [
+            [
+              0,
+              1
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0
+          ]
+        },
+        "VALIDATION": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 1.0,
+          "perRun": [
+            [
+              0,
+              2
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0
+          ]
+        }
+      },
+      "falseFailureRate": {
+        "mean": 0.045454545454545456,
+        "stdev": 0.0
+      },
+      "avgTests": 88
+    },
+    "C": {
+      "runs": 1,
+      "detection": {
+        "ALL": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 0.6,
+          "perRun": [
+            [
+              0,
+              5
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0
+          ]
+        },
+        "BUSINESS_RULE": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 1.0,
+          "perRun": [
+            [
+              0,
+              2
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0
+          ]
+        },
+        "MASS_ASSIGNMENT": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 0.0,
+          "perRun": [
+            [
+              0,
+              1
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0
+          ]
+        },
+        "VALIDATION": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 0.5,
+          "perRun": [
+            [
+              0,
+              2
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0
+          ]
+        }
+      },
+      "falseFailureRate": {
+        "mean": 0.06666666666666667,
+        "stdev": 0.0
+      },
+      "avgTests": 15
+    }
+  }
+}

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bật/tắt lỗi cài sẵn</title>
+<style>
+  :root { --bg:#f7f6f3; --card:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e3e1da; --accent:#1d1d1b; --on:#c2410c; --onbg:#fff1e8; --ok:#15803d; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#1f1f1d; --text:#f1f0ec; --muted:#a3a39b; --line:#33332f; --accent:#f1f0ec; --on:#fb923c; --onbg:#2a1d14; --ok:#4ade80; } }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:24px 16px 80px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  p.lead { color:var(--muted); margin:0 0 16px; }
+  .bar { position:sticky; top:0; background:var(--bg); padding:12px 0; border-bottom:1px solid var(--line); display:flex; gap:8px; flex-wrap:wrap; align-items:center; z-index:2; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); cursor:pointer; }
+  button.primary { background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:600; }
+  button:disabled { opacity:.5; cursor:default; }
+  #status { margin-left:auto; color:var(--muted); font-size:14px; }
+  #status.ok { color:var(--ok); }
+  h2 { font-size:15px; margin:22px 0 8px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  label.item { display:flex; gap:10px; align-items:flex-start; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; cursor:pointer; }
+  label.item.on { background:var(--onbg); border-color:var(--on); }
+  label.item input { margin-top:4px; width:18px; height:18px; flex:none; }
+  .id { font-weight:700; min-width:34px; }
+  .desc { flex:1; }
+  .ep { color:var(--muted); font-size:13px; font-family:ui-monospace,Consolas,monospace; }
+  details.ep-group { background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:8px; }
+  details.ep-group > summary { cursor:pointer; padding:10px 12px; font-family:ui-monospace,Consolas,monospace; font-size:14px; }
+  details.ep-group[open] > summary { border-bottom:1px solid var(--line); }
+  details.ep-group .rules { padding:8px 10px 2px; }
+  details.ep-group label.item { margin-bottom:6px; padding:7px 10px; }
+  .badge { font-size:12px; color:var(--on); margin-left:6px; }
+  .note { color:var(--muted); font-size:13px; margin:0 0 10px; }
+  #err { background:var(--onbg); border:1px solid var(--on); border-radius:10px; padding:12px; display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bật/tắt lỗi cài sẵn của mutant-api</h1>
+  <p class="lead">Tick lỗi muốn bật rồi bấm <b>Áp dụng</b>. Khi không tick lỗi nào, API chạy <b>bản đúng</b>. Sau khi đổi, quay lại giao diện test và chạy lại các test case.</p>
+  <div id="err"></div>
+  <div class="bar">
+    <button class="primary" id="apply">Áp dụng</button>
+    <button id="clear">Tắt hết lỗi (bản đúng)</button>
+    <button id="reset">Reset dữ liệu (xoá tin/đơn đã tạo)</button>
+    <span id="status">Đang tải...</span>
+  </div>
+  <div id="list"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let catalog = [];
+let enabled = new Set();
+let ruleCatalog = [];
+let rulesOn = new Set();
+
+function setStatus(text, ok) { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : ""; }
+
+async function load() {
+  try {
+    const r = await fetch("/__mutants");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    catalog = data.catalog; enabled = new Set(data.enabled);
+    ruleCatalog = data.ruleCatalog || []; rulesOn = new Set(data.rulesEnabled || []);
+    $("err").style.display = "none";
+    render();
+    const total = enabled.size + rulesOn.size;
+    setStatus(total ? "Đang bật " + total + " lỗi/công tắc" + (enabled.size ? " (lỗi: " + [...enabled].join(", ") + ")" : "") : "Đang chạy bản đúng (không bật lỗi nào)", true);
+  } catch (e) {
+    $("err").style.display = "block";
+    $("err").innerHTML = "Không điều khiển được. mutant-api phải được chạy với <b>MUTANT_CONTROL=true</b> (" + e.message + ").";
+    setStatus("Lỗi kết nối", false);
+  }
+}
+
+function render() {
+  const groups = {};
+  catalog.forEach((m) => (groups[m.categoryLabel] = groups[m.categoryLabel] || []).push(m));
+  const mutantHtml = Object.entries(groups).map(([label, items]) =>
+    "<h2>" + label + "</h2>" + items.map((m) =>
+      '<label class="item' + (enabled.has(m.id) ? " on" : "") + '"><input type="checkbox" data-id="' + m.id + '"' + (enabled.has(m.id) ? " checked" : "") + ">" +
+      '<span class="id">' + m.id + '</span><span class="desc">' + m.description + (m.inReport === false ? '<span class="badge">bổ sung, chưa đo</span>' : "") + '<div class="ep">' + m.endpoint + "</div></span></label>"
+    ).join("")
+  ).join("");
+  const byEndpoint = {};
+  ruleCatalog.forEach((r) => (byEndpoint[r.endpoint] = byEndpoint[r.endpoint] || []).push(r));
+  const ruleHtml = ruleCatalog.length ? "<h2>Công tắc kiểm tra đầu vào và xác thực (theo từng endpoint)</h2>" +
+    '<p class="note">Mỗi công tắc làm API <b>bỏ qua đúng một kiểm tra</b>. Mỗi test "từ chối dữ liệu sai" mà hệ thống sinh ra (thiếu trường, null, sai kiểu, quá ngắn/dài, ngoài danh sách, không có token...) đều có công tắc tương ứng ở đây.</p>' +
+    Object.entries(byEndpoint).map(([ep, items]) => {
+      const n = items.filter((r) => rulesOn.has(r.id)).length;
+      return '<details class="ep-group"' + (n ? " open" : "") + "><summary>" + ep + ' <span class="badge">' + items.length + " công tắc" + (n ? ", đang bật " + n : "") + '</span></summary><div class="rules">' +
+        items.map((r) => '<label class="item' + (rulesOn.has(r.id) ? " on" : "") + '"><input type="checkbox" data-rule="' + r.id.replace(/"/g, "&quot;") + '"' + (rulesOn.has(r.id) ? " checked" : "") + ">" +
+          '<span class="desc">' + r.description + "</span></label>").join("") + "</div></details>";
+    }).join("") : "";
+  $("list").innerHTML = mutantHtml + ruleHtml;
+  document.querySelectorAll("input[type=checkbox]").forEach((cb) => cb.addEventListener("change", () => {
+    const set = cb.dataset.rule !== undefined ? rulesOn : enabled;
+    const key = cb.dataset.rule !== undefined ? cb.dataset.rule : cb.dataset.id;
+    cb.checked ? set.add(key) : set.delete(key);
+    cb.closest("label").classList.toggle("on", cb.checked);
+    setStatus("Chưa áp dụng - bấm Áp dụng", false);
+  }));
+}
+
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+}
+
+$("apply").onclick = async () => { try { await post("/__mutants", { enabled: [...enabled], rules: [...rulesOn] }); await load(); } catch (e) { setStatus("Lỗi: " + e.message, false); } };
+$("clear").onclick = async () => { try { await post("/__mutants", { enabled: [], rules: [] }); await load(); } catch (e) { setStatus("Lỗi: " + e.message, false); } };
+$("reset").onclick = async () => { if (!confirm("Xoá toàn bộ tin tuyển dụng và đơn ứng tuyển đã tạo, đồng thời tắt hết lỗi?")) return; try { await post("/__reset"); await load(); setStatus("Đã reset dữ liệu và tắt hết lỗi", true); } catch (e) { setStatus("Lỗi: " + e.message, false); } };
+load();
+</script>
+</body>
+</html>
