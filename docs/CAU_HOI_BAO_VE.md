@@ -33,17 +33,18 @@
 ## C. Chất lượng và bằng chứng
 
 **6. Hệ thống bắt được bao nhiêu lỗi so với baseline?**
-- Hiện CHƯA có con số hợp lệ về tỉ lệ bắt lỗi cài sẵn. 708 test backend chứng minh chất lượng mã, không chứng minh khả năng bắt lỗi. Kế hoạch chi tiết: roadmap 17o (API demo gieo 20–30 mutant, so checklist-only / hybrid / AI-only; metric: tỉ lệ phát hiện theo loại lỗi, Fail giả trên bản chuẩn, token, thời gian, chi phí/lỗi).
-- Có bằng chứng thực địa (không phải đo hệ thống): chạy 36 test sinh ra trên API tuyển dụng → 24 Pass / 12 Fail; **8 Fail là lỗi thật** của API đích (trả 401 thay vì 400 cho body sai kiểu/enum sai dù token hợp lệ, đã xác minh bằng curl) và hệ thống gắn nhãn `API_WRONG_STATUS` thay vì che bằng "lỗi token"; 2 Fail là chuỗi rỗng bị API từ chối (lệch spec); 2 Fail là hạn chế của bộ bù (đổi 1 field, không hiểu luật chéo field).
+- Đã đo (17o, `docs/DANH_GIA.md`): gieo **27 lỗi cài sẵn** vào một API tuyển dụng thu nhỏ (`mutant-api`, 10 endpoint), chạy lại bộ test trên từng lỗi. "Phát hiện" = test Pass trên bản chuẩn rồi Fail khi bật đúng một lỗi, loại Fail do môi trường/nhiễu (có lượt đối chứng không bật lỗi).
+- **Checklist tất định (không AI, 0 token): 14/27 (52%)**, kết quả giống hệt giữa 2 lượt. **Hybrid (thêm AI nghiệp vụ): 17/27 (63%)**, 17/17/17 qua 3 lượt, ≈ 93.000 token mỗi lượt. **Chỉ phần AI nghiệp vụ: ≈ 7/27 (27%)**. **Schemathesis (mặc định): 4/27 (15%).**
+- Theo loại: bắt hết 5/5 lỗi bỏ validate, 3/3 sai mã trạng thái, 3/5 sai biên, phân quyền theo vai và mass-assignment có bắt (2/5 và 1/2). **AI chỉ bù đúng chỗ checklist không với tới: luật nghiệp vụ (+3/5)**, giá khoảng 31.000 token cho mỗi lỗi bắt thêm.
+- **Điểm yếu nói thẳng:** cả hai cùng bỏ lọt 9/27 (quyền sở hữu dữ liệu, sai biên trong body lồng nhau, máy trạng thái đơn, nộp đơn trùng, lộ thông tin trong lỗi 400); và hệ thống thường *phát hiện* nhưng chưa dám *kết luận* lỗi của API (chỉ 3–4 phát hiện có nhãn đủ chắc, còn lại `UNDETERMINED`/`FLAKY`).
+- Giới hạn (mục 7 của `DANH_GIA.md`): mutant do nhóm tự gieo trên API nhỏ do nhóm viết; 3 lượt; phụ thuộc phiên bản model/prompt; test gốc và ma trận phân quyền do người viết; cấu hình "chỉ AI" là xấp xỉ; người chạy biết danh sách lỗi (không mù). Không suy rộng ra "bắt được X% lỗi của mọi API".
+- Bằng chứng thực địa trước đó (không phải đo hệ thống): 36 test trên API tuyển dụng thật → 24 Pass / 12 Fail, trong đó **8 Fail là lỗi thật** của API đích (401 thay vì 400, đã xác minh bằng curl; nhãn `API_WRONG_STATUS`).
 
 **7. Tỉ lệ Fail giả (false failure) là bao nhiêu?**
-- Trên bản API thật (chưa có bản chuẩn đã biết là đúng): trước khi cô lập tài nguyên cha 15/36 Pass, sau đó 24/36 Pass; 9 Fail trước đó là lỗi do CÁCH CHẠY của hệ thống (409 do trạng thái cộng dồn) chứ không phải lỗi API, đã loại bằng cách mỗi test con dùng tài nguyên cha mới. Một nhận định cũ cũng bị đính chính (`weight=100` tưởng "API chặt hơn spec" thực ra do tổng trọng số cộng dồn). Fail giả đúng nghĩa (Fail trên bản chuẩn của API) chỉ đo được ở 17o. Số cũ trên 2 endpoint: hệ thống 2/23 và 2/19 (lệch spec thật, `TEST_DATA_SUSPECT`); AI sinh checklist: 13/25 và 20/34 là 404 do thiếu chuỗi id.
-
-**8. Hệ thống có dùng được cho API khác không?**
-- Đã chạy trên 4 API khác miền (tuyển dụng 110 endpoint, thư viện giả lập, shop Spring, Swagger 2.0 XML). Mỗi API chỉ 1–2 endpoint phân tích kỹ; đã sửa 7+ lỗi tổng quát hoá (enum MySQL, Swagger 2.0, basePath, form/XML, Basic/header/query auth...). Chưa thử GraphQL/gRPC.
-
-**9. Spec sai thì sao?**
-- Checklist phụ thuộc spec: spec sai thì checklist sai. Hệ thống phát hiện *lệch spec–API* ở mức nhất định (ví dụ `minLength: 0` nhưng API từ chối chuỗi rỗng → gắn `TEST_DATA_SUSPECT`), không tự sửa spec.
+- Đo được từ 17o trên **bản chuẩn đã biết là đúng** của `mutant-api`: **checklist tất định 4,3%** (7/163 test, giống hệt giữa các lượt; nguyên nhân: luật chéo field `salaryMin ≤ salaryMax`, đăng nhập với giá trị biên, máy trạng thái đơn); **hybrid 23,2% ± 1,2** (≈ 52/228 test), phần lớn từ test AI nghiệp vụ phụ thuộc lẫn nhau (`BLOCKED`) hoặc dùng id không tồn tại; **chỉ phần AI nghiệp vụ ≈ 49%** (xấp xỉ).
+- Hai lần phép đo suýt cho kết quả sai đã được phát hiện và sửa (ghi ở mục 6 của `DANH_GIA.md`): spec của API demo ghi `minLength: 0` trong khi API từ chối chuỗi rỗng (Fail giả giảm 13,3% → 3,5% sau khi sửa spec), và nhiễu làm mọi lỗi cùng ra một con số.
+- Một lỗi thật của hệ thống do phép đo phát hiện: test checklist do hệ thống bù không thừa kế `authProfileId` của test gốc nên endpoint cần vai khác ra 403 oan (chưa sửa, đã ghi roadmap).
+- Chưa đo Fail giả trên API thật nhiều endpoint ở đợt này; số cũ trên API tuyển dụng (2/23 và 2/19 cho checklist hệ thống; 13/25 và 20/34 là 404 thiếu chuỗi id cho AI sinh toàn bộ, đường này đã bỏ) vẫn là bằng chứng thực địa.
 
 ## D. Kỹ thuật và giới hạn
 

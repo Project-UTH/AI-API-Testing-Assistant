@@ -10,6 +10,9 @@ hệ thống, không chèn SQL.
 3. Seed dữ liệu: `python scripts/seed-demo.py --recreate` (chỉ cần Python 3, không cài thêm gì).
    - Tạo tài khoản demo `demo@aiapi.local` / `demo12345` (riêng, không đụng tài khoản test khác).
    - Tạo project **"Demo - Shop API"**: import OpenAPI, 25 test case thủ công, chạy 7 lượt, sinh bug report.
+   *(Chỉ cho bước 9 / chạy lại phép đo)* chạy `mutant-api`: `cd mutant-api && MUTANT_CONTROL=true ./mvnw spring-boot:run` (cổng 8083), rồi
+   `python scripts/eval-mutants.py --config A` (0 token, ~3 phút). Cấu hình có AI (`--config B`) tốn token thật - **không chạy trên sân khấu**, chỉ trình bày
+   kết quả đã lưu trong `docs/eval/`.
 4. Kiểm tra trước giờ demo: đăng nhập tài khoản demo, mở project, xem Kết quả thực thi mở được. Token của target hết hạn sau
    7 ngày - nếu quá hạn thì chạy lại bước 3.
 
@@ -25,6 +28,7 @@ hệ thống, không chèn SQL.
 | 6 | Tab Coverage | Chỉ "đã có test case" và "đã chạy có kết quả" | "Coverage đo checklist EP/BVA suy ra từ spec, không đo code. Mục chưa chạm tài nguyên được đánh dấu *chưa kiểm được*." |
 | 7 | Tab Bug Report | Mở 1 bug | "Bug report do hệ thống tạo theo mẫu cố định, **không dùng AI** nên không bịa. Chỉ 6 bug cho 6 test lỗi thật - fail do môi trường/token/không ổn định/id dự phòng bị loại." |
 | 8 | Bấm Import OpenAPI | **Chỉ mở hộp thoại, bấm Hủy** | "Import lại xoá toàn bộ dữ liệu cũ (chủ ý), nên hộp thoại báo số lượng sẽ mất và bắt xác nhận." |
+| 9 | `docs/DANH_GIA.md` (bảng kết quả đo bằng lỗi cài sẵn) | Mở bảng "bắt X/Y lỗi theo loại" của 3 cấu hình; chỉ 1 mutant bị bắt và 1 mutant bị bỏ lọt | "Em không nói AI giỏi: em **đo**. Gieo 27 lỗi vào 1 API tuyển dụng thu nhỏ, chạy lại bộ test trên từng lỗi. Checklist tất định bắt được các lỗi validate/biên/phân quyền theo vai nhưng **bỏ lọt luật nghiệp vụ**; đó là chỗ AI nghiệp vụ (có gắn nhãn GIẢ ĐỊNH) bổ sung. Số liệu, độ lệch và giới hạn nằm trong tài liệu, chạy lại được bằng `scripts/eval-mutants.py`." |
 
 ## Rủi ro khi demo trực tiếp
 
