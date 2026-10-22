@@ -43,6 +43,7 @@ public class MutantControlController {
             item.put("description", f.description());
             item.put("expectChecklist", f.expectChecklist());
             item.put("inReport", f.inReport());
+            item.put("heldout", f.heldout());
             catalog.add(item);
         }
         List<Map<String, Object>> rules = new ArrayList<>();

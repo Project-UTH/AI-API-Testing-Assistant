@@ -44,6 +44,10 @@ public class AuthFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             user = tokens.verify(header.substring(7).trim());
+            // H07 (held-out): bo loc JWT dung chung chi decode payload, khong xac minh chu ky.
+            if (user.isEmpty() && mutants.on(MutantFlag.H07)) {
+                user = tokens.decodeUnverified(header.substring(7).trim());
+            }
         }
         if (user.isEmpty() && mutants.on(MutantFlag.M18) && "GET".equals(request.getMethod())
                 && JOB_BY_ID.matcher(request.getRequestURI()).matches()) {

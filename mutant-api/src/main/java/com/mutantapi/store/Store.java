@@ -123,6 +123,11 @@ public class Store {
         return applications.values().stream().anyMatch(a -> a.jobId == jobId && a.candidateId == candidateId);
     }
 
+    public boolean hasApplicationWithStatus(long jobId, long candidateId, String status) {
+        return applications.values().stream()
+                .anyMatch(x -> x.jobId == jobId && x.candidateId == candidateId && status.equals(x.status));
+    }
+
     public void reset() {
         jobs.clear();
         applications.clear();

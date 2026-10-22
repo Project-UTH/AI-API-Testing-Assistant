@@ -61,19 +61,29 @@ public class ApplicationController {
             @ApiResponse(responseCode = "409", description = "Da nop don cho tin nay")})
     public ResponseEntity<Dtos.ApplicationResponse> apply(@RequestAttribute(AuthFilter.ATTRIBUTE) AuthUser auth,
                                                           @PathVariable long jobId, @RequestBody JsonNode body) {
-        if (!auth.isCandidate() && !m.on(MutantFlag.M38)) { // M38: HR cung nop don duoc
+        // M38: HR cung nop don duoc. H06 (held-out): mat dong kiem tra role == CANDIDATE (cung hanh vi voi M38).
+        if (!auth.isCandidate() && !m.on(MutantFlag.M38) && !m.on(MutantFlag.H06)) {
             throw ApiException.forbidden("Chi ung vien duoc nop don");
         }
-        store.findJob(jobId).orElseThrow(() -> ApiException.notFound("JOB_NOT_FOUND", "Khong tim thay tin tuyen dung " + jobId));
+        // H15 (held-out): tim tin khong loc da xoa mem -> tin da xoa van nhan don.
+        (m.on(MutantFlag.H15) ? store.findJobAny(jobId) : store.findJob(jobId)).orElseThrow(() -> ApiException.notFound("JOB_NOT_FOUND", "Khong tim thay tin tuyen dung " + jobId));
         Input in = Input.of(body);
-        String coverLetter = in.string("coverLetter", false, false, 0, 2000);
+        String coverLetter = in.string("coverLetter", false, false, 0, m.on(MutantFlag.H03) ? Integer.MAX_VALUE : 2000);
+        // H03 (held-out): do dai coverLetter do bang so byte UTF-8 thay vi so ky tu.
+        if (m.on(MutantFlag.H03) && coverLetter != null
+                && coverLetter.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 2000 && !in.off("coverLetter", "maxLength")) {
+            in.addError("coverLetter toi da 2000 ky tu");
+        }
         Boolean consent = in.bool("consent", true);
         in.check(400);
         if (!Boolean.TRUE.equals(consent) && !m.on(MutantFlag.M39)) { // M39: consent=false van nhan don
             throw new ApiException(400, "CONSENT_REQUIRED", "Ung vien phai dong y (consent = true) truoc khi nop don");
         }
         // M27: nop don trung van duoc nhan.
-        if (store.hasApplication(jobId, auth.id()) && !m.on(MutantFlag.M27)) {
+        // H11 (held-out): kiem tra trung chi tim don dang PENDING.
+        boolean duplicate = m.on(MutantFlag.H11)
+                ? store.hasApplicationWithStatus(jobId, auth.id(), "PENDING") : store.hasApplication(jobId, auth.id());
+        if (duplicate && !m.on(MutantFlag.M27)) {
             throw ApiException.conflict("ALREADY_APPLIED", "Ban da nop don cho tin nay");
         }
         Store.Application app = new Store.Application();
@@ -99,7 +109,8 @@ public class ApplicationController {
             allowed = ownerOf(app) == auth.id() || m.on(MutantFlag.M40);
         } else {
             // M16: ung vien xem duoc don cua nguoi khac (thieu kiem tra chu don).
-            allowed = auth.isCandidate() && (app.candidateId == auth.id() || m.on(MutantFlag.M16));
+            // H13 (held-out): chi xet role == CANDIDATE, quen so candidateId (cung hanh vi voi M16).
+            allowed = auth.isCandidate() && (app.candidateId == auth.id() || m.on(MutantFlag.M16) || m.on(MutantFlag.H13));
         }
         if (!allowed) {
             throw ApiException.forbidden("Ban khong co quyen xem don nay");
@@ -141,7 +152,9 @@ public class ApplicationController {
 
         boolean allowed = TRANSITIONS.getOrDefault(app.status, Set.of()).contains(status)
                 // M26: nhay thang PENDING -> HIRED.
-                || (m.on(MutantFlag.M26) && "PENDING".equals(app.status) && "HIRED".equals(status));
+                || (m.on(MutantFlag.M26) && "PENDING".equals(app.status) && "HIRED".equals(status))
+                // H12 (held-out): REJECTED khong con la trang thai cuoi - them nham REJECTED -> INTERVIEW_INVITED.
+                || (m.on(MutantFlag.H12) && "REJECTED".equals(app.status) && "INTERVIEW_INVITED".equals(status));
         if (!allowed) {
             throw ApiException.conflict("INVALID_STATE_TRANSITION", "Khong the chuyen " + app.status + " -> " + status);
         }
