@@ -572,7 +572,9 @@ def main():
     ap.add_argument("--target-url", default="http://host.docker.internal:8083", help="mutant-api tính từ backend (Docker)")
     ap.add_argument("--email", default="eval@aiapi.local")
     ap.add_argument("--password", default="eval12345")
-    ap.add_argument("--mutants", default="", help="chỉ đo các mutant này, vd M01,M07 (mặc định: tất cả)")
+    ap.add_argument("--mutants", default="", help="chỉ đo các mutant này, vd M01,M07 (mặc định: tất cả, trừ bộ held-out)")
+    ap.add_argument("--include-heldout", action="store_true",
+                    help="17q - đo cả bộ held-out H01-H15 (CHỈ dùng 1 lần ở G5; mặc định loại để không vô tình 'nhìn đề')")
     ap.add_argument("--skip-paths", nargs="*", default=[], help="bỏ qua endpoint theo path (vd để thử 1 endpoint)")
     ap.add_argument("--seed-baselines", action="store_true", help="B: tạo trước test gốc do người viết (bỏ AI sinh test gốc)")
     ap.add_argument("--token-cap", type=int, default=200000, help="trần token cho 1 job AI")
@@ -604,6 +606,8 @@ def main():
     catalog = target.catalog()
     wanted = {x.strip() for x in args.mutants.split(",") if x.strip()}
     mutants = [m for m in catalog if not wanted or m["id"] in wanted]
+    if not args.include_heldout:
+        mutants = [m for m in mutants if not m.get("heldout")]
     if not mutants:
         raise SystemExit("Không có mutant nào khớp --mutants")
     spec_paths = json.loads(target.spec())["paths"]
