@@ -55,9 +55,10 @@ public class TestExecutionRunner {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Module 16 - dữ liệu phụ thu được quanh 1 lần gọi target, truyền xuống finish() để lưu cùng TestResult. */
-    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint, String schemaViolationsJson, String securityFindingsJson) {
+    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint, String schemaViolationsJson, String securityFindingsJson,
+                        String specDeviationsJson) {
         Meta(Long durationMs, ErrorKind errorKind, String fingerprint) {
-            this(durationMs, errorKind, fingerprint, null, null);
+            this(durationMs, errorKind, fingerprint, null, null, null);
         }
     }
 
@@ -287,7 +288,8 @@ public class TestExecutionRunner {
             SensitiveDataScanner.Scan scan = scanSensitive(testCase, result.responseBody());
             Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
                     statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null,
-                    securityFindingsJsonOf(result.statusCode(), scan, probeFindingsOf(probe)));
+                    securityFindingsJsonOf(result.statusCode(), scan, probeFindingsOf(probe)),
+                    specDeviationsJsonOf(testCase, result.statusCode()));
 
             // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
             // status code đã sai.
@@ -410,6 +412,31 @@ public class TestExecutionRunner {
         }
     }
 
+    /**
+     * 17q G1 - cảnh báo mã thành công lệch spec, tính ĐỘC LẬP với việc mã có khớp kỳ vọng hay không (kỳ vọng có thể đã bị đổi
+     * theo mã API trả nên "khớp" không có nghĩa là đúng spec). Lỗi ở bước này chỉ bỏ qua.
+     */
+    private String specDeviationsJsonOf(TestCase testCase, Integer statusCode) {
+        try {
+            if (testCase.getEndpoint() == null || testCase.getProbeKind() != null) {
+                return null;
+            }
+            return SpecStatusDeviation.check(SpecStatusDeviation.declaredStatusCodes(testCase.getEndpoint().getSchema()),
+                            testCase.getExpectedStatus(), statusCode)
+                    .map(warning -> {
+                        try {
+                            return objectMapper.writeValueAsString(List.of(warning));
+                        } catch (Exception e) {
+                            return null;
+                        }
+                    })
+                    .orElse(null);
+        } catch (Exception e) {
+            log.warn("Khong doi chieu duoc ma trang thai voi spec cho test case {}: {}", testCase.getId(), e.toString());
+            return null;
+        }
+    }
+
     private long elapsedMillis(long startedNanos) {
         return (System.nanoTime() - startedNanos) / 1_000_000;
     }
@@ -439,6 +466,7 @@ public class TestExecutionRunner {
                 .testCaseFingerprint(meta.fingerprint())
                 .schemaViolationsJson(meta.schemaViolationsJson())
                 .securityFindingsJson(meta.securityFindingsJson())
+                .specDeviationsJson(meta.specDeviationsJson())
                 .build();
         testResultRepository.save(result);
         savedResults.add(result);

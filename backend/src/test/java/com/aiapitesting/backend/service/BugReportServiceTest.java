@@ -211,7 +211,7 @@ class BugReportServiceTest {
         failedResult.setFailureCause(FailureCause.STABLE_FAILURE);
         when(testResultRepository.findAllFailedByProject(project)).thenReturn(List.of(failedResult));
         when(currentUserService.getCurrentUser()).thenReturn(owner);
-        when(bugReportRepository.existsByTestCaseAndStatusNot(testCase, com.aiapitesting.backend.entity.BugStatus.CLOSED)).thenReturn(true);
+        when(bugReportRepository.existsOpenFailBugForTestCase(testCase, com.aiapitesting.backend.entity.BugStatus.CLOSED)).thenReturn(true);
 
         BugReportBatchGenerateResponse response = bugReportService.generateForProject(projectId, null);
 
@@ -254,6 +254,57 @@ class BugReportServiceTest {
         assertThatThrownBy(() -> bugReportService.create(projectId, request))
                 .isInstanceOf(InvalidRequestException.class);
         verify(bugReportRepository, never()).save(any());
+    }
+
+    // ---- 17q G1 - bug "lệch spec" từ lần chạy Pass, chỉ tạo thủ công ----
+
+    private TestResult passedWithSpecDeviation() {
+        return TestResult.builder().id(UUID.randomUUID()).testCase(testCase).execution(failedResult.getExecution())
+                .status(TestResultStatus.PASSED).responseStatus(200)
+                .specDeviationsJson("[\"Mã trạng thái lệch spec: spec khai [201], API trả 200\"]").build();
+    }
+
+    @Test
+    void create_passedResultWithSpecDeviation_isAllowed() {
+        TestResult deviation = passedWithSpecDeviation();
+        when(testResultRepository.findByIdAndTestCaseEndpointProject(deviation.getId(), project)).thenReturn(Optional.of(deviation));
+        when(bugReportRepository.existsBySourceTestResultId(deviation.getId())).thenReturn(false);
+        when(bugReportRepository.existsOpenSpecDeviationBug(endpoint, BugStatus.CLOSED)).thenReturn(false);
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(projectRepository.findMaxBugReportProjectSeqByOwner(owner)).thenReturn(Optional.empty());
+        when(bugReportRepository.findMaxSeqInProjectByProject(project)).thenReturn(Optional.empty());
+
+        BugReportResponse response = bugReportService.create(projectId, new CreateBugReportRequest(
+                deviation.getId(), "Lệch spec", null, null, null, null,
+                BugSeverity.MINOR, BugFrequency.ALWAYS, BugPriority.TRIVIAL, null, null));
+
+        assertThat(response.bugId()).isEqualTo("B1_001");
+    }
+
+    @Test
+    void create_specDeviation_secondOpenBugOnSameEndpoint_isRejected() {
+        TestResult deviation = passedWithSpecDeviation();
+        when(testResultRepository.findByIdAndTestCaseEndpointProject(deviation.getId(), project)).thenReturn(Optional.of(deviation));
+        when(bugReportRepository.existsBySourceTestResultId(deviation.getId())).thenReturn(false);
+        when(bugReportRepository.existsOpenSpecDeviationBug(endpoint, BugStatus.CLOSED)).thenReturn(true);
+
+        assertThatThrownBy(() -> bugReportService.create(projectId, new CreateBugReportRequest(
+                deviation.getId(), "Lệch spec", null, null, null, null,
+                BugSeverity.MINOR, BugFrequency.ALWAYS, BugPriority.TRIVIAL, null, null)))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(bugReportRepository, never()).save(any());
+    }
+
+    @Test
+    void getDraft_specDeviation_describesDeviationInsteadOfFail() {
+        TestResult deviation = passedWithSpecDeviation();
+        when(testResultRepository.findByIdAndTestCaseEndpointProject(deviation.getId(), project)).thenReturn(Optional.of(deviation));
+
+        var draft = bugReportService.getDraft(projectId, deviation.getId());
+
+        assertThat(draft.summary()).startsWith("Lệch spec").contains("/api/products");
+        assertThat(draft.actualResult()).contains("API trả 200");
+        assertThat(draft.expectedResult()).contains("spec");
     }
 
     @Test

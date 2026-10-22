@@ -109,6 +109,8 @@ export interface TestResult {
   schemaViolations: string[]
   /** Module 17 (17b) - cảnh báo dữ liệu nhạy cảm trong response (chỉ đường dẫn + quy tắc, không có giá trị). Không đổi Pass/Fail. */
   securityFindings?: SecurityFinding[]
+  /** 17q G1 - cảnh báo mã thành công lệch spec (vd spec khai [201], API trả 200); rỗng = không lệch/không đủ căn cứ. Không đổi Pass/Fail. */
+  specDeviations?: string[]
 }
 
 export interface SecurityFinding {

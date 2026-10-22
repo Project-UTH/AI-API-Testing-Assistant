@@ -36,7 +36,7 @@ interface CoverageSummaryProps {
 
 /**
  * Hai donut cạnh nhau: "đã có test case" vs "đã chạy có kết quả" - có test mới là thiết kế, chạy ra Pass/Fail
- * mới là đã kiểm thật (Module 15c + 15j).
+ * mới là đã kiểm thật (Module 15c + 15j). "Đã có test" chỉ đếm mục có test, KHÔNG xét Pass/Fail (17q G1).
  */
 export function CoverageSummary({ coveragePercent, executedPercent }: CoverageSummaryProps) {
   return (
@@ -45,7 +45,7 @@ export function CoverageSummary({ coveragePercent, executedPercent }: CoverageSu
         <MiniDonut percent={coveragePercent} color="#10b981" />
         <div className="text-sm">
           <p className="font-medium text-foreground">Đã có test case</p>
-          <p className="text-xs text-muted-foreground">% mục cần kiểm (tự tính từ spec) đã có test đạt</p>
+          <p className="text-xs text-muted-foreground">% mục cần kiểm (tự tính từ spec) đã có test</p>
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -61,6 +61,9 @@ export function CoverageSummary({ coveragePercent, executedPercent }: CoverageSu
           kế, chưa được kiểm thật trên API.
         </p>
       )}
+      <p className="w-full text-xs text-muted-foreground">
+        Độ phủ đo mức đủ tình huống theo spec, không đo khả năng bắt lỗi.
+      </p>
     </div>
   )
 }

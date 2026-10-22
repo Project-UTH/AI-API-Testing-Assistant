@@ -147,6 +147,25 @@ class TestCaseGenerationServiceTest {
                 .thenReturn(com.aiapitesting.backend.service.TestCaseReliabilityValidator.Result.reliable());
     }
 
+    // ---- 17q G1 - đổi kỳ vọng test gốc không được che lệch spec ----
+
+    @Test
+    void expectationChangeNote_saysSpecDeviationWhenAdoptedCodeIsNotDeclared() {
+        Endpoint declared201 = Endpoint.builder().schema("{\"responseStatusCodes\":[\"201\",\"400\"]}").build();
+        assertThat(TestCaseGenerationService.expectationChangeNote(declared201, 201, 200))
+                .contains("201 → 200").contains("LỆCH SPEC").contains("[201]");
+    }
+
+    @Test
+    void expectationChangeNote_matchesSpec_orSpecNotInformative() {
+        Endpoint declared = Endpoint.builder().schema("{\"responseStatusCodes\":[\"200\",\"201\"]}").build();
+        assertThat(TestCaseGenerationService.expectationChangeNote(declared, 200, 201)).contains("khớp spec").doesNotContain("LỆCH");
+        Endpoint springdoc = Endpoint.builder().schema("{\"responseStatusCodes\":[\"200\"]}").build();
+        assertThat(TestCaseGenerationService.expectationChangeNote(springdoc, 200, 201)).contains("chỉ khai 200");
+        Endpoint legacy = Endpoint.builder().build();
+        assertThat(TestCaseGenerationService.expectationChangeNote(legacy, 200, 201)).contains("không đối chiếu được");
+    }
+
     @Test
     void generate_businessGroup_savesCappedDedupedAssumptionCases_withBusinessSource_andKeepsCoverageScope() throws Exception {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);

@@ -219,8 +219,10 @@ public class BaselineVerificationService {
 
             if (diagnosis.decision() == Decision.ADOPT_2XX) {
                 // API trả 2xx khác mã AI kỳ vọng (vd 201 thay vì 200): hệ thống tự sửa kỳ vọng, chạy lại, KHÔNG tốn AI.
-                p.start(endpointId, label, "ADJUST_EXPECTED", "SYSTEM", "Sửa kỳ vọng sang " + outcome.httpStatus()).ok(diagnosis.message());
-                generationService.setBaselineExpectedStatus(projectId, endpointId, testId, outcome.httpStatus());
+                JobProgress.Step adjust = p.start(endpointId, label, "ADJUST_EXPECTED", "SYSTEM", "Sửa kỳ vọng sang " + outcome.httpStatus());
+                // 17q G1 - ghi chú kèm kết luận đối chiếu spec (lệch spec không bị che, kết quả chạy báo riêng).
+                String note = generationService.setBaselineExpectedStatus(projectId, endpointId, testId, outcome.httpStatus());
+                adjust.ok(note == null ? diagnosis.message() : note);
                 RunOutcome second = runStep(p, endpointId, label, projectId, testId, "Chạy lại test gốc sau khi sửa kỳ vọng");
                 last = second;
                 outcome = second;

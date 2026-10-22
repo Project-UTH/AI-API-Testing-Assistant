@@ -66,6 +66,13 @@ public class TestResult {
     @Column(columnDefinition = "TEXT")
     private String securityFindingsJson;
 
+    /**
+     * 17q G1 - cảnh báo mã thành công lệch spec (JSON array câu mô tả, vd spec khai [201], API trả 200). Null = không lệch/
+     * không đủ căn cứ/kết quả cũ. CHỈ cảnh báo - không đổi Pass/Fail, không là tín hiệu phân loại nguyên nhân Fail.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String specDeviationsJson;
+
     /** Module 16 - thời gian gọi target API (ms); null cho case không gọi target (ERROR cấu hình, BLOCKED) và dữ liệu cũ. */
     private Long durationMs;
 

@@ -79,6 +79,16 @@ public class TestCase {
     @Column(nullable = false)
     private Integer expectedStatus;
 
+    /**
+     * 17q G1 - kỳ vọng ban đầu (do AI đoán) khi hệ thống tự đổi kỳ vọng của test gốc sang mã 2xx API thật trả. Null = chưa
+     * từng đổi. Giữ lại để truy vết - đổi kỳ vọng không được che lỗi: chênh lệch so với spec được báo riêng ở kết quả chạy.
+     */
+    private Integer originalExpectedStatus;
+
+    /** 17q G1 - ghi chú lý do đổi kỳ vọng (kèm kết luận lệch spec nếu có); null = chưa đổi. */
+    @Column(length = 500)
+    private String expectationNote;
+
     /** Module 17 (17b-2) - loại test bảo mật tự sinh (hiện chỉ "MASS_ASSIGNMENT"); null = test thường. VARCHAR (không enum) để thêm loại mới về sau. */
     @Column(length = 30)
     private String probeKind;

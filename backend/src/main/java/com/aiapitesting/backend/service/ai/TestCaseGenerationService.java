@@ -33,6 +33,7 @@ import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import com.aiapitesting.backend.service.TestCaseReliabilityValidator;
 import com.aiapitesting.backend.service.TestCaseService;
+import com.aiapitesting.backend.service.execution.SpecStatusDeviation;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +62,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -350,6 +352,9 @@ public class TestCaseGenerationService {
         existing.setRequestBody(fresh.getRequestBody());
         existing.setRationale(fresh.getRationale());
         existing.setExpectedStatus(fresh.getExpectedStatus());
+        // AI vừa viết lại test gốc: ghi chú đổi kỳ vọng của bản trước không còn đúng.
+        existing.setOriginalExpectedStatus(null);
+        existing.setExpectationNote(null);
         existing.setResolvedPath(fresh.getResolvedPath());
         existing.setPathParamFallbacks(fresh.getPathParamFallbacks());
         existing.setReliabilityStatus(fresh.getReliabilityStatus());
@@ -374,16 +379,48 @@ public class TestCaseGenerationService {
         return applied;
     }
 
-    /** Hệ thống tự đổi kỳ vọng sang đúng mã 2xx API trả (vd 200 -> 201) mà không tốn AI. */
+    /**
+     * Hệ thống tự đổi kỳ vọng sang đúng mã 2xx API trả (vd 201 -> 200) mà không tốn AI. Test gốc chỉ cần xác nhận "request hợp
+     * lệ được chấp nhận" để làm nền, nên đổi ở đây là hợp lý - nhưng 17q G1: KHÔNG được che lỗi. Lưu kỳ vọng ban đầu + ghi chú,
+     * và nếu mã API trả nằm ngoài các mã 2xx spec khai thì ghi rõ "lệch spec" (kết quả chạy cũng báo riêng, SpecStatusDeviation).
+     *
+     * @return ghi chú đã lưu (dùng cho bước giám sát job)
+     */
     @Transactional
-    public void setBaselineExpectedStatus(UUID projectId, UUID endpointId, UUID testCaseId, int expectedStatus) {
+    public String setBaselineExpectedStatus(UUID projectId, UUID endpointId, UUID testCaseId, int expectedStatus) {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
         TestCase testCase = testCaseRepository.findByIdAndEndpoint(testCaseId, endpoint)
                 .orElseThrow(() -> new TestCaseNotFoundException("Không tìm thấy test case với id đã cho"));
+        Integer before = testCase.getExpectedStatus();
+        String note = expectationChangeNote(endpoint, before, expectedStatus);
+        if (testCase.getOriginalExpectedStatus() == null) {
+            testCase.setOriginalExpectedStatus(before);
+        }
+        if (Integer.valueOf(expectedStatus).equals(testCase.getOriginalExpectedStatus())) {
+            // Đổi qua rồi đổi về đúng kỳ vọng ban đầu: không còn gì để ghi chú.
+            testCase.setOriginalExpectedStatus(null);
+            note = null;
+        }
+        testCase.setExpectationNote(note);
         testCase.setExpectedStatus(expectedStatus);
         testCaseRepository.save(testCase);
+        return note;
+    }
+
+    static String expectationChangeNote(Endpoint endpoint, Integer before, int after) {
+        String note = "Hệ thống đổi kỳ vọng " + before + " → " + after + " sau khi chạy thật test gốc (API trả " + after + ")";
+        Set<Integer> declared = SpecStatusDeviation.declaredSuccessCodes(SpecStatusDeviation.declaredStatusCodes(endpoint.getSchema()));
+        if (declared.isEmpty()) {
+            return note + "; spec không khai mã thành công (hoặc endpoint import trước khi lưu mã phản hồi) nên không đối chiếu được";
+        }
+        if (!SpecStatusDeviation.isInformative(declared)) {
+            return note + "; spec chỉ khai 200 (thường do công cụ sinh spec tự điền) nên không đủ căn cứ kết luận lệch spec";
+        }
+        return declared.contains(after)
+                ? note + "; khớp spec " + declared
+                : note + "; LỆCH SPEC: spec khai " + declared + " - được báo ở kết quả chạy";
     }
 
     private Prompt buildSinglePrompt(Endpoint endpoint, String groupRules) {

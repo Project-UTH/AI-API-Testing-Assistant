@@ -24,7 +24,11 @@ public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
 
     long countByProject(Project project);
 
-    boolean existsByTestCaseAndStatusNot(TestCase testCase, BugStatus status);
+    // 17q G1 - sinh bug hàng loạt chỉ bỏ qua test case đã có bug FAIL đang mở; bug "lệch spec" (nguồn là lần chạy PASSED)
+    // không được chặn 1 lỗi Fail thật về sau của cùng test case.
+    @Query("SELECT CASE WHEN COUNT(b) > 0 THEN true ELSE false END FROM BugReport b WHERE b.testCase = :testCase "
+            + "AND b.status <> :closed AND b.sourceTestResult.status <> com.aiapitesting.backend.entity.TestResultStatus.PASSED")
+    boolean existsOpenFailBugForTestCase(@Param("testCase") TestCase testCase, @Param("closed") BugStatus closed);
 
     long countByProjectAndStatusNot(Project project, BugStatus status);
 
@@ -66,6 +70,13 @@ public interface BugReportRepository extends JpaRepository<BugReport, UUID> {
     List<BugReport> findAllByTestCase(@Param("testCase") TestCase testCase);
 
     boolean existsBySourceTestResultId(UUID sourceTestResultId);
+
+    // 17q G1 - chặn trùng bug "lệch spec": mỗi endpoint chỉ 1 bug lệch spec đang mở (mọi test dương cùng endpoint đều thấy cùng lệch).
+    @Query("SELECT CASE WHEN COUNT(b) > 0 THEN true ELSE false END FROM BugReport b WHERE b.endpoint = :endpoint AND b.status <> :closed "
+            + "AND b.sourceTestResult.status = com.aiapitesting.backend.entity.TestResultStatus.PASSED "
+            + "AND b.sourceTestResult.specDeviationsJson IS NOT NULL")
+    boolean existsOpenSpecDeviationBug(@Param("endpoint") com.aiapitesting.backend.entity.Endpoint endpoint,
+                                       @Param("closed") BugStatus closed);
 
     // Module 17 (G4) - số kết quả FAILED của 1 lần chạy đã có Bug Report (để biết còn bao nhiêu kết quả chưa có bug).
     @Query("SELECT DISTINCT b.sourceTestResult.id FROM BugReport b WHERE b.sourceTestResult.execution = :execution")

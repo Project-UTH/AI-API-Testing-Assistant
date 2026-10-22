@@ -177,12 +177,20 @@ export interface TestCase {
   /** Module 17 (17b-2) - "MASS_ASSIGNMENT" cho test probe bảo mật tự sinh; probeFields = tên field đã tiêm. */
   probeKind?: string | null
   probeFields?: string[]
+  /** 17q G1 - kỳ vọng ban đầu trước khi hệ thống tự đổi sau lần chạy thật test gốc (null = chưa đổi) + lý do. */
+  originalExpectedStatus?: number | null
+  expectationNote?: string | null
 }
 
 export interface ReliabilityDisplay {
   label: string
   tone: "reliable" | "needsReview"
   title: string
+}
+
+/** 17q G1 - hệ thống đã tự đổi kỳ vọng của test gốc sau lần chạy thật (giữ dấu vết, không được ẩn). */
+export function expectationChanged(testCase: TestCase): boolean {
+  return testCase.originalExpectedStatus != null && testCase.originalExpectedStatus !== testCase.expectedStatus
 }
 
 /**

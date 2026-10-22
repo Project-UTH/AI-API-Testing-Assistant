@@ -40,7 +40,10 @@ public record TestCaseResponse(
         List<TestCaseAssertionResponse> assertions,
         /** Module 17 (17b-2) - loại test bảo mật tự sinh ("MASS_ASSIGNMENT") hoặc null; probeFields = tên field đã tiêm (chỉ đọc). */
         String probeKind,
-        List<String> probeFields
+        List<String> probeFields,
+        /** 17q G1 - kỳ vọng ban đầu trước khi hệ thống tự đổi sau lần chạy thật test gốc (null = chưa đổi) + ghi chú lý do. */
+        Integer originalExpectedStatus,
+        String expectationNote
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -82,7 +85,9 @@ public record TestCaseResponse(
                 dependencies,
                 assertions,
                 testCase.getProbeKind(),
-                parseProbeFieldNames(testCase.getProbeFieldsJson())
+                parseProbeFieldNames(testCase.getProbeFieldsJson()),
+                testCase.getOriginalExpectedStatus(),
+                testCase.getExpectationNote()
         );
     }
 

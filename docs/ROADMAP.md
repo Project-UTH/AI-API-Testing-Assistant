@@ -1581,26 +1581,37 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
 ---
 
 **G0. Nền đo, làm TRƯỚC mọi thay đổi checklist/luật (khoảng 1,5 ngày, 0 token)**
-- [ ] **G0.1** Đo lại cấu hình A trên `main` hiện tại (`scripts/eval-mutants.py`), ghi commit hash. Kiểm chứng luôn nghi vấn M11 bị tụt từ caught xuống suspect.
-- [ ] **G0.2 Danh mục mẫu luật** lấy từ tài liệu tham khảo, không lấy theo mutant. Commit TRƯỚC khi viết bộ held-out. Các mẫu:
+- [x] **G0.1** Đo lại cấu hình A trên `main` hiện tại (`scripts/eval-mutants.py`), ghi commit hash. Kiểm chứng luôn nghi vấn M11 bị tụt từ caught xuống suspect. *(ĐÃ ĐO 2026-10-23 trên `main` @ `2652cfa` (hệ thống chưa đổi gì của 17q), 2 lượt project mới, `docs/eval/results-A-g0-baseline.json`: bắt chặt **5/42**, phát hiện (bắt chặt + nghi ngờ) **21/42**, Fail giả **1,7%** (3/176, đều `STATE_CONFLICT`), 2 lượt giống hệt. **M11 bắt chặt ở cả 2 lượt**: nghi vấn tụt hạng ở G5 là do thứ tự/lịch sử chạy trên project cũ, không phải hệ thống kém đi. Đây là mốc "trước 17q" để so.)*
+- [x] **G0.2 Danh mục mẫu luật** *(ĐÃ LÀM 2026-10-23: `docs/eval/rule-template-catalog.md`, T1-T12, commit `873be29` trước G0.3/G0.4. Lưu ý trung thực: người soạn danh mục đã biết bộ M01-M42; bộ held-out là chỗ kiểm chứng ngoài.)* lấy từ tài liệu tham khảo, không lấy theo mutant. Commit TRƯỚC khi viết bộ held-out. Các mẫu:
   - phụ thuộc tham số Martin-Lopez, Segura, Ruiz-Cortés 2019 (Requires/Or/OnlyOne/AllOrNone/ZeroOrOne/Arithmetic);
   - ràng buộc thời gian;
   - tổng hợp trên mảng;
   - trùng lặp;
   - máy trạng thái.
-- [ ] **G0.3 Bộ lỗi held-out do AI viết.** Một agent MỚI, cô lập:
+- [x] **G0.3 Bộ lỗi held-out do AI viết.** *(ĐÃ THIẾT KẾ 2026-10-23: `docs/eval/heldout-mutants.md`, H01-H15, commit `767490b`; agent thiết kế chỉ đọc `openapi.json` + `docs/eval/ground-truth-rules.md` (86 luật hành vi đúng do agent khác rút từ code bản chuẩn, không nhắc mutant). CHƯA cài vào `mutant-api` (chờ phép đo G0.1 xong). Lưu ý: người code hệ thống đã thấy bảng tóm tắt H01-H15 lúc nhận kết quả - ghi vào threats to validity, không chỉnh hệ thống theo bảng này.)* Một agent MỚI, cô lập:
   - CHỈ được đọc `mutant-api/openapi.json`, mô tả miền tuyển dụng và danh mục loại lỗi (OWASP API Top 10 + loại lỗi thường gặp);
   - KHÔNG được đọc `backend/`, `TestCaseChecklistPlanner`, `MutantFlag.java`/danh sách M01-M42, `docs/DANH_GIA.md`.
 
   Agent viết 10-15 mutant mới (`H01-H15`), có phân loại và giả thuyết. Commit có hash TRƯỚC khi code G1-G4. Bộ này chỉ dùng để đo một lần ở cuối; không sửa hệ thống dựa trên nó.
-- [ ] **G0.4 Tài liệu nghiệp vụ do AI viết.** Một agent cô lập khác, cùng ràng buộc như G0.3 và KHÔNG biết bộ held-out, viết `docs/eval/srs-mutant-api.md` theo giọng BA mô tả hệ thống tuyển dụng. Kèm **danh sách luật chuẩn** (ground truth), rút từ code `mutant-api` bản chuẩn bởi một agent thứ ba, để đo precision/recall trích luật.
+- [x] **G0.4 Tài liệu nghiệp vụ do AI viết.** *(ĐÃ LÀM 2026-10-23: `docs/eval/srs-mutant-api.md` (≈3.560 từ, nêu 72/86 luật, cố ý bỏ 14, có nhiễu ở mục phi chức năng/vấn đề mở) + đáp án `docs/eval/srs-mutant-api.answer-key.md`, commit `0d41252`; agent viết chỉ đọc `openapi.json` + `ground-truth-rules.md`.)* Một agent cô lập khác, cùng ràng buộc như G0.3 và KHÔNG biết bộ held-out, viết `docs/eval/srs-mutant-api.md` theo giọng BA mô tả hệ thống tuyển dụng. Kèm **danh sách luật chuẩn** (ground truth), rút từ code `mutant-api` bản chuẩn bởi một agent thứ ba, để đo precision/recall trích luật.
 - **Hạn chế phải ghi trong `DANH_GIA.md`:** người viết held-out/tài liệu là AI cùng họ với AI trong hệ thống (Claude). Có thể chung "điểm mù", nên là bằng chứng yếu hơn so với người viết độc lập. Bù lại bằng cách chạy thêm trên `shop-api-target` (API thứ 2, khác miền).
 
 **G1. Phương án C: tự đổi kỳ vọng 2xx của test gốc, bản trung gian chặt (khoảng 1 ngày)**
-- [ ] Vẫn tự sửa để test gốc Pass, vì test gốc chỉ cần xác nhận "request hợp lệ được chấp nhận" để làm nền.
-- [ ] CHỈ ghi phát hiện "**Lệch spec: khai X, API trả Y**" khi spec khai mã 2xx cụ thể và mã API trả nằm NGOÀI danh sách khai. Spec kiểu springdoc mặc định chỉ khai 200 thì không cảnh báo.
-- [ ] Lưu kỳ vọng gốc + lý do đổi. Phát hiện ở mức thấp, xuất được vào bug report. Enum/nhãn mới phải thêm vào bảng hiển thị frontend cùng lúc.
-- [ ] Sửa nhãn "đã có test đạt" → "đã có test" (`CoverageMatrixChart.tsx:48`). Thêm câu cảnh báo cố định: "Độ phủ đo mức đủ tình huống theo spec, không đo khả năng bắt lỗi."
+- [x] Vẫn tự sửa để test gốc Pass, vì test gốc chỉ cần xác nhận "request hợp lệ được chấp nhận" để làm nền.
+- [x] CHỈ ghi phát hiện "**Lệch spec: khai X, API trả Y**" khi spec khai mã 2xx cụ thể và mã API trả nằm NGOÀI danh sách khai. Spec kiểu springdoc mặc định chỉ khai 200 thì không cảnh báo.
+- [x] Lưu kỳ vọng gốc + lý do đổi. Phát hiện ở mức thấp, xuất được vào bug report. Enum/nhãn mới phải thêm vào bảng hiển thị frontend cùng lúc.
+- [x] Sửa nhãn "đã có test đạt" → "đã có test" (`CoverageMatrixChart.tsx:48`). Thêm câu cảnh báo cố định: "Độ phủ đo mức đủ tình huống theo spec, không đo khả năng bắt lỗi."
+- *G1 ĐÃ LÀM 2026-10-23 (hỏi 2 chuyên gia trước khi code, 1 chuyên gia review sau khi code; đã sửa 6/7 điểm review):*
+  - `SpecStatusDeviation` (tất định): cảnh báo khi test kỳ vọng 2xx, API trả 2xx ngoài tập 2xx spec khai. Bỏ qua spec chỉ khai {200}, "2XX", "default". Tính độc lập với việc khớp kỳ vọng.
+  - Lưu ở cột mới `TestResult.specDeviationsJson` → `TestResultResponse.specDeviations`, tách khỏi `schemaViolations`. Không đổi Pass/Fail, không là tín hiệu phân loại Fail.
+  - `TestCase.originalExpectedStatus` + `expectationNote`: lưu kỳ vọng ban đầu + ghi chú khi ADOPT_2XX, có kết luận "khớp spec / LỆCH SPEC / spec chỉ khai 200 / không đối chiếu được". Bước job `ADJUST_EXPECTED` hiện ghi chú này. Xoá ghi chú khi AI viết lại test gốc, khi người dùng sửa tay kỳ vọng, hoặc khi đổi về đúng mã ban đầu.
+  - Bug report:
+    - Tạo THỦ CÔNG được từ kết quả PASS có lệch spec (nút "Báo lỗi lệch spec"); draft mô tả mốc "mã spec khai". Mỗi endpoint chỉ 1 bug lệch spec đang mở.
+    - Lần Pass vẫn lệch thì không gợi ý đóng; Fail không liên quan không mở lại.
+    - Sinh hàng loạt chỉ bỏ qua test case có bug **Fail** đang mở (`existsOpenFailBugForTestCase`, thay `existsByTestCaseAndStatusNot`), để bug lệch spec không chặn Fail thật.
+  - Frontend: chip "Lệch spec: mã X" + khung giải thích ở trang kết quả chạy; "→ 200 (trước: ~~201~~)" ở dòng test case; khung "Kỳ vọng đã được hệ thống đổi" ở chi tiết test case; câu cảnh báo cố định dưới thẻ Coverage.
+  - 785 unit test pass, `tsc -b` pass.
+  - Hạn chế: endpoint import trước 2026-08-17 (chưa lưu `responseStatusCodes`) thì im lặng; import lại để bật. Chặn trùng bug dựa vào kiểm tra trước khi lưu, không có ràng buộc unique.
 
 **G2. Phương án A+B: độ bao phủ theo endpoint + độ tin của kết luận (khoảng 2,5 ngày)**
 - [ ] **A. Trạng thái endpoint** `EndpointTestState`, suy từ dữ liệu có sẵn, không thêm cột DB.

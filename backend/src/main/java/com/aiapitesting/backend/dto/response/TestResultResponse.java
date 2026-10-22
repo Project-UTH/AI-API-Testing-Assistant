@@ -39,7 +39,9 @@ public record TestResultResponse(
         /** Cảnh báo phản hồi thật lệch schema response của spec (kiểu/trường bắt buộc); rỗng = khớp hoặc không kiểm. Không đổi Pass/Fail. */
         List<String> schemaViolations,
         /** Module 17 (17b) - cảnh báo dữ liệu nhạy cảm trong response (không chứa giá trị); rỗng = không có. Không đổi Pass/Fail. */
-        List<SecurityFindingResponse> securityFindings
+        List<SecurityFindingResponse> securityFindings,
+        /** 17q G1 - cảnh báo mã thành công lệch spec; rỗng = không lệch hoặc không đủ căn cứ. Không đổi Pass/Fail. */
+        List<String> specDeviations
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -68,7 +70,8 @@ public record TestResultResponse(
                 result.getTestCase().getEndpoint().getMethod(),
                 stability,
                 parseEvidence(result.getSchemaViolationsJson()),
-                parseFindings(result.getSecurityFindingsJson())
+                parseFindings(result.getSecurityFindingsJson()),
+                parseEvidence(result.getSpecDeviationsJson())
         );
     }
 

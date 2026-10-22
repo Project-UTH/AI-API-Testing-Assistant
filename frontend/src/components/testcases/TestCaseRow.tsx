@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import {
+  expectationChanged,
   getReliabilityDisplay,
   originDisplay,
   TEST_CASE_SOURCE_LABEL,
@@ -97,7 +98,17 @@ export const TestCaseRow = memo(function TestCaseRow({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate text-sm">{testCase.name}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">→ {testCase.expectedStatus}</span>
+      <span
+        className="shrink-0 text-xs text-muted-foreground"
+        title={expectationChanged(testCase) ? `Hệ thống đã đổi kỳ vọng sau khi chạy thật test gốc: ${testCase.expectationNote ?? ""}` : undefined}
+      >
+        → {testCase.expectedStatus}
+        {expectationChanged(testCase) && (
+          <span className="ml-1">
+            (trước: <span className="line-through">{testCase.originalExpectedStatus}</span>)
+          </span>
+        )}
+      </span>
       <Button
         size="icon-sm"
         variant="ghost"

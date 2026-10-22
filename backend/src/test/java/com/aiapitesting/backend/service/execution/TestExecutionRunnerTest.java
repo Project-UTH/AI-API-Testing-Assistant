@@ -399,6 +399,59 @@ class TestExecutionRunnerTest {
         assertThat(captor.getAllValues()).allSatisfy(r -> assertThat(r.getSecurityFindingsJson()).isNull());
     }
 
+    // ---- 17q G1 - mã thành công lệch spec ----
+
+    private TestCase caseWithDeclaredCodes(String codesJson, int expected) {
+        Endpoint declared = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/jobs")
+                .schema("{\"responseStatusCodes\":" + codesJson + "}").build();
+        return TestCase.builder().id(UUID.randomUUID()).endpoint(declared)
+                .resolvedPath("/jobs").expectedStatus(expected).createdAt(Instant.now()).build();
+    }
+
+    @Test
+    void runInBackground_passWithSuccessCodeOutsideSpec_staysPassedButRecordsSpecDeviation() {
+        // Kỳ vọng đã bị đổi theo mã API trả (200) nên test Pass - nhưng spec khai 201: lỗi phải được báo, không bị che.
+        TestCase testCase = caseWithDeclaredCodes("[\"201\",\"400\"]", 200);
+        when(restAssuredTestRunner.run(any(), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"id\":1}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.PASSED);
+        assertThat(captor.getValue().getSpecDeviationsJson()).contains("[201]").contains("API trả 200");
+        assertThat(captor.getValue().getSchemaViolationsJson()).isNull();
+    }
+
+    @Test
+    void runInBackground_specDeviationIsIndependentOfStatusMatch() {
+        TestCase testCase = caseWithDeclaredCodes("[\"201\"]", 204);
+        when(restAssuredTestRunner.run(any(), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.FAILED);
+        assertThat(captor.getValue().getSpecDeviationsJson()).contains("API trả 200");
+    }
+
+    @Test
+    void runInBackground_noSpecDeviation_forSpringdocDefault200_negativeTest_orLegacyEndpoint() {
+        TestCase springdoc = caseWithDeclaredCodes("[\"200\"]", 201);
+        TestCase negative = caseWithDeclaredCodes("[\"201\",\"400\"]", 400);
+        TestCase legacy = simpleCase();
+        when(restAssuredTestRunner.run(any(), eq(springdoc), any())).thenReturn(new RestAssuredTestRunner.RunResult(201, "{}"));
+        when(restAssuredTestRunner.run(any(), eq(negative), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+        when(restAssuredTestRunner.run(any(), eq(legacy), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+
+        runner.runInBackground(execution, List.of(springdoc, negative, legacy), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, times(3)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(r -> assertThat(r.getSpecDeviationsJson()).isNull());
+    }
+
     // ---- Module 17 (17b-2) - probe mass-assignment ----
 
     private TestCase probeCase() {
