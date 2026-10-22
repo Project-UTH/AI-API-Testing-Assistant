@@ -1,6 +1,7 @@
 # Roadmap — AI API Testing Assistant
 
-> Cập nhật lần cuối: 2026-10-21 (✅ **17o E1e**: `mutant-api` mở rộng 42 lỗi + 82 công tắc quy tắc để test tay mọi endpoint (chưa đo);  **Module 17o E1a–E1d xong**: `mutant-api` 27 mutant + `scripts/eval-mutants.py` + `docs/DANH_GIA.md`; checklist tất định bắt 14/27, hybrid 17/27 (3 lượt, ≈ 93.000 token/lượt), Schemathesis 4/27; ghi 4 lỗi/hạn chế của hệ thống do phép đo phát hiện. Trước đó: 2026-10-20 (RÀ SOÁT LẠI TOÀN BỘ ROADMAP + tài liệu sau đợt thay đổi lớn: bỏ chức năng AI sinh TOÀN BỘ test, đổi 'Sinh đầy đủ' thành 'Sinh test case' chạy nền (job + khung giám sát từng bước, huỷ, thu nhỏ), chọn nhóm test (mặc định Positive + Negative + Boundary), placeholder `{{uuid}}`/`{{rand}}`/`{{runId}}`, cô lập trạng thái (tài nguyên cha mới cho mỗi test con), dọn dữ liệu tuỳ chọn, nhãn `API_WRONG_STATUS`; kiểm chứng thật bằng AI trên API tuyển dụng: 24 Pass / 12 Fail trong 36 test, 8 Fail là lỗi thật của API đích. Xem mục 17n (đã làm) và 17o (kế hoạch đo độ chính xác bằng lỗi cài sẵn). 708 test backend pass.)
+> Cập nhật lần cuối: 2026-10-22 (Chốt kế hoạch **17q**, CHƯA CODE, sau 3 vòng tham vấn chuyên gia: G0 nền đo (held-out + tài liệu nghiệp vụ do agent AI cô lập viết), G1 lệch spec 2xx, G2 độ bao phủ theo endpoint + độ tin của kết luận, G3 luật nghiệp vụ có trích dẫn "luật trước, test sau" + ngân sách token do người dùng đặt, G4 mục tất định rẻ, G5 đo lại tách bộ phát triển/held-out. Bỏ mục "giám sát execution treo" khỏi Module 11; BOLA thành hướng phát triển.)
+> Cập nhật trước đó: 2026-10-21 (✅ **17o E1e**: `mutant-api` mở rộng 42 lỗi + 82 công tắc quy tắc để test tay mọi endpoint (chưa đo);  **Module 17o E1a–E1d xong**: `mutant-api` 27 mutant + `scripts/eval-mutants.py` + `docs/DANH_GIA.md`; checklist tất định bắt 14/27, hybrid 17/27 (3 lượt, ≈ 93.000 token/lượt), Schemathesis 4/27; ghi 4 lỗi/hạn chế của hệ thống do phép đo phát hiện. Trước đó: 2026-10-20 (RÀ SOÁT LẠI TOÀN BỘ ROADMAP + tài liệu sau đợt thay đổi lớn: bỏ chức năng AI sinh TOÀN BỘ test, đổi 'Sinh đầy đủ' thành 'Sinh test case' chạy nền (job + khung giám sát từng bước, huỷ, thu nhỏ), chọn nhóm test (mặc định Positive + Negative + Boundary), placeholder `{{uuid}}`/`{{rand}}`/`{{runId}}`, cô lập trạng thái (tài nguyên cha mới cho mỗi test con), dọn dữ liệu tuỳ chọn, nhãn `API_WRONG_STATUS`; kiểm chứng thật bằng AI trên API tuyển dụng: 24 Pass / 12 Fail trong 36 test, 8 Fail là lỗi thật của API đích. Xem mục 17n (đã làm) và 17o (kế hoạch đo độ chính xác bằng lỗi cài sẵn). 708 test backend pass.)
 > Cập nhật trước đó: 2026-10-19 (Ghi Module 17 - kế hoạch sẵn sàng cho API thật & quy mô lớn, dựa trên lần chạy thật trên API 110 endpoint; CHƯA CODE. Trước đó trong ngày: phạm vi đo coverage theo loại test đã chọn + sửa lỗi OutOfMemoryError làm sập Coverage - xem Module 15j.)
 > Cập nhật trước đó: 2026-10-18 (✅ Nhánh `fix/error-handling` - sửa theo review cuối của chuyên gia UX: "Chọn tất cả/Bỏ chọn tất cả" đúng khi có endpoint đang sinh; thanh dính đáy giữ dòng "Đang sinh test case cho N endpoint" khi đang chạy; cảnh báo sinh lại gom thành 1 dòng có số endpoint và nói đúng hậu quả (đã xác minh bằng code: chỉ xoá test case AI chưa khoá của đúng nhóm, giữ test case thêm tay và đã khoá, nhưng xoá kèm kết quả chạy và bug report của các test case bị thay); đổi nhãn nguyên nhân dễ hiểu ("Có thể id không tồn tại", "Kỳ vọng có thể quá chặt", chip "Lệch schema (cảnh báo)"); aria-label cho checkbox/chevron từng endpoint, chữ amber-700 cho chữ nhỏ, link có gạch chân; nút Import OpenAPI chuyển vào hàng Target. Chưa làm (giá trị thấp hơn): dọn trang Test case (thu gọn nhóm theo endpoint, menu ⋯, lọc).)
 > Cập nhật trước đó: 2026-10-18 (✅ Nhánh `fix/error-handling` - Việc 9 (dọn trang Project/Coverage theo thiết kế của chuyên gia UX): mỗi endpoint 1 dòng (method · path · mô tả · "N test · covered/relevant mục · thiếu M" · Xem test case · nút mở chi tiết coverage + báo cáo lần sinh); thanh sinh test case (Positive/Negative/Boundary/+Security + Sinh Test Case) dính đáy và CHỈ hiện khi có endpoint được chọn, có "Chọn tất cả"; dòng token AI chỉ hiện khi đã dùng >= nửa hạn mức; trang Coverage: mô tả 1 dòng, giải thích EP/BVA chuyển vào tooltip, mục còn thiếu gập lý do/bằng chứng sau nút "Vì sao?", bỏ chữ nội bộ "xem Module 15 trong roadmap" khỏi giao diện. Trang Project với 7 endpoint còn khoảng 900px (trước đây ~2000px).)
@@ -61,13 +62,13 @@ Roadmap chia theo **module công việc**, làm theo thứ tự từ trên xuố
 | 8. Lịch sử & Dashboard | ✅ Xong |
 | 9. Nâng cao Test Case AI sinh (Security, Assertion, Test Data) | ✅ Xong (9b đã bỏ AI sinh assertion, chỉ còn tự tay thêm) |
 | 10. Bug Report (quy trình QA) | ✅ Xong |
-| 11. Trang Admin quản lý hệ thống | 🟡 Đang làm (11a-e xong, còn giám sát execution treo - hạ ưu tiên) |
+| 11. Trang Admin quản lý hệ thống | ✅ Xong (11a-e; đã bỏ mục "giám sát execution treo" khỏi phạm vi 2026-10-22) |
 | 12. Đổi mật khẩu & Quên mật khẩu | ✅ Xong |
 | 13. Đăng nhập/Đăng ký với Google | ✅ Xong |
 | 14. Hoàn thiện & Demo | 🟡 Đang làm (Docker hoá xong, còn polish/tài liệu/demo) |
 | 15. Explainable & Reliable AI Testing | 🔄 15a-15i đã merge vào `main` (PR #11; 15i còn chờ verify bằng AI thật); 15j (Coverage Gap Analysis) đã code trên `feature/module-15j-coverage-gap`, 306/306 test pass, chờ verify trên Docker thật |
 | 16. Test Stability & Failure Analysis (chức năng 2) | 🔄 Giai đoạn 1 (phân tích nguyên nhân fail) + giai đoạn 2 (phát hiện test không ổn định, gợi ý chạy lại) đã code trên `feature/module-16-test-stability`, 410/410 test pass, đã verify bằng API trên Docker thật (chưa xem bằng mắt trên giao diện) |
-| 17. Sẵn sàng cho API thật & quy mô lớn | 🟡 17a–17d, 17f (tổng quát hoá 4 API), 17m–17n (Sinh test case chạy nền + kiểm chứng thật) ĐÃ XONG; **17p đã làm G1, G2, G4, G5** (hiển thị đủ endpoint, phân trang/lọc, body lồng nhau 1 cấp, profile tự đăng nhập, sửa Fail giả); **hoãn (hướng phát triển):** G3 (SSRF, throttle/Dừng, retention, index), G6 (vitest), P1-1, P1-5, và **17o đã làm xong E1a–E1d (đo 27 mutant: A 14/27, B 17/27, Schemathesis 4/27; xem `docs/DANH_GIA.md`), còn E2/E4 cần người** |
+| 17. Sẵn sàng cho API thật & quy mô lớn | 🟡 **17q (kế hoạch chốt 2026-10-22, chưa code, khoảng 20-22 ngày-người):** coverage theo endpoint + độ tin của kết luận + luật nghiệp vụ có trích dẫn + đo held-out. 17a–17d, 17f (tổng quát hoá 4 API), 17m–17n (Sinh test case chạy nền + kiểm chứng thật) ĐÃ XONG; **17p đã làm G1, G2, G4, G5** (hiển thị đủ endpoint, phân trang/lọc, body lồng nhau 1 cấp, profile tự đăng nhập, sửa Fail giả); **hoãn (hướng phát triển):** G3 (SSRF, throttle/Dừng, retention, index), G6 (vitest), P1-1, P1-5, và **17o đã làm xong E1a–E1d (đo 27 mutant: A 14/27, B 17/27, Schemathesis 4/27; xem `docs/DANH_GIA.md`), còn E2/E4 cần người** |
 
 ---
 
@@ -576,7 +577,7 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 
 ---
 
-## 11. Trang Admin quản lý hệ thống
+## 11. Trang Admin quản lý hệ thống ✅
 *Phụ thuộc: Module 1 (auth), dùng dữ liệu từ mọi module 2-10 nhưng không sửa nghiệp vụ của chúng*
 
 **Bối cảnh:** mở rộng phạm vi ngoài kế hoạch MVP gốc — `CLAUDE.md` trước đây liệt kê "Multi-role phân quyền phức tạp (admin/user)" vào mục "Không làm", nay đã đổi quyết định theo yêu cầu người dùng. Mục tiêu: 1 trang admin quản lý được **toàn bộ hệ thống** (mọi user, không chỉ dữ liệu của người đang đăng nhập) — khác hẳn Dashboard hiện có ở Module 8 vốn luôn giới hạn theo `owner`.
@@ -601,7 +602,6 @@ Dữ liệu DB dev cũ được đánh giá là "cũ, không theo kịp cập nh
 - [x] `GET /api/v1/auth/me` (mới) trả `{email, role}` đọc fresh từ DB — để frontend biết role hiện tại mà không cần đăng nhập lại; `AuthResponse` (`/auth/login`, `/auth/register`) trả kèm `role` luôn
 - [x] Mã lỗi mới `ACCOUNT_DISABLED` (403), `USER_NOT_FOUND` (404) — đã cập nhật bảng mã lỗi + mục 4d (giải thích cơ chế phân quyền) ở skill `api-contract`
 - [x] *(Bug thật phát hiện lúc verify bằng API thật, nghiêm trọng)* `GET /auth/me` ban đầu nằm trong `requestMatchers("/api/v1/auth/**").permitAll()` — permitAll nguyên cụm khiến request KHÔNG kèm token cũng lọt qua tới controller, nhưng `CurrentUserService.getCurrentUser()` bên trong lại giả định luôn có người đăng nhập (`SecurityContextHolder...getAuthentication().getName()` trả `"anonymousUser"` khi không có token) → `userRepository.findByEmail("anonymousUser")` rỗng → ném `IllegalStateException` không được `GlobalExceptionHandler` bắt riêng, rơi xuống handler `Exception.class` chung → 500 `INTERNAL_ERROR` thay vì 401 sạch. Fix: liệt kê rõ đúng 2 path công khai thật (`/api/v1/auth/register`, `/api/v1/auth/login`), bỏ wildcard.
-- [ ] *(Chưa làm — để đợt sau, quyết định hạ ưu tiên)* Giám sát execution treo
 
 ### 11c. Admin xem (chỉ đọc) Bug Report của user khác ✅
 
@@ -1531,6 +1531,240 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - [x] **Kiểm chứng:** token tự đăng nhập chạy thật với `mutant-api` (đăng nhập hr1 -> GET /api/users/me trả 200; sai mật khẩu -> lỗi cấu hình 401 không lộ tài khoản); backend Docker khởi động với các cột mới. Đo lại mutant cấu hình A (0 token, 42 mutant, 176 test; `docs/eval/results-A-final-g5.json`): Fail giả trên bản chuẩn **3/176 = 1,7%** (trước 7/163 = 4,3%; còn lại đều là `STATE_CONFLICT` 409 do trạng thái mutant-api), bắt chặt 4/42, bắt hoặc nghi ngờ 21/42. So với lần đo cũ trên M01-M27: M09 missed -> suspect (tốt hơn), **M11 caught -> suspect (kém hơn, chạy riêng 2 lần đều suspect; bộ phân loại không đổi nên nghi do mẫu lịch sử Pass->Fail `DATA_STATE` phụ thuộc thứ tự chạy; CHƯA kiểm chứng bằng cách chạy bản HEAD - để sau)**. P1-3 từng sinh 2 Fail giả ở biên `criteria[0].weight` (tổng weight phải bằng 100) -> biên số kỳ vọng thành công của trường lồng nhau được đánh `notApplicable`, biên vi phạm vẫn giữ.
   - [-] **P1-1** (`fieldValueHints` theo project), **P1-5** (multipart file giả, lặp PUT/DELETE kiểm idempotency): HOÃN, ghi là hướng phát triển.
 - [-] **G6. KHÔNG LÀM đợt này (quyết định nhóm 2026-10-21, ghi là hướng phát triển) - Test công cụ + tài liệu:** Q-1 (vitest), cập nhật roadmap/`api-contract`/DEMO/CAU_HOI_BAO_VE.
+
+#### 17q. KẾ HOẠCH (chốt 2026-10-22, CHƯA CODE): Độ bao phủ theo endpoint, độ tin của kết luận, luật nghiệp vụ có nguồn và câu hỏi "số test case đã đủ chưa"
+
+*Nguồn: 3 vòng tham vấn chuyên gia ngày 2026-10-22, tất cả đều đọc code thật.*
+- *Vòng 1: backend/QA + frontend/UX về 2 chỉ số.*
+- *Vòng 2: phương pháp kiểm thử + giảng viên/hội đồng về câu hỏi "đủ chưa".*
+- *Vòng 3: backend + frontend kiểm tra quy trình luật nghiệp vụ.*
+
+*Xuất phát từ 2 đề xuất của chủ đồ án:*
+- *"độ bao phủ nên là chỉ số riêng cho từng endpoint vì có endpoint không bấm sinh test";*
+- *"AI đọc chỉ dẫn/tài liệu người dùng gửi, đề xuất bổ sung checklist, người dùng duyệt rồi hệ thống sinh test", để trả lời câu hỏi "AI có đoán không".*
+
+*Nhóm còn thời gian nên làm đầy đủ. Mỗi giai đoạn: tạo nhánh `feature/<tên>` riêng, hỏi 2 chuyên gia (backend + frontend) trước khi code, mỗi chức năng 1 commit, cập nhật roadmap cùng lúc.*
+
+**Quyết định đã chốt (2026-10-22):**
+- Mục "giám sát execution treo" bỏ khỏi Module 11.
+- BOLA (quyền sở hữu dữ liệu) ghi thành hướng phát triển.
+- Phương án C chọn bản trung gian chặt.
+- Tài liệu tải lên chỉ nhận .md/.txt; PDF để sau.
+- **Ngân sách token do người dùng tự đặt cho mỗi lần sinh** (xem G3.6).
+- **Bộ lỗi held-out và tài liệu nghiệp vụ dùng để đo do AI viết**, nhưng là một agent cô lập (xem G0). Hạn chế này phải ghi rõ trong `DANH_GIA.md`.
+
+**Vấn đề đã xác nhận trong code (lý do của kế hoạch):**
+- **Coverage tự chấm.** Hệ thống bù test TỪ CHÍNH checklist dùng để chấm (`CoverageGapFillService` + `TestCaseChecklistPlanner`), nên bấm Sinh/Bù xong là gần như tự lên 100%.
+  - Theo lý thuyết test adequacy (Goodenough-Gerhart; Zhu, Hall & May 1997), "đủ" luôn tương đối với một tiêu chí. Vì vậy chỉ được nói "**thoả tiêu chí EP/BVA**".
+  - Thực tế checklist A chỉ bắt 14/27 mutant.
+- **% project bị méo.**
+  - Endpoint CHƯA sinh vẫn góp đủ mục vào mẫu số dưới dạng MISSING (`EndpointCoverageService.aggregateProject` :216-228).
+  - Endpoint chưa từng chọn phạm vi bị tính đủ 4 loại (`CoverageScope.of` :18-19).
+  - Endpoint không có mục nào được tính 100%.
+- **Nhãn UI sai nghĩa.** `CoverageMatrixChart.tsx:48` ghi "đã có test **đạt**", trong khi backend chỉ đếm COVERED.
+- **Reliability gần như luôn xanh.**
+  - Tier 1 chấm test sinh từ chính spec, nên đúng theo cách dựng.
+  - `CoverageGapFillService:248-251` ép NEEDS_REVIEW thành RELIABLE khi `tier1CannotSee`.
+  - Tier 2 chỉ được gọi trong `generateGroup`, luồng cũ không còn đường gọi.
+- **Hai tiêu chí "Fail đáng tin" lệch nhau.** Coverage dùng `isNotApiFault` (`EndpointCoverageService:268`), Bug Report dùng `suppressesBugAutomation` (`BugReportService:355`).
+- **Biên ngầm sai về lý thuyết.** Mục 0/-1/"" kỳ vọng 2xx (`TestCaseChecklistPlanner:483-508`) là suy luận closed-world. Spec không khai ràng buộc thì oracle không xác định.
+- **Phạm vi checklist.** Checklist ĐÃ gồm tham số query/path/header (`TestCaseChecklistPlanner:222-233`). Cookie bị bỏ; body lồng từ cấp 2 trở đi chưa đọc.
+- **AI nghiệp vụ không có căn cứ.** Số test do AI tự chọn (`prompts/generate/business.st`: tối đa 12 test, suy luật từ TÊN field). Không có căn cứ tất định, không có tiêu chí "đủ". Kết quả 17o: khoảng 93.000 token/lượt, bắt thêm 3 mutant, Fail giả 23%.
+- **Overfitting đã xảy ra.** `refinePairedBounds`/`refineNestedNumericBounds` được thêm ở commit `4705ed2` (17p) SAU lần đo 17o, rồi đo lại trên cùng bộ mutant. Số sau G5 là số **in-sample**.
+- **`ADOPT_2XX` che lỗi thật** (`BaselineVerificationService:220`, `diagnose` :306-308). Test gốc Fail mà API trả mã 2xx khác kỳ vọng thì hệ thống tự sửa kỳ vọng, không ghi lại gì.
+- **Lỗi có sẵn ở quota token.**
+  - Import REPLACE xoá `TestGenerationEvent` (`EndpointImportService:230`), làm quota trong ngày về 0.
+  - `TestGenerationEvent.endpoint` NOT NULL, nên lần gọi AI cấp project không có chỗ ghi token.
+  - Trần 60.000 token/job chỉ là trần mềm: có job vượt khoảng 8%.
+- **Test BUSINESS bị xoá khi sinh lại.** Mỗi lần sinh nghiệp vụ, `TestCaseGenerationService:231` `deleteExistingGroup(BUSINESS)` xoá toàn bộ test BUSINESS. Test sinh từ luật phải có origin riêng.
+
+---
+
+**G0. Nền đo, làm TRƯỚC mọi thay đổi checklist/luật (khoảng 1,5 ngày, 0 token)**
+- [ ] **G0.1** Đo lại cấu hình A trên `main` hiện tại (`scripts/eval-mutants.py`), ghi commit hash. Kiểm chứng luôn nghi vấn M11 bị tụt từ caught xuống suspect.
+- [ ] **G0.2 Danh mục mẫu luật** lấy từ tài liệu tham khảo, không lấy theo mutant. Commit TRƯỚC khi viết bộ held-out. Các mẫu:
+  - phụ thuộc tham số Martin-Lopez, Segura, Ruiz-Cortés 2019 (Requires/Or/OnlyOne/AllOrNone/ZeroOrOne/Arithmetic);
+  - ràng buộc thời gian;
+  - tổng hợp trên mảng;
+  - trùng lặp;
+  - máy trạng thái.
+- [ ] **G0.3 Bộ lỗi held-out do AI viết.** Một agent MỚI, cô lập:
+  - CHỈ được đọc `mutant-api/openapi.json`, mô tả miền tuyển dụng và danh mục loại lỗi (OWASP API Top 10 + loại lỗi thường gặp);
+  - KHÔNG được đọc `backend/`, `TestCaseChecklistPlanner`, `MutantFlag.java`/danh sách M01-M42, `docs/DANH_GIA.md`.
+
+  Agent viết 10-15 mutant mới (`H01-H15`), có phân loại và giả thuyết. Commit có hash TRƯỚC khi code G1-G4. Bộ này chỉ dùng để đo một lần ở cuối; không sửa hệ thống dựa trên nó.
+- [ ] **G0.4 Tài liệu nghiệp vụ do AI viết.** Một agent cô lập khác, cùng ràng buộc như G0.3 và KHÔNG biết bộ held-out, viết `docs/eval/srs-mutant-api.md` theo giọng BA mô tả hệ thống tuyển dụng. Kèm **danh sách luật chuẩn** (ground truth), rút từ code `mutant-api` bản chuẩn bởi một agent thứ ba, để đo precision/recall trích luật.
+- **Hạn chế phải ghi trong `DANH_GIA.md`:** người viết held-out/tài liệu là AI cùng họ với AI trong hệ thống (Claude). Có thể chung "điểm mù", nên là bằng chứng yếu hơn so với người viết độc lập. Bù lại bằng cách chạy thêm trên `shop-api-target` (API thứ 2, khác miền).
+
+**G1. Phương án C: tự đổi kỳ vọng 2xx của test gốc, bản trung gian chặt (khoảng 1 ngày)**
+- [ ] Vẫn tự sửa để test gốc Pass, vì test gốc chỉ cần xác nhận "request hợp lệ được chấp nhận" để làm nền.
+- [ ] CHỈ ghi phát hiện "**Lệch spec: khai X, API trả Y**" khi spec khai mã 2xx cụ thể và mã API trả nằm NGOÀI danh sách khai. Spec kiểu springdoc mặc định chỉ khai 200 thì không cảnh báo.
+- [ ] Lưu kỳ vọng gốc + lý do đổi. Phát hiện ở mức thấp, xuất được vào bug report. Enum/nhãn mới phải thêm vào bảng hiển thị frontend cùng lúc.
+- [ ] Sửa nhãn "đã có test đạt" → "đã có test" (`CoverageMatrixChart.tsx:48`). Thêm câu cảnh báo cố định: "Độ phủ đo mức đủ tình huống theo spec, không đo khả năng bắt lỗi."
+
+**G2. Phương án A+B: độ bao phủ theo endpoint + độ tin của kết luận (khoảng 2,5 ngày)**
+- [ ] **A. Trạng thái endpoint** `EndpointTestState`, suy từ dữ liệu có sẵn, không thêm cột DB.
+  - Các trạng thái:
+    - `NOT_GENERATED`: chip xám + nút "Sinh test case"; KHÔNG hiện "0%", không tô đỏ.
+    - `NOT_RUN`.
+    - `TESTED_FAILING`.
+    - `TESTED_OK`.
+  - Mỗi endpoint đã sinh có 3 số, đếm theo **MỤC**, cùng mẫu số, lồng nhau: **có test ⊇ đã chạy ⊇ kết luận chắc**.
+  - Cấp project BỎ % gộp làm số chính. Thay bằng "**X/N endpoint đã kiểm thử**" + phân bố theo 4 trạng thái (bấm để lọc). Nếu vẫn hiện % thì chỉ tính trên endpoint đã sinh, ghi rõ mẫu số.
+  - Mục biên ngầm gắn nhãn "**spec thiếu ràng buộc**": Fail ở mục này không quy là lỗi API.
+- [ ] **B. `VerdictTrust`**, gom vào 1 hàm `FailureCause.verdictTrust()` dùng chung cho Coverage, Bug Report và `ExecutionDiffClassifier`.
+  - **CHẮC** (đều phải không `unstable`):
+    - Fail có nhãn `API_WRONG_STATUS`/`STABLE_FAILURE`/`AUTHZ_VIOLATION`/`MASS_ASSIGNMENT`.
+    - Pass có oracle mạnh. Với test âm: lý do API từ chối phải khớp đúng field đang kiểm (dùng `InputRejectionDetector`); không khớp thì là NGHI, vì có thể chỉ Pass trùng hợp.
+  - **NGHI**:
+    - Fail mà `suppressesBugAutomation()` nhưng không `isNotApiFault()`, cộng `DATA_STATE`, `UNDETERMINED`.
+    - Mọi Fail của test GIẢ ĐỊNH/kỳ vọng do AI viết.
+    - Fail ở mục "spec thiếu ràng buộc".
+    - Lệch mã lỗi trong nhóm từ chối (400 so với 422) ở luật nghiệp vụ.
+  - **KHÔNG KẾT LUẬN**: `isNotApiFault()`, FLAKY, chưa chạy.
+  - Độ tin endpoint = CHẮC/(CHẮC+NGHI), **luôn kèm mẫu số**. Kèm cờ "Test gốc đã xác nhận bằng chạy thật".
+- [ ] **Nhãn `reliabilityStatus`**: GIỮ cột, đổi tên hiển thị thành "**Kỳ vọng cần xem**". Chỉ hiện với test AI sinh/người sửa tay. Bỏ khối Tier 2 ở `TestCaseDetailDialog.tsx:210-229` và `lib/testcases.ts:195-221`.
+- Giữ nguyên field cũ của DTO coverage để tương thích ngược, chỉ thêm field mới. *Bỏ khỏi đợt này:* thanh 3 nấc + tooltip, `OracleStrength`, chỉ số status code đã quan sát.
+
+**G3. Luật nghiệp vụ có nguồn: "luật trước, test sau" (khoảng 9 ngày backend + 5 ngày frontend)**
+
+*Quy trình chốt:*
+1. **Test gốc hợp lệ** (giữ nguyên): có test hợp lệ của người dùng thì dùng; không thì AI sinh 1 test gốc → chạy thật → Pass thì khoá.
+2. **Giữ 1 nút "Sinh test case".** Wizard thêm mục "Luật nghiệp vụ": ○ Không dùng (mặc định) ○ Từ tài liệu đã tải (N file), + ô "Chỉ dẫn thêm", + ô "Giới hạn token".
+3. **Job sinh phần spec như hiện nay.** Nếu có chọn luật thì AI đọc tài liệu/chỉ dẫn và đề xuất luật. Job **KẾT THÚC thành công**: "N luật chờ duyệt" + link "Duyệt N luật →". Trạng thái chờ duyệt nằm trên **từng luật**, KHÔNG trên job (không đưa `AWAITING_REVIEW` vào `ACTIVE` của `GenerationJobService:53`, tránh khoá project, tránh job ma khi khởi động lại).
+4. **Tab mới "Nghiệp vụ"** (giữa Test case và Coverage): người dùng duyệt/sửa/loại (có lý do)/thêm luật → bấm "**Sinh test từ N luật đã duyệt**" (tạo job tiếp nối, 0 token).
+5. Chạy → phân loại Fail → CHẮC/NGHI (G2) → bug report.
+
+*Thiết kế:*
+- [ ] **G3.1 Mẫu luật + bộ sinh tất định + luật người dùng tự nhập (chưa có AI)**, nhánh `feature/business-rule-template`, khoảng 2,5 ngày. Từ bước này đã đo được.
+  - Entity `BusinessRule`:
+    - phạm vi: `projectId`, `endpointKey` (METHOD + path, sống qua re-import), `endpointId` nullable;
+    - nguồn: `source` (DOC/INSTRUCTION/INFERRED/SYSTEM_DETECTED/USER), `documentId?`;
+    - nội dung: `template`, `paramsJson`, `expectedStatus?`, `quote`, `quoteOffset`, `rationale`;
+    - trạng thái: `status` (PROPOSED/APPROVED/REJECTED/STALE/CONFLICT);
+    - truy vết: `reviewedBy/At`, `rejectReason`, `extractionJobId`, `specHash`.
+  - 6 mẫu đợt đầu:
+    - `COMPARE_FIELDS` (min ≤ max);
+    - `DATE_NOT_PAST/FUTURE`;
+    - `VALUE_RANGE` (spec không khai);
+    - `REQUIRES/ALL_OR_NONE/ONLY_ONE` (1 bộ sinh);
+    - `ARRAY_SUM_EQUALS`;
+    - `DUPLICATE_REJECTED` (gửi lại test gốc 2 lần, kỳ vọng 409).
+
+    Máy trạng thái để sau.
+  - **Kỳ vọng mặc định là "bị từ chối"** (khác 2xx, khác 5xx). Chỉ dùng mã cụ thể khi tài liệu ghi mã, spec chỉ khai đúng 1 mã 4xx, hoặc người duyệt chọn. Lệch 400/422 tính NGHI, không gắn `API_WRONG_STATUS`.
+  - Hệ thống tự phát hiện cặp `xxxMin/xxxMax` (tái dùng `pairedBoundSides`, `TestCaseChecklistPlanner:1262`) → luật PROPOSED nguồn SYSTEM_DETECTED, 0 token. Mục này thay mục D3 min>max cũ.
+  - `TestCase`: thêm `ruleId` + origin mới `RULE_TEMPLATE`. Sửa `deleteExistingGroup` để chỉ xoá test AI nghiệp vụ, không xoá test từ luật.
+  - **Luật không khớp mẫu: đợt này KHÔNG cho AI viết test.** Hiện ở mục "chưa tự động hoá", người dùng tự viết.
+  - Luật trùng ràng buộc spec (đối chiếu `FieldRule` min/max/enum) bị loại tất định. Luật **mâu thuẫn** spec (tài liệu ghi 100, spec ghi 50) gắn CONFLICT, không cho tự duyệt; đây là một phát hiện "spec lệch tài liệu".
+  - Field của luật không còn trong spec khi sinh → luật chuyển STALE.
+  - Mục spec (EP/BVA/Security) vẫn **tính động**, KHÔNG lưu DB và KHÔNG vào màn duyệt. Chỉ lưu thêm ghi đè "Không áp dụng + lý do" theo `TestCaseChecklistPlanner.key()` (:588); thao tác này ở `CoverageGapReport`.
+- [ ] **G3.2 Màn duyệt luật + độ bao phủ 2 lớp**, nhánh `feature/rule-review`, khoảng 2 ngày backend + 3 ngày frontend.
+  - Bố cục trang "Nghiệp vụ": khối tài liệu ở trên. Bên dưới chia đôi: danh sách luật nhóm theo endpoint (trái) / chi tiết luật (phải). Chi tiết gồm field, mẫu, kỳ vọng, đoạn trích có `<mark>` + tên file/dòng, nguồn. Các nút Duyệt (A) / Sửa (E) / Loại (R). Bộ lọc theo endpoint/nguồn/có trích dẫn.
+  - **Chống duyệt bừa**:
+    - không có "Duyệt tất cả" cho luật GIẢ ĐỊNH;
+    - luật có trích dẫn chỉ được duyệt hàng loạt theo endpoint sau khi đã mở từng luật;
+    - luật GIẢ ĐỊNH phải chọn kỳ vọng hoặc sửa ít nhất 1 lần trước khi duyệt;
+    - "Loại" bắt buộc chọn lý do (sai nghĩa/trùng/không áp dụng);
+    - **không xoá luật đã loại** (cần để đo precision).
+  - Chip "Có trích dẫn" (xanh) / "GIẢ ĐỊNH" (vàng, thống nhất màu BUSINESS).
+  - **Độ bao phủ 2 dòng tách nhau, không gộp**:
+    - `Spec: 18/20 mục có test · 15 đã chạy`;
+    - `Nghiệp vụ: 4/6 luật đã duyệt có test (2 GIẢ ĐỊNH)`.
+
+    Chưa có luật thì ghi "Chưa có luật", không ghi 0%. "Chờ duyệt N luật" là badge phụ (xanh dương, bấm được) cạnh chip trạng thái; KHÔNG thêm vào `EndpointTestState`.
+  - Test từ luật KHÔNG tính vào % EP/BVA.
+- [ ] **G3.3 Tải tài liệu + AI trích luật + kiểm chứng trích dẫn**, nhánh `feature/requirement-doc`, khoảng 2,5 ngày backend + 1 ngày frontend.
+  - Entity `RequirementDocument`: `projectId`, `fileName`, `sizeBytes`, `sha256`, `content` MEDIUMTEXT, `uploadedBy`, `createdAt`, `active`. Tải bản mới thì luật của bản cũ chuyển STALE, không xoá.
+  - Giới hạn tài liệu: **chỉ .md/.txt UTF-8**, ≤ 200 KB/file, ≤ 5 file/project, quyền sở hữu qua `getOwnedProject`.
+  - Quét secret (mẫu của `SensitiveDataScanner`) và cảnh báo trước khi gửi AI.
+  - Prompt `prompts/rules/extract.st` (load qua `PromptTemplate`). Tài liệu bọc trong delimiter, ghi rõ là DỮ LIỆU.
+  - **Kiểm chứng tất định đầu ra AI** (`responseEntity` ra record):
+    - template thuộc enum;
+    - endpoint nằm trong danh sách đã gửi;
+    - field có trong spec, kiểu dữ liệu khớp mẫu;
+    - `quote` sau khi chuẩn hoá NFC + gộp khoảng trắng phải là chuỗi con của tài liệu (hoặc của ô chỉ dẫn với nguồn INSTRUCTION), dài ≥ 15 ký tự.
+
+    Trượt bất kỳ điều kiện nào thì hạ xuống INFERRED (GIẢ ĐỊNH), không vứt bỏ. Đây cũng là lớp chặn prompt injection chính: AI không tự viết được request.
+  - Không có tài liệu: AI vẫn suy luật từ tên field như hiện nay, nhưng là INFERRED (GIẢ ĐỊNH).
+  - **Sửa lỗi quota có sẵn:**
+    - `TestGenerationEvent.endpoint` nullable + thêm `projectId`, để token trích luật cấp project được tính quota;
+    - import REPLACE không xoá event token.
+- [ ] **G3.4 Gắn vào job + ô chỉ dẫn**, cùng nhánh G3.3, khoảng 1 ngày backend + 1 ngày frontend.
+  - Thêm loại job `TYPE_RULES` + bước giám sát "Đọc tài liệu", "Đề xuất luật", "Kiểm chứng trích dẫn".
+  - Lưu ô chỉ dẫn vào job + vào metadata nguồn của luật. Hiện "chỉ dẫn lần trước" để người dùng chọn dùng lại.
+- [ ] **G3.5 Đo thời gian duyệt (E2)** trong giao diện, khoảng 0,5 ngày.
+  - Mỗi luật ghi `firstViewedAt`, `decidedAt`, `decision`, `editedFields`. Tính khoảng có focus, trừ thời gian tab ẩn (`visibilitychange`). Không ghi thao tác chuột/bàn phím.
+  - Chỉ đo khi người tham gia đồng ý: hiện công khai dòng "Phiên duyệt đang được đo thời gian cho đánh giá E2" + công tắc tắt. Dữ liệu xuất ẩn danh.
+- [ ] **G3.6 Ngân sách token do người dùng đặt**, khoảng 1 ngày.
+  - Wizard có ô "Giới hạn token cho lần sinh này" (mặc định 60.000) + **ước tính trước khi chạy**.
+  - Đến ngưỡng thì job dừng các bước AI còn lại, giữ phần đã làm, ghi rõ lý do trong khung giám sát.
+  - Đổi trần mềm hiện nay thành **trần thật**: kiểm trước mỗi lần gọi AI theo ước tính, không chỉ sau khi gọi.
+  - Vẫn nằm dưới quota ngày của tài khoản (Module 11d).
+- **Enum mới phải thêm vào bảng hiển thị frontend cùng lúc:**
+  - `RuleStatus`, `RuleSource`, `RuleTemplate`, `RejectReason`;
+  - origin `RULE_TEMPLATE`;
+  - job type `RULES`;
+  - mã lý do `AWAITING_REVIEW`/`NO_DOCUMENT` trong `REASON_HELP`;
+  - `EndpointTestState`, `VerdictTrust`, nhãn "Lệch spec".
+
+  Dùng kiểu `Record<Enum, …>` để TypeScript báo khi thiếu, và có fallback hiện mã thô.
+- **Cắt được nếu thiếu thời gian:** G3.4 (dùng nút sinh cũ), luật INFERRED khi không có tài liệu, mẫu máy trạng thái, ghi đè "Không áp dụng" của mục spec.
+
+**G4. Gói mục tất định rẻ (khoảng 1,5 ngày, 0 token)**
+- [ ] Body JSON hỏng cú pháp (kỳ vọng 400, hay gặp 500), sai Content-Type (415), sai method (405).
+- [ ] Thêm mẫu stack trace/SQL/tên class vào `SensitiveDataScanner` (:54-58).
+- [ ] Tính cảnh báo HIGH lộ dữ liệu (M21) là một cột phát hiện riêng trong báo cáo đo.
+
+**G5. Đo lại và viết kết quả (khoảng 2-3 ngày; token do người dùng duyệt trước mỗi lần chạy)**
+- [ ] Đo cấu hình A, B cũ và **C mới (có tài liệu + luật đã duyệt)** trên 3 bộ:
+  - **bộ phát triển** M01-M42;
+  - **bộ held-out** H01-H15;
+  - `shop-api-target`.
+
+  Báo cáo TÁCH riêng từng bộ.
+- [ ] **Precision/recall trích luật**: 1 luật trích ra khớp khi trùng (endpoint, template, tập field) với danh sách chuẩn G0.4. precision = khớp/đề xuất; recall = khớp/chuẩn. Đo thêm tỉ lệ trích dẫn bị hạ xuống GIẢ ĐỊNH.
+- [ ] Fail giả trên bản chuẩn, token, thời gian, **đường bão hoà** (số lỗi bắt thêm trên mỗi 10.000 token).
+- [ ] Số A/B cũ giữ nguyên nếu `business.st` và planner không đổi. Mọi số sau thay đổi ghi rõ là in-sample (bộ phát triển) hay out-of-sample (held-out).
+- [ ] Cập nhật `DANH_GIA.md`: kết quả + threats to validity, gồm:
+  - held-out/tài liệu do AI viết;
+  - in-sample sau 17p;
+  - API demo đơn giản;
+  - cỡ mẫu nhỏ.
+- [ ] **D1. Cập nhật `CAU_HOI_BAO_VE.md`**: trả lời "đủ chưa" bằng **3 trục độc lập**, không gộp:
+  - (a) thoả tiêu chí: % mục spec có test / % luật đã duyệt có test;
+  - (b) chất lượng kết luận: CHẮC/NGHI;
+  - (c) khả năng bắt lỗi: mutation score, tách bộ phát triển và held-out.
+
+  Thêm 2 câu trả lời mẫu: "sinh bao nhiêu là đủ, dựa vào đâu" và "AI nghiệp vụ dựa vào đâu, còn đoán không".
+
+**G6. Việc cần người (song song, xong trước khi bảo vệ)**
+- [ ] **E2**: đo thời gian duyệt luật bằng G3.5 với người tham gia thật.
+- [ ] **E4**: diễn tập demo + quay bản dự phòng. Thêm cảnh "tải tài liệu → duyệt luật (có trích dẫn) → test từ luật bắt lỗi nghiệp vụ".
+
+**Thứ tự:** G0 → G1 → G2 → G3.1 → G3.2 → G3.3 + G3.4 → G3.6 → G4 → G5; G3.5 làm cùng G3.2; G6 song song. Tổng khoảng 20-22 ngày-người.
+
+**Hướng phát triển (KHÔNG làm đợt này):**
+- **BOLA** (OWASP API1): 2 AuthProfile cùng vai, B đọc/sửa/xoá dữ liệu A tạo, kỳ vọng 403/404. Bộ 42 có 5 mutant loại này (M15/16/17/35/40).
+- Máy trạng thái (M26).
+- OWASP API4 (limit/pageSize cực lớn).
+- Điều tra vì sao M19 lọt dù probe có `ownerId` (`MassAssignmentProbe.java:64`).
+- PDF.
+- Để AI viết test cho luật không khớp mẫu.
+- Cookie, body lồng từ cấp 2.
+- Chỉ số status code đã quan sát (Martin-Lopez 2019), `OracleStrength`.
+
+**Không làm:**
+- Gộp mutation score vào coverage, hoặc gộp % spec với % nghiệp vụ thành 1 số.
+- Đưa số mutant vào UI của project người dùng.
+- Tô đỏ endpoint chưa sinh.
+- Sửa kỳ vọng để test Pass.
+- Khung chat nhiều lượt với AI.
+- Đưa `AWAITING_REVIEW` vào trạng thái job đang chạy.
+- Lưu checklist spec vào DB.
+- Tự duyệt luật.
+- Để AI chọn mã lỗi chính xác rồi xếp CHẮC.
+- Chạy lại cấu hình tốn token khi chưa có bộ held-out.
 
 #### 17g. Phần còn thiếu theo rà soát 2 chuyên gia (backend/QA + frontend/UX), 2026-10-20
 
