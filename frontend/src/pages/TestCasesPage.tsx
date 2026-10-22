@@ -87,7 +87,12 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
   })
   const { data: page, isLoading, isError, isFetching, isPlaceholderData } = useQuery({
     queryKey: ["test-cases", projectId, "page", lf.params],
-    queryFn: () => listTestCasesPage(projectId, lf.params),
+    // 17q G2 - bộ lọc chỉ còn "Kỳ vọng cần xem"; link cũ ?reliability=RELIABLE bị bỏ qua thay vì lọc ngầm.
+    queryFn: () =>
+      listTestCasesPage(projectId, {
+        ...lf.params,
+        reliability: lf.params.reliability === "NEEDS_REVIEW" ? "NEEDS_REVIEW" : undefined,
+      }),
     placeholderData: keepPreviousData,
   })
 
@@ -296,13 +301,10 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
     },
     {
       key: "reliability",
-      label: "Lọc theo độ tin cậy",
-      allLabel: "Mọi độ tin cậy",
-      value: lf.filters.reliability,
-      options: [
-        { value: "RELIABLE", label: "Đáng tin" },
-        { value: "NEEDS_REVIEW", label: "Cần xem lại" },
-      ],
+      label: "Lọc theo kỳ vọng cần xem",
+      allLabel: "Mọi test case",
+      value: lf.filters.reliability === "NEEDS_REVIEW" ? "NEEDS_REVIEW" : "",
+      options: [{ value: "NEEDS_REVIEW", label: "Kỳ vọng cần xem" }],
     },
   ]
 

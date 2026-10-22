@@ -54,10 +54,11 @@ public class CoverageController {
             @RequestParam(required = false) String method,
             @RequestParam(required = false) Boolean onlyGaps,
             @RequestParam(required = false) Boolean onlyFailing,
-            @RequestParam(required = false) String sort
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String state
     ) {
         return ResponseEntity.ok(ApiResponse.of(endpointCoverageService.getProjectCoveragePaged(projectId,
-                new CoverageListQuery(page, size, q, method, onlyGaps, onlyFailing, sort))));
+                new CoverageListQuery(page, size, q, method, onlyGaps, onlyFailing, sort, state))));
     }
 
     /** Số tổng + 1 dòng tóm tắt mỗi endpoint (không có chi tiết từng mục) - nhẹ, dùng cho danh sách endpoint. */

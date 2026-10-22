@@ -73,6 +73,13 @@ public class TestResult {
     @Column(columnDefinition = "TEXT")
     private String specDeviationsJson;
 
+    /**
+     * 17q G2 - đoạn trích ngắn (đã che dữ liệu nhạy cảm) lý do API từ chối đầu vào ở phản hồi 4xx; null = không phải 4xx, không nhận
+     * ra lý do, hoặc kết quả cũ. Dùng để xét Pass của test âm có "oracle mạnh" (API từ chối đúng field đang kiểm).
+     */
+    @Column(length = 500)
+    private String rejectionExcerpt;
+
     /** Module 16 - thời gian gọi target API (ms); null cho case không gọi target (ERROR cấu hình, BLOCKED) và dữ liệu cũ. */
     private Long durationMs;
 

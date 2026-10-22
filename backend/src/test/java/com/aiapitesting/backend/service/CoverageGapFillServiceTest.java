@@ -494,6 +494,11 @@ class CoverageGapFillServiceTest {
             public Boolean getUnstable() {
                 return null;
             }
+
+            @Override
+            public String getRejectionExcerpt() {
+                return null;
+            }
         };
     }
 }

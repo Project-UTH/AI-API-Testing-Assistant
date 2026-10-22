@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight } from "lucide-react"
 import { cn, METHOD_STYLES } from "@/lib/utils"
 import { coverageCounts, scopeLabel, type EndpointCoverage } from "@/lib/coverage"
 import { CoverageGapReport } from "@/components/coverage/CoverageGapReport"
+import { CoverageCountsText, TestStateChip } from "@/components/coverage/TestStateChip"
 
 interface CoverageEndpointRowProps {
   projectId: string
@@ -38,9 +39,7 @@ export const CoverageEndpointRow = memo(function CoverageEndpointRow({ projectId
           {endpoint.method}
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint.path}</span>
-        {endpoint.testCaseCount === 0 && (
-          <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">Chưa có test case nào</span>
-        )}
+        <TestStateChip state={endpoint.testState ?? (endpoint.testCaseCount === 0 ? "NOT_GENERATED" : null)} />
         {scopeLabel(endpoint.scope) && (
           <span
             className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
@@ -49,13 +48,18 @@ export const CoverageEndpointRow = memo(function CoverageEndpointRow({ projectId
             Phạm vi: {scopeLabel(endpoint.scope)}
           </span>
         )}
-        <span className="shrink-0 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">
-            {counts.covered}/{counts.relevant} mục
-          </span>{" "}
-          · {counts.executed} đã chạy
-          {counts.missing > 0 && <span className="text-amber-600 dark:text-amber-400"> · thiếu {counts.missing}</span>}
-        </span>
+        {endpoint.testState !== "NOT_GENERATED" && endpoint.testCaseCount > 0 && (
+          <CoverageCountsText
+            relevant={counts.relevant}
+            covered={counts.covered}
+            executed={counts.executed}
+            certain={counts.certain}
+            doubtful={counts.doubtful}
+            missing={counts.missing}
+            specGap={counts.specGap}
+            baselineVerified={endpoint.baselineVerified}
+          />
+        )}
       </button>
 
       {expanded && (

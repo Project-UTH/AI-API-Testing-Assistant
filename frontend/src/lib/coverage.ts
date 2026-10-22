@@ -38,6 +38,10 @@ export interface CoverageDimension {
   fillable: boolean
   /** Dòng MISSING có itemKey nhưng chưa bù được: vì sao + cần làm gì. */
   fillBlockedReason: string | null
+  /** 17q G2 - chỉ có khi dòng đã chạy ra kết quả: kết luận CHẮC hay NGHI. */
+  verdictTrust?: VerdictTrust | null
+  /** 17q G2 - mục "biên ngầm": spec không khai ràng buộc, kỳ vọng chỉ là quy ước (Fail không quy là lỗi API). */
+  specUnderspecified?: boolean
 }
 
 /** Loại test case được đo coverage của endpoint. custom=false: chưa từng chọn (endpoint cũ) nên coi như đủ 4 loại. */
@@ -98,6 +102,65 @@ export interface EndpointCoverage {
   requiresAuth: boolean
   requiresAuthSource: "SPEC" | "MANUAL"
   dimensions: CoverageDimension[]
+  /** 17q G2 - trạng thái kiểm thử + số mục kết luận CHẮC/NGHI + số mục "spec thiếu ràng buộc" + test gốc đã xác nhận. */
+  testState?: EndpointTestState
+  certainCount?: number
+  doubtfulCount?: number
+  specGapCount?: number
+  baselineVerified?: boolean
+}
+
+/** 17q G2 - trạng thái kiểm thử của endpoint (backend tính, frontend chỉ hiển thị). */
+export type EndpointTestState = "NOT_GENERATED" | "NOT_RUN" | "TESTED_FAILING" | "TESTED_OK"
+
+/** 17q G2 - độ tin của kết luận (chỉ hiển thị, không chặn bug report). */
+export type VerdictTrust = "CERTAIN" | "DOUBTFUL" | "NO_VERDICT"
+
+export const TEST_STATE_ORDER: EndpointTestState[] = ["NOT_GENERATED", "NOT_RUN", "TESTED_FAILING", "TESTED_OK"]
+
+export const TEST_STATE_DISPLAY: Record<EndpointTestState, { label: string; dot: string; chip: string; bar: string; title: string }> = {
+  NOT_GENERATED: {
+    label: "Chưa sinh test",
+    dot: "bg-zinc-400",
+    chip: "bg-muted text-muted-foreground",
+    bar: "bg-zinc-300 dark:bg-zinc-600",
+    title: "Endpoint chưa có test nào - chưa làm, không phải làm sai",
+  },
+  NOT_RUN: {
+    label: "Chưa chạy",
+    dot: "bg-sky-500",
+    chip: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+    bar: "bg-sky-500",
+    title: "Đã có test nhưng chưa chạy ra kết luận (chưa chạy, hoặc chỉ lỗi môi trường/không ổn định)",
+  },
+  TESTED_FAILING: {
+    label: "Đang có Fail",
+    dot: "bg-destructive",
+    chip: "bg-destructive/10 text-destructive",
+    bar: "bg-destructive",
+    title: "Có ít nhất 1 test Fail không do môi trường/token/không ổn định - mở endpoint để xem từng mục là kết luận chắc hay nghi",
+  },
+  TESTED_OK: {
+    label: "Đã kiểm, ổn",
+    dot: "bg-emerald-500",
+    chip: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    bar: "bg-emerald-500",
+    title: "Đã chạy ra kết luận và không có Fail nào kết luận được",
+  },
+}
+
+/** Luôn đi qua hàm này (không index thẳng Record) - giá trị lạ từ backend hiện mã thô thay vì làm trắng trang. */
+export function getTestStateDisplay(state: string | null | undefined) {
+  if (!state) return null
+  return (
+    TEST_STATE_DISPLAY[state as EndpointTestState] ?? {
+      label: state,
+      dot: "bg-muted-foreground",
+      chip: "bg-muted text-muted-foreground",
+      bar: "bg-muted-foreground",
+      title: state,
+    }
+  )
 }
 
 export interface ProjectCoverage {
@@ -137,6 +200,9 @@ export function coverageCounts(endpoint: EndpointCoverage) {
     executed: covered.filter((d) => d.runStatus === "PASSED" || d.runStatus === "FAILED").length,
     failing: covered.filter((d) => d.runStatus === "FAILED").length,
     missing: relevant.length - covered.length,
+    certain: endpoint.certainCount ?? 0,
+    doubtful: endpoint.doubtfulCount ?? 0,
+    specGap: endpoint.specGapCount ?? 0,
     /** Khoá các mục bù được ngay - gửi thẳng cho fillCoverageGaps. */
     fillableKeys: fillableRows.map((d) => d.itemKey as string),
     blockedCount: blockedRows.length,
@@ -152,6 +218,9 @@ export function coverageRowCounts(row: CoverageEndpointRow) {
     executed: row.executedCount,
     failing: row.failingCount,
     missing: row.missingCount,
+    certain: row.certainCount ?? 0,
+    doubtful: row.doubtfulCount ?? 0,
+    specGap: row.specGapCount ?? 0,
   }
 }
 
@@ -168,6 +237,16 @@ export interface CoverageOverview {
   relevantCount: number
   coveredCount: number
   executedCount: number
+  /** 17q G2 - số endpoint đã chạy ra kết luận (số chính của cấp project). */
+  testedEndpoints?: number
+  /** 17q G2 - phân bố endpoint theo trạng thái (thiếu khoá thì tính là 0). */
+  stateCounts?: Partial<Record<EndpointTestState, number>>
+  /** 17q G2 - mẫu số/tử số % chỉ trên endpoint ĐÃ SINH test. */
+  generatedRelevantCount?: number
+  generatedCoveredCount?: number
+  generatedExecutedCount?: number
+  certainCount?: number
+  doubtfulCount?: number
 }
 
 /** Module 17 (G4) - tóm tắt coverage 1 endpoint (không có từng dòng chi tiết), có đủ số đếm để gộp. */
@@ -184,6 +263,11 @@ export interface CoverageEndpointRow {
   missingCount: number
   coveragePercent: number
   executedPercent: number
+  testState?: EndpointTestState
+  certainCount?: number
+  doubtfulCount?: number
+  specGapCount?: number
+  baselineVerified?: boolean
 }
 
 export interface CoveragePageInfo {
@@ -211,6 +295,8 @@ export interface CoveragePageParams {
   onlyGaps?: boolean
   onlyFailing?: boolean
   sort?: string
+  /** 17q G2 - lọc theo trạng thái kiểm thử. */
+  state?: string
 }
 
 export function getProjectCoveragePage(projectId: string, params: CoveragePageParams): Promise<ProjectCoveragePage> {
@@ -220,6 +306,7 @@ export function getProjectCoveragePage(projectId: string, params: CoveragePagePa
   if (params.onlyGaps) query.set("onlyGaps", "true")
   if (params.onlyFailing) query.set("onlyFailing", "true")
   if (params.sort) query.set("sort", params.sort)
+  if (params.state) query.set("state", params.state)
   return apiFetch<ProjectCoveragePage>(`/projects/${projectId}/coverage?${query.toString()}`)
 }
 

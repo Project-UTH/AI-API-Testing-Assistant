@@ -452,6 +452,25 @@ class TestExecutionRunnerTest {
         assertThat(captor.getAllValues()).allSatisfy(r -> assertThat(r.getSpecDeviationsJson()).isNull());
     }
 
+    // ---- 17q G2 - lưu lý do API từ chối (oracle mạnh cho test âm) ----
+
+    @Test
+    void runInBackground_4xxWithRejectionReason_storesExcerpt_but2xxDoesNot() {
+        TestCase negative = simpleCase();
+        negative.setExpectedStatus(400);
+        TestCase positive = simpleCase();
+        when(restAssuredTestRunner.run(any(), eq(negative), any()))
+                .thenReturn(new RestAssuredTestRunner.RunResult(400, "{\"message\":\"email is required\"}"));
+        when(restAssuredTestRunner.run(any(), eq(positive), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"message\":\"invalid\"}"));
+
+        runner.runInBackground(execution, List.of(negative, positive), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues().get(0).getRejectionExcerpt()).contains("email is required");
+        assertThat(captor.getAllValues().get(1).getRejectionExcerpt()).isNull();
+    }
+
     // ---- Module 17 (17b-2) - probe mass-assignment ----
 
     private TestCase probeCase() {

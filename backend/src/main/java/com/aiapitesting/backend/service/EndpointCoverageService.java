@@ -12,6 +12,7 @@ import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
 import com.aiapitesting.backend.dto.response.CoverageRunStatus;
 import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
+import com.aiapitesting.backend.dto.response.EndpointTestState;
 import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
 import com.aiapitesting.backend.entity.AuthProfile;
 import com.aiapitesting.backend.entity.AuthzExpectation;
@@ -20,7 +21,9 @@ import com.aiapitesting.backend.entity.EndpointRole;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseDependency;
+import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
 import com.aiapitesting.backend.entity.TestResultStatus;
+import com.aiapitesting.backend.entity.VerdictTrust;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.repository.AuthProfileRepository;
@@ -108,7 +111,8 @@ public class EndpointCoverageService {
             java.util.Set.of("default", "path", "coverage,asc", "coverage,desc", "missing,desc");
 
     /** Đếm mục của 1 endpoint theo đúng các vị từ dùng cho % (loại "không áp dụng", chỉ 4 loại checklist + phân quyền). */
-    private record Counts(long relevant, long covered, long executed, long failing, long missing) {
+    private record Counts(long relevant, long covered, long executed, long failing, long missing,
+                          long certain, long doubtful, long specGap) {
     }
 
     private Counts countsOf(List<CoverageDimensionResponse> dimensions) {
@@ -118,7 +122,10 @@ public class EndpointCoverageService {
                 counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED).count(),
                 counted.stream().filter(this::isExecuted).count(),
                 counted.stream().filter(d -> d.status() == CoverageDimensionStatus.COVERED && d.runStatus() == CoverageRunStatus.FAILED).count(),
-                counted.stream().filter(d -> d.status() == CoverageDimensionStatus.MISSING).count());
+                counted.stream().filter(d -> d.status() == CoverageDimensionStatus.MISSING).count(),
+                counted.stream().filter(d -> isExecuted(d) && d.verdictTrust() == VerdictTrust.CERTAIN).count(),
+                counted.stream().filter(d -> isExecuted(d) && d.verdictTrust() == VerdictTrust.DOUBTFUL).count(),
+                counted.stream().filter(d -> d.status() != CoverageDimensionStatus.NOT_APPLICABLE && d.specUnderspecified()).count());
     }
 
     private record LightEntry(Endpoint endpoint, EndpointCoverageResponse light, CoverageEndpointRow row) {
@@ -130,18 +137,34 @@ public class EndpointCoverageService {
             Counts c = countsOf(light.dimensions());
             CoverageEndpointRow row = new CoverageEndpointRow(endpoint.getId(), endpoint.getPath(), endpoint.getMethod(),
                     light.requiresAuth(), light.testCaseCount(), c.relevant(), c.covered(), c.executed(), c.failing(), c.missing(),
-                    light.coveragePercent(), light.executedPercent());
+                    light.coveragePercent(), light.executedPercent(),
+                    light.testState(), c.certain(), c.doubtful(), c.specGap(), light.baselineVerified());
             return new LightEntry(endpoint, light, row);
         }).toList();
     }
 
     private CoverageOverview overviewOf(List<LightEntry> entries) {
+        // 17q G2 - số chính của cấp project là "X/N endpoint đã kiểm thử" + phân bố trạng thái; % (nếu hiện) chỉ tính trên endpoint
+        // ĐÃ SINH test - endpoint chưa sinh không bị tính là "0%" (chưa làm, không phải làm thiếu).
+        Map<EndpointTestState, Integer> stateCounts = new java.util.EnumMap<>(EndpointTestState.class);
+        for (EndpointTestState state : EndpointTestState.values()) {
+            stateCounts.put(state, (int) entries.stream().filter(e -> e.row().testState() == state).count());
+        }
+        List<CoverageEndpointRow> generated = entries.stream().map(LightEntry::row)
+                .filter(r -> r.testState() != EndpointTestState.NOT_GENERATED).toList();
         return new CoverageOverview(entries.size(),
                 (int) entries.stream().filter(e -> e.row().missingCount() > 0).count(),
                 (int) entries.stream().filter(e -> e.row().failingCount() > 0).count(),
                 entries.stream().mapToLong(e -> e.row().relevantCount()).sum(),
                 entries.stream().mapToLong(e -> e.row().coveredCount()).sum(),
-                entries.stream().mapToLong(e -> e.row().executedCount()).sum());
+                entries.stream().mapToLong(e -> e.row().executedCount()).sum(),
+                stateCounts.get(EndpointTestState.TESTED_FAILING) + stateCounts.get(EndpointTestState.TESTED_OK),
+                stateCounts,
+                generated.stream().mapToLong(CoverageEndpointRow::relevantCount).sum(),
+                generated.stream().mapToLong(CoverageEndpointRow::coveredCount).sum(),
+                generated.stream().mapToLong(CoverageEndpointRow::executedCount).sum(),
+                entries.stream().mapToLong(e -> e.row().certainCount()).sum(),
+                entries.stream().mapToLong(e -> e.row().doubtfulCount()).sum());
     }
 
     /**
@@ -154,6 +177,7 @@ public class EndpointCoverageService {
         String sort = PagingSupport.requireAllowedSort(query.sort(), "default", COVERAGE_SORTS);
         String q = PagingSupport.normalizeQuery(query.q(), 100);
         String method = PagingSupport.normalizeMethod(query.method());
+        EndpointTestState stateFilter = parseState(query.state());
 
         List<Endpoint> endpoints = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project);
         CoverageContext context = buildContext(project, endpoints);
@@ -168,6 +192,7 @@ public class EndpointCoverageService {
                 .filter(e -> method == null || method.equalsIgnoreCase(e.row().method()))
                 .filter(e -> !Boolean.TRUE.equals(query.onlyGaps()) || e.row().missingCount() > 0)
                 .filter(e -> !Boolean.TRUE.equals(query.onlyFailing()) || e.row().failingCount() > 0)
+                .filter(e -> stateFilter == null || e.row().testState() == stateFilter)
                 .toList());
         java.util.Comparator<LightEntry> byPath = java.util.Comparator
                 .comparing((LightEntry e) -> e.row().path() == null ? "" : e.row().path())
@@ -192,6 +217,17 @@ public class EndpointCoverageService {
     }
 
     /** Coverage nhẹ của cả project: số tổng + 1 dòng tóm tắt mỗi endpoint (màn hình danh sách endpoint chỉ cần các số đếm này). */
+    private static EndpointTestState parseState(String state) {
+        if (state == null || state.isBlank()) {
+            return null;
+        }
+        try {
+            return EndpointTestState.valueOf(state.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new InvalidRequestException("Trạng thái kiểm thử không hợp lệ: " + state);
+        }
+    }
+
     public CoverageSummaryResponse getCoverageSummary(UUID projectId) {
         Project project = projectService.getOwnedProject(projectId);
         List<Endpoint> endpoints = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project);
@@ -259,15 +295,17 @@ public class EndpointCoverageService {
         // Module 15j - lượt chạy MỚI NHẤT của từng test case (trạng thái chạy của dòng coverage).
         Map<UUID, TestResultStatus> latestResultByTestCaseId = new HashMap<>();
         Set<UUID> latestNotApiFaultIds = new HashSet<>();
+        Map<UUID, TestResultRepository.TestCaseLatestResult> latestRowByTestCaseId = new HashMap<>();
         for (TestResultRepository.TestCaseLatestResult row : testResultRepository.findLatestResultsByProject(project)) {
             if (latestResultByTestCaseId.putIfAbsent(row.getTestCaseId(), row.getStatus()) != null) {
                 continue;
             }
-            // Fail do môi trường/token (không nói gì về API) hoặc kết quả của test KHÔNG ỔN ĐỊNH (kể cả Pass - Module 16
-            // gđ2): đều không phải bằng chứng chắc chắn nên runStatus là NO_VERDICT, không phải PASSED/FAILED.
-            boolean notApiFault = row.getStatus() == TestResultStatus.FAILED
-                    && row.getFailureCause() != null && row.getFailureCause().isNotApiFault();
-            if (notApiFault || Boolean.TRUE.equals(row.getUnstable())) {
+            latestRowByTestCaseId.put(row.getTestCaseId(), row);
+            // Fail do môi trường/token/không ổn định (FLAKY), hoặc kết quả của test KHÔNG ỔN ĐỊNH (kể cả Pass - Module 16 gđ2): không
+            // phải bằng chứng về API nên runStatus là NO_VERDICT. 17q G2 - dùng chung định nghĩa NO_VERDICT của VerdictTrust.
+            boolean concluded = row.getStatus() == TestResultStatus.FAILED || row.getStatus() == TestResultStatus.PASSED;
+            if (concluded && VerdictTrust.of(row.getStatus(), row.getFailureCause(), row.getUnstable(), true, false)
+                    == VerdictTrust.NO_VERDICT) {
                 latestNotApiFaultIds.add(row.getTestCaseId());
             }
         }
@@ -289,7 +327,7 @@ public class EndpointCoverageService {
         authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project).forEach(p -> profilesById.put(p.getId(), p));
 
         return new CoverageContext(testCasesByEndpointId, dependenciesByConsumerEndpointId, latestResultByTestCaseId,
-                postEndpointByPath, latestNotApiFaultIds, rolesByEndpointId, profilesById);
+                postEndpointByPath, latestNotApiFaultIds, rolesByEndpointId, profilesById, latestRowByTestCaseId);
     }
 
     private record CoverageContext(
@@ -301,7 +339,9 @@ public class EndpointCoverageService {
             Set<UUID> latestNotApiFaultTestCaseIds,
             /** Module 17 (17a) - ma trận phân quyền đã khai, theo endpoint. */
             Map<UUID, List<EndpointRole>> rolesByEndpointId,
-            Map<UUID, AuthProfile> profilesById
+            Map<UUID, AuthProfile> profilesById,
+            /** 17q G2 - lượt chạy mới nhất đầy đủ (nhãn nguyên nhân, không ổn định, đoạn trích lý do từ chối) để tính độ tin kết luận. */
+            Map<UUID, TestResultRepository.TestCaseLatestResult> latestRowByTestCaseId
     ) {
     }
 
@@ -376,7 +416,123 @@ public class EndpointCoverageService {
         return new EndpointCoverageResponse(
                 endpoint.getId(), endpoint.getPath(), endpoint.getMethod(), testCases.size(),
                 round1(coveragePercent), round1(executedPercent), facts.parsed(), scope,
-                endpoint.effectiveRequiresAuth(), endpoint.getRequiresAuthManual() != null ? "MANUAL" : "SPEC", dimensions);
+                endpoint.effectiveRequiresAuth(), endpoint.getRequiresAuthManual() != null ? "MANUAL" : "SPEC", dimensions,
+                testStateOf(testCases, context), counts.certain(), counts.doubtful(), counts.specGap(), baselineVerified(testCases));
+    }
+
+    // ---- 17q G2 - trạng thái kiểm thử của endpoint + độ tin kết luận ----
+
+    /** Trạng thái tính theo TEST (không theo mục) để bản nhẹ và bản đầy đủ không lệch nhau; test nghiệp vụ GIẢ ĐỊNH không tính. */
+    private EndpointTestState testStateOf(List<TestCase> testCases, CoverageContext context) {
+        List<TestCase> own = testCases.stream()
+                .filter(tc -> tc.getSource() != com.aiapitesting.backend.entity.TestCaseSource.BUSINESS)
+                .toList();
+        if (own.isEmpty()) {
+            return EndpointTestState.NOT_GENERATED;
+        }
+        boolean concluded = false;
+        for (TestCase tc : own) {
+            TestResultRepository.TestCaseLatestResult row = context.latestRowByTestCaseId().get(tc.getId());
+            if (row == null || (row.getStatus() != TestResultStatus.PASSED && row.getStatus() != TestResultStatus.FAILED)) {
+                continue;
+            }
+            if (VerdictTrust.of(row.getStatus(), row.getFailureCause(), row.getUnstable(), true, false) == VerdictTrust.NO_VERDICT) {
+                continue;
+            }
+            if (row.getStatus() == TestResultStatus.FAILED) {
+                return EndpointTestState.TESTED_FAILING;
+            }
+            concluded = true;
+        }
+        return concluded ? EndpointTestState.TESTED_OK : EndpointTestState.NOT_RUN;
+    }
+
+    /** Có test gốc AI đã được chạy thật xác nhận và khoá làm nền (BaselineVerificationService chỉ khoá khi test gốc Pass). */
+    private boolean baselineVerified(List<TestCase> testCases) {
+        return testCases.stream().anyMatch(tc -> tc.getGenerationOrigin() == TestCaseGenerationOrigin.AI_BASELINE && tc.isLocked());
+    }
+
+    /**
+     * Mục "biên ngầm": spec không khai ràng buộc nên kỳ vọng 2xx chỉ là quy ước (closed-world), không phải đặc tả. Chỉ mục kỳ vọng
+     * THÀNH CÔNG - cùng loại mục ở tham số path định danh tài nguyên kỳ vọng 404 (id không tồn tại), đó là oracle thật, không phải biên ngầm.
+     */
+    static boolean isUnderspecified(TestCaseChecklistPlanner.ChecklistItem item) {
+        return item != null && item.expectSuccess() && (item.type() == ChecklistItemType.BOUNDARY_ZERO
+                || item.type() == ChecklistItemType.BOUNDARY_NEGATIVE_NUMBER
+                || item.type() == ChecklistItemType.BOUNDARY_EMPTY_STRING);
+    }
+
+    /**
+     * Độ tin của 1 dòng đã chạy: dòng FAILED → CHẮC nếu có ít nhất 1 test Fail ở mức CHẮC; dòng PASSED → CHẮC nếu có ít nhất 1 test Pass
+     * ở mức CHẮC; ngược lại NGHI. Dòng chưa ra kết luận (chưa chạy/NO_VERDICT) → null.
+     */
+    private VerdictTrust dimensionTrust(CoverageRunStatus run, List<TestCase> covering, CoverageContext context,
+                                        TestCaseChecklistPlanner.ChecklistItem item) {
+        if (run != CoverageRunStatus.PASSED && run != CoverageRunStatus.FAILED) {
+            return null;
+        }
+        TestResultStatus wanted = run == CoverageRunStatus.FAILED ? TestResultStatus.FAILED : TestResultStatus.PASSED;
+        for (TestCase tc : covering) {
+            TestResultRepository.TestCaseLatestResult row = context.latestRowByTestCaseId().get(tc.getId());
+            if (row != null && row.getStatus() == wanted && testTrust(tc, row, item) == VerdictTrust.CERTAIN) {
+                return VerdictTrust.CERTAIN;
+            }
+        }
+        return VerdictTrust.DOUBTFUL;
+    }
+
+    private VerdictTrust testTrust(TestCase tc, TestResultRepository.TestCaseLatestResult row,
+                                   TestCaseChecklistPlanner.ChecklistItem item) {
+        boolean assumed = isAssumedOracle(tc) || isUnderspecified(item);
+        return VerdictTrust.of(row.getStatus(), row.getFailureCause(), row.getUnstable(), strongPassOracle(tc, row, item), assumed);
+    }
+
+    /** Kỳ vọng do AI viết (AI_CHECKLIST/AI_EXTRA/AI_BUSINESS) hoặc bị đánh dấu "kỳ vọng cần xem": Fail tối đa NGHI. */
+    private static boolean isAssumedOracle(TestCase tc) {
+        TestCaseGenerationOrigin origin = tc.getGenerationOrigin();
+        return origin == TestCaseGenerationOrigin.AI_CHECKLIST || origin == TestCaseGenerationOrigin.AI_EXTRA
+                || origin == TestCaseGenerationOrigin.AI_BUSINESS
+                || tc.getReliabilityStatus() == com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW;
+    }
+
+    /**
+     * Pass có oracle mạnh khi: test kỳ vọng thành công (oracle là mã 2xx), hoặc mục bảo mật/phân quyền (401/403 chính là oracle), hoặc
+     * test âm mà lý do API từ chối nhắc ĐÚNG field đang kiểm. Test âm Pass vì bị từ chối do lý do khác (trùng hợp) chỉ là NGHI.
+     */
+    private static boolean strongPassOracle(TestCase tc, TestResultRepository.TestCaseLatestResult row,
+                                            TestCaseChecklistPlanner.ChecklistItem item) {
+        // Chỉ "từ chối đầu vào" (400/422) mới có thể trùng hợp vì lỗi KHÁC; mã riêng (401/403/404/409...) tự nó là oracle.
+        if (!isInputRejectionStatus(tc.getExpectedStatus()) || item == null) {
+            return true;
+        }
+        if (item.type().name().startsWith("SECURITY_") || item.field() == null || item.field().isBlank()) {
+            return true;
+        }
+        return mentionsField(row.getRejectionExcerpt(), item.field());
+    }
+
+    static boolean isInputRejectionStatus(Integer status) {
+        return status != null && (status == 400 || status == 422);
+    }
+
+    /** So khớp tên field trong đoạn trích: bỏ dấu + chữ thường, chấp nhận dạng camelCase/snake_case/kebab-case và có khoảng trắng. */
+    static boolean mentionsField(String excerpt, String field) {
+        if (excerpt == null || excerpt.isBlank() || field == null || field.isBlank()) {
+            return false;
+        }
+        String leaf = field.contains(".") ? field.substring(field.lastIndexOf('.') + 1) : field;
+        leaf = leaf.replaceAll("\\[\\d*]", "");
+        String text = foldLetters(excerpt);
+        String spaced = foldLetters(leaf.replaceAll("([a-z0-9])([A-Z])", "$1 $2").replace('_', ' ').replace('-', ' '));
+        String joined = spaced.replace(" ", "");
+        return Pattern.compile("(^|[^a-z0-9])(" + Pattern.quote(joined) + "|" + Pattern.quote(spaced) + ")([^a-z0-9]|$)")
+                .matcher(text.replace('_', ' ').replace('-', ' ')).find()
+                || Pattern.compile("(^|[^a-z0-9])" + Pattern.quote(joined) + "([^a-z0-9]|$)").matcher(text.replace("_", "").replace("-", "")).find();
+    }
+
+    private static String foldLetters(String text) {
+        String lower = text.toLowerCase(Locale.ROOT).replace('đ', 'd');
+        return java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
     }
 
     /**
@@ -422,14 +578,18 @@ public class EndpointCoverageService {
                 .filter(c -> testCaseChecklistPlanner.covers(spec, item, c.generated(), requiresAuth))
                 .map(Candidate::entity)
                 .toList();
+        boolean underspecified = isUnderspecified(item);
         if (!covering.isEmpty()) {
+            CoverageRunStatus run = runStatus(covering, context);
             return new CoverageDimensionResponse(category, item.description(), CoverageDimensionStatus.COVERED, null,
                     withDetail ? toRefs(covering, context) : List.of(), item.type().name(), key, item.rationale(),
-                    runStatus(covering, context), List.of());
+                    run, List.of())
+                    .withTrust(dimensionTrust(run, covering, context, item), underspecified);
         }
         if (!withDetail) {
             return new CoverageDimensionResponse(category, item.description(), CoverageDimensionStatus.MISSING, null,
-                    List.of(), item.type().name(), key, item.rationale(), null, List.of());
+                    List.of(), item.type().name(), key, item.rationale(), null, List.of())
+                    .withTrust(null, underspecified);
         }
 
         List<CoverageDimensionResponse.NearMiss> nearMisses = new ArrayList<>();
@@ -446,7 +606,7 @@ public class EndpointCoverageService {
         return new CoverageDimensionResponse(category, item.description(), CoverageDimensionStatus.MISSING, detail,
                 List.of(), item.type().name(), key, item.rationale(), null,
                 List.copyOf(nearMisses.subList(0, Math.min(MAX_NEAR_MISSES, nearMisses.size()))),
-                attempt.filled() != null, attempt.blockedReason());
+                attempt.filled() != null, attempt.blockedReason(), null, underspecified);
     }
 
     /** Tiền tố tên ChecklistItemType chính là loại test case (POSITIVE/NEGATIVE/BOUNDARY/SECURITY). */
@@ -504,8 +664,10 @@ public class EndpointCoverageService {
                     .filter(tc -> AuthzMatrix.covers(expectation, profile.getId(), tc))
                     .toList();
             if (!covering.isEmpty()) {
+                CoverageRunStatus run = runStatus(covering, context);
                 result.add(new CoverageDimensionResponse(AuthzMatrix.CATEGORY, label, CoverageDimensionStatus.COVERED, null,
-                        toRefs(covering, context), AuthzMatrix.type(expectation), key, why, runStatus(covering, context), List.of()));
+                        toRefs(covering, context), AuthzMatrix.type(expectation), key, why, run, List.of())
+                        .withTrust(dimensionTrust(run, covering, context, null), false));
                 continue;
             }
             boolean fillable = expectation == AuthzExpectation.ALLOW ? usableBaseline : anyBaseline;

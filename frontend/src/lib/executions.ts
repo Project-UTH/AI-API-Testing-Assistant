@@ -111,6 +111,35 @@ export interface TestResult {
   securityFindings?: SecurityFinding[]
   /** 17q G1 - cảnh báo mã thành công lệch spec (vd spec khai [201], API trả 200); rỗng = không lệch/không đủ căn cứ. Không đổi Pass/Fail. */
   specDeviations?: string[]
+  /** 17q G2 - độ tin kết luận của lần chạy (null: Pass của test âm - xem ở Coverage, hoặc chưa đánh giá). Chỉ hiển thị. */
+  verdictTrust?: VerdictTrust | null
+}
+
+/** 17q G2 - độ tin của kết luận (backend tính). */
+export type VerdictTrust = "CERTAIN" | "DOUBTFUL" | "NO_VERDICT"
+
+export const VERDICT_TRUST_DISPLAY: Record<VerdictTrust, { label: string; className: string; title: string }> = {
+  CERTAIN: {
+    label: "chắc",
+    className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    title: "Kết luận chắc: Pass với kỳ vọng thành công, hoặc Fail có nhãn lỗi API rõ ràng",
+  },
+  DOUBTFUL: {
+    label: "nghi",
+    className: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    title: "Kết luận còn nghi: cần người xem (nguyên nhân chưa rõ, hoặc kỳ vọng do AI viết/quy ước). Vẫn báo lỗi được.",
+  },
+  NO_VERDICT: {
+    label: "chưa kết luận",
+    className: "border border-dashed border-muted-foreground/50 text-muted-foreground",
+    title: "Lần chạy không nói gì về API (môi trường/token/cấu hình test, test không ổn định, lỗi gọi API)",
+  },
+}
+
+/** Luôn đi qua hàm này: giá trị lạ hiện mã thô thay vì làm trắng trang. */
+export function getVerdictTrustDisplay(trust: string | null | undefined) {
+  if (!trust) return null
+  return VERDICT_TRUST_DISPLAY[trust as VerdictTrust] ?? { label: trust, className: "bg-muted text-muted-foreground", title: trust }
 }
 
 export interface SecurityFinding {

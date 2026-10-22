@@ -208,34 +208,13 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
             </Field>
           )}
 
-          {testCase.reliabilityStatus === "NEEDS_REVIEW" && testCase.reliabilityNotes.length > 0 && (
-            <Field label="Cần xem lại vì (đối chiếu tất định với spec)">
+          {testCase.reliabilityStatus === "NEEDS_REVIEW" && testCase.generationOrigin !== "SYSTEM_FILLED" && testCase.reliabilityNotes.length > 0 && (
+            <Field label="Kỳ vọng cần xem vì (đối chiếu tất định với spec)">
               <ul className="flex flex-col gap-1 text-sm text-amber-600 dark:text-amber-400">
                 {testCase.reliabilityNotes.map((note, index) => (
                   <li key={index}>• {note}</li>
                 ))}
               </ul>
-            </Field>
-          )}
-
-          {testCase.reliabilityAiConfirmed !== null && (
-            <Field
-              label={
-                testCase.reliabilityAiConfirmed
-                  ? "AI xác nhận - đây là lỗi thật (tốn thêm token)"
-                  : "AI xác nhận - đây là false positive, chủ đích (tốn thêm token)"
-              }
-            >
-              <p
-                className={cn(
-                  "text-sm",
-                  testCase.reliabilityAiConfirmed
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-emerald-600 dark:text-emerald-400"
-                )}
-              >
-                {testCase.reliabilityAiNote}
-              </p>
             </Field>
           )}
 

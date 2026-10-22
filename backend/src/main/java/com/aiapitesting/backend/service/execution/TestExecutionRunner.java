@@ -56,9 +56,9 @@ public class TestExecutionRunner {
 
     /** Module 16 - dữ liệu phụ thu được quanh 1 lần gọi target, truyền xuống finish() để lưu cùng TestResult. */
     private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint, String schemaViolationsJson, String securityFindingsJson,
-                        String specDeviationsJson) {
+                        String specDeviationsJson, String rejectionExcerpt) {
         Meta(Long durationMs, ErrorKind errorKind, String fingerprint) {
-            this(durationMs, errorKind, fingerprint, null, null, null);
+            this(durationMs, errorKind, fingerprint, null, null, null, null);
         }
     }
 
@@ -289,7 +289,8 @@ public class TestExecutionRunner {
             Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
                     statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null,
                     securityFindingsJsonOf(result.statusCode(), scan, probeFindingsOf(probe)),
-                    specDeviationsJsonOf(testCase, result.statusCode()));
+                    specDeviationsJsonOf(testCase, result.statusCode()),
+                    rejectionExcerptOf(result.statusCode(), scan.maskedBody() != null ? scan.maskedBody() : result.responseBody()));
 
             // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
             // status code đã sai.
@@ -437,6 +438,21 @@ public class TestExecutionRunner {
         }
     }
 
+    /**
+     * 17q G2 - đoạn trích lý do API từ chối đầu vào (chỉ phản hồi 4xx, đọc trên body ĐÃ CHE dữ liệu nhạy cảm). Coverage dùng nó để
+     * biết 1 test âm Pass vì API từ chối ĐÚNG field đang kiểm (oracle mạnh) hay chỉ trùng hợp bị từ chối vì lý do khác.
+     */
+    private static String rejectionExcerptOf(Integer statusCode, String maskedBody) {
+        if (statusCode == null || statusCode < 400 || statusCode > 499) {
+            return null;
+        }
+        try {
+            return InputRejectionDetector.excerptIfRejected(maskedBody);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private long elapsedMillis(long startedNanos) {
         return (System.nanoTime() - startedNanos) / 1_000_000;
     }
@@ -467,6 +483,7 @@ public class TestExecutionRunner {
                 .schemaViolationsJson(meta.schemaViolationsJson())
                 .securityFindingsJson(meta.securityFindingsJson())
                 .specDeviationsJson(meta.specDeviationsJson())
+                .rejectionExcerpt(meta.rejectionExcerpt())
                 .build();
         testResultRepository.save(result);
         savedResults.add(result);

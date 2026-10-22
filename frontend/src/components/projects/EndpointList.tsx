@@ -16,6 +16,7 @@ import { AuthHintBanner } from "@/components/projects/AuthHintBanner"
 import { GenerateWizardDialog } from "@/components/generation/GenerateWizardDialog"
 import { getDashboardSummary } from "@/lib/dashboard"
 import { coverageRowCounts, getCoverageSummary, type CoverageEndpointRow } from "@/lib/coverage"
+import { CoverageCountsText, TestStateChip } from "@/components/coverage/TestStateChip"
 
 interface EndpointListProps {
   projectId: string
@@ -78,25 +79,25 @@ const EndpointRow = memo(function EndpointRow({ projectId, endpoint, row, select
             Spec đổi {new Date(endpoint.schemaChangedAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
           </span>
         )}
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {endpoint.testCaseCount > 0 ? (
-            <>
-              <span className="font-medium text-foreground">{endpoint.testCaseCount}</span> test
-              {counts && (
-                <>
-                  {" · "}
-                  <span className="font-medium text-foreground">
-                    {counts.covered}/{counts.relevant}
-                  </span>{" "}
-                  mục
-                  {counts.missing > 0 && <span className="text-amber-700 dark:text-amber-400"> · thiếu {counts.missing}</span>}
-                </>
-              )}
-            </>
-          ) : (
-            "Chưa có test case"
-          )}
-        </span>
+        <TestStateChip state={row?.testState ?? (endpoint.testCaseCount === 0 ? "NOT_GENERATED" : null)} />
+        {endpoint.testCaseCount > 0 && (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{endpoint.testCaseCount}</span>{" "}
+            {row?.testState === "NOT_GENERATED" ? "test nghiệp vụ (giả định, không tính độ phủ)" : "test"}
+          </span>
+        )}
+        {endpoint.testCaseCount > 0 && counts && (
+          <CoverageCountsText
+            relevant={counts.relevant}
+            covered={counts.covered}
+            executed={counts.executed}
+            certain={counts.certain}
+            doubtful={counts.doubtful}
+            missing={counts.missing}
+            specGap={counts.specGap}
+            baselineVerified={row?.baselineVerified}
+          />
+        )}
         <Button
           type="button"
           size="sm"

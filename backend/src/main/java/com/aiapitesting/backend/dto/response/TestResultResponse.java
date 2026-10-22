@@ -3,7 +3,11 @@ package com.aiapitesting.backend.dto.response;
 import com.aiapitesting.backend.entity.BugReport;
 import com.aiapitesting.backend.entity.ErrorKind;
 import com.aiapitesting.backend.entity.TestResult;
+import com.aiapitesting.backend.entity.TestCase;
+import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
+import com.aiapitesting.backend.entity.TestCaseReliability;
 import com.aiapitesting.backend.entity.TestResultStatus;
+import com.aiapitesting.backend.entity.VerdictTrust;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -41,7 +45,12 @@ public record TestResultResponse(
         /** Module 17 (17b) - cảnh báo dữ liệu nhạy cảm trong response (không chứa giá trị); rỗng = không có. Không đổi Pass/Fail. */
         List<SecurityFindingResponse> securityFindings,
         /** 17q G1 - cảnh báo mã thành công lệch spec; rỗng = không lệch hoặc không đủ căn cứ. Không đổi Pass/Fail. */
-        List<String> specDeviations
+        List<String> specDeviations,
+        /**
+         * 17q G2 - độ tin kết luận của lần chạy này. Pass của test âm cần biết field đang kiểm (chỉ trang Coverage có) nên để null ở
+         * đây; null cũng cho Pass/Fail chưa đánh giá được. Chỉ để hiển thị - không ảnh hưởng tạo/mở lại bug report.
+         */
+        VerdictTrust verdictTrust
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -71,8 +80,22 @@ public record TestResultResponse(
                 stability,
                 parseEvidence(result.getSchemaViolationsJson()),
                 parseFindings(result.getSecurityFindingsJson()),
-                parseEvidence(result.getSpecDeviationsJson())
+                parseEvidence(result.getSpecDeviationsJson()),
+                verdictTrustOf(result)
         );
+    }
+
+    private static VerdictTrust verdictTrustOf(TestResult result) {
+        TestCase testCase = result.getTestCase();
+        Integer expected = testCase.getExpectedStatus();
+        if (result.getStatus() == TestResultStatus.PASSED && !Boolean.TRUE.equals(result.getUnstable())
+                && expected != null && (expected == 400 || expected == 422)) {
+            return null; // Pass vì bị từ chối đầu vào: cần đối chiếu field đang kiểm - xem ở trang Coverage (401/403/404 tự nó là oracle)
+        }
+        TestCaseGenerationOrigin origin = testCase.getGenerationOrigin();
+        boolean assumed = origin == TestCaseGenerationOrigin.AI_CHECKLIST || origin == TestCaseGenerationOrigin.AI_EXTRA
+                || origin == TestCaseGenerationOrigin.AI_BUSINESS || testCase.getReliabilityStatus() == TestCaseReliability.NEEDS_REVIEW;
+        return VerdictTrust.of(result.getStatus(), result.getFailureCause(), result.getUnstable(), true, assumed);
     }
 
     private static List<SecurityFindingResponse> parseFindings(String json) {

@@ -194,38 +194,19 @@ export function expectationChanged(testCase: TestCase): boolean {
 }
 
 /**
- * Gộp logic hiển thị Tier 1 (15b) + Tier 2 (15d) ở 1 chỗ, dùng chung TestCasesPage/TestCaseDetailDialog.
- * - RELIABLE (Tier 1) -> "Đáng tin" xanh.
- * - NEEDS_REVIEW (Tier 1) + reliabilityAiConfirmed=true (Tier 2 xác nhận lỗi thật) -> vẫn "Cần xem lại" vàng, kèm note AI.
- * - NEEDS_REVIEW (Tier 1) + reliabilityAiConfirmed=false (Tier 2 cho là false positive) -> đổi sang "Đáng tin (AI xác minh)" xanh nhạt.
- * - NEEDS_REVIEW (Tier 1) + reliabilityAiConfirmed=null (Tier 2 chưa chạy) -> giữ nguyên "Cần xem lại" theo Tier 1.
+ * 17q G2 - nhãn đối chiếu tất định với spec (Tier 1, 15b) đổi nghĩa thành "Kỳ vọng cần xem": CHỈ hiện khi có vấn đề (NEEDS_REVIEW) và
+ * test không phải do hệ thống bù (test hệ thống sinh từ chính spec nên luôn khớp spec - nhãn xanh cũ không mang thông tin). Không
+ * còn nhãn "Đáng tin" xanh và không còn phần AI xác nhận (Tier 2, luồng cũ đã bỏ). Độ tin của KẾT LUẬN xem ở Coverage/kết quả chạy.
  */
 export function getReliabilityDisplay(testCase: TestCase): ReliabilityDisplay | null {
-  if (!testCase.reliabilityStatus) {
+  if (testCase.reliabilityStatus !== "NEEDS_REVIEW" || testCase.generationOrigin === "SYSTEM_FILLED") {
     return null
   }
-  if (testCase.reliabilityStatus === "RELIABLE") {
-    return {
-      label: "Đáng tin",
-      tone: "reliable",
-      title: "Giá trị AI sinh khớp đúng ràng buộc (required/enum/min-max) trong spec",
-    }
+  return {
+    label: "Kỳ vọng cần xem",
+    tone: "needsReview",
+    title: testCase.reliabilityNotes.length > 0 ? testCase.reliabilityNotes.join("; ") : "Giá trị/kỳ vọng lệch ràng buộc của spec",
   }
-  if (testCase.reliabilityAiConfirmed === true) {
-    return {
-      label: "Cần xem lại",
-      tone: "needsReview",
-      title: `AI xác nhận: ${testCase.reliabilityAiNote ?? testCase.reliabilityNotes.join("; ")}`,
-    }
-  }
-  if (testCase.reliabilityAiConfirmed === false) {
-    return {
-      label: "Đáng tin (AI xác minh)",
-      tone: "reliable",
-      title: testCase.reliabilityAiNote ?? "AI xác nhận đây là false positive",
-    }
-  }
-  return { label: "Cần xem lại", tone: "needsReview", title: testCase.reliabilityNotes.join("; ") }
 }
 
 export interface TestCaseInput {

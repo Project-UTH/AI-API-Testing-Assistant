@@ -1614,7 +1614,7 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - Hạn chế: endpoint import trước 2026-08-17 (chưa lưu `responseStatusCodes`) thì im lặng; import lại để bật. Chặn trùng bug dựa vào kiểm tra trước khi lưu, không có ràng buộc unique.
 
 **G2. Phương án A+B: độ bao phủ theo endpoint + độ tin của kết luận (khoảng 2,5 ngày)**
-- [ ] **A. Trạng thái endpoint** `EndpointTestState`, suy từ dữ liệu có sẵn, không thêm cột DB.
+- [x] **A. Trạng thái endpoint** `EndpointTestState`, suy từ dữ liệu có sẵn, không thêm cột DB.
   - Các trạng thái:
     - `NOT_GENERATED`: chip xám + nút "Sinh test case"; KHÔNG hiện "0%", không tô đỏ.
     - `NOT_RUN`.
@@ -1623,7 +1623,7 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - Mỗi endpoint đã sinh có 3 số, đếm theo **MỤC**, cùng mẫu số, lồng nhau: **có test ⊇ đã chạy ⊇ kết luận chắc**.
   - Cấp project BỎ % gộp làm số chính. Thay bằng "**X/N endpoint đã kiểm thử**" + phân bố theo 4 trạng thái (bấm để lọc). Nếu vẫn hiện % thì chỉ tính trên endpoint đã sinh, ghi rõ mẫu số.
   - Mục biên ngầm gắn nhãn "**spec thiếu ràng buộc**": Fail ở mục này không quy là lỗi API.
-- [ ] **B. `VerdictTrust`**, gom vào 1 hàm `FailureCause.verdictTrust()` dùng chung cho Coverage, Bug Report và `ExecutionDiffClassifier`.
+- [x] **B. `VerdictTrust`**, gom vào 1 hàm `FailureCause.verdictTrust()` dùng chung cho Coverage, Bug Report và `ExecutionDiffClassifier`.
   - **CHẮC** (đều phải không `unstable`):
     - Fail có nhãn `API_WRONG_STATUS`/`STABLE_FAILURE`/`AUTHZ_VIOLATION`/`MASS_ASSIGNMENT`.
     - Pass có oracle mạnh. Với test âm: lý do API từ chối phải khớp đúng field đang kiểm (dùng `InputRejectionDetector`); không khớp thì là NGHI, vì có thể chỉ Pass trùng hợp.
@@ -1634,8 +1634,30 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
     - Lệch mã lỗi trong nhóm từ chối (400 so với 422) ở luật nghiệp vụ.
   - **KHÔNG KẾT LUẬN**: `isNotApiFault()`, FLAKY, chưa chạy.
   - Độ tin endpoint = CHẮC/(CHẮC+NGHI), **luôn kèm mẫu số**. Kèm cờ "Test gốc đã xác nhận bằng chạy thật".
-- [ ] **Nhãn `reliabilityStatus`**: GIỮ cột, đổi tên hiển thị thành "**Kỳ vọng cần xem**". Chỉ hiện với test AI sinh/người sửa tay. Bỏ khối Tier 2 ở `TestCaseDetailDialog.tsx:210-229` và `lib/testcases.ts:195-221`.
+- [x] **Nhãn `reliabilityStatus`**: GIỮ cột, đổi tên hiển thị thành "**Kỳ vọng cần xem**". Chỉ hiện với test AI sinh/người sửa tay. Bỏ khối Tier 2 ở `TestCaseDetailDialog.tsx:210-229` và `lib/testcases.ts:195-221`.
 - Giữ nguyên field cũ của DTO coverage để tương thích ngược, chỉ thêm field mới. *Bỏ khỏi đợt này:* thanh 3 nấc + tooltip, `OracleStrength`, chỉ số status code đã quan sát.
+- *G2 ĐÃ LÀM 2026-10-23 (hỏi 2 chuyên gia trước khi code, 1 chuyên gia review sau khi code; đã sửa 2 lỗi mức cao + 3 mức trung bình):*
+  - **Backend:**
+    - `entity/VerdictTrust`: `of(status, cause, unstable, strongPassOracle, assumedOracle)` + `ofFailure(cause)`; `dto/response/EndpointTestState`.
+    - Cột mới `TestResult.rejectionExcerpt`: đoạn trích lý do từ chối ở phản hồi 4xx, lưu lúc chạy trên body đã che dữ liệu nhạy cảm.
+    - Coverage có: `testState`, `certainCount`, `doubtfulCount`, `specGapCount`, `baselineVerified` theo endpoint; `verdictTrust`, `specUnderspecified` theo mục; `testedEndpoints`, `stateCounts`, `generated*Count`, `certainCount`, `doubtfulCount` ở tổng quan. Lọc được `?state=`.
+    - `TestResultResponse.verdictTrust`; bộ lọc "Kỳ vọng cần xem" loại test hệ thống bù.
+  - **Khác kế hoạch (cố ý):**
+    - Không gộp vào `FailureCause.verdictTrust()` và không đổi Bug Report/`ExecutionDiffClassifier`: hành vi tạo/mở lại bug giữ nguyên, Fail NGHI vẫn báo được. Coverage dùng chung định nghĩa NO_VERDICT, nên Fail FLAKY nay là "chưa kết luận".
+    - Chỉ đòi lý do từ chối nhắc đúng field với kỳ vọng 400/422. 401/403/404/409 tự nó là oracle.
+    - Mục biên ở tham số path kỳ vọng 404 KHÔNG phải "spec thiếu ràng buộc".
+  - **Frontend:**
+    - Thẻ tổng quan "X/N endpoint đã kiểm thử" + thanh phân bố + 4 chip bấm để lọc, thay 2 donut.
+    - `TestStateChip` + `CoverageCountsText` ("có test x/y · chạy z · chắc a · nghi b · thiếu m") dùng chung ở Coverage, Endpoint, báo cáo lần sinh.
+    - Chip "chắc/nghi" + "Spec thiếu ràng buộc" ở từng mục; chip độ tin ở trang kết quả chạy.
+    - Nhãn "Kỳ vọng cần xem", bỏ khối Tier 2.
+    - Mọi enum mới đi qua `get…Display` có fallback.
+  - **Kiểm chứng:**
+    - 813 test backend pass; `tsc -b` + lint sạch.
+    - Docker thật + project đo A (mutant-api): 10/10 endpoint đã kiểm thử, phân bố {3 Đang có Fail, 7 Đã kiểm, ổn}, 150 mục chắc / 29 nghi, lọc `TESTED_FAILING` đúng 3 endpoint. Ảnh chụp giao diện bằng Playwright đúng thiết kế.
+  - **Hạn chế thấy trên dữ liệu thật:**
+    - Test âm tham số path sai kiểu Pass nhưng là NGHI, vì thông báo "sai kiểu" của mutant-api không có trong từ khoá của `InputRejectionDetector`. Không tự mở rộng từ khoá, vì detector còn dùng để phân loại Fail; ghi lại để xem ở đợt sau.
+    - `TESTED_FAILING` tính theo test (kể cả Fail NGHI), còn bộ lọc cũ "Có mục đang Fail" tính theo mục: 2 định nghĩa khác nhau, đã ghi rõ ở tooltip.
 
 **G3. Luật nghiệp vụ có nguồn: "luật trước, test sau" (khoảng 9 ngày backend + 5 ngày frontend)**
 

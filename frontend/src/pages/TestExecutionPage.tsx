@@ -22,6 +22,7 @@ import {
   exportExecution,
   FAILURE_CAUSE_LABEL,
   getExecutionPage,
+  getVerdictTrustDisplay,
   type ExecutionReportFormat,
   type ExecutionStatus,
   type FailureCauseCode,
@@ -523,6 +524,7 @@ export function TestExecutionPage() {
                   className="flex min-w-0 flex-1 flex-col gap-2 text-left sm:flex-row sm:items-center"
                 >
                   <StatusBadge status={result.status} />
+                  <VerdictTrustChip trust={result.verdictTrust} />
                   <span className="min-w-0 flex-1 truncate text-sm">{result.testCaseName}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     Kỳ vọng {result.expectedStatus} → thực tế {result.responseStatus ?? "—"}
@@ -809,5 +811,16 @@ function ExecutionSummaryDashboard({ total, countByStatus }: { total: number; co
         </div>
       </div>
     </div>
+  )
+}
+
+/** 17q G2 - độ tin kết luận cạnh badge Pass/Fail (khác FailureCauseChip: chip đó nói VÌ SAO Fail, chip này nói CÓ TIN ĐƯỢC không). */
+function VerdictTrustChip({ trust }: { trust: string | null | undefined }) {
+  const display = getVerdictTrustDisplay(trust)
+  if (!display) return null
+  return (
+    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", display.className)} title={display.title}>
+      {display.label}
+    </span>
   )
 }
