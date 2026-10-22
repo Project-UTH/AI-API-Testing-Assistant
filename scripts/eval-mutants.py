@@ -339,6 +339,7 @@ def evaluate(system, target, pid, tests, mutants, label, log, evidence_ids=None)
                 suspect.append(evidence)
         outcome = "caught" if caught else "suspect" if suspect else "flagged" if findings else "missed"
         per_mutant.append({"id": m["id"], "category": m["category"], "expectChecklist": m["expectChecklist"],
+                           "heldout": bool(m.get("heldout")),
                            "outcome": outcome, "caughtBy": caught[:5], "caughtCount": len(caught),
                            "suspectBy": suspect[:5], "suspectCount": len(suspect),
                            "securityFindings": findings[:5], "securityFindingsCount": len(findings)})
@@ -463,15 +464,27 @@ def summarize(runs, config):
         return sum(1 for m in selected if m["outcome"] == "caught" or (flag and m["outcome"] in ("suspect",))) / n if n else 0.0
 
     categories = sorted({m["category"] for m in per_run[0]["mutants"]})
+    # 17q G5 - bộ phát triển (M) và bộ held-out (H) phải báo cáo TÁCH riêng; "ALL" chỉ còn ý nghĩa khi chỉ đo 1 bộ.
+    has_heldout = any(m.get("heldout") for m in per_run[0]["mutants"])
+
+    def in_scope(m, scope):
+        if scope == "ALL":
+            return True
+        if scope == "DEV":
+            return not m.get("heldout")
+        if scope == "HELDOUT":
+            return bool(m.get("heldout"))
+        return m["category"] == scope
+
     table = {}
-    for scope in ["ALL"] + categories:
+    for scope in ["ALL"] + (["DEV", "HELDOUT"] if has_heldout else []) + categories:
         strict, lenient, counts = [], [], []
         for pr in per_run:
-            sel = [m for m in pr["mutants"] if scope == "ALL" or m["category"] == scope]
+            sel = [m for m in pr["mutants"] if in_scope(m, scope)]
             strict.append(rate(sel, False))
             lenient.append(rate(sel, True))
             counts.append((sum(1 for m in sel if m["outcome"] == "caught"), len(sel)))
-        flagged = [sum(1 for m in pr["mutants"] if (scope == "ALL" or m["category"] == scope) and m["outcome"] == "flagged")
+        flagged = [sum(1 for m in pr["mutants"] if in_scope(m, scope) and m["outcome"] == "flagged")
                    for pr in per_run]
         table[scope] = {"caughtStrictMean": statistics.mean(strict), "caughtStrictStdev": statistics.pstdev(strict),
                         "caughtOrSuspectMean": statistics.mean(lenient), "perRun": counts, "flaggedOnlyPerRun": flagged}
@@ -640,7 +653,10 @@ def main():
         log(f"\n--- Lượt {n}/{args.runs} - cấu hình {args.config} ---")
         runs.append(run_once(args, args.config, n, target, system, mutants, log))
 
-    result = {"environment": environment_info(args), "mutantCatalog": catalog, "runs": runs, "summary": {}}
+    # 17q - chỉ ghi catalog của các mutant ĐÃ ĐO: không để mô tả bộ held-out lọt vào file kết quả của bộ phát triển.
+    measured_ids = {m["id"] for m in mutants}
+    result = {"environment": environment_info(args), "mutantCatalog": [m for m in catalog if m["id"] in measured_ids],
+              "runs": runs, "summary": {}}
     for cfg in ("A", "B", "C"):
         s = summarize(runs, cfg)
         if s:
