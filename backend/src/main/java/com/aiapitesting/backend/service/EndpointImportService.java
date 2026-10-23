@@ -227,7 +227,7 @@ public class EndpointImportService {
         testCaseDependencyRepository.deleteAllByProject(project);
         testCaseAssertionRepository.deleteAllByTestCaseEndpointProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
-        testGenerationEventRepository.deleteAllByEndpointProject(project);
+        testGenerationEventRepository.detachFromEndpointsOfProject(project); // giữ sổ token (quota ngày), không xoá
         endpointRoleRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         List<Endpoint> saved = endpointRepository.saveAll(parsed.endpoints());

@@ -22,6 +22,11 @@ public interface BusinessRuleRepository extends JpaRepository<BusinessRule, UUID
 
     List<BusinessRule> findAllByProject(Project project);
 
+    /** Xoá mọi luật của project (xoá project). @Modifying: derived delete vỡ khi dòng đã bị xoá bởi luồng khác. */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query("DELETE FROM BusinessRule r WHERE r.project = :project")
+    void deleteAllByProject(@org.springframework.data.repository.query.Param("project") Project project);
+
     boolean existsByProjectAndFingerprint(Project project, String fingerprint);
 
     Optional<BusinessRule> findByProjectAndFingerprint(Project project, String fingerprint);

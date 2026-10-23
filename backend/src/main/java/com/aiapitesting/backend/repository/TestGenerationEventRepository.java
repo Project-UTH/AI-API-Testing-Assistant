@@ -5,6 +5,7 @@ import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -33,13 +34,20 @@ public interface TestGenerationEventRepository extends JpaRepository<TestGenerat
             @Param("owner") User owner, @Param("projectId") UUID projectId, @Param("endpointId") UUID endpointId,
             @Param("from") Instant from, @Param("to") Instant to);
 
-    void deleteAllByEndpointProject(Project project);
+    /**
+     * 17q G3.3 - TÁCH sự kiện khỏi endpoint của project (thay cho xoá): import REPLACE và xoá project từng xoá luôn sổ token nên quota ngày bị
+     * đặt về 0. Giữ dòng (kèm ownerId/projectId) để quota vẫn đúng; bỏ snapshot nặng vì lịch sử đã không còn truy cập được.
+     */
+    @Modifying
+    @Query("UPDATE TestGenerationEvent e SET e.endpoint = null, e.snapshotJson = '[]', e.planSummaryJson = null "
+            + "WHERE e.endpoint IN (SELECT ep FROM Endpoint ep WHERE ep.project = :project)")
+    void detachFromEndpointsOfProject(@Param("project") Project project);
 
     long countByEndpointProject(Project project);
 
     // Tổng token đã dùng của 1 owner trong [from, to) - gọi trước khi gọi AI để chặn sớm.
     @Query("SELECT COALESCE(SUM(e.totalTokens), 0) FROM TestGenerationEvent e "
-            + "WHERE e.endpoint.project.owner = :owner AND e.createdAt >= :from AND e.createdAt < :to")
+            + "WHERE e.ownerId = :#{#owner.id} AND e.createdAt >= :from AND e.createdAt < :to")
     long sumTotalTokensByOwnerAndCreatedAtBetween(
             @Param("owner") User owner, @Param("from") Instant from, @Param("to") Instant to);
 
@@ -49,12 +57,12 @@ public interface TestGenerationEventRepository extends JpaRepository<TestGenerat
     long sumTotalTokensByCreatedAtBetween(@Param("from") Instant from, @Param("to") Instant to);
 
     // Tổng token/số lần gọi AI theo từng owner - from/to null = không giới hạn.
-    @Query("SELECT ep.project.owner.id AS ownerId, COALESCE(SUM(e.totalTokens), 0) AS totalTokens, COUNT(e) AS callCount "
-            + "FROM TestGenerationEvent e JOIN e.endpoint ep "
-            + "WHERE ep.project.owner.id IN :ownerIds "
+    @Query("SELECT e.ownerId AS ownerId, COALESCE(SUM(e.totalTokens), 0) AS totalTokens, COUNT(e) AS callCount "
+            + "FROM TestGenerationEvent e "
+            + "WHERE e.ownerId IN :ownerIds "
             + "AND (:from IS NULL OR e.createdAt >= :from) "
             + "AND (:to IS NULL OR e.createdAt < :to) "
-            + "GROUP BY ep.project.owner.id")
+            + "GROUP BY e.ownerId")
     List<OwnerAiUsage> sumUsageGroupedByOwnerIds(
             @Param("ownerIds") List<UUID> ownerIds, @Param("from") Instant from, @Param("to") Instant to);
 
@@ -67,7 +75,7 @@ public interface TestGenerationEventRepository extends JpaRepository<TestGenerat
     // Biểu đồ usage theo ngày/tuần/tháng - chỉ lấy 2 cột cần, AiUsageService tự bucket theo ngày ở
     // tầng Java rồi cộng dồn thành tuần/tháng phía client.
     @Query("SELECT e.createdAt AS createdAt, e.totalTokens AS totalTokens FROM TestGenerationEvent e "
-            + "WHERE e.endpoint.project.owner = :owner AND e.createdAt >= :since ORDER BY e.createdAt ASC")
+            + "WHERE e.ownerId = :#{#owner.id} AND e.createdAt >= :since ORDER BY e.createdAt ASC")
     List<UsagePoint> findUsagePointsByOwnerSince(@Param("owner") User owner, @Param("since") Instant since);
 
     // Bản không lọc owner - Admin xem usage toàn hệ thống.

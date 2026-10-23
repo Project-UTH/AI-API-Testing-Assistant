@@ -254,7 +254,7 @@ class EndpointImportServiceTest {
         verify(testResultRepository).deleteAllByTestCaseEndpointProject(project);
         verify(testExecutionRepository).deleteAllByProject(project);
         verify(testCaseRepository).deleteAllByEndpointProject(project);
-        verify(testGenerationEventRepository).deleteAllByEndpointProject(project);
+        verify(testGenerationEventRepository).detachFromEndpointsOfProject(project);
         verify(endpointRepository).deleteAllByProject(project);
 
         ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
