@@ -57,7 +57,7 @@ export function DocViewerDialog({ projectId, target, onClose }: Props) {
         {parts && !parts.stale && (
           <pre className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted/30 p-3 font-sans text-sm leading-relaxed whitespace-pre-wrap">
             {parts.before}
-            <mark ref={markRef} className="rounded bg-yellow-300/60 px-0.5 text-foreground dark:bg-yellow-500/40">
+            <mark ref={markRef} aria-label="Đoạn trích của luật" className="rounded bg-yellow-300/60 px-0.5 text-foreground dark:bg-yellow-500/40">
               {parts.mark}
             </mark>
             {parts.after}

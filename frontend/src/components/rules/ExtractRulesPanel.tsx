@@ -78,6 +78,8 @@ export function ExtractRulesPanel({ projectId }: { projectId: string }) {
   const hasInput = selected.length > 0 || instruction.trim().length > 0
 
   function onFiles(files: FileList | null) {
+    start.reset()
+    remove.reset()
     const file = files?.[0]
     if (fileInput.current) fileInput.current.value = ""
     setLocalError(null)
@@ -87,7 +89,7 @@ export function ExtractRulesPanel({ projectId }: { projectId: string }) {
     upload.mutate(file)
   }
 
-  const error = localError ?? [upload, remove, start].map((m) => m.error).find(Boolean)
+  const error = localError ?? [start, upload, remove].map((m) => m.error).find(Boolean)
 
   return (
     <section aria-label="Trích luật bằng AI" className="mt-5 rounded-lg border border-border p-4">
@@ -195,6 +197,7 @@ export function ExtractRulesPanel({ projectId }: { projectId: string }) {
             onChange={(e) => setBudget(e.target.value)}
             className="h-8 w-36 rounded-md border border-input bg-transparent px-2 text-sm"
           />
+          {String(budgetValue) !== budget && <span className="text-[11px] text-amber-700 dark:text-amber-400">Sẽ dùng {budgetValue.toLocaleString("vi-VN")} (trong khoảng 5.000 đến 1.000.000)</span>}
         </div>
         <p className="max-w-md text-xs text-muted-foreground">
           Ước tính khoảng <strong>{perLotEstimate.toLocaleString("vi-VN")}</strong> token cho mỗi lô 12 endpoint. Hết ngân sách hoặc hết quota ngày thì
@@ -220,7 +223,11 @@ export function ExtractRulesPanel({ projectId }: { projectId: string }) {
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button type="button" size="sm" disabled={!hasInput || !consent || start.isPending} onClick={() => start.mutate(false)}>
+        <Button type="button" size="sm" disabled={!hasInput || !consent || start.isPending} onClick={() => {
+            upload.reset()
+            remove.reset()
+            start.mutate(false)
+          }}>
           {start.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
           AI trích luật
         </Button>

@@ -11,6 +11,7 @@ interface Props {
   /** Luật có trích dẫn, đang chờ duyệt (đã lọc ở trang). */
   rules: BusinessRule[]
   pending: boolean
+  error?: string | null
   onClose: () => void
   onConfirm: (ruleIds: string[]) => void
 }
@@ -19,13 +20,15 @@ interface Props {
  * Duyệt hàng loạt CHỈ luật có trích dẫn: mỗi luật hiện đủ câu luật + đoạn trích để bạn đối chiếu, và mặc định KHÔNG tick sẵn - duyệt phải là hành
  * động có chủ đích, không phải bấm một nút cho xong.
  */
-export function BatchApproveDialog({ open, rules, pending, onClose, onConfirm }: Props) {
+export function BatchApproveDialog({ open, rules, pending, error, onClose, onConfirm }: Props) {
   const [ticked, setTicked] = useState<Set<string>>(new Set())
   useEffect(() => {
     if (open) setTicked(new Set())
   }, [open])
 
-  const all = rules.length > 0 && ticked.size === rules.length
+  // Chỉ tính các luật còn trong danh sách (danh sách có thể đổi khi hộp thoại đang mở).
+  const valid = rules.filter((r) => ticked.has(r.id))
+  const all = rules.length > 0 && valid.length === rules.length
   const toggle = (id: string, on: boolean) =>
     setTicked((prev) => {
       const next = new Set(prev)
@@ -44,8 +47,8 @@ export function BatchApproveDialog({ open, rules, pending, onClose, onConfirm }:
           </DialogDescription>
         </DialogHeader>
         <Label className="items-center gap-2 text-sm font-normal">
-          <Checkbox checked={all} indeterminate={ticked.size > 0 && !all} onCheckedChange={(v) => setTicked(v ? new Set(rules.map((r) => r.id)) : new Set())} />
-          Chọn tất cả sau khi đã đọc ({ticked.size}/{rules.length})
+          <Checkbox checked={all} indeterminate={valid.length > 0 && !all} onCheckedChange={(v) => setTicked(v ? new Set(rules.map((r) => r.id)) : new Set())} />
+          Chọn tất cả sau khi đã đọc ({valid.length}/{rules.length})
         </Label>
         <ul className="flex max-h-[50vh] flex-col gap-2 overflow-y-auto">
           {rules.map((rule) => (
@@ -62,12 +65,17 @@ export function BatchApproveDialog({ open, rules, pending, onClose, onConfirm }:
             </li>
           ))}
         </ul>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
             Đóng
           </Button>
-          <Button type="button" disabled={ticked.size === 0 || pending} onClick={() => onConfirm([...ticked])}>
-            Duyệt {ticked.size} luật
+          <Button type="button" disabled={valid.length === 0 || pending} onClick={() => onConfirm(valid.map((r) => r.id))}>
+            Duyệt {valid.length} luật
           </Button>
         </DialogFooter>
       </DialogContent>

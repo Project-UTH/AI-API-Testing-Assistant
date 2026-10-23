@@ -8,6 +8,7 @@ import { COMMON_REJECT_STATUSES, type BusinessRule } from "@/lib/rules"
 interface Props {
   rule: BusinessRule | null
   pending: boolean
+  error?: string | null
   onCancel: () => void
   onConfirm: (rule: BusinessRule, expectedStatus: number) => void
 }
@@ -16,7 +17,7 @@ interface Props {
  * Luật GIẢ ĐỊNH (AI đoán, không có trích dẫn) không thể duyệt "cho qua": không có nguồn nào nêu mã lỗi, nên người duyệt phải tự chọn mã lỗi
  * kỳ vọng. Backend cũng từ chối duyệt nếu thiếu mã này.
  */
-export function ApproveGuessDialog({ rule, pending, onCancel, onConfirm }: Props) {
+export function ApproveGuessDialog({ rule, pending, error, onCancel, onConfirm }: Props) {
   const [custom, setCustom] = useState("")
   const [picked, setPicked] = useState<number | null>(null)
   const value = custom.trim() ? Number(custom) : picked
@@ -63,6 +64,11 @@ export function ApproveGuessDialog({ rule, pending, onCancel, onConfirm }: Props
             className="h-8 w-28 rounded-md border border-input bg-transparent px-2 text-sm"
           />
         </div>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onCancel}>
             Huỷ

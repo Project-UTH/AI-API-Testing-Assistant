@@ -157,7 +157,8 @@ public class RequirementDocumentService {
     }
 
     private static String cleanFileName(String original) {
-        String name = original == null ? "" : original.replace('\\', '/');
+        String name = original == null ? "" : java.text.Normalizer.normalize(original, java.text.Normalizer.Form.NFC)
+                .replaceAll("\\p{Cntrl}", "").replace('\\', '/');
         name = name.substring(name.lastIndexOf('/') + 1).trim();
         if (name.isEmpty()) {
             throw new RequirementDocumentException("DOCUMENT_TYPE_INVALID", HttpStatus.BAD_REQUEST, "Thiếu tên tệp");

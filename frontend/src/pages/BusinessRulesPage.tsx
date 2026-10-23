@@ -34,6 +34,10 @@ import {
   type RuleStatus,
 } from "@/lib/rules"
 
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Đã xảy ra lỗi, vui lòng thử lại"
+}
+
 const FILTER_KEYS = ["status", "source", "endpointId"] as const
 const PAGE_SIZE = 50
 
@@ -102,11 +106,19 @@ export function BusinessRulesPage() {
       invalidate()
     },
   })
-  const { data: citedPage } = useQuery({
-    queryKey: ["rules", projectId, "cited-proposed"],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED" }),
+  // Luật có trích dẫn = nguồn tài liệu hoặc chỉ dẫn: lọc ở backend để không bị 200 luật GIẢ ĐỊNH/hệ thống đứng trước che mất.
+  const { data: docPage } = useQuery({
+    queryKey: ["rules", projectId, "cited-proposed", "DOC"],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "DOC" }),
   })
-  const citedProposed = useMemo(() => (citedPage?.data ?? []).filter((r) => r.quote !== null && r.source !== "INFERRED"), [citedPage])
+  const { data: instructionPage } = useQuery({
+    queryKey: ["rules", projectId, "cited-proposed", "INSTRUCTION"],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INSTRUCTION" }),
+  })
+  const citedProposed = useMemo(
+    () => [...(docPage?.data ?? []), ...(instructionPage?.data ?? [])].filter((r) => r.quote !== null),
+    [docPage, instructionPage]
+  )
   const remove = useMutation({ mutationFn: (rule: BusinessRule) => deleteBusinessRule(projectId, rule.id), onSuccess: invalidate })
   const detect = useMutation({
     mutationFn: () => detectBusinessRules(projectId),
@@ -142,7 +154,7 @@ export function BusinessRulesPage() {
         setConflictRule(rule)
         return
       }
-      if (rule.source === "INFERRED" && rule.expectedStatus === null) {
+      if (rule.source === "INFERRED") {
         setGuessRule(rule)
         return
       }
@@ -337,7 +349,9 @@ export function BusinessRulesPage() {
       />
       <RejectRuleDialog projectId={projectId} rule={rejecting} onClose={() => setRejecting(null)} />
       <ApproveGuessDialog
+        key={guessRule?.id ?? "none"}
         rule={guessRule}
+        error={approve.error ? errorMessage(approve.error) : null}
         pending={approve.isPending}
         onCancel={() => setGuessRule(null)}
         onConfirm={(rule, expectedStatus) => approve.mutate({ rule, expectedStatus })}
@@ -345,6 +359,7 @@ export function BusinessRulesPage() {
       <BatchApproveDialog
         open={batchOpen}
         rules={citedProposed}
+        error={batchApprove.error ? errorMessage(batchApprove.error) : null}
         pending={batchApprove.isPending}
         onClose={() => setBatchOpen(false)}
         onConfirm={(ids) => batchApprove.mutate(ids)}

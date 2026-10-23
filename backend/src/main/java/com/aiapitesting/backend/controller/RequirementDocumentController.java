@@ -32,6 +32,11 @@ public class RequirementDocumentController {
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<DocumentResponse>> upload(@PathVariable UUID projectId, @RequestParam("file") MultipartFile file) {
+        if (file.getSize() > RequirementDocumentService.MAX_BYTES) {
+            // kiểm trước khi đọc cả tệp vào bộ nhớ (multipart cho phép tới 20MB cho import OpenAPI)
+            throw new RequirementDocumentException("DOCUMENT_TOO_LARGE", HttpStatus.PAYLOAD_TOO_LARGE,
+                    "Tệp quá lớn (tối đa " + RequirementDocumentService.MAX_BYTES / 1000 + " KB)");
+        }
         try {
             return ResponseEntity.status(HttpStatus.CREATED)
                     .body(ApiResponse.of(documentService.upload(projectId, file.getOriginalFilename(), file.getBytes())));

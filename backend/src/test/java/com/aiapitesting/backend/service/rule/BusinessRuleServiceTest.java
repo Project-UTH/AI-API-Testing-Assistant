@@ -225,6 +225,25 @@ class BusinessRuleServiceTest {
     }
 
     @Test
+    void update_changingParamsDropsTheQuote_soAnEditedRuleCannotBeBatchApprovedAsCited() {
+        BusinessRule rule = stored(RuleStatus.PROPOSED, RuleSource.DOC);
+        rule.setQuote("đoạn trích nguyên văn đủ dài");
+        rule.setQuoteOffset(12);
+        rule.setDocumentId(UUID.randomUUID());
+        RuleParams changed = new RuleParams("salaryMin", "LT", "salaryMax", null, null, null, null, null, null, null, null, null, null, null);
+
+        service.update(project.getId(), rule.getId(), new UpdateRequest(changed, null, null));
+
+        assertThat(rule.getQuote()).isNull();
+        assertThat(rule.getQuoteOffset()).isNull();
+        assertThat(rule.getDocumentId()).isNull();
+        assertThat(rule.getSource()).isEqualTo(RuleSource.USER);
+        var response = service.approveBatch(project.getId(),
+                new com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveBatchRequest(List.of(rule.getId())));
+        assertThat(response.approvedIds()).isEmpty();
+    }
+
+    @Test
     void detect_proposesOneCompareRuleForEachMinMaxPair_andRerunCreatesNoDuplicates() {
         when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
 

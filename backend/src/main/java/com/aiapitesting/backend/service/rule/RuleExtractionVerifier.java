@@ -223,9 +223,6 @@ public final class RuleExtractionVerifier {
             if (token.matches("\\d+[.,]\\d+")) {
                 result.add(token.replace(',', '.'));
             }
-            for (String part : token.split("[.,]")) {
-                result.add(part);
-            }
         }
         return result;
     }

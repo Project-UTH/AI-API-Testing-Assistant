@@ -320,7 +320,7 @@ function RulesSummary({ job, projectId }: { job: GenerationJob; projectId: strin
             <p className="mt-1 text-muted-foreground">
               Bỏ qua: {r.skippedExisting} đã có · {r.skippedInferred} không có trích dẫn · {r.skippedOverCap} vượt trần mỗi endpoint · {r.rejectedAsDuplicateOfSpec} trùng
               ràng buộc spec
-              {Object.keys(r.dropped).length > 0 ? ` · ${Object.values(r.dropped).reduce((a, b) => a + b, 0)} sai endpoint/mẫu/field` : ""}
+              {Object.keys(r.dropped ?? {}).length > 0 ? ` · ${Object.values(r.dropped ?? {}).reduce((a, b) => a + b, 0)} sai endpoint/mẫu/field` : ""}
             </p>
           )}
           {r.stoppedReason && <p className="mt-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2">{STOP_TEXT[r.stoppedReason] ?? r.stoppedReason}</p>}

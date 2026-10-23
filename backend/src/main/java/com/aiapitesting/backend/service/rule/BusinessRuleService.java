@@ -217,6 +217,16 @@ public class BusinessRuleService {
                 .ifPresent(other -> {
                     throw BusinessRuleException.alreadyExists();
                 });
+        if (!rebuilt.getParamsJson().equals(rule.getParamsJson())) {
+            // Tham số đã đổi: đoạn trích cũ không còn chứng minh luật này. Bỏ trích dẫn và coi là luật do người dùng tự sửa.
+            rule.setQuote(null);
+            rule.setQuoteOffset(null);
+            rule.setDocumentId(null);
+            rule.setExtractionJobId(null);
+            if (rule.getSource() == RuleSource.DOC || rule.getSource() == RuleSource.INSTRUCTION || rule.getSource() == RuleSource.INFERRED) {
+                rule.setSource(RuleSource.USER);
+            }
+        }
         rule.setParamsJson(rebuilt.getParamsJson());
         rule.setFingerprint(rebuilt.getFingerprint());
         rule.setExpectedStatus(rebuilt.getExpectedStatus());
@@ -250,9 +260,9 @@ public class BusinessRuleService {
         if (request != null && request.expectedStatus() != null) {
             rule.setExpectedStatus(validExpected(request.expectedStatus()));
         }
-        if (rule.getSource() == RuleSource.INFERRED && rule.getExpectedStatus() == null) {
+        if (rule.getSource() == RuleSource.INFERRED && (request == null || request.expectedStatus() == null)) {
             // Luật AI đoán không có trích dẫn nào nêu mã lỗi: người duyệt phải TỰ chọn mã kỳ vọng, không được bấm duyệt cho qua.
-            throw BusinessRuleException.stateInvalid("Luật GIẢ ĐỊNH (AI đoán, không có trích dẫn) - phải tự chọn mã lỗi kỳ vọng trước khi duyệt");
+            throw BusinessRuleException.stateInvalid("Luật GIẢ ĐỊNH (AI đoán, không có trích dẫn) - phải tự chọn mã lỗi kỳ vọng trong chính thao tác duyệt");
         }
         markApproved(rule);
         return toResponse(ruleRepository.save(rule));

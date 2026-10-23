@@ -204,7 +204,9 @@ public class RuleTestService {
     }
 
     private void deleteOldTests(BusinessRule rule) {
-        List<TestCase> old = testCaseRepository.findAllByRuleId(rule.getId()).stream().filter(tc -> !tc.isLocked()).toList();
+        // Test đã khoá, hoặc đã có bug report người dùng viết, được giữ lại: sinh lại không được xoá mất bằng chứng.
+        List<TestCase> old = testCaseRepository.findAllByRuleId(rule.getId()).stream()
+                .filter(tc -> !tc.isLocked() && bugReportRepository.findAllByTestCase(tc).isEmpty()).toList();
         if (old.isEmpty()) {
             return;
         }

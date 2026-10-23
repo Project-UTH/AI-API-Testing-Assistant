@@ -103,6 +103,9 @@ class RuleExtractionVerifierTest {
         assertThat(RuleExtractionVerifier.numbersIn("lương tối đa 1.000.000 đồng")).contains("1000000");
         assertThat(RuleExtractionVerifier.numbersIn("mức 2,5 lần")).contains("2.5").contains("25");
         assertThat(RuleExtractionVerifier.numbersIn("không có số")).isEmpty();
+        // không tách mảnh: "2,5" không được coi là có số 5, "1.000" không có số 1
+        assertThat(RuleExtractionVerifier.numbersIn("mức 2,5 lần")).doesNotContain("5", "2");
+        assertThat(RuleExtractionVerifier.numbersIn("tối đa 1.000 đồng")).doesNotContain("1", "000");
     }
 
     @Test
