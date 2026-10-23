@@ -150,7 +150,8 @@ public class GenerationJobService {
                     .dryRun(Boolean.TRUE.equals(request.getDryRun()))
                     .tokenCap(rules ? RuleExtractionService.budgetOf(request.getTokenCap())
                             : request.getTokenCap() == null ? 0 : Math.max(0, request.getTokenCap()))
-                    .paramsJson(toJson(request))
+                    .paramsJson(rules ? toJson(java.util.Map.of("type", "RULES", "allowInferred", Boolean.TRUE.equals(request.getAllowInferred()),
+                            "documentIds", request.getDocumentIds() == null ? List.of() : request.getDocumentIds())) : toJson(request))
                     .build());
         }
         UUID jobId = job.getId();

@@ -69,6 +69,9 @@ public class RuleExtractionService {
     static final String BUDGET_STOPPED = "BUDGET_STOPPED";
     static final String DAILY_QUOTA = "DAILY_QUOTA";
     static final String AI_ERROR = "AI_ERROR";
+    static final String NO_INPUT = "NO_INPUT";
+    static final String WRITE_ERROR = "WRITE_ERROR";
+    static final int MAX_PARAGRAPH_CHARS = 3_000;
 
     private final ChatClient chatClient;
     private final TestGenerationEventRepository events;
@@ -129,7 +132,7 @@ public class RuleExtractionService {
 
         Totals totals = new Totals();
         int done = 0;
-        String stopped = null;
+        String stopped = docs.isEmpty() && instruction.isEmpty() ? NO_INPUT : null;
         for (int i = 0; i < lots.size() && stopped == null; i++) {
             ctx.checkCancelled();
             String label = "Lô " + (i + 1) + "/" + lots.size();
@@ -215,9 +218,13 @@ public class RuleExtractionService {
             verify.ok("AI đề xuất " + parsed.rules().size() + " luật: giữ " + outcome.proposed() + " (" + outcome.fromDocument() + " có trích dẫn tài liệu, "
                     + outcome.fromInstruction() + " từ chỉ dẫn, " + outcome.inferred() + " GIẢ ĐỊNH)"
                     + droppedText(outcome, skippedInferred, parsed.malformed()));
+        } catch (IllegalArgumentException e) {
+            log.warn("Dau ra AI khong doc duoc ({}): {}", label, e.getClass().getSimpleName());
+            verify.fail("Không đọc được trả lời của AI (định dạng sai hoặc bị cắt) - token đã tính, lô này không có luật mới");
         } catch (RuntimeException e) {
-            log.warn("Kiem chung dau ra AI that bai ({}): {}", label, e.getClass().getSimpleName());
-            verify.fail("Không đọc được trả lời của AI (định dạng sai) - token đã tính, lô này không có luật mới");
+            log.warn("Ghi luat that bai ({}): {}", label, e.getClass().getSimpleName());
+            verify.fail("Lỗi hệ thống khi lưu luật - dừng job, phần đã lưu ở các lô trước được giữ");
+            return WRITE_ERROR;
         } finally {
             recordEvent(req, tokens, proposedCount, lot.size());
         }
@@ -342,9 +349,12 @@ public class RuleExtractionService {
         }
         List<Para> paras = new ArrayList<>();
         for (int d = 0; d < docs.size(); d++) {
-            String[] parts = docs.get(d).masked().split("\n\\s*\n");
-            for (int i = 0; i < parts.length; i++) {
-                String lower = parts[i].toLowerCase(Locale.ROOT);
+            List<String> parts = new ArrayList<>();
+            for (String block : docs.get(d).masked().split("\n\\s*\n")) {
+                parts.addAll(splitLong(block, MAX_PARAGRAPH_CHARS));
+            }
+            for (int i = 0; i < parts.size(); i++) {
+                String lower = parts.get(i).toLowerCase(Locale.ROOT);
                 int score = 0;
                 for (String k : keywords) {
                     int at = lower.indexOf(k);
@@ -353,7 +363,7 @@ public class RuleExtractionService {
                         at = lower.indexOf(k, at + k.length());
                     }
                 }
-                paras.add(new Para(d, i, parts[i], score));
+                paras.add(new Para(d, i, parts.get(i), score));
             }
         }
         List<Para> byScore = new ArrayList<>(paras);
@@ -378,6 +388,35 @@ public class RuleExtractionService {
             out.append(p.text()).append("\n\n");
         }
         return out.toString();
+    }
+
+    /** Cắt khối quá dài theo dòng (dòng quá dài thì cắt cứng) để mọi đoạn đều chọn được dưới giới hạn. */
+    static List<String> splitLong(String block, int max) {
+        List<String> out = new ArrayList<>();
+        if (block.length() <= max) {
+            out.add(block);
+            return out;
+        }
+        StringBuilder current = new StringBuilder();
+        for (String line : block.split("\n", -1)) {
+            while (line.length() > max) {
+                if (current.length() > 0) {
+                    out.add(current.toString());
+                    current.setLength(0);
+                }
+                out.add(line.substring(0, max));
+                line = line.substring(max);
+            }
+            if (current.length() + line.length() + 1 > max && current.length() > 0) {
+                out.add(current.toString());
+                current.setLength(0);
+            }
+            current.append(current.length() > 0 ? "\n" : "").append(line);
+        }
+        if (current.length() > 0) {
+            out.add(current.toString());
+        }
+        return out;
     }
 
     // ---- prompt + parse ----
@@ -418,8 +457,12 @@ public class RuleExtractionService {
             throw new IllegalArgumentException("no json");
         }
         try {
-            JsonNode root = mapper.readTree(text.substring(from, to + 1));
-            JsonNode rules = root.get("rules");
+            JsonNode rules;
+            try {
+                rules = mapper.readTree(text.substring(from, to + 1)).get("rules");
+            } catch (IOException cut) {
+                rules = salvage(text.substring(from));
+            }
             if (rules == null || !rules.isArray()) {
                 throw new IllegalArgumentException("no rules");
             }
@@ -437,9 +480,45 @@ public class RuleExtractionService {
                 }
             }
             return new ParsedAnswer(list, malformed);
-        } catch (IOException e) {
+        } catch (IllegalStateException e) {
             throw new IllegalArgumentException("bad json", e);
         }
+    }
+
+    /** JSON bị cắt giữa chừng (hết max_tokens): giữ lại các phần tử của mảng rules đã đóng ngoặc đủ. */
+    private JsonNode salvage(String text) {
+        int key = text.indexOf("\"rules\"");
+        int open = key < 0 ? -1 : text.indexOf('[', key);
+        if (open < 0) {
+            return null;
+        }
+        com.fasterxml.jackson.databind.node.ArrayNode array = mapper.createArrayNode();
+        int depth = 0;
+        int start = -1;
+        boolean inString = false;
+        for (int i = open + 1; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (inString) {
+                if (c == '\\') {
+                    i++;
+                } else if (c == '"') {
+                    inString = false;
+                }
+            } else if (c == '"') {
+                inString = true;
+            } else if (c == '{') {
+                if (depth++ == 0) {
+                    start = i;
+                }
+            } else if (c == '}' && depth > 0 && --depth == 0) {
+                try {
+                    array.add(mapper.readTree(text.substring(start, i + 1)));
+                } catch (IOException ignored) {
+                    // phần tử hỏng: bỏ
+                }
+            }
+        }
+        return array;
     }
 
     private static String textOf(JsonNode node, String field) {

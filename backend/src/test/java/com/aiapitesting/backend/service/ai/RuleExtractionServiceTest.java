@@ -268,6 +268,29 @@ class RuleExtractionServiceTest {
     }
 
     @Test
+    void parse_salvagesCompleteRulesFromTruncatedJson() {
+        RuleExtractionService.ParsedAnswer parsed = service.parse("{\"rules\":[{\"endpoint\":\"POST /api/jobs\",\"template\":\"OR\",\"quote\":\"a } b\"},"
+                + "{\"endpoint\":\"POST /api/jobs\",\"template\":\"OR\",\"quote\":\"x\"},{\"endpoint\":\"POST /api/jo");
+        assertThat(parsed.rules()).hasSize(2);
+    }
+
+    @Test
+    void splitLong_cutsHugeBlocksSoEveryPieceFits() {
+        String block = ("dòng dài ".repeat(50) + System.lineSeparator()).repeat(30) + "x".repeat(10_000);
+        assertThat(RuleExtractionService.splitLong(block, 3_000)).allMatch(piece -> piece.length() <= 3_000).hasSizeGreaterThan(3);
+    }
+
+    @Test
+    void noDocumentAndNoInstruction_stopsWithoutCallingAi() {
+        RequirementDocument empty = RequirementDocument.builder().id(UUID.randomUUID()).project(project).fileName("a.md").content("").build();
+        RulesJobResult result = service.run(new RuleExtractionService.Request(project, ownerId, List.of(endpoint), List.of(), "  ", true, jobId, 60_000),
+                new Progress());
+        verifyNoInteractions(chatClient, writer);
+        assertThat(result.stoppedReason()).isEqualTo("NO_INPUT");
+        assertThat(empty.getFileName()).isEqualTo("a.md");
+    }
+
+    @Test
     void planLots_groupsByFirstSegmentAndCapsLotSize() {
         List<Endpoint> all = new ArrayList<>();
         for (int i = 0; i < 14; i++) {
