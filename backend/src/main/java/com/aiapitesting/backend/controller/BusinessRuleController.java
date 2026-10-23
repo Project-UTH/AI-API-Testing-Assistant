@@ -2,6 +2,8 @@ package com.aiapitesting.backend.controller;
 
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.response.PageResponse;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveBatchRequest;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveBatchResponse;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveRequest;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.CreateRequest;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.RejectRequest;
@@ -77,6 +79,12 @@ public class BusinessRuleController {
     public ResponseEntity<ApiResponse<RuleResponse>> approve(
             @PathVariable UUID projectId, @PathVariable UUID ruleId, @RequestBody(required = false) ApproveRequest request) {
         return ResponseEntity.ok(ApiResponse.of(businessRuleService.approve(projectId, ruleId, request)));
+    }
+
+    @PostMapping("/approve-batch")
+    public ResponseEntity<ApiResponse<ApproveBatchResponse>> approveBatch(
+            @PathVariable UUID projectId, @RequestBody ApproveBatchRequest request) {
+        return ResponseEntity.ok(ApiResponse.of(businessRuleService.approveBatch(projectId, request)));
     }
 
     @PostMapping("/{ruleId}/reject")

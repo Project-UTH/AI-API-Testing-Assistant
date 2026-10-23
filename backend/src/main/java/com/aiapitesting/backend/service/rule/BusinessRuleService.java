@@ -1,7 +1,10 @@
 package com.aiapitesting.backend.service.rule;
 
 import com.aiapitesting.backend.dto.response.PageResponse;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveBatchRequest;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveBatchResponse;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveRequest;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.NotApproved;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.CreateRequest;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.DetectResponse;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.EndpointFieldResponse;
@@ -247,8 +250,38 @@ public class BusinessRuleService {
         if (request != null && request.expectedStatus() != null) {
             rule.setExpectedStatus(validExpected(request.expectedStatus()));
         }
+        if (rule.getSource() == RuleSource.INFERRED && rule.getExpectedStatus() == null) {
+            // Luật AI đoán không có trích dẫn nào nêu mã lỗi: người duyệt phải TỰ chọn mã kỳ vọng, không được bấm duyệt cho qua.
+            throw BusinessRuleException.stateInvalid("Luật GIẢ ĐỊNH (AI đoán, không có trích dẫn) - phải tự chọn mã lỗi kỳ vọng trước khi duyệt");
+        }
         markApproved(rule);
         return toResponse(ruleRepository.save(rule));
+    }
+
+    /** Duyệt hàng loạt các luật có trích dẫn; luật không đủ điều kiện được báo lý do, không làm hỏng cả lô. */
+    @Transactional
+    public ApproveBatchResponse approveBatch(UUID projectId, ApproveBatchRequest request) {
+        Project project = projectService.getOwnedProject(projectId);
+        if (request == null || request.ruleIds() == null || request.ruleIds().isEmpty()) {
+            throw new InvalidRequestException("Phải chọn ít nhất 1 luật để duyệt");
+        }
+        List<UUID> approved = new java.util.ArrayList<>();
+        List<NotApproved> skipped = new java.util.ArrayList<>();
+        for (UUID id : request.ruleIds().stream().distinct().toList()) {
+            BusinessRule rule = ruleRepository.findByIdAndProject(id, project).orElse(null);
+            if (rule == null) {
+                skipped.add(new NotApproved(id, "Không tìm thấy luật"));
+            } else if (rule.getStatus() != RuleStatus.PROPOSED) {
+                skipped.add(new NotApproved(id, "Chỉ duyệt hàng loạt luật đang chờ duyệt (hiện: " + rule.getStatus() + ")"));
+            } else if (rule.getSource() == RuleSource.INFERRED || rule.getQuote() == null) {
+                skipped.add(new NotApproved(id, "Luật không có trích dẫn - phải duyệt từng luật"));
+            } else {
+                markApproved(rule);
+                ruleRepository.save(rule);
+                approved.add(id);
+            }
+        }
+        return new ApproveBatchResponse(approved, skipped);
     }
 
     @Transactional

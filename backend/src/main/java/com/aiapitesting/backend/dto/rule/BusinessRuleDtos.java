@@ -31,6 +31,16 @@ public final class BusinessRuleDtos {
     public record ApproveRequest(Integer expectedStatus, String conflictNote) {
     }
 
+    /** Duyệt hàng loạt: CHỈ luật có trích dẫn (nguồn tài liệu/chỉ dẫn) đang chờ duyệt; luật GIẢ ĐỊNH, mâu thuẫn spec luôn phải duyệt từng cái. */
+    public record ApproveBatchRequest(List<UUID> ruleIds) {
+    }
+
+    public record ApproveBatchResponse(List<UUID> approvedIds, List<NotApproved> notApproved) {
+    }
+
+    public record NotApproved(UUID ruleId, String reason) {
+    }
+
     public record RejectRequest(RuleRejectReason reason, String note) {
     }
 
@@ -40,14 +50,14 @@ public final class BusinessRuleDtos {
 
     public record RuleResponse(
             UUID id, String endpointKey, UUID endpointId, RuleTemplate template, RuleParams params, String sentence,
-            Integer expectedStatus, RuleStatus status, RuleSource source, String rationale, String quote,
-            RuleRejectReason rejectReason, String statusNote, UUID reviewedBy, Instant reviewedAt, long testCount,
+            Integer expectedStatus, RuleStatus status, RuleSource source, String rationale, String quote, Integer quoteOffset, UUID documentId,
+            UUID extractionJobId, RuleRejectReason rejectReason, String statusNote, UUID reviewedBy, Instant reviewedAt, long testCount,
             Instant createdAt, Instant updatedAt, Long version
     ) {
         public static RuleResponse from(BusinessRule rule, RuleParams params, String sentence, long testCount) {
             return new RuleResponse(rule.getId(), rule.getEndpointKey(), rule.getEndpointId(), rule.getTemplate(), params, sentence,
-                    rule.getExpectedStatus(), rule.getStatus(), rule.getSource(), rule.getRationale(), rule.getQuote(),
-                    rule.getRejectReason(), rule.getStatusNote(), rule.getReviewedBy(), rule.getReviewedAt(), testCount,
+                    rule.getExpectedStatus(), rule.getStatus(), rule.getSource(), rule.getRationale(), rule.getQuote(), rule.getQuoteOffset(),
+                    rule.getDocumentId(), rule.getExtractionJobId(), rule.getRejectReason(), rule.getStatusNote(), rule.getReviewedBy(), rule.getReviewedAt(), testCount,
                     rule.getCreatedAt(), rule.getUpdatedAt(), rule.getVersion());
         }
     }

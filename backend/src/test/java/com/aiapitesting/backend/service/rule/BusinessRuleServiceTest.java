@@ -137,11 +137,45 @@ class BusinessRuleServiceTest {
     }
 
     @Test
+    void approve_inferredRuleNeedsAnExplicitExpectedStatus_citedRuleDoesNot() {
+        BusinessRule guess = stored(RuleStatus.PROPOSED, RuleSource.INFERRED);
+        assertThatThrownBy(() -> service.approve(project.getId(), guess.getId(), null)).extracting("code").isEqualTo("BUSINESS_RULE_STATE_INVALID");
+        assertThatThrownBy(() -> service.approve(project.getId(), guess.getId(), new ApproveRequest(null, null)))
+                .extracting("code").isEqualTo("BUSINESS_RULE_STATE_INVALID");
+        assertThat(service.approve(project.getId(), guess.getId(), new ApproveRequest(422, null)).status()).isEqualTo(RuleStatus.APPROVED);
+
+        BusinessRule cited = stored(RuleStatus.PROPOSED, RuleSource.DOC);
+        assertThat(service.approve(project.getId(), cited.getId(), null).status()).isEqualTo(RuleStatus.APPROVED);
+    }
+
+    @Test
+    void approveBatch_approvesOnlyCitedProposedRules_andExplainsTheRest() {
+        BusinessRule cited = stored(RuleStatus.PROPOSED, RuleSource.DOC);
+        cited.setQuote("đoạn trích nguyên văn đủ dài");
+        BusinessRule noQuote = stored(RuleStatus.PROPOSED, RuleSource.DOC);
+        BusinessRule guess = stored(RuleStatus.PROPOSED, RuleSource.INFERRED);
+        guess.setQuote("có trích dẫn nhưng là luật đoán");
+        BusinessRule conflict = stored(RuleStatus.CONFLICT, RuleSource.DOC);
+        conflict.setQuote("đoạn trích nguyên văn đủ dài");
+        UUID unknown = UUID.randomUUID();
+
+        var response = service.approveBatch(project.getId(), new com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveBatchRequest(
+                List.of(cited.getId(), noQuote.getId(), guess.getId(), conflict.getId(), unknown, cited.getId())));
+
+        assertThat(response.approvedIds()).containsExactly(cited.getId());
+        assertThat(response.notApproved()).extracting("ruleId").containsExactlyInAnyOrder(noQuote.getId(), guess.getId(), conflict.getId(), unknown);
+        assertThat(cited.getStatus()).isEqualTo(RuleStatus.APPROVED);
+        assertThat(guess.getStatus()).isEqualTo(RuleStatus.PROPOSED);
+        assertThat(conflict.getStatus()).isEqualTo(RuleStatus.CONFLICT);
+        assertThatThrownBy(() -> service.approveBatch(project.getId(), null)).isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+    }
+
+    @Test
     void approve_conflictRuleNeedsNote_andOnlyProposedOrConflictCanBeApproved() {
         BusinessRule conflict = stored(RuleStatus.CONFLICT, RuleSource.INFERRED);
         assertThatThrownBy(() -> service.approve(project.getId(), conflict.getId(), new ApproveRequest(null, " ")))
                 .extracting("code").isEqualTo("BUSINESS_RULE_STATE_INVALID");
-        RuleResponse approved = service.approve(project.getId(), conflict.getId(), new ApproveRequest(null, "tài liệu mới hơn spec"));
+        RuleResponse approved = service.approve(project.getId(), conflict.getId(), new ApproveRequest(400, "tài liệu mới hơn spec"));
         assertThat(approved.status()).isEqualTo(RuleStatus.APPROVED);
         assertThat(approved.statusNote()).contains("tài liệu mới hơn spec");
 
