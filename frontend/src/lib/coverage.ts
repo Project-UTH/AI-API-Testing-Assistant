@@ -108,6 +108,17 @@ export interface EndpointCoverage {
   doubtfulCount?: number
   specGapCount?: number
   baselineVerified?: boolean
+  rules?: RuleCoverage | null
+}
+
+/** 17q G3 - lớp nghiệp vụ của endpoint, TÁCH khỏi lớp spec: "x/y luật đã duyệt có test". Thiếu = endpoint chưa có luật nào. */
+export interface RuleCoverage {
+  approved: number
+  approvedWithTests: number
+  /** Luật chờ duyệt (đề xuất + mâu thuẫn spec). */
+  proposed: number
+  /** Trong số luật đã duyệt: số luật GIẢ ĐỊNH (AI suy đoán, không có trích dẫn hợp lệ). */
+  assumed: number
 }
 
 /** 17q G2 - trạng thái kiểm thử của endpoint (backend tính, frontend chỉ hiển thị). */
@@ -255,6 +266,9 @@ export interface CoverageOverview {
   generatedExecutedCount?: number
   certainCount?: number
   doubtfulCount?: number
+  ruleApprovedCount?: number
+  ruleTestedCount?: number
+  ruleProposedCount?: number
 }
 
 /** Module 17 (G4) - tóm tắt coverage 1 endpoint (không có từng dòng chi tiết), có đủ số đếm để gộp. */
@@ -276,6 +290,7 @@ export interface CoverageEndpointRow {
   doubtfulCount?: number
   specGapCount?: number
   baselineVerified?: boolean
+  rules?: RuleCoverage | null
 }
 
 export interface CoveragePageInfo {

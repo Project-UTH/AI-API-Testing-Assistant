@@ -83,7 +83,7 @@ const EndpointRow = memo(function EndpointRow({ projectId, endpoint, row, select
         {endpoint.testCaseCount > 0 && (
           <span className="shrink-0 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{endpoint.testCaseCount}</span>{" "}
-            {row?.testState === "NOT_GENERATED" ? "test nghiệp vụ (giả định, không tính độ phủ)" : "test"}
+            {row?.testState === "NOT_GENERATED" ? "test nghiệp vụ (không tính vào độ phủ EP/BVA)" : "test"}
           </span>
         )}
         {endpoint.testCaseCount > 0 && counts && (

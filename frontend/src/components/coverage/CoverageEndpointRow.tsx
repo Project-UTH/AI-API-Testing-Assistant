@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight } from "lucide-react"
 import { cn, METHOD_STYLES } from "@/lib/utils"
 import { coverageCounts, scopeLabel, type EndpointCoverage } from "@/lib/coverage"
 import { CoverageGapReport } from "@/components/coverage/CoverageGapReport"
-import { CoverageCountsText, TestStateChip } from "@/components/coverage/TestStateChip"
+import { CoverageCountsText, RuleCoverageText, TestStateChip } from "@/components/coverage/TestStateChip"
 
 interface CoverageEndpointRowProps {
   projectId: string
@@ -62,6 +62,9 @@ export const CoverageEndpointRow = memo(function CoverageEndpointRow({ projectId
           />
         )}
       </button>
+      <p className="-mt-2 px-4 pb-3 pl-11">
+        <RuleCoverageText rules={endpoint.rules} projectId={projectId} endpointId={endpoint.endpointId} />
+      </p>
       {(endpoint.testState === "NOT_GENERATED" || (!endpoint.testState && endpoint.testCaseCount === 0)) && (
         <p className="-mt-2 px-4 pb-3 pl-11 text-xs text-muted-foreground">
           Endpoint chưa có test.{" "}

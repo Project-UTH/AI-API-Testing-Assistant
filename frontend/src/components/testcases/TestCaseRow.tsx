@@ -102,7 +102,8 @@ export const TestCaseRow = memo(function TestCaseRow({
         className="shrink-0 text-xs text-muted-foreground"
         title={expectationChanged(testCase) ? `Hệ thống đã đổi kỳ vọng sau khi chạy thật test gốc: ${testCase.expectationNote ?? ""}` : undefined}
       >
-        → {testCase.expectedStatus}
+        → {testCase.expectedStatusClass === "REJECTED" ? "4xx (bị từ chối)" : testCase.expectedStatus}
+        {testCase.sendTwice && " · gửi 2 lần"}
         {expectationChanged(testCase) && (
           <span className="ml-1">
             (trước: <span className="line-through">{testCase.originalExpectedStatus}</span>)
