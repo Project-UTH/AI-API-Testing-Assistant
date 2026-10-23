@@ -1658,6 +1658,15 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - **Hạn chế thấy trên dữ liệu thật:**
     - Test âm tham số path sai kiểu Pass nhưng là NGHI, vì thông báo "sai kiểu" của mutant-api không có trong từ khoá của `InputRejectionDetector`. Không tự mở rộng từ khoá, vì detector còn dùng để phân loại Fail; ghi lại để xem ở đợt sau.
     - `TESTED_FAILING` tính theo test (kể cả Fail NGHI), còn bộ lọc cũ "Có mục đang Fail" tính theo mục: 2 định nghĩa khác nhau, đã ghi rõ ở tooltip.
+- *Kiểm định độc lập G0-G2 (2026-10-23, 1 chuyên gia) và việc đã sửa:*
+  - **Đã sửa:**
+    - Script đo không còn ghi mô tả held-out vào file kết quả, báo cáo tách DEV/HELDOUT (commit `de30350`); mốc A đo lại sạch (xem G0.1).
+    - Thêm trạng thái `TESTED_DOUBTFUL` ("Có Fail cần xem", màu amber): chỉ Fail kết luận CHẮC mới tô đỏ "Đang có Fail"; Fail NGHI (biên ngầm, kỳ vọng do AI viết, `STATE_CONFLICT`...) không bị che nhưng không tô đỏ. Định nghĩa "2 bộ lọc khác nhau" ở trên được thay bằng trạng thái này.
+    - Trang kết quả chạy dùng cùng quy tắc độ tin với Coverage (mục biên ngầm lưu `TestCase.checklistType`; Pass có lệch spec chỉ NGHI).
+    - Bug lệch spec đã đóng tự mở lại khi lệch tái diễn; ghi chú đổi kỳ vọng lấy mốc kỳ vọng ban đầu; dòng `NOT_GENERATED` có link sinh test; `docs/eval/README.md` ghi rõ file nào KHÔNG đọc khi code.
+  - **Chưa sửa / ghi nhận:**
+    - Held-out chưa out-of-sample hoàn toàn: agent rút luật chuẩn có đọc mã nguồn mutant-api; H02≡M08, H06≡M38, H13≡M16, H14≡M21, H10 chồng M25; SRS và held-out cùng rút từ 86 luật chuẩn. G5 phải tách 3 nhóm: H trùng M / H vi phạm luật có trong SRS / H vi phạm 14 luật bị bỏ khỏi SRS.
+    - Báo cáo xuất (`ExecutionReportService`) chưa có `specDeviations`/`verdictTrust`; chưa có test repository thật cho 2 truy vấn JPQL bug report (chỉ mock).
 
 **G3. Luật nghiệp vụ có nguồn: "luật trước, test sau" (khoảng 9 ngày backend + 5 ngày frontend)**
 
