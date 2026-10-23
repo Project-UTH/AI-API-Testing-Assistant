@@ -1678,7 +1678,7 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
 5. Chạy → phân loại Fail → CHẮC/NGHI (G2) → bug report.
 
 *Thiết kế:*
-- [ ] **G3.1 Mẫu luật + bộ sinh tất định + luật người dùng tự nhập (chưa có AI)**, nhánh `feature/business-rule-template`, khoảng 2,5 ngày. Từ bước này đã đo được.
+- [x] **G3.1 Mẫu luật + bộ sinh tất định + luật người dùng tự nhập (chưa có AI)**, nhánh `feature/business-rule-template`, khoảng 2,5 ngày. Từ bước này đã đo được.
   - Entity `BusinessRule`:
     - phạm vi: `projectId`, `endpointKey` (METHOD + path, sống qua re-import), `endpointId` nullable;
     - nguồn: `source` (DOC/INSTRUCTION/INFERRED/SYSTEM_DETECTED/USER), `documentId?`;
@@ -1701,7 +1701,7 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - Luật trùng ràng buộc spec (đối chiếu `FieldRule` min/max/enum) bị loại tất định. Luật **mâu thuẫn** spec (tài liệu ghi 100, spec ghi 50) gắn CONFLICT, không cho tự duyệt; đây là một phát hiện "spec lệch tài liệu".
   - Field của luật không còn trong spec khi sinh → luật chuyển STALE.
   - Mục spec (EP/BVA/Security) vẫn **tính động**, KHÔNG lưu DB và KHÔNG vào màn duyệt. Chỉ lưu thêm ghi đè "Không áp dụng + lý do" theo `TestCaseChecklistPlanner.key()` (:588); thao tác này ở `CoverageGapReport`.
-- [ ] **G3.2 Màn duyệt luật + độ bao phủ 2 lớp**, nhánh `feature/rule-review`, khoảng 2 ngày backend + 3 ngày frontend.
+- [~] **G3.2 Màn duyệt luật + độ bao phủ 2 lớp**, nhánh `feature/rule-review`, khoảng 2 ngày backend + 3 ngày frontend.
   - Bố cục trang "Nghiệp vụ": khối tài liệu ở trên. Bên dưới chia đôi: danh sách luật nhóm theo endpoint (trái) / chi tiết luật (phải). Chi tiết gồm field, mẫu, kỳ vọng, đoạn trích có `<mark>` + tên file/dòng, nguồn. Các nút Duyệt (A) / Sửa (E) / Loại (R). Bộ lọc theo endpoint/nguồn/có trích dẫn.
   - **Chống duyệt bừa**:
     - không có "Duyệt tất cả" cho luật GIẢ ĐỊNH;
@@ -1716,6 +1716,22 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
 
     Chưa có luật thì ghi "Chưa có luật", không ghi 0%. "Chờ duyệt N luật" là badge phụ (xanh dương, bấm được) cạnh chip trạng thái; KHÔNG thêm vào `EndpointTestState`.
   - Test từ luật KHÔNG tính vào % EP/BVA.
+- *G3.1 ĐÃ LÀM 2026-10-23 (hỏi 2 chuyên gia trước khi code; 6 commit; 862 test backend pass, `tsc -b` + lint sạch):*
+  - **Backend:**
+    - Entity `BusinessRule`; enum `RuleTemplate` (10 mẫu T1-T9), `RuleStatus`, `RuleSource`, `RuleRejectReason`.
+    - `RuleParamsValidator` kiểm tham số theo mẫu + spec, đối chiếu spec (trùng → REJECTED/409; mâu thuẫn → CONFLICT; field mất → STALE). `RuleTestGenerator` sinh test vi phạm đúng 1 luật + biên hợp lệ, tự kiểm không vi phạm ràng buộc spec nào (dùng placeholder `{{today±Nd}}`, không ghi cứng ngày).
+    - API `/projects/{pid}/business-rules` (CRUD, approve/reject kèm lý do, delete chỉ luật USER chưa duyệt, `detect`, `endpoint-fields`, `generate-tests`), mã lỗi `BUSINESS_RULE_*`.
+    - Hệ thống tự phát hiện cặp `xxxMin/xxxMax` → luật COMPARE chờ duyệt. Luật nối lại endpoint theo `METHOD path` sau import (STALE khi endpoint bị gỡ).
+  - **Khác kế hoạch (cố ý):**
+    - Kỳ vọng "bị từ chối" = `TestCase.expectedStatusClass=REJECTED` (expectedStatus vẫn 400 làm mã đại diện). `ExpectedStatus.matches` khớp mọi 4xx trừ 401/403/404/405/415/429 (mã lỗi cách gọi, không chứng minh API từ chối vì luật).
+    - Mẫu UNIQUE dùng `TestCase.sendTwice` (runner gửi 2 lần cùng `RunScope`; lần 1 không 2xx → BLOCKED, không Pass giả).
+    - Test từ luật giữ `source=BUSINESS` + `origin=RULE_TEMPLATE`: mọi bộ lọc "!= BUSINESS" tự loại khỏi % EP/BVA; `deleteExistingGroup` (sinh lại nghiệp vụ AI) KHÔNG xoá chúng, sinh lại 1 luật chỉ xoá test chưa khoá của đúng luật đó.
+    - Chỉ dùng test gốc ĐÃ PASS làm nền (Pass của test vi phạm chỉ có nghĩa khi request gốc hợp lệ thật).
+    - Nhãn mới `FailureCause.RULE_VIOLATION_ACCEPTED` ("API nhận dữ liệu vi phạm luật nghiệp vụ", kết luận CHẮC, không bị loại khỏi Bug Report): oracle là luật người đã duyệt. Đã thêm đủ 3 bảng hiển thị frontend.
+    - Chưa làm: bắt `generate-tests` trả 409 khi project đang có job sinh (G3.4); sinh test cho luật ở query/header (báo lý do, người dùng tự viết).
+  - **Frontend:** tab "Nghiệp vụ" (`/projects/:id/rules`): danh sách nhóm theo endpoint, chip trạng thái/nguồn/mẫu, Duyệt/Sửa/Loại (bắt buộc lý do)/Xoá, hộp thoại thêm/sửa luật (field chọn từ spec, câu luật xem trước), "Hệ thống phát hiện luật", "Sinh test từ N luật đã duyệt"; Coverage có dòng riêng "Nghiệp vụ: x/y luật đã duyệt có test" (không gộp với lớp spec; chưa có luật ghi "chưa có luật").
+  - **Kiểm chứng trên hệ thống thật (0 token, `mutant-api`):** phát hiện 2 luật min/max, tự nhập luật ngày + tổng weight; sinh 5 test, Pass hết trên bản chuẩn; bật lỗi M23, M24, M25 (3 lỗi luật nghiệp vụ mà checklist tất định bỏ lọt 0/5) → mỗi lỗi bị đúng 1 test bắt, nhãn `RULE_VIOLATION_ACCEPTED`. **Lưu ý trung thực:** đây là minh hoạ cơ chế trên bộ phát triển (người nhập luật biết lỗi M), KHÔNG phải số đo độ chính xác - số đo là G5 trên held-out. Khung đo bật/tắt lỗi liên tục trên cùng 1 test nên có test bị gắn "không ổn định" (hạn chế đã biết của khung đo).
+  - **G3.2 còn lại:** master-detail + đoạn trích tô sáng (cần G3.3), đo thời gian duyệt (G3.5). Không có "Duyệt tất cả" nên chưa cần cơ chế chống duyệt bừa; thêm khi có luật AI.
 - [ ] **G3.3 Tải tài liệu + AI trích luật + kiểm chứng trích dẫn**, nhánh `feature/requirement-doc`, khoảng 2,5 ngày backend + 1 ngày frontend.
   - Entity `RequirementDocument`: `projectId`, `fileName`, `sizeBytes`, `sha256`, `content` MEDIUMTEXT, `uploadedBy`, `createdAt`, `active`. Tải bản mới thì luật của bản cũ chuyển STALE, không xoá.
   - Giới hạn tài liệu: **chỉ .md/.txt UTF-8**, ≤ 200 KB/file, ≤ 5 file/project, quyền sở hữu qua `getOwnedProject`.
