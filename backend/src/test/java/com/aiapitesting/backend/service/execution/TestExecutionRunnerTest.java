@@ -471,6 +471,65 @@ class TestExecutionRunnerTest {
         assertThat(captor.getAllValues().get(1).getRejectionExcerpt()).isNull();
     }
 
+    // ---- 17q G3 - test sinh từ luật nghiệp vụ ----
+
+    @Test
+    void runInBackground_rejectedClass_passesOn422AndFailsOn200_and401IsNotARuleRejection() {
+        TestCase rejected = simpleCase();
+        rejected.setExpectedStatus(400);
+        rejected.setExpectedStatusClass(ExpectedStatus.REJECTED);
+        TestCase acceptedWrongly = simpleCase();
+        acceptedWrongly.setExpectedStatus(400);
+        acceptedWrongly.setExpectedStatusClass(ExpectedStatus.REJECTED);
+        TestCase unauthorized = simpleCase();
+        unauthorized.setExpectedStatus(400);
+        unauthorized.setExpectedStatusClass(ExpectedStatus.REJECTED);
+        when(restAssuredTestRunner.run(any(), eq(rejected), any())).thenReturn(new RestAssuredTestRunner.RunResult(422, "{}"));
+        when(restAssuredTestRunner.run(any(), eq(acceptedWrongly), any())).thenReturn(new RestAssuredTestRunner.RunResult(201, "{}"));
+        when(restAssuredTestRunner.run(any(), eq(unauthorized), any())).thenReturn(new RestAssuredTestRunner.RunResult(401, "{}"));
+
+        runner.runInBackground(execution, List.of(rejected, acceptedWrongly, unauthorized), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, times(3)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(TestResult::getStatus)
+                .containsExactly(TestResultStatus.PASSED, TestResultStatus.FAILED, TestResultStatus.FAILED);
+    }
+
+    @Test
+    void runInBackground_sendTwice_secondResponseIsGraded_butFirstNon2xxBlocksTheTest() {
+        TestCase duplicate = simpleCase();
+        duplicate.setExpectedStatus(409);
+        duplicate.setSendTwice(true);
+        when(restAssuredTestRunner.run(any(), eq(duplicate), any(), any()))
+                .thenReturn(new RestAssuredTestRunner.RunResult(201, "{}"))
+                .thenReturn(new RestAssuredTestRunner.RunResult(409, "{}"));
+
+        runner.runInBackground(execution, List.of(duplicate), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.PASSED);
+        assertThat(captor.getValue().getResponseStatus()).isEqualTo(409);
+        org.mockito.Mockito.verify(restAssuredTestRunner, times(2)).run(any(), eq(duplicate), any(), any());
+    }
+
+    @Test
+    void runInBackground_sendTwice_firstFailureMeansBlocked_notAFalsePass() {
+        TestCase duplicate = simpleCase();
+        duplicate.setExpectedStatus(409);
+        duplicate.setSendTwice(true);
+        when(restAssuredTestRunner.run(any(), eq(duplicate), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(400, "{}"));
+
+        runner.runInBackground(execution, List.of(duplicate), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.BLOCKED);
+        assertThat(captor.getValue().getErrorMessage()).contains("Lần gửi đầu");
+        org.mockito.Mockito.verify(restAssuredTestRunner, times(1)).run(any(), eq(duplicate), any(), any());
+    }
+
     // ---- Module 17 (17b-2) - probe mass-assignment ----
 
     private TestCase probeCase() {

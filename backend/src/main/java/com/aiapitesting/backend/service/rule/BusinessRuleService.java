@@ -18,6 +18,7 @@ import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.repository.BusinessRuleRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.service.CurrentUserService;
 import com.aiapitesting.backend.service.ProjectService;
 import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
@@ -51,6 +52,7 @@ public class BusinessRuleService {
     private final CurrentUserService currentUserService;
     private final EndpointRepository endpointRepository;
     private final BusinessRuleRepository ruleRepository;
+    private final TestCaseRepository testCaseRepository;
     private final TestCaseChecklistPlanner planner;
     private final ObjectMapper objectMapper = new ObjectMapper().setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL);
 
@@ -64,7 +66,12 @@ public class BusinessRuleService {
         int s = size == null || size < 1 ? 50 : Math.min(size, MAX_PAGE_SIZE);
         var result = ruleRepository.findAll(BusinessRuleRepository.filter(project, null, endpointId, status, source, template),
                 PageRequest.of(p, s, Sort.by("endpointKey").ascending().and(Sort.by("createdAt").ascending())));
-        return PageResponse.from(result, this::toResponse);
+        // 1 truy vấn đếm test cho cả trang (không N+1).
+        java.util.Map<UUID, Long> counts = testCaseRepository.findAllByRuleIdIn(
+                        result.getContent().stream().map(BusinessRule::getId).toList()).stream()
+                .collect(java.util.stream.Collectors.groupingBy(com.aiapitesting.backend.entity.TestCase::getRuleId,
+                        java.util.stream.Collectors.counting()));
+        return PageResponse.from(result, rule -> toResponse(rule, counts.getOrDefault(rule.getId(), 0L)));
     }
 
     @Transactional(readOnly = true)
@@ -255,8 +262,12 @@ public class BusinessRuleService {
     }
 
     RuleResponse toResponse(BusinessRule rule) {
+        return toResponse(rule, rule.getId() == null ? 0 : testCaseRepository.countByRuleId(rule.getId()));
+    }
+
+    RuleResponse toResponse(BusinessRule rule, long testCount) {
         RuleParams params = read(rule.getParamsJson());
-        return RuleResponse.from(rule, params, RuleSentence.of(rule.getTemplate(), params), 0);
+        return RuleResponse.from(rule, params, RuleSentence.of(rule.getTemplate(), params), testCount);
     }
 
     RuleParams read(String json) {

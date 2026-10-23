@@ -43,7 +43,11 @@ public record TestCaseResponse(
         List<String> probeFields,
         /** 17q G1 - kỳ vọng ban đầu trước khi hệ thống tự đổi sau lần chạy thật test gốc (null = chưa đổi) + ghi chú lý do. */
         Integer originalExpectedStatus,
-        String expectationNote
+        String expectationNote,
+        /** 17q G3 - "REJECTED" = kỳ vọng "bị từ chối (4xx)"; ruleId = luật nghiệp vụ đã sinh test này; sendTwice = gửi 2 lần (luật UNIQUE). */
+        String expectedStatusClass,
+        UUID ruleId,
+        boolean sendTwice
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -87,7 +91,10 @@ public record TestCaseResponse(
                 testCase.getProbeKind(),
                 parseProbeFieldNames(testCase.getProbeFieldsJson()),
                 testCase.getOriginalExpectedStatus(),
-                testCase.getExpectationNote()
+                testCase.getExpectationNote(),
+                testCase.getExpectedStatusClass(),
+                testCase.getRuleId(),
+                testCase.isSendTwice()
         );
     }
 

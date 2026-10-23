@@ -16,6 +16,7 @@ import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.BusinessRuleException;
 import com.aiapitesting.backend.repository.BusinessRuleRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
+import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.service.CurrentUserService;
 import com.aiapitesting.backend.service.ProjectService;
 import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
@@ -53,6 +54,8 @@ class BusinessRuleServiceTest {
     private EndpointRepository endpointRepository;
     @Mock
     private BusinessRuleRepository ruleRepository;
+    @Mock
+    private TestCaseRepository testCaseRepository;
     @Spy
     private TestCaseChecklistPlanner planner = new TestCaseChecklistPlanner();
     @InjectMocks

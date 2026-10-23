@@ -15,5 +15,10 @@ public enum TestCaseGenerationOrigin {
     /** Test nghiệp vụ do AI đoán (xem {@link TestCaseSource#BUSINESS}); mọi rationale đều là GIẢ ĐỊNH, không kiểm chứng được từ spec. */
     AI_BUSINESS,
     /** Test gốc hợp lệ do AI sinh rồi được CHẠY THỬ xác nhận (xem BaselineVerificationService); thêm vào CUỐI enum. */
-    AI_BASELINE
+    AI_BASELINE,
+    /**
+     * 17q G3 - test hệ thống sinh TẤT ĐỊNH từ luật nghiệp vụ người dùng đã duyệt (source vẫn BUSINESS để mọi bộ lọc "!= BUSINESS" tự loại nó
+     * khỏi % EP/BVA). Sinh lại BUSINESS (AI) KHÔNG được xoá các test này; sinh lại từ luật mới xoá test cũ của đúng luật đó.
+     */
+    RULE_TEMPLATE
 }

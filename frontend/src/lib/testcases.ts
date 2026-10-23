@@ -23,7 +23,7 @@ export const TEST_CASE_SOURCE_STYLES: Record<TestCaseSource, string> = {
  * AI_CHECKLIST = AI sinh, đạt mục checklist; AI_EXTRA = AI đề xuất thêm ngoài checklist;
  * SYSTEM_FILLED = hệ thống tự bù mục AI làm thiếu/sai.
  */
-export type TestCaseGenerationOrigin = "AI_CHECKLIST" | "AI_EXTRA" | "SYSTEM_FILLED" | "AI_BUSINESS" | "AI_BASELINE"
+export type TestCaseGenerationOrigin = "AI_CHECKLIST" | "AI_EXTRA" | "SYSTEM_FILLED" | "AI_BUSINESS" | "AI_BASELINE" | "RULE_TEMPLATE"
 
 export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label: string; className: string; title: string }> = {
   AI_CHECKLIST: {
@@ -50,6 +50,11 @@ export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label
     label: "Test gốc",
     className: "bg-green-500/10 text-green-700 dark:text-green-400",
     title: "Test gốc hợp lệ do AI sinh và đã được chạy thật xác nhận Pass, dùng làm nền để hệ thống bổ sung checklist",
+  },
+  RULE_TEMPLATE: {
+    label: "Từ luật nghiệp vụ",
+    className: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
+    title: "Sinh tất định từ luật nghiệp vụ bạn đã duyệt (kỳ vọng do bạn chịu trách nhiệm); không tính vào % EP/BVA",
   },
 }
 
@@ -180,6 +185,10 @@ export interface TestCase {
   /** 17q G1 - kỳ vọng ban đầu trước khi hệ thống tự đổi sau lần chạy thật test gốc (null = chưa đổi) + lý do. */
   originalExpectedStatus?: number | null
   expectationNote?: string | null
+  /** 17q G3 - "REJECTED" = kỳ vọng "bị từ chối (4xx)"; ruleId = luật nghiệp vụ đã sinh test; sendTwice = gửi 2 lần. */
+  expectedStatusClass?: string | null
+  ruleId?: string | null
+  sendTwice?: boolean
 }
 
 export interface ReliabilityDisplay {

@@ -11,7 +11,10 @@ import com.aiapitesting.backend.entity.RuleSource;
 import com.aiapitesting.backend.entity.RuleStatus;
 import com.aiapitesting.backend.entity.RuleTemplate;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.GenerateTestsRequest;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.GenerateTestsResponse;
 import com.aiapitesting.backend.service.rule.BusinessRuleService;
+import com.aiapitesting.backend.service.rule.RuleTestService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,6 +37,7 @@ import java.util.UUID;
 public class BusinessRuleController {
 
     private final BusinessRuleService businessRuleService;
+    private final RuleTestService ruleTestService;
 
     @GetMapping
     public PageResponse<RuleResponse> list(
@@ -76,6 +80,13 @@ public class BusinessRuleController {
     public ResponseEntity<ApiResponse<RuleResponse>> reject(
             @PathVariable UUID projectId, @PathVariable UUID ruleId, @RequestBody RejectRequest request) {
         return ResponseEntity.ok(ApiResponse.of(businessRuleService.reject(projectId, ruleId, request)));
+    }
+
+    /** Sinh test tất định (0 token) từ các luật ĐÃ DUYỆT (body rỗng = mọi luật đã duyệt của project). Chạy đồng bộ như coverage/fill. */
+    @PostMapping("/generate-tests")
+    public ResponseEntity<ApiResponse<GenerateTestsResponse>> generateTests(
+            @PathVariable UUID projectId, @RequestBody(required = false) GenerateTestsRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(ruleTestService.generate(projectId, request)));
     }
 
     @DeleteMapping("/{ruleId}")

@@ -13,6 +13,7 @@ import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.BugReportStatusService;
+import com.aiapitesting.backend.service.DynamicPlaceholderResolver;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -277,13 +278,27 @@ public class TestExecutionRunner {
 
         long startedNanos = System.nanoTime();
         try {
-            RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
+            RestAssuredTestRunner.RunResult result;
+            if (testCase.isSendTwice()) {
+                // 17q G3 (luật UNIQUE): gửi 2 lần cùng giá trị {{uuid:x}}; lần 1 phải tạo được (2xx) thì lần 2 mới có nghĩa để chấm.
+                DynamicPlaceholderResolver.RunScope scope = new DynamicPlaceholderResolver.RunScope();
+                RestAssuredTestRunner.RunResult first = restAssuredTestRunner.run(project, testCase, resolvedValues, scope);
+                if (first.statusCode() < 200 || first.statusCode() > 299) {
+                    finish(execution, testCase, TestResultStatus.BLOCKED, first.statusCode(), null,
+                            "Lần gửi đầu trả " + first.statusCode() + " (không tạo được bản ghi gốc) nên không kiểm được việc tạo trùng",
+                            statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null, noCallMeta, savedResults);
+                    return;
+                }
+                result = restAssuredTestRunner.run(project, testCase, resolvedValues, scope);
+            } else {
+                result = restAssuredTestRunner.run(project, testCase, resolvedValues);
+            }
             // Test probe mass-assignment (17b-2) tự chấm theo phản hồi (400/422 = từ chối = đạt; phản chiếu field lạ = Fail); các mã khác
             // (401/403/404...) không kết luận được nên rơi về luật mã trạng thái thường.
             MassAssignmentProbe.Outcome probe = probeOutcomeOf(testCase, result);
             boolean statusMatches = probe != null && probe.verdict() != MassAssignmentProbe.Verdict.INCONCLUSIVE
                     ? probe.verdict() == MassAssignmentProbe.Verdict.PASS
-                    : Objects.equals(result.statusCode(), testCase.getExpectedStatus());
+                    : ExpectedStatus.matches(testCase, result.statusCode());
             // Quét 1 lần trên body THÔ; body lưu/hiển thị là bản đã che. Assertion + dependency vẫn dùng body thô (bên dưới).
             SensitiveDataScanner.Scan scan = scanSensitive(testCase, result.responseBody());
             Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
