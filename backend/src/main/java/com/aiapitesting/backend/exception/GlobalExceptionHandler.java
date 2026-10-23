@@ -87,6 +87,11 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("SWAGGER_PARSE_FAILED", ex.getMessage()));
     }
 
+    @ExceptionHandler(BusinessRuleException.class)
+    public ResponseEntity<ApiErrorResponse> handleBusinessRule(BusinessRuleException ex) {
+        return ResponseEntity.status(ex.getStatus()).body(ApiErrorResponse.of(ex.getCode(), ex.getMessage()));
+    }
+
     @ExceptionHandler(EndpointNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleEndpointNotFound(EndpointNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
