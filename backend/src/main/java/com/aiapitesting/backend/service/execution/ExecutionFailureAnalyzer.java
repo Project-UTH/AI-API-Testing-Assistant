@@ -81,6 +81,13 @@ public class ExecutionFailureAnalyzer {
         List<TestResult> changed = new ArrayList<>();
 
         for (TestResult result : failed) {
+            List<String> robustnessEvidence = probeEvidence(result, HttpRobustnessProbe.KIND);
+            if (!robustnessEvidence.isEmpty()) {
+                result.setFailureCause(FailureCause.HTTP_ROBUSTNESS);
+                result.setFailureEvidence(writeEvidence(robustnessEvidence));
+                changed.add(result);
+                continue;
+            }
             // Probe mass-assignment đã bị phát hiện (17b-2): đây là phát hiện bảo mật thật, bỏ qua luật phân loại theo mã trạng thái.
             List<String> probeEvidence = massAssignmentEvidence(result);
             if (!probeEvidence.isEmpty()) {
@@ -319,15 +326,20 @@ public class ExecutionFailureAnalyzer {
     }
 
     private List<String> massAssignmentEvidence(TestResult result) {
+        return probeEvidence(result, MassAssignmentProbe.KIND);
+    }
+
+    /** Bằng chứng (mô tả, không có giá trị) của probe loại {@code kind} mà lần chạy này đã phát hiện; rỗng nếu không phải probe đó. */
+    private List<String> probeEvidence(TestResult result, String kind) {
         String json = result.getSecurityFindingsJson();
-        if (json == null || !MassAssignmentProbe.KIND.equals(result.getTestCase().getProbeKind()) || !json.contains(MassAssignmentProbe.KIND)) {
+        if (json == null || !kind.equals(result.getTestCase().getProbeKind()) || !json.contains(kind)) {
             return List.of();
         }
         try {
             List<Map<String, String>> findings = new com.fasterxml.jackson.databind.ObjectMapper().readValue(json,
                     new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {
                     });
-            return findings.stream().filter(f -> f.getOrDefault("rule", "").startsWith(MassAssignmentProbe.KIND))
+            return findings.stream().filter(f -> f.getOrDefault("rule", "").startsWith(kind))
                     .map(f -> f.get("detail")).toList();
         } catch (Exception e) {
             return List.of();

@@ -114,6 +114,41 @@ class CoverageGapFillServiceTest {
     }
 
     @Test
+    void fill_owaspScope_addsMalformedJsonAndWrongContentTypeProbes_once() {
+        Endpoint endpoint = endpoint("/users", "POST", false, EMAIL_SCHEMA);
+        endpoint.setScopeOwasp(true);
+        TestCase positive = testCase(endpoint, "Positive - hop le", 201, "{\"email\":\"an@gmail.com\"}");
+        positive.setRequestHeaders("{\"X-Trace\":\"1\",\"content-type\":\"application/json\"}");
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of(positive));
+
+        coverageGapFillService.fill(projectId, endpoint.getId(), new CoverageFillRequest(null));
+
+        List<TestCase> robust = savedCases().stream().filter(tc -> "HTTP_ROBUSTNESS".equals(tc.getProbeKind())).toList();
+        assertThat(robust).hasSize(2);
+        TestCase malformed = robust.stream().filter(tc -> tc.getName().contains("JSON")).findFirst().orElseThrow();
+        assertThat(malformed.getExpectedStatus()).isEqualTo(400);
+        assertThat(malformed.getRequestBody()).isNotEqualTo(positive.getRequestBody()).doesNotEndWith("}");
+        TestCase wrongType = robust.stream().filter(tc -> tc.getName().contains("Content-Type")).findFirst().orElseThrow();
+        assertThat(wrongType.getExpectedStatus()).isEqualTo(415);
+        assertThat(wrongType.getRequestBody()).isEqualTo(positive.getRequestBody()); // body vẫn hợp lệ, chỉ sai Content-Type
+        assertThat(wrongType.getRequestHeaders()).contains("text/plain").contains("X-Trace").doesNotContain("application/json");
+    }
+
+    @Test
+    void fill_robustnessProbesAlreadyPresent_areNotDuplicated() {
+        Endpoint endpoint = endpoint("/users", "POST", false, EMAIL_SCHEMA);
+        endpoint.setScopeOwasp(true);
+        TestCase positive = testCase(endpoint, "Positive - hop le", 201, "{\"email\":\"an@gmail.com\"}");
+        TestCase existing = testCase(endpoint, "Probe độ bền - JSON cú pháp hỏng", 400, "{\"email\":");
+        existing.setProbeKind("HTTP_ROBUSTNESS");
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of(positive, existing));
+
+        coverageGapFillService.fill(projectId, endpoint.getId(), new CoverageFillRequest(null));
+
+        assertThat(savedCases()).noneMatch(tc -> "HTTP_ROBUSTNESS".equals(tc.getProbeKind()));
+    }
+
+    @Test
     void fill_allMissing_createsOneSystemFilledCasePerItemFromValidBaseline() {
         Endpoint endpoint = endpoint("/users", "POST", false, EMAIL_SCHEMA);
         TestCase positive = testCase(endpoint, "Positive - hop le", 201, "{\"email\":\"an@gmail.com\"}");

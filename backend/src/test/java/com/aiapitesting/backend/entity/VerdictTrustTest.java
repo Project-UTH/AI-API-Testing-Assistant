@@ -12,7 +12,7 @@ class VerdictTrustTest {
 
     private static final Set<FailureCause> CERTAIN_CAUSES = Set.of(
             FailureCause.STABLE_FAILURE, FailureCause.AUTHZ_VIOLATION, FailureCause.MASS_ASSIGNMENT, FailureCause.API_WRONG_STATUS,
-            FailureCause.RULE_VIOLATION_ACCEPTED);
+            FailureCause.RULE_VIOLATION_ACCEPTED, FailureCause.HTTP_ROBUSTNESS);
 
     @ParameterizedTest
     @EnumSource(FailureCause.class)

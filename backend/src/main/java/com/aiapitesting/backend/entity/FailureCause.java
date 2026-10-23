@@ -85,7 +85,12 @@ public enum FailureCause {
      * do người chịu trách nhiệm nên là PHÁT HIỆN thật của API đích (trừ khi luật sai - người duyệt tự xét), KHÔNG bị loại khỏi Bug Report.
      * Thêm vào CUỐI enum.
      */
-    RULE_VIOLATION_ACCEPTED("API nhận dữ liệu vi phạm luật nghiệp vụ", false);
+    RULE_VIOLATION_ACCEPTED("API nhận dữ liệu vi phạm luật nghiệp vụ", false),
+    /**
+     * 17q G4 - test độ bền xử lý request lỗi định dạng (JSON hỏng / sai Content-Type): API trả 5xx hoặc chấp nhận (2xx) thay vì từ chối bằng
+     * 4xx. Là PHÁT HIỆN thật của API đích. Thêm vào CUỐI enum.
+     */
+    HTTP_ROBUSTNESS("API xử lý sai request lỗi định dạng (JSON hỏng / sai Content-Type)", false);
 
     private final String label;
     private final boolean notApiFault;

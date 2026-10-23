@@ -571,6 +571,47 @@ class TestExecutionRunnerTest {
     }
 
     @Test
+    void runInBackground_robustnessProbe_500OnMalformedJsonFailsWithFinding_400Passes_401StaysAFailure() {
+        TestCase serverError = simpleCase();
+        TestCase rejected = simpleCase();
+        TestCase wrongCode = simpleCase();
+        for (TestCase tc : List.of(serverError, rejected, wrongCode)) {
+            tc.setProbeKind(HttpRobustnessProbe.KIND);
+            tc.setProbeFieldsJson(HttpRobustnessProbe.probeJson(HttpRobustnessProbe.Variant.MALFORMED_JSON));
+            tc.setExpectedStatus(400);
+        }
+        when(restAssuredTestRunner.run(any(), eq(serverError), any())).thenReturn(new RestAssuredTestRunner.RunResult(500, "{\"error\":\"x\"}"));
+        when(restAssuredTestRunner.run(any(), eq(rejected), any())).thenReturn(new RestAssuredTestRunner.RunResult(400, "{\"error\":\"bad json\"}"));
+        when(restAssuredTestRunner.run(any(), eq(wrongCode), any())).thenReturn(new RestAssuredTestRunner.RunResult(401, "{}"));
+
+        runner.runInBackground(execution, List.of(serverError, rejected, wrongCode), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, org.mockito.Mockito.times(3)).save(captor.capture());
+        TestResult r500 = captor.getAllValues().stream().filter(r -> r.getTestCase() == serverError).findFirst().orElseThrow();
+        TestResult r400 = captor.getAllValues().stream().filter(r -> r.getTestCase() == rejected).findFirst().orElseThrow();
+        TestResult r401 = captor.getAllValues().stream().filter(r -> r.getTestCase() == wrongCode).findFirst().orElseThrow();
+        assertThat(r500.getStatus()).isEqualTo(TestResultStatus.FAILED);
+        assertThat(r500.getSecurityFindingsJson()).contains(HttpRobustnessProbe.RULE_SERVER_ERROR);
+        assertThat(r400.getStatus()).isEqualTo(TestResultStatus.PASSED);
+        assertThat(r401.getStatus()).isEqualTo(TestResultStatus.FAILED); // không sửa kỳ vọng cho khớp 401
+    }
+
+    @Test
+    void runInBackground_stackTraceInA500Response_isRecordedAsAnErrorLeakFinding_onAnyStatus() {
+        TestCase testCase = simpleCase();
+        testCase.setExpectedStatus(400);
+        when(restAssuredTestRunner.run(any(), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(500,
+                "{\"trace\":\"java.lang.NullPointerException\\n\\tat com.shop.A.b(A.java:10)\"}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getSecurityFindingsJson()).contains("ERROR_LEAK_STACKTRACE");
+    }
+
+    @Test
     void runInBackground_targetUnreachable_recordsErrorKindByExceptionTypeNotMessage() {
         TestCase testCase = simpleCase();
         // Thông báo cố tình KHÔNG chứa chữ "timeout"/"refused" - phải phân loại theo loại exception.

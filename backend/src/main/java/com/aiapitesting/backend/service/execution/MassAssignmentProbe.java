@@ -52,7 +52,11 @@ public final class MassAssignmentProbe {
         INCONCLUSIVE
     }
 
-    public record Outcome(Verdict verdict, List<Field> reflected, String detail) {
+    /** @param finding phát hiện sẵn cho probe loại khác (HTTP_ROBUSTNESS); null với mass assignment (runner tự dựng từ reflected). */
+    public record Outcome(Verdict verdict, List<Field> reflected, String detail, SensitiveDataScanner.Finding finding) {
+        public Outcome(Verdict verdict, List<Field> reflected, String detail) {
+            this(verdict, reflected, detail, null);
+        }
     }
 
     private record Candidate(String camelName, ValueType type) {

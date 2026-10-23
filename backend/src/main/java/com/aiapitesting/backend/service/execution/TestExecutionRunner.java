@@ -303,7 +303,7 @@ public class TestExecutionRunner {
             SensitiveDataScanner.Scan scan = scanSensitive(testCase, result.responseBody());
             Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
                     statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null,
-                    securityFindingsJsonOf(result.statusCode(), scan, probeFindingsOf(probe)),
+                    securityFindingsJsonOf(result.statusCode(), scan, probeFindingsOf(probe), SensitiveDataScanner.scanErrorLeak(result.responseBody())),
                     specDeviationsJsonOf(testCase, result.statusCode()),
                     rejectionExcerptOf(result.statusCode(), scan.maskedBody() != null ? scan.maskedBody() : result.responseBody()));
 
@@ -355,9 +355,12 @@ public class TestExecutionRunner {
     }
 
     /** Cảnh báo quét dữ liệu nhạy cảm chỉ lấy từ response 2xx; phát hiện của probe (17b-2) luôn được ghi. CHỈ có đường dẫn/quy tắc/mô tả, không có giá trị. */
-    private String securityFindingsJsonOf(Integer statusCode, SensitiveDataScanner.Scan scan, List<SensitiveDataScanner.Finding> probeFindings) {
+    private String securityFindingsJsonOf(Integer statusCode, SensitiveDataScanner.Scan scan, List<SensitiveDataScanner.Finding> probeFindings,
+                                         List<SensitiveDataScanner.Finding> errorLeaks) {
         try {
+            // Rò rỉ chi tiết lỗi (stack trace/SQL/tên lớp) hay nằm ở response 4xx/5xx nên được ghi ở MỌI mã trạng thái.
             List<SensitiveDataScanner.Finding> all = new ArrayList<>(probeFindings);
+            all.addAll(errorLeaks);
             if (statusCode != null && statusCode >= 200 && statusCode <= 299) {
                 all.addAll(scan.findings());
             }
@@ -369,6 +372,10 @@ public class TestExecutionRunner {
 
     /** Chấm probe mass-assignment; null nếu test case không phải probe hoặc không đọc được danh sách field đã tiêm. */
     private MassAssignmentProbe.Outcome probeOutcomeOf(TestCase testCase, RestAssuredTestRunner.RunResult result) {
+        if (HttpRobustnessProbe.KIND.equals(testCase.getProbeKind())) {
+            HttpRobustnessProbe.Variant variant = HttpRobustnessProbe.variantOf(testCase.getProbeFieldsJson());
+            return variant == null ? null : HttpRobustnessProbe.evaluate(variant, result.statusCode());
+        }
         if (!MassAssignmentProbe.KIND.equals(testCase.getProbeKind()) || testCase.getProbeFieldsJson() == null) {
             return null;
         }
@@ -386,6 +393,9 @@ public class TestExecutionRunner {
     private List<SensitiveDataScanner.Finding> probeFindingsOf(MassAssignmentProbe.Outcome probe) {
         if (probe == null || probe.verdict() != MassAssignmentProbe.Verdict.FAIL) {
             return List.of();
+        }
+        if (probe.finding() != null) {
+            return List.of(probe.finding());
         }
         if (probe.reflected().isEmpty()) {
             return List.of(new SensitiveDataScanner.Finding("(request)", MassAssignmentProbe.RULE_SERVER_ERROR,

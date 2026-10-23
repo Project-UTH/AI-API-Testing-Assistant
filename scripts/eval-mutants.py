@@ -323,10 +323,12 @@ def evaluate(system, target, pid, tests, mutants, label, log, evidence_ids=None)
         target.enable([m["id"]])
         results = system.run(pid, clean_pass)
         caught, suspect, findings = [], [], []
+        leak_hits = 0
         for r in results:
             if r["testCaseId"] in noise or r["testCaseId"] not in scope:
                 continue
             if r.get("securityFindings") and r["testCaseId"] not in clean_findings:
+                leak_hits += sum(1 for f in r["securityFindings"] if is_leak_finding(f))
                 findings.append({"test": names.get(r["testCaseId"], r["testCaseId"]), "status": r["status"],
                                  "findings": json.dumps(r["securityFindings"], ensure_ascii=False)[:300]})
             c = classify(r)
@@ -342,13 +344,23 @@ def evaluate(system, target, pid, tests, mutants, label, log, evidence_ids=None)
                            "heldout": bool(m.get("heldout")),
                            "outcome": outcome, "caughtBy": caught[:5], "caughtCount": len(caught),
                            "suspectBy": suspect[:5], "suspectCount": len(suspect),
-                           "securityFindings": findings[:5], "securityFindingsCount": len(findings)})
+                           "securityFindings": findings[:5], "securityFindingsCount": len(findings),
+                           "leakFindingsCount": leak_hits})
         log(f"    {m['id']} {m['category']:<16} -> {outcome:<7} ({len(caught)} bắt, {len(suspect)} nghi ngờ)")
     target.reset()
     return {"label": label, "tests": len(scope), "contextTests": len(ids) - len(scope), "cleanPass": scope_pass,
             "falseFailures": len(scope) - scope_pass,
             "falseFailureCauses": false_causes, "falseFailureDetails": false_details,
             "noiseTests": [names.get(i, i) for i in noise], "mutants": per_mutant}
+
+
+LEAK_RULE_PREFIXES = ("VALUE_", "FIELD_", "ERROR_LEAK")
+
+
+def is_leak_finding(finding):
+    """17q G4: rò rỉ dữ liệu/chi tiết lỗi (cột riêng) khác với phát hiện của probe (mass assignment, độ bền request lỗi định dạng)."""
+    rule = finding.get("rule", "") if isinstance(finding, dict) else str(finding)
+    return rule.startswith(LEAK_RULE_PREFIXES)
 
 
 def reuse_project(args, config, run_no, target, system, mutants, log):
@@ -486,8 +498,10 @@ def summarize(runs, config):
             counts.append((sum(1 for m in sel if m["outcome"] == "caught"), len(sel)))
         flagged = [sum(1 for m in pr["mutants"] if in_scope(m, scope) and m["outcome"] == "flagged")
                    for pr in per_run]
+        # cột riêng: số mutant có CẢNH BÁO RÒ RỈ (dữ liệu nhạy cảm/stack trace/SQL) bất kể có bị bắt bởi test hay không
+        leaks = [sum(1 for m in pr["mutants"] if in_scope(m, scope) and m.get("leakFindingsCount", 0) > 0) for pr in per_run]
         table[scope] = {"caughtStrictMean": statistics.mean(strict), "caughtStrictStdev": statistics.pstdev(strict),
-                        "caughtOrSuspectMean": statistics.mean(lenient), "perRun": counts, "flaggedOnlyPerRun": flagged}
+                        "caughtOrSuspectMean": statistics.mean(lenient), "perRun": counts, "flaggedOnlyPerRun": flagged, "leakWarningPerRun": leaks}
     ff = [pr["falseFailures"] / pr["tests"] for pr in per_run if pr["tests"]]
     return {"runs": len(per_run), "detection": table,
             "falseFailureRate": {"mean": statistics.mean(ff) if ff else None, "stdev": statistics.pstdev(ff) if ff else None},
@@ -501,7 +515,8 @@ def print_summary(config, s, runs):
         sd = f" ± {v['caughtStrictStdev'] * 100:.0f}" if s["runs"] > 1 else ""
         per = " ".join(f"{c}/{t}" for c, t in v["perRun"])
         extra = f"  (+{sum(v['flaggedOnlyPerRun']) / s['runs']:.0f} chỉ có cảnh báo bảo mật)" if any(v["flaggedOnlyPerRun"]) else ""
-        print(f"{scope:<18}{v['caughtStrictMean'] * 100:>13.0f}%{sd:<5}{v['caughtOrSuspectMean'] * 100:>10.0f}%        {per}{extra}")
+        leak = f"  [rò rỉ dữ liệu: {sum(v['leakWarningPerRun']) / s['runs']:.0f} mutant có cảnh báo]" if any(v.get("leakWarningPerRun", [])) else ""
+        print(f"{scope:<18}{v['caughtStrictMean'] * 100:>13.0f}%{sd:<5}{v['caughtOrSuspectMean'] * 100:>10.0f}%        {per}{extra}{leak}")
     ff = s["falseFailureRate"]
     if ff["mean"] is not None:
         print(f"Fail giả trên bản chuẩn: {ff['mean'] * 100:.1f}%")

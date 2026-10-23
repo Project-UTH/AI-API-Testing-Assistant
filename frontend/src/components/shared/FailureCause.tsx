@@ -19,6 +19,7 @@ const CAUSE_STYLES: Record<FailureCauseCode, string> = {
   AUTHZ_VIOLATION: "bg-destructive/10 text-destructive",
   TEST_DATA_SUSPECT: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   MASS_ASSIGNMENT: "bg-destructive/10 text-destructive",
+  HTTP_ROBUSTNESS: "bg-destructive/10 text-destructive",
   TOKEN_FORBIDDEN: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   API_WRONG_STATUS: "bg-destructive/10 text-destructive",
   RULE_VIOLATION_ACCEPTED: "bg-destructive/10 text-destructive",
@@ -46,6 +47,8 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
     "API từ chối đầu vào (400/422) và phản hồi nói dữ liệu không hợp lệ (vd ngày quá khứ, giá trị không có trong danh mục). Ưu tiên Sửa test case: đổi dữ liệu thành giá trị hợp lệ rồi chạy lại. Chỉ tạo Bug Report nếu đã chắc dữ liệu hợp lệ mà API vẫn từ chối.",
   MASS_ASSIGNMENT:
     "Phát hiện bảo mật: API nhận field không khai báo trong schema (giá trị đánh dấu xuất hiện lại trong phản hồi) hoặc lỗi 5xx khi nhận chúng. Kiểm tra whitelist/DTO ở backend, rồi xoá dữ liệu probe đã ghi trên hệ thống đích. Đây là lỗ hổng, không phải lỗi test.",
+  HTTP_ROBUSTNESS:
+    "Phát hiện thật của API đích: gửi JSON cú pháp hỏng hoặc sai Content-Type mà API trả lỗi máy chủ (5xx) hoặc chấp nhận thay vì từ chối bằng 4xx (400/415/422). Nên tạo Bug Report; không sửa kỳ vọng để test Pass.",
   API_WRONG_STATUS:
     "API trả 401 cho request đầu vào sai (kỳ vọng 400/422) dù token đã được API chấp nhận ở test khác. Nhiều khả năng đây là lỗi của API đích (xử lý lỗi đầu vào sai mã): nên tạo Bug Report. Không sửa kỳ vọng cho khớp 401.",
   RULE_VIOLATION_ACCEPTED:

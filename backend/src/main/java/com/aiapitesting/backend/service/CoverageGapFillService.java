@@ -5,6 +5,7 @@ import com.aiapitesting.backend.dto.request.CoverageFillRequest;
 import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageFillResponse;
 import com.aiapitesting.backend.dto.response.CoverageScope;
+import com.aiapitesting.backend.service.execution.HttpRobustnessProbe;
 import com.aiapitesting.backend.service.execution.MassAssignmentProbe;
 import com.aiapitesting.backend.entity.AuthProfile;
 import com.aiapitesting.backend.entity.AuthzExpectation;
@@ -114,7 +115,11 @@ public class CoverageGapFillService {
                 && spec.hasBody() && spec.bodyIsJson()
                 && (requested == null || requested.contains(EndpointCoverageService.OWASP_KEY))
                 && candidates.stream().noneMatch(c -> MassAssignmentProbe.KIND.equals(c.entity().getProbeKind()));
-        if (missing.isEmpty() && missingAuthz.isEmpty() && !needProbe) {
+        boolean needRobust = Boolean.TRUE.equals(endpoint.getScopeOwasp()) && MassAssignmentFields.isWriteMethod(endpoint.getMethod())
+                && spec.hasBody() && spec.bodyIsJson()
+                && (requested == null || requested.contains(EndpointCoverageService.OWASP_KEY))
+                && candidates.stream().noneMatch(c -> HttpRobustnessProbe.KIND.equals(c.entity().getProbeKind()));
+        if (missing.isEmpty() && missingAuthz.isEmpty() && !needProbe && !needRobust) {
             return new CoverageFillResponse(0, List.of(), List.of(), null, 0);
         }
 
@@ -180,6 +185,13 @@ public class CoverageGapFillService {
                 } else {
                     pending.add(new Pending(probe, baseline.entity()));
                 }
+            }
+        }
+
+        if (needRobust && baseline != null) {
+            // 17q G4: 2 test tất định về request lỗi định dạng (cần body hợp lệ làm gốc); không có gốc thì bỏ qua, mục mass assignment đã báo thiếu.
+            for (HttpRobustnessProbe.Variant variant : HttpRobustnessProbe.Variant.values()) {
+                pending.add(new Pending(toRobustnessEntity(endpoint, baseline.entity(), variant), baseline.entity()));
             }
         }
 
@@ -370,6 +382,46 @@ public class CoverageGapFillService {
                 .authProfileId(base.getAuthProfileId())
                 .probeKind(MassAssignmentProbe.KIND)
                 .probeFieldsJson(writeJson(fields))
+                .build();
+    }
+
+    /** Probe độ bền (17q G4): copy case gốc hợp lệ, làm hỏng body JSON hoặc gửi sai Content-Type. Kỳ vọng 400/415; runner chấm riêng theo probeKind. */
+    private TestCase toRobustnessEntity(Endpoint endpoint, TestCase base, HttpRobustnessProbe.Variant variant) {
+        String body = base.getRequestBody();
+        String headers = base.getRequestHeaders();
+        if (variant == HttpRobustnessProbe.Variant.MALFORMED_JSON) {
+            body = HttpRobustnessProbe.malformedBody(body);
+        } else {
+            Map<String, String> map = new java.util.LinkedHashMap<>();
+            try {
+                if (headers != null && !headers.isBlank()) {
+                    map.putAll(objectMapper.readValue(headers, new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {
+                    }));
+                }
+            } catch (Exception ignored) {
+                // header gốc hỏng: chỉ đặt Content-Type
+            }
+            map.keySet().removeIf(k -> k.equalsIgnoreCase("Content-Type"));
+            map.put("Content-Type", "text/plain");
+            headers = writeJson(map);
+        }
+        return TestCase.builder()
+                .endpoint(endpoint)
+                .name("Probe độ bền - " + variant.label())
+                .description("Hệ thống tự bổ sung (copy case gốc '" + base.getName() + "', " + variant.label() + "). Đạt = API từ chối bằng 4xx; Fail = lỗi 5xx hoặc chấp nhận.")
+                .requestHeaders(headers)
+                .requestBody(body)
+                .rationale("API phải từ chối request lỗi định dạng bằng 4xx, không được lỗi máy chủ hay chấp nhận.")
+                .expectedStatus(variant.expectedStatus())
+                .resolvedPath(base.getResolvedPath())
+                .pathParamFallbacks(base.getPathParamFallbacks())
+                .source(TestCaseSource.MANUAL)
+                .generationOrigin(TestCaseGenerationOrigin.SYSTEM_FILLED)
+                .checklistItem(truncate("HTTP robustness: " + variant.label()))
+                .authOverride(base.getAuthOverride() == null ? TestCaseAuthOverride.DEFAULT : base.getAuthOverride())
+                .authProfileId(base.getAuthProfileId())
+                .probeKind(HttpRobustnessProbe.KIND)
+                .probeFieldsJson(HttpRobustnessProbe.probeJson(variant))
                 .build();
     }
 
