@@ -48,6 +48,7 @@ public class ProjectService {
     private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
     private final com.aiapitesting.backend.repository.BusinessRuleRepository businessRuleRepository;
+    private final com.aiapitesting.backend.repository.RequirementDocumentRepository requirementDocumentRepository;
     private final com.aiapitesting.backend.repository.GenerationJobRepository generationJobRepository;
     private final com.aiapitesting.backend.repository.GenerationJobStepRepository generationJobStepRepository;
     private final BugReportRepository bugReportRepository;
@@ -144,6 +145,7 @@ public class ProjectService {
         testCaseRepository.deleteAllByEndpointProject(project);
         testGenerationEventRepository.detachFromEndpointsOfProject(project); // giữ sổ token: xoá project không được đặt lại quota ngày
         businessRuleRepository.deleteAllByProject(project);
+        requirementDocumentRepository.deleteAllByProject(project);
         endpointRoleRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         authProfileRepository.deleteAllByProject(project);
