@@ -13,6 +13,11 @@ import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
 import com.aiapitesting.backend.dto.response.CoverageRunStatus;
 import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
 import com.aiapitesting.backend.dto.response.EndpointTestState;
+import com.aiapitesting.backend.dto.response.RuleCoverage;
+import com.aiapitesting.backend.entity.BusinessRule;
+import com.aiapitesting.backend.entity.RuleSource;
+import com.aiapitesting.backend.entity.RuleStatus;
+import com.aiapitesting.backend.repository.BusinessRuleRepository;
 import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
 import com.aiapitesting.backend.entity.AuthProfile;
 import com.aiapitesting.backend.entity.AuthzExpectation;
@@ -84,6 +89,7 @@ public class EndpointCoverageService {
     private final TestCaseChecklistPlanner testCaseChecklistPlanner;
     private final AuthProfileRepository authProfileRepository;
     private final EndpointRoleRepository endpointRoleRepository;
+    private final BusinessRuleRepository businessRuleRepository;
     // FAIL_ON_UNKNOWN_PROPERTIES tắt vì StoredSchema chỉ khai báo đúng field cần dùng (parameters/
     // requestBody/responseStatusCodes) - buildSchemaJson() (EndpointImportService) còn ghi thêm
     // "summary" mà parser này không cần đọc lại. Thiếu dòng này gây UnrecognizedPropertyException
@@ -138,7 +144,7 @@ public class EndpointCoverageService {
             CoverageEndpointRow row = new CoverageEndpointRow(endpoint.getId(), endpoint.getPath(), endpoint.getMethod(),
                     light.requiresAuth(), light.testCaseCount(), c.relevant(), c.covered(), c.executed(), c.failing(), c.missing(),
                     light.coveragePercent(), light.executedPercent(),
-                    light.testState(), c.certain(), c.doubtful(), c.specGap(), light.baselineVerified());
+                    light.testState(), c.certain(), c.doubtful(), c.specGap(), light.baselineVerified(), light.rules());
             return new LightEntry(endpoint, light, row);
         }).toList();
     }
@@ -165,7 +171,10 @@ public class EndpointCoverageService {
                 generated.stream().mapToLong(CoverageEndpointRow::coveredCount).sum(),
                 generated.stream().mapToLong(CoverageEndpointRow::executedCount).sum(),
                 entries.stream().mapToLong(e -> e.row().certainCount()).sum(),
-                entries.stream().mapToLong(e -> e.row().doubtfulCount()).sum());
+                entries.stream().mapToLong(e -> e.row().doubtfulCount()).sum(),
+                entries.stream().filter(e -> e.row().rules() != null).mapToLong(e -> e.row().rules().approved()).sum(),
+                entries.stream().filter(e -> e.row().rules() != null).mapToLong(e -> e.row().rules().approvedWithTests()).sum(),
+                entries.stream().filter(e -> e.row().rules() != null).mapToLong(e -> e.row().rules().proposed()).sum());
     }
 
     /**
@@ -327,8 +336,13 @@ public class EndpointCoverageService {
         Map<UUID, AuthProfile> profilesById = new HashMap<>();
         authProfileRepository.findAllByProjectOrderByCreatedAtAsc(project).forEach(p -> profilesById.put(p.getId(), p));
 
+        Map<String, List<BusinessRule>> rulesByKey = businessRuleRepository.findAllByProject(project).stream()
+                .collect(Collectors.groupingBy(BusinessRule::getEndpointKey));
+        Set<UUID> ruleIdsWithTests = testCasesByEndpointId.values().stream().flatMap(List::stream)
+                .map(TestCase::getRuleId).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
         return new CoverageContext(testCasesByEndpointId, dependenciesByConsumerEndpointId, latestResultByTestCaseId,
-                postEndpointByPath, latestNotApiFaultIds, rolesByEndpointId, profilesById, latestRowByTestCaseId);
+                postEndpointByPath, latestNotApiFaultIds, rolesByEndpointId, profilesById, latestRowByTestCaseId,
+                rulesByKey, ruleIdsWithTests);
     }
 
     private record CoverageContext(
@@ -342,7 +356,10 @@ public class EndpointCoverageService {
             Map<UUID, List<EndpointRole>> rolesByEndpointId,
             Map<UUID, AuthProfile> profilesById,
             /** 17q G2 - lượt chạy mới nhất đầy đủ (nhãn nguyên nhân, không ổn định, đoạn trích lý do từ chối) để tính độ tin kết luận. */
-            Map<UUID, TestResultRepository.TestCaseLatestResult> latestRowByTestCaseId
+            Map<UUID, TestResultRepository.TestCaseLatestResult> latestRowByTestCaseId,
+            /** 17q G3 - luật nghiệp vụ của project theo endpointKey ("POST /jobs") + id các luật đã có test (từ test của project, không thêm truy vấn). */
+            Map<String, List<BusinessRule>> rulesByEndpointKey,
+            Set<UUID> ruleIdsWithTests
     ) {
     }
 
@@ -424,7 +441,23 @@ public class EndpointCoverageService {
                 round1(coveragePercent), round1(executedPercent), facts.parsed(), scope,
                 endpoint.effectiveRequiresAuth(), endpoint.getRequiresAuthManual() != null ? "MANUAL" : "SPEC", dimensions,
                 testStateOf(testCases, context, underspecifiedTestIds), counts.certain(), counts.doubtful(), counts.specGap(),
-                baselineVerified(testCases));
+                baselineVerified(testCases), ruleCoverageOf(endpoint, context));
+    }
+
+    /** 17q G3 - lớp nghiệp vụ tách khỏi lớp spec: "x/y luật đã duyệt có test". Null khi endpoint chưa có luật (frontend ghi "Chưa có luật", không 0%). */
+    private RuleCoverage ruleCoverageOf(Endpoint endpoint, CoverageContext context) {
+        String key = endpoint.getMethod().toUpperCase(java.util.Locale.ROOT) + " " + endpoint.getPath();
+        List<BusinessRule> rules = context.rulesByEndpointKey().getOrDefault(key, List.of());
+        List<BusinessRule> live = rules.stream().filter(r -> r.getStatus() != RuleStatus.REJECTED && r.getStatus() != RuleStatus.STALE).toList();
+        if (live.isEmpty()) {
+            return null;
+        }
+        List<BusinessRule> approved = live.stream().filter(r -> r.getStatus() == RuleStatus.APPROVED).toList();
+        return new RuleCoverage(
+                approved.size(),
+                (int) approved.stream().filter(r -> context.ruleIdsWithTests().contains(r.getId())).count(),
+                (int) live.stream().filter(r -> r.getStatus() == RuleStatus.PROPOSED || r.getStatus() == RuleStatus.CONFLICT).count(),
+                (int) approved.stream().filter(r -> r.getSource() == RuleSource.INFERRED).count());
     }
 
     // ---- 17q G2 - trạng thái kiểm thử của endpoint + độ tin kết luận ----

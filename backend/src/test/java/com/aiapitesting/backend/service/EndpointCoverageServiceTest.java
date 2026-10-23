@@ -71,6 +71,9 @@ class EndpointCoverageServiceTest {
     @Mock
     private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
 
+    @Mock
+    private com.aiapitesting.backend.repository.BusinessRuleRepository businessRuleRepository;
+
     // Module 15j - bản thật (không mock): coverage chấm bằng CHÍNH checklist của planner, mock thì test vô nghĩa.
     @Spy
     private TestCaseChecklistPlanner testCaseChecklistPlanner = new TestCaseChecklistPlanner();
@@ -1110,6 +1113,39 @@ class EndpointCoverageServiceTest {
         assertThat(zeroRow.status()).isEqualTo(CoverageDimensionStatus.COVERED);
         assertThat(zeroRow.verdictTrust()).isEqualTo(VerdictTrust.CERTAIN);
         assertThat(result.specGapCount()).isZero();
+    }
+
+    @Test
+    void ruleCoverage_isASeparateLayer_approvedWithTests_proposedAndAssumed_andNullWhenNoRules() {
+        Endpoint withRules = endpoint("/jobs", "POST", false, emailRequiredSchema(List.of("201")));
+        Endpoint noRules = endpoint("/other", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase positive = testCase(withRules, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        TestCase ruleTest = testCase(withRules, "Nghiệp vụ", 400, "{}");
+        ruleTest.setSource(TestCaseSource.BUSINESS);
+        ruleTest.setGenerationOrigin(TestCaseGenerationOrigin.RULE_TEMPLATE);
+        var tested = com.aiapitesting.backend.entity.BusinessRule.builder().id(UUID.randomUUID()).endpointKey("POST /jobs")
+                .status(com.aiapitesting.backend.entity.RuleStatus.APPROVED).source(com.aiapitesting.backend.entity.RuleSource.USER).build();
+        ruleTest.setRuleId(tested.getId());
+        var untested = com.aiapitesting.backend.entity.BusinessRule.builder().id(UUID.randomUUID()).endpointKey("POST /jobs")
+                .status(com.aiapitesting.backend.entity.RuleStatus.APPROVED).source(com.aiapitesting.backend.entity.RuleSource.INFERRED).build();
+        var pending = com.aiapitesting.backend.entity.BusinessRule.builder().id(UUID.randomUUID()).endpointKey("POST /jobs")
+                .status(com.aiapitesting.backend.entity.RuleStatus.PROPOSED).source(com.aiapitesting.backend.entity.RuleSource.SYSTEM_DETECTED).build();
+        var rejected = com.aiapitesting.backend.entity.BusinessRule.builder().id(UUID.randomUUID()).endpointKey("POST /jobs")
+                .status(com.aiapitesting.backend.entity.RuleStatus.REJECTED).source(com.aiapitesting.backend.entity.RuleSource.USER).build();
+        stubProject(List.of(withRules, noRules), List.of(positive, ruleTest), List.of());
+        when(businessRuleRepository.findAllByProject(project)).thenReturn(List.of(tested, untested, pending, rejected));
+
+        var summary = endpointCoverageService.getCoverageSummary(projectId);
+
+        var rules = summary.endpoints().get(0).rules();
+        assertThat(rules.approved()).isEqualTo(2);
+        assertThat(rules.approvedWithTests()).isEqualTo(1);
+        assertThat(rules.proposed()).isEqualTo(1);
+        assertThat(rules.assumed()).isEqualTo(1);
+        assertThat(summary.endpoints().get(1).rules()).isNull();
+        assertThat(summary.overview().ruleApprovedCount()).isEqualTo(2);
+        // test từ luật KHÔNG tính vào % EP/BVA: số mục spec không đổi vì có thêm test nghiệp vụ
+        assertThat(summary.endpoints().get(0).testState()).isNotEqualTo(EndpointTestState.NOT_GENERATED);
     }
 
     @Test

@@ -93,8 +93,11 @@ public class RuleTestService {
                 }
                 continue;
             }
-            Endpoint endpoint = rule.getEndpointId() == null ? null : endpoints.computeIfAbsent(rule.getEndpointId(),
-                    id -> endpointRepository.findByIdAndProject(id, project).orElse(null));
+            // Endpoint theo id, không có thì theo "METHOD path" (import lại đổi id endpoint nhưng luật vẫn sống).
+            Endpoint endpoint = ruleService.resolveEndpoint(project, rule).orElse(null);
+            if (endpoint != null) {
+                endpoints.put(endpoint.getId(), endpoint);
+            }
             if (endpoint == null) {
                 notGenerated.add(new NotGenerated(rule.getId(), sentence, "Endpoint của luật không còn trong project"));
                 continue;

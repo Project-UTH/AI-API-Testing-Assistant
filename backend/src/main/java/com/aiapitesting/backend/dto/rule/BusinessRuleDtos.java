@@ -60,4 +60,11 @@ public final class BusinessRuleDtos {
 
     public record DetectResponse(int proposedCount, int skippedExistingCount) {
     }
+
+    /** Field của endpoint (từ spec, cùng nguồn với checklist) để chọn khi nhập luật; ref = chuỗi dùng trong tham số luật. */
+    public record EndpointFieldResponse(
+            String ref, String name, String location, String type, boolean required, boolean nested, boolean numeric,
+            List<String> enumValues, java.math.BigDecimal minimum, java.math.BigDecimal maximum
+    ) {
+    }
 }

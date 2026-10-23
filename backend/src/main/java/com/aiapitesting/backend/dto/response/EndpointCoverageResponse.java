@@ -34,6 +34,8 @@ public record EndpointCoverageResponse(
         long certainCount,
         long doubtfulCount,
         long specGapCount,
-        boolean baselineVerified
+        boolean baselineVerified,
+        /** 17q G3 - lớp nghiệp vụ (luật đã duyệt có test); null = endpoint chưa có luật nào. */
+        RuleCoverage rules
 ) {
 }

@@ -3,6 +3,8 @@ package com.aiapitesting.backend.service.rule;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveRequest;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.CreateRequest;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.DetectResponse;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.EndpointFieldResponse;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.RejectRequest;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.RuleResponse;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.UpdateRequest;
@@ -58,10 +60,11 @@ public class BusinessRuleService {
 
     // ---- đọc ----
 
-    @Transactional(readOnly = true)
+    @Transactional
     public PageResponse<RuleResponse> list(UUID projectId, Integer page, Integer size, UUID endpointId, RuleStatus status, RuleSource source,
                                            RuleTemplate template) {
         Project project = projectService.getOwnedProject(projectId);
+        relink(project);
         int p = page == null || page < 0 ? 0 : page;
         int s = size == null || size < 1 ? 50 : Math.min(size, MAX_PAGE_SIZE);
         var result = ruleRepository.findAll(BusinessRuleRepository.filter(project, null, endpointId, status, source, template),
@@ -77,6 +80,91 @@ public class BusinessRuleService {
     @Transactional(readOnly = true)
     public RuleResponse get(UUID projectId, UUID ruleId) {
         return toResponse(owned(projectService.getOwnedProject(projectId), ruleId));
+    }
+
+    // ---- field của endpoint + phát hiện tự động ----
+
+    /** Field của endpoint để chọn trong form nhập luật (cùng nguồn với checklist: Spec của planner). */
+    @Transactional(readOnly = true)
+    public List<EndpointFieldResponse> fieldsOf(UUID projectId, UUID endpointId) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
+                .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
+        return planner.readSpec(endpoint).rules().stream()
+                .map(r -> new EndpointFieldResponse(
+                        r.location() == TestCaseChecklistPlanner.ParamLocation.BODY ? r.name()
+                                : r.location().name().toLowerCase(Locale.ROOT) + ":" + r.name(),
+                        r.name(), r.location().name(), r.type(), r.required(), r.nested(), r.numeric(), r.enumValues(), r.minimum(), r.maximum()))
+                .toList();
+    }
+
+    /**
+     * Hệ thống tự đề xuất luật từ spec (0 token): mỗi cặp field "dưới/trên" (salaryMin/salaryMax...) thành luật COMPARE "dưới ≤ trên" ở trạng
+     * thái chờ duyệt, nguồn SYSTEM_DETECTED. Chạy lại không tạo trùng (fingerprint duy nhất), luật đã bị loại không bị đề xuất lại.
+     */
+    @Transactional
+    public DetectResponse detect(UUID projectId) {
+        Project project = projectService.getOwnedProject(projectId);
+        int proposed = 0;
+        int skipped = 0;
+        for (Endpoint endpoint : endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)) {
+            for (String[] pair : planner.pairedBounds(planner.readSpec(endpoint))) {
+                RuleParams params = new RuleParams(pair[0], "LTE", pair[1], null, null, null, null, null, null, null, null, null, null, null);
+                BusinessRule rule;
+                try {
+                    rule = build(project, endpoint, RuleTemplate.COMPARE_FIELDS, params, null,
+                            "Hệ thống thấy cặp field '" + pair[0] + "' / '" + pair[1] + "' - thường 'dưới' không được lớn hơn 'trên'", RuleSource.SYSTEM_DETECTED);
+                } catch (BusinessRuleException e) {
+                    skipped++;
+                    continue;
+                }
+                if (ruleRepository.existsByProjectAndFingerprint(project, rule.getFingerprint())) {
+                    skipped++;
+                    continue;
+                }
+                ruleRepository.save(rule);
+                if (rule.getStatus() == RuleStatus.PROPOSED || rule.getStatus() == RuleStatus.CONFLICT) {
+                    proposed++;
+                }
+            }
+        }
+        return new DetectResponse(proposed, skipped);
+    }
+
+    // ---- nối lại luật với endpoint (luật sống qua import REPLACE) ----
+
+    /** Endpoint hiện tại của luật: theo id, không có thì theo endpointKey (METHOD path) - và cập nhật lại endpointId nếu đổi. */
+    java.util.Optional<Endpoint> resolveEndpoint(Project project, BusinessRule rule) {
+        if (rule.getEndpointId() != null) {
+            var byId = endpointRepository.findByIdAndProject(rule.getEndpointId(), project);
+            if (byId.isPresent()) {
+                return byId;
+            }
+        }
+        String[] parts = rule.getEndpointKey().split(" ", 2);
+        var byKey = endpointRepository.findByProjectAndPathAndMethod(project, parts.length > 1 ? parts[1] : "", parts[0]);
+        byKey.ifPresent(e -> rule.setEndpointId(e.getId()));
+        return byKey;
+    }
+
+    /** Sau import lại, endpoint đổi id: nối lại luật theo endpointKey; endpoint đã gỡ khỏi spec thì luật thành STALE. */
+    void relink(Project project) {
+        java.util.Set<UUID> liveIds = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project).stream()
+                .map(Endpoint::getId).collect(java.util.stream.Collectors.toSet());
+        for (BusinessRule rule : ruleRepository.findAllByProject(project)) {
+            if (rule.getEndpointId() != null && liveIds.contains(rule.getEndpointId())) {
+                continue;
+            }
+            var found = resolveEndpoint(project, rule);
+            if (found.isEmpty()) {
+                if (rule.getStatus() != RuleStatus.STALE && rule.getStatus() != RuleStatus.REJECTED) {
+                    rule.setStatus(RuleStatus.STALE);
+                    rule.setStatusNote("Endpoint " + rule.getEndpointKey() + " không còn trong spec");
+                }
+                rule.setEndpointId(null);
+            }
+            ruleRepository.save(rule);
+        }
     }
 
     // ---- tạo/sửa ----
@@ -250,14 +338,7 @@ public class BusinessRuleService {
     }
 
     private Endpoint endpointOf(Project project, BusinessRule rule) {
-        if (rule.getEndpointId() != null) {
-            var found = endpointRepository.findByIdAndProject(rule.getEndpointId(), project);
-            if (found.isPresent()) {
-                return found.get();
-            }
-        }
-        String[] parts = rule.getEndpointKey().split(" ", 2);
-        return endpointRepository.findByProjectAndPathAndMethod(project, parts.length > 1 ? parts[1] : "", parts[0])
+        return resolveEndpoint(project, rule)
                 .orElseThrow(() -> BusinessRuleException.stateInvalid("Endpoint của luật không còn trong project (luật lỗi thời)"));
     }
 

@@ -11,6 +11,8 @@ import com.aiapitesting.backend.entity.RuleSource;
 import com.aiapitesting.backend.entity.RuleStatus;
 import com.aiapitesting.backend.entity.RuleTemplate;
 import com.aiapitesting.backend.exception.InvalidRequestException;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.DetectResponse;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.EndpointFieldResponse;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.GenerateTestsRequest;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.GenerateTestsResponse;
 import com.aiapitesting.backend.service.rule.BusinessRuleService;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /** 17q G3 - luật nghiệp vụ theo project (CRUD + duyệt/loại). Controller mỏng: mọi nghiệp vụ ở {@link BusinessRuleService}. */
@@ -87,6 +90,19 @@ public class BusinessRuleController {
     public ResponseEntity<ApiResponse<GenerateTestsResponse>> generateTests(
             @PathVariable UUID projectId, @RequestBody(required = false) GenerateTestsRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(ruleTestService.generate(projectId, request)));
+    }
+
+    /** Hệ thống tự đề xuất luật từ spec (cặp field dưới/trên), 0 token; luật ở trạng thái chờ duyệt. */
+    @PostMapping("/detect")
+    public ResponseEntity<ApiResponse<DetectResponse>> detect(@PathVariable UUID projectId) {
+        return ResponseEntity.ok(ApiResponse.of(businessRuleService.detect(projectId)));
+    }
+
+    /** Field của endpoint (từ spec) để chọn khi nhập luật. */
+    @GetMapping("/endpoint-fields")
+    public ResponseEntity<ApiResponse<List<EndpointFieldResponse>>> endpointFields(
+            @PathVariable UUID projectId, @RequestParam UUID endpointId) {
+        return ResponseEntity.ok(ApiResponse.of(businessRuleService.fieldsOf(projectId, endpointId)));
     }
 
     @DeleteMapping("/{ruleId}")

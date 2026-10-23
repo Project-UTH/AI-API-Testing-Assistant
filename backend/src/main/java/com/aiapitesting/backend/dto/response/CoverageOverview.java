@@ -18,6 +18,8 @@ public record CoverageOverview(
         long relevantCount, long coveredCount, long executedCount,
         int testedEndpoints, java.util.Map<EndpointTestState, Integer> stateCounts,
         long generatedRelevantCount, long generatedCoveredCount, long generatedExecutedCount,
-        long certainCount, long doubtfulCount
+        long certainCount, long doubtfulCount,
+        /** 17q G3 - tổng luật đã duyệt / đã duyệt có test / chờ duyệt của toàn project (lớp nghiệp vụ, tách khỏi lớp spec). */
+        long ruleApprovedCount, long ruleTestedCount, long ruleProposedCount
 ) {
 }

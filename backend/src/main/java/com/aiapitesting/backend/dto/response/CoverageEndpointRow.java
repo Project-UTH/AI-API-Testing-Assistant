@@ -21,6 +21,8 @@ public record CoverageEndpointRow(
         UUID endpointId, String path, String method, boolean requiresAuth, int testCaseCount,
         long relevantCount, long coveredCount, long executedCount, long failingCount, long missingCount,
         double coveragePercent, double executedPercent,
-        EndpointTestState testState, long certainCount, long doubtfulCount, long specGapCount, boolean baselineVerified
+        EndpointTestState testState, long certainCount, long doubtfulCount, long specGapCount, boolean baselineVerified,
+        /** 17q G3 - lớp nghiệp vụ; null = endpoint chưa có luật nào. */
+        RuleCoverage rules
 ) {
 }

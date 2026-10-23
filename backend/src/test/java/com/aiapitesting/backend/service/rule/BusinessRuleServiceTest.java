@@ -191,6 +191,55 @@ class BusinessRuleServiceTest {
     }
 
     @Test
+    void detect_proposesOneCompareRuleForEachMinMaxPair_andRerunCreatesNoDuplicates() {
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+
+        var first = service.detect(project.getId());
+
+        assertThat(first.proposedCount()).isEqualTo(1);
+        org.mockito.ArgumentCaptor<BusinessRule> saved = org.mockito.ArgumentCaptor.forClass(BusinessRule.class);
+        verify(ruleRepository).save(saved.capture());
+        assertThat(saved.getValue().getSource()).isEqualTo(RuleSource.SYSTEM_DETECTED);
+        assertThat(saved.getValue().getStatus()).isEqualTo(RuleStatus.PROPOSED);
+        assertThat(saved.getValue().getParamsJson()).contains("salaryMin").contains("salaryMax").contains("LTE");
+
+        when(ruleRepository.existsByProjectAndFingerprint(any(), any())).thenReturn(true);
+        var second = service.detect(project.getId());
+        assertThat(second.proposedCount()).isZero();
+        assertThat(second.skippedExistingCount()).isEqualTo(1);
+    }
+
+    @Test
+    void fieldsOf_listsSpecFieldsWithRefsForTheForm() {
+        var fields = service.fieldsOf(project.getId(), endpoint.getId());
+        assertThat(fields).extracting(f -> f.ref()).contains("salaryMin", "salaryMax", "years");
+        assertThat(fields).filteredOn(f -> f.ref().equals("years")).singleElement().satisfies(f -> {
+            assertThat(f.numeric()).isTrue();
+            assertThat(f.maximum()).isEqualByComparingTo("50");
+        });
+    }
+
+    @Test
+    void relinkOnList_reconnectsRuleToNewEndpointIdByKey_andMarksRemovedEndpointStale() {
+        BusinessRule moved = BusinessRule.builder().id(UUID.randomUUID()).project(project).endpointKey("POST /jobs").endpointId(UUID.randomUUID())
+                .template(RuleTemplate.COMPARE_FIELDS).paramsJson("{}").status(RuleStatus.PROPOSED).source(RuleSource.USER).fingerprint("a").build();
+        BusinessRule gone = BusinessRule.builder().id(UUID.randomUUID()).project(project).endpointKey("DELETE /old").endpointId(UUID.randomUUID())
+                .template(RuleTemplate.COMPARE_FIELDS).paramsJson("{}").status(RuleStatus.APPROVED).source(RuleSource.USER).fingerprint("b").build();
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(endpoint));
+        when(ruleRepository.findAllByProject(project)).thenReturn(List.of(moved, gone));
+        when(endpointRepository.findByIdAndProject(any(), any())).thenReturn(Optional.empty());
+        when(endpointRepository.findByProjectAndPathAndMethod(project, "/jobs", "POST")).thenReturn(Optional.of(endpoint));
+        when(endpointRepository.findByProjectAndPathAndMethod(project, "/old", "DELETE")).thenReturn(Optional.empty());
+
+        service.relink(project);
+
+        assertThat(moved.getEndpointId()).isEqualTo(endpoint.getId());
+        assertThat(moved.getStatus()).isEqualTo(RuleStatus.PROPOSED);
+        assertThat(gone.getEndpointId()).isNull();
+        assertThat(gone.getStatus()).isEqualTo(RuleStatus.STALE);
+    }
+
+    @Test
     void unknownRule_is404() {
         assertThatThrownBy(() -> service.get(project.getId(), UUID.randomUUID())).extracting("code").isEqualTo("BUSINESS_RULE_NOT_FOUND");
     }

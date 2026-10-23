@@ -98,6 +98,7 @@ class RuleTestServiceTest {
         lenient().when(projectService.getOwnedProject(project.getId())).thenReturn(project);
         lenient().when(ruleRepository.findAllByProject(project)).thenReturn(List.of(rule));
         lenient().when(ruleService.read(any())).thenReturn(params);
+        lenient().when(ruleService.resolveEndpoint(project, rule)).thenReturn(java.util.Optional.of(endpoint));
         lenient().when(endpointRepository.findByIdAndProject(endpoint.getId(), project)).thenReturn(java.util.Optional.of(endpoint));
         lenient().when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint)).thenReturn(List.of(baseline));
         lenient().when(testCaseRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
