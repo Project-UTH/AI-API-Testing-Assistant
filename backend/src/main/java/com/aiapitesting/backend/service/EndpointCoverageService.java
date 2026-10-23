@@ -158,7 +158,8 @@ public class EndpointCoverageService {
                 entries.stream().mapToLong(e -> e.row().relevantCount()).sum(),
                 entries.stream().mapToLong(e -> e.row().coveredCount()).sum(),
                 entries.stream().mapToLong(e -> e.row().executedCount()).sum(),
-                stateCounts.get(EndpointTestState.TESTED_FAILING) + stateCounts.get(EndpointTestState.TESTED_OK),
+                stateCounts.get(EndpointTestState.TESTED_FAILING) + stateCounts.get(EndpointTestState.TESTED_DOUBTFUL)
+                        + stateCounts.get(EndpointTestState.TESTED_OK),
                 stateCounts,
                 generated.stream().mapToLong(CoverageEndpointRow::relevantCount).sum(),
                 generated.stream().mapToLong(CoverageEndpointRow::coveredCount).sum(),
@@ -381,9 +382,14 @@ public class EndpointCoverageService {
 
         CoverageScope scope = CoverageScope.of(endpoint);
         List<CoverageDimensionResponse> dimensions = new ArrayList<>();
+        Set<UUID> underspecifiedTestIds = new HashSet<>();
         for (TestCaseChecklistPlanner.ChecklistItem item : testCaseChecklistPlanner.planScoped(spec, endpoint.effectiveRequiresAuth(), scope, testCaseChecklistPlanner.hintsOf(endpoint))) {
             GeneratedTestCase base = item.type().name().startsWith("SECURITY_") ? securityBaseline : baseline;
             dimensions.add(checklistDimension(spec, item, candidates, endpoint.effectiveRequiresAuth(), context, base, detail));
+            if (isUnderspecified(item) && item.notApplicableReason() == null) {
+                candidates.stream().filter(c -> testCaseChecklistPlanner.covers(spec, item, c.generated(), endpoint.effectiveRequiresAuth()))
+                        .forEach(c -> underspecifiedTestIds.add(c.entity().getId()));
+            }
         }
         if (detail) {
             for (String statusCode : facts.statusCodes()) {
@@ -417,13 +423,18 @@ public class EndpointCoverageService {
                 endpoint.getId(), endpoint.getPath(), endpoint.getMethod(), testCases.size(),
                 round1(coveragePercent), round1(executedPercent), facts.parsed(), scope,
                 endpoint.effectiveRequiresAuth(), endpoint.getRequiresAuthManual() != null ? "MANUAL" : "SPEC", dimensions,
-                testStateOf(testCases, context), counts.certain(), counts.doubtful(), counts.specGap(), baselineVerified(testCases));
+                testStateOf(testCases, context, underspecifiedTestIds), counts.certain(), counts.doubtful(), counts.specGap(),
+                baselineVerified(testCases));
     }
 
     // ---- 17q G2 - trạng thái kiểm thử của endpoint + độ tin kết luận ----
 
-    /** Trạng thái tính theo TEST (không theo mục) để bản nhẹ và bản đầy đủ không lệch nhau; test nghiệp vụ GIẢ ĐỊNH không tính. */
-    private EndpointTestState testStateOf(List<TestCase> testCases, CoverageContext context) {
+    /**
+     * Trạng thái tính theo TEST (không theo mục) để bản nhẹ và bản đầy đủ không lệch nhau; test nghiệp vụ GIẢ ĐỊNH không tính. Chỉ Fail
+     * kết luận CHẮC mới làm endpoint "Đang có Fail" (đỏ); Fail NGHI (nguyên nhân chưa rõ, kỳ vọng do AI viết, mục biên ngầm, xung đột
+     * trạng thái...) là "Có Fail cần xem" - không bị che, nhưng không tô đỏ như lỗi API chắc chắn.
+     */
+    private EndpointTestState testStateOf(List<TestCase> testCases, CoverageContext context, Set<UUID> underspecifiedTestIds) {
         List<TestCase> own = testCases.stream()
                 .filter(tc -> tc.getSource() != com.aiapitesting.backend.entity.TestCaseSource.BUSINESS)
                 .toList();
@@ -431,20 +442,26 @@ public class EndpointCoverageService {
             return EndpointTestState.NOT_GENERATED;
         }
         boolean concluded = false;
+        boolean doubtfulFail = false;
         for (TestCase tc : own) {
             TestResultRepository.TestCaseLatestResult row = context.latestRowByTestCaseId().get(tc.getId());
             if (row == null || (row.getStatus() != TestResultStatus.PASSED && row.getStatus() != TestResultStatus.FAILED)) {
                 continue;
             }
-            if (VerdictTrust.of(row.getStatus(), row.getFailureCause(), row.getUnstable(), true, false) == VerdictTrust.NO_VERDICT) {
+            VerdictTrust trust = VerdictTrust.of(row.getStatus(), row.getFailureCause(), row.getUnstable(), true,
+                    isAssumedOracle(tc) || underspecifiedTestIds.contains(tc.getId()));
+            if (trust == VerdictTrust.NO_VERDICT) {
                 continue;
             }
-            if (row.getStatus() == TestResultStatus.FAILED) {
-                return EndpointTestState.TESTED_FAILING;
-            }
             concluded = true;
+            if (row.getStatus() == TestResultStatus.FAILED) {
+                if (trust == VerdictTrust.CERTAIN) {
+                    return EndpointTestState.TESTED_FAILING;
+                }
+                doubtfulFail = true;
+            }
         }
-        return concluded ? EndpointTestState.TESTED_OK : EndpointTestState.NOT_RUN;
+        return doubtfulFail ? EndpointTestState.TESTED_DOUBTFUL : concluded ? EndpointTestState.TESTED_OK : EndpointTestState.NOT_RUN;
     }
 
     /** Có test gốc AI đã được chạy thật xác nhận và khoá làm nền (BaselineVerificationService chỉ khoá khi test gốc Pass). */
@@ -484,15 +501,29 @@ public class EndpointCoverageService {
     private VerdictTrust testTrust(TestCase tc, TestResultRepository.TestCaseLatestResult row,
                                    TestCaseChecklistPlanner.ChecklistItem item) {
         boolean assumed = isAssumedOracle(tc) || isUnderspecified(item);
-        return VerdictTrust.of(row.getStatus(), row.getFailureCause(), row.getUnstable(), strongPassOracle(tc, row, item), assumed);
+        // Pass nhưng mã thành công lệch spec (G1): chưa phải bằng chứng "đúng" - chỉ NGHI (kiểm định 2026-10-23).
+        boolean strong = strongPassOracle(tc, row, item) && !Boolean.TRUE.equals(row.getSpecDeviation());
+        return VerdictTrust.of(row.getStatus(), row.getFailureCause(), row.getUnstable(), strong, assumed);
     }
 
-    /** Kỳ vọng do AI viết (AI_CHECKLIST/AI_EXTRA/AI_BUSINESS) hoặc bị đánh dấu "kỳ vọng cần xem": Fail tối đa NGHI. */
-    private static boolean isAssumedOracle(TestCase tc) {
+    /**
+     * Kỳ vọng do AI viết (AI_CHECKLIST/AI_EXTRA/AI_BUSINESS) hoặc bị đánh dấu "kỳ vọng cần xem": Fail tối đa NGHI. Nhãn "kỳ vọng cần xem"
+     * không áp dụng cho test hệ thống bù (sinh từ chính spec) - khớp với giao diện và bộ lọc.
+     */
+    public static boolean isAssumedOracle(TestCase tc) {
         TestCaseGenerationOrigin origin = tc.getGenerationOrigin();
         return origin == TestCaseGenerationOrigin.AI_CHECKLIST || origin == TestCaseGenerationOrigin.AI_EXTRA
                 || origin == TestCaseGenerationOrigin.AI_BUSINESS
-                || tc.getReliabilityStatus() == com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW;
+                || (tc.getReliabilityStatus() == com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW
+                    && origin != TestCaseGenerationOrigin.SYSTEM_FILLED);
+    }
+
+    /** Test hệ thống bù cho mục "biên ngầm" kỳ vọng thành công (dựa vào checklistType đã lưu) - dùng ở trang kết quả chạy. */
+    public static boolean isUnderspecifiedTest(TestCase tc) {
+        String type = tc.getChecklistType();
+        return type != null && tc.getExpectedStatus() != null && tc.getExpectedStatus() < 400
+                && (type.equals(ChecklistItemType.BOUNDARY_ZERO.name()) || type.equals(ChecklistItemType.BOUNDARY_NEGATIVE_NUMBER.name())
+                    || type.equals(ChecklistItemType.BOUNDARY_EMPTY_STRING.name()));
     }
 
     /**

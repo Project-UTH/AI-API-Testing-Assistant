@@ -111,12 +111,12 @@ export interface EndpointCoverage {
 }
 
 /** 17q G2 - trạng thái kiểm thử của endpoint (backend tính, frontend chỉ hiển thị). */
-export type EndpointTestState = "NOT_GENERATED" | "NOT_RUN" | "TESTED_FAILING" | "TESTED_OK"
+export type EndpointTestState = "NOT_GENERATED" | "NOT_RUN" | "TESTED_FAILING" | "TESTED_DOUBTFUL" | "TESTED_OK"
 
 /** 17q G2 - độ tin của kết luận (chỉ hiển thị, không chặn bug report). */
 export type VerdictTrust = "CERTAIN" | "DOUBTFUL" | "NO_VERDICT"
 
-export const TEST_STATE_ORDER: EndpointTestState[] = ["NOT_GENERATED", "NOT_RUN", "TESTED_FAILING", "TESTED_OK"]
+export const TEST_STATE_ORDER: EndpointTestState[] = ["NOT_GENERATED", "NOT_RUN", "TESTED_FAILING", "TESTED_DOUBTFUL", "TESTED_OK"]
 
 export const TEST_STATE_DISPLAY: Record<EndpointTestState, { label: string; dot: string; chip: string; bar: string; title: string }> = {
   NOT_GENERATED: {
@@ -138,7 +138,15 @@ export const TEST_STATE_DISPLAY: Record<EndpointTestState, { label: string; dot:
     dot: "bg-destructive",
     chip: "bg-destructive/10 text-destructive",
     bar: "bg-destructive",
-    title: "Có ít nhất 1 test Fail không do môi trường/token/không ổn định - mở endpoint để xem từng mục là kết luận chắc hay nghi",
+    title: "Có ít nhất 1 test Fail với kết luận CHẮC là lỗi API (nhãn lỗi API rõ ràng, kỳ vọng có căn cứ)",
+  },
+  TESTED_DOUBTFUL: {
+    label: "Có Fail cần xem",
+    dot: "bg-amber-500",
+    chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    bar: "bg-amber-500",
+    title:
+      "Chỉ có Fail mà kết luận còn NGHI (nguyên nhân chưa rõ, kỳ vọng do AI viết/quy ước, xung đột trạng thái...) - cần người xem, chưa chắc là lỗi API",
   },
   TESTED_OK: {
     label: "Đã kiểm, ổn",

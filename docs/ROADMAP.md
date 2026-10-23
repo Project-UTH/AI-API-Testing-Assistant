@@ -1532,7 +1532,7 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - [-] **P1-1** (`fieldValueHints` theo project), **P1-5** (multipart file giả, lặp PUT/DELETE kiểm idempotency): HOÃN, ghi là hướng phát triển.
 - [-] **G6. KHÔNG LÀM đợt này (quyết định nhóm 2026-10-21, ghi là hướng phát triển) - Test công cụ + tài liệu:** Q-1 (vitest), cập nhật roadmap/`api-contract`/DEMO/CAU_HOI_BAO_VE.
 
-#### 17q. KẾ HOẠCH (chốt 2026-10-22, CHƯA CODE): Độ bao phủ theo endpoint, độ tin của kết luận, luật nghiệp vụ có nguồn và câu hỏi "số test case đã đủ chưa"
+#### 17q. KẾ HOẠCH (chốt 2026-10-22; G0-G2 ĐÃ CODE 2026-10-23, G3 đang làm): Độ bao phủ theo endpoint, độ tin của kết luận, luật nghiệp vụ có nguồn và câu hỏi "số test case đã đủ chưa"
 
 *Nguồn: 3 vòng tham vấn chuyên gia ngày 2026-10-22, tất cả đều đọc code thật.*
 - *Vòng 1: backend/QA + frontend/UX về 2 chỉ số.*
@@ -1581,14 +1581,14 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
 ---
 
 **G0. Nền đo, làm TRƯỚC mọi thay đổi checklist/luật (khoảng 1,5 ngày, 0 token)**
-- [x] **G0.1** Đo lại cấu hình A trên `main` hiện tại (`scripts/eval-mutants.py`), ghi commit hash. Kiểm chứng luôn nghi vấn M11 bị tụt từ caught xuống suspect. *(ĐÃ ĐO 2026-10-23 trên `main` @ `2652cfa` (hệ thống chưa đổi gì của 17q), 2 lượt project mới, `docs/eval/results-A-g0-baseline.json`: bắt chặt **5/42**, phát hiện (bắt chặt + nghi ngờ) **21/42**, Fail giả **1,7%** (3/176, đều `STATE_CONFLICT`), 2 lượt giống hệt. **M11 bắt chặt ở cả 2 lượt**: nghi vấn tụt hạng ở G5 là do thứ tự/lịch sử chạy trên project cũ, không phải hệ thống kém đi. Đây là mốc "trước 17q" để so.)*
+- [x] **G0.1** Đo lại cấu hình A trên `main` hiện tại (`scripts/eval-mutants.py`), ghi commit hash. Kiểm chứng luôn nghi vấn M11 bị tụt từ caught xuống suspect. *(ĐÃ ĐO 2026-10-23, ĐO LẠI SẠCH trên commit `de30350` (`gitDirty=false`, catalog chỉ M01-M42), 2 lượt project mới, `docs/eval/results-A-g0-baseline-clean.json` (bản đo đầu bị `gitDirty` và lộ mô tả held-out nên đã bỏ): bắt chặt **5/42**, phát hiện (bắt chặt + nghi ngờ) **21/42**, Fail giả **1,7%** (3/176, đều `STATE_CONFLICT`), 2 lượt giống hệt. **M11 bắt chặt ở cả 2 lượt**: nghi vấn tụt hạng ở G5 là do thứ tự/lịch sử chạy trên project cũ, không phải hệ thống kém đi. Đây là mốc "trước 17q" để so.)*
 - [x] **G0.2 Danh mục mẫu luật** *(ĐÃ LÀM 2026-10-23: `docs/eval/rule-template-catalog.md`, T1-T12, commit `873be29` trước G0.3/G0.4. Lưu ý trung thực: người soạn danh mục đã biết bộ M01-M42; bộ held-out là chỗ kiểm chứng ngoài.)* lấy từ tài liệu tham khảo, không lấy theo mutant. Commit TRƯỚC khi viết bộ held-out. Các mẫu:
   - phụ thuộc tham số Martin-Lopez, Segura, Ruiz-Cortés 2019 (Requires/Or/OnlyOne/AllOrNone/ZeroOrOne/Arithmetic);
   - ràng buộc thời gian;
   - tổng hợp trên mảng;
   - trùng lặp;
   - máy trạng thái.
-- [x] **G0.3 Bộ lỗi held-out do AI viết.** *(ĐÃ THIẾT KẾ 2026-10-23: `docs/eval/heldout-mutants.md`, H01-H15, commit `767490b`; agent thiết kế chỉ đọc `openapi.json` + `docs/eval/ground-truth-rules.md` (86 luật hành vi đúng do agent khác rút từ code bản chuẩn, không nhắc mutant). CHƯA cài vào `mutant-api` (chờ phép đo G0.1 xong). Lưu ý: người code hệ thống đã thấy bảng tóm tắt H01-H15 lúc nhận kết quả - ghi vào threats to validity, không chỉnh hệ thống theo bảng này.)* Một agent MỚI, cô lập:
+- [x] **G0.3 Bộ lỗi held-out do AI viết.** *(ĐÃ THIẾT KẾ 2026-10-23: `docs/eval/heldout-mutants.md`, H01-H15, commit `767490b`; agent thiết kế chỉ đọc `openapi.json` + `docs/eval/ground-truth-rules.md` (86 luật hành vi đúng do agent khác rút từ code bản chuẩn, không nhắc mutant). ĐÃ cài vào `mutant-api` 2026-10-23 (commit `3654161`, 15 cờ H, mặc định tắt, script đo mặc định loại - chỉ đo khi `--include-heldout`). Lưu ý: người code hệ thống đã thấy bảng tóm tắt H01-H15 lúc nhận kết quả - ghi vào threats to validity, không chỉnh hệ thống theo bảng này.)* Một agent MỚI, cô lập:
   - CHỈ được đọc `mutant-api/openapi.json`, mô tả miền tuyển dụng và danh mục loại lỗi (OWASP API Top 10 + loại lỗi thường gặp);
   - KHÔNG được đọc `backend/`, `TestCaseChecklistPlanner`, `MutantFlag.java`/danh sách M01-M42, `docs/DANH_GIA.md`.
 
@@ -1623,7 +1623,7 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - Mỗi endpoint đã sinh có 3 số, đếm theo **MỤC**, cùng mẫu số, lồng nhau: **có test ⊇ đã chạy ⊇ kết luận chắc**.
   - Cấp project BỎ % gộp làm số chính. Thay bằng "**X/N endpoint đã kiểm thử**" + phân bố theo 4 trạng thái (bấm để lọc). Nếu vẫn hiện % thì chỉ tính trên endpoint đã sinh, ghi rõ mẫu số.
   - Mục biên ngầm gắn nhãn "**spec thiếu ràng buộc**": Fail ở mục này không quy là lỗi API.
-- [x] **B. `VerdictTrust`**, gom vào 1 hàm `FailureCause.verdictTrust()` dùng chung cho Coverage, Bug Report và `ExecutionDiffClassifier`.
+- [~] **B. `VerdictTrust`** (làm khác kế hoạch có chủ đích, xem ghi chú G2), gom vào 1 hàm `FailureCause.verdictTrust()` dùng chung cho Coverage, Bug Report và `ExecutionDiffClassifier`.
   - **CHẮC** (đều phải không `unstable`):
     - Fail có nhãn `API_WRONG_STATUS`/`STABLE_FAILURE`/`AUTHZ_VIOLATION`/`MASS_ASSIGNMENT`.
     - Pass có oracle mạnh. Với test âm: lý do API từ chối phải khớp đúng field đang kiểm (dùng `InputRejectionDetector`); không khớp thì là NGHI, vì có thể chỉ Pass trùng hợp.

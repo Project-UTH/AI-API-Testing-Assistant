@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react"
+import { Link } from "react-router-dom"
 import { ChevronDown, ChevronRight } from "lucide-react"
 
 import { cn, METHOD_STYLES } from "@/lib/utils"
@@ -61,6 +62,14 @@ export const CoverageEndpointRow = memo(function CoverageEndpointRow({ projectId
           />
         )}
       </button>
+      {(endpoint.testState === "NOT_GENERATED" || (!endpoint.testState && endpoint.testCaseCount === 0)) && (
+        <p className="-mt-2 px-4 pb-3 pl-11 text-xs text-muted-foreground">
+          Endpoint chưa có test.{" "}
+          <Link to={`/projects/${projectId}`} className="text-primary underline-offset-4 hover:underline">
+            Sinh test case ở tab Endpoint →
+          </Link>
+        </p>
+      )}
 
       {expanded && (
         <div className="border-t border-border p-4">

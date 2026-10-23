@@ -106,7 +106,8 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID>, J
     // Module 16 gđ2 - thêm unstable: lần chạy mới nhất của test không ổn định (kể cả Pass) không phải bằng chứng chắc chắn.
     // 17q G2 - thêm rejectionExcerpt (VARCHAR ngắn, không phải TEXT): xét oracle mạnh cho Pass của test âm.
     @Query("SELECT tr.testCase.id AS testCaseId, tr.status AS status, tr.failureCause AS failureCause, tr.unstable AS unstable, "
-            + "tr.rejectionExcerpt AS rejectionExcerpt "
+            + "tr.rejectionExcerpt AS rejectionExcerpt, "
+            + "CASE WHEN tr.specDeviationsJson IS NULL THEN false ELSE true END AS specDeviation "
             + "FROM TestResult tr "
             + "WHERE tr.testCase.endpoint.project = :project AND tr.createdAt = "
             + "(SELECT MAX(tr2.createdAt) FROM TestResult tr2 WHERE tr2.testCase = tr.testCase)")
@@ -119,6 +120,9 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID>, J
         Boolean getUnstable();
 
         String getRejectionExcerpt();
+
+        /** 17q - lần chạy có cảnh báo mã thành công lệch spec (Pass như vậy chỉ là NGHI). */
+        Boolean getSpecDeviation();
     }
 
     // Module 16 - lịch sử các lần chạy của nhiều test case cho ExecutionFailureAnalyzer: chỉ vài cột nhẹ, KHÔNG

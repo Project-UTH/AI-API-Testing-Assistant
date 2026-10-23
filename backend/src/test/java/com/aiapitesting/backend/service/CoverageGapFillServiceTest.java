@@ -496,6 +496,11 @@ class CoverageGapFillServiceTest {
             }
 
             @Override
+            public Boolean getSpecDeviation() {
+                return null;
+            }
+
+            @Override
             public String getRejectionExcerpt() {
                 return null;
             }

@@ -268,6 +268,7 @@ public class CoverageGapFillService {
                 .source(source)
                 .generationOrigin(TestCaseGenerationOrigin.SYSTEM_FILLED)
                 .checklistItem(truncate(item.description()))
+                .checklistType(item.type().name())
                 .authOverride(filled.authOverride() == null ? TestCaseAuthOverride.DEFAULT : filled.authOverride())
                 // Kế thừa vai (AuthProfile) của case gốc: endpoint cần vai khác (vd ứng viên) không bị 403 oan ở case bù.
                 .authProfileId(authProfileId)

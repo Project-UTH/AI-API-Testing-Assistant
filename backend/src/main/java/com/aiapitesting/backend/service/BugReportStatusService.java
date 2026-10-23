@@ -68,6 +68,12 @@ public class BugReportStatusService {
         if (status == TestResultStatus.PASSED) {
             // 17q G1 - bug "lệch spec" sinh từ 1 lần chạy PASS: lần Pass mới mà vẫn còn lệch spec không có nghĩa là đã sửa.
             if (isSpecDeviationBug(bug) && result.getSpecDeviationsJson() != null) {
+                if (bug.getStatus() == BugStatus.CLOSED) {
+                    bug.setStatus(BugStatus.REOPENED);
+                    bug.setPendingCloseSuggestion(false);
+                    appendNote(bug, "[hệ thống] Tự động chuyển sang Reopened do lần chạy mới vẫn lệch spec");
+                    return true;
+                }
                 return false;
             }
             if (ELIGIBLE_FOR_CLOSE_SUGGESTION.contains(bug.getStatus()) && !bug.isPendingCloseSuggestion()) {

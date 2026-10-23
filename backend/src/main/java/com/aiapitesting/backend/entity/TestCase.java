@@ -85,6 +85,13 @@ public class TestCase {
      */
     private Integer originalExpectedStatus;
 
+    /**
+     * 17q - loại mục checklist mà test hệ thống bù nhắm tới (tên ChecklistItemType); null = test khác/dữ liệu cũ. Dùng để biết test
+     * thuộc mục "biên ngầm" (spec thiếu ràng buộc) ở trang kết quả chạy - thống nhất độ tin với trang Coverage.
+     */
+    @Column(length = 40)
+    private String checklistType;
+
     /** 17q G1 - ghi chú lý do đổi kỳ vọng (kèm kết luận lệch spec nếu có); null = chưa đổi. */
     @Column(length = 500)
     private String expectationNote;

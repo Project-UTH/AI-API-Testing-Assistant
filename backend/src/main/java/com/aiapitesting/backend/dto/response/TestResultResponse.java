@@ -92,10 +92,12 @@ public record TestResultResponse(
                 && expected != null && (expected == 400 || expected == 422)) {
             return null; // Pass vì bị từ chối đầu vào: cần đối chiếu field đang kiểm - xem ở trang Coverage (401/403/404 tự nó là oracle)
         }
-        TestCaseGenerationOrigin origin = testCase.getGenerationOrigin();
-        boolean assumed = origin == TestCaseGenerationOrigin.AI_CHECKLIST || origin == TestCaseGenerationOrigin.AI_EXTRA
-                || origin == TestCaseGenerationOrigin.AI_BUSINESS || testCase.getReliabilityStatus() == TestCaseReliability.NEEDS_REVIEW;
-        return VerdictTrust.of(result.getStatus(), result.getFailureCause(), result.getUnstable(), true, assumed);
+        // Cùng quy tắc với trang Coverage: kỳ vọng do AI viết/"kỳ vọng cần xem" hoặc mục biên ngầm → Fail tối đa NGHI; Pass mà mã thành
+        // công lệch spec → NGHI.
+        boolean assumed = com.aiapitesting.backend.service.EndpointCoverageService.isAssumedOracle(testCase)
+                || com.aiapitesting.backend.service.EndpointCoverageService.isUnderspecifiedTest(testCase);
+        boolean strongPass = result.getSpecDeviationsJson() == null;
+        return VerdictTrust.of(result.getStatus(), result.getFailureCause(), result.getUnstable(), strongPass, assumed);
     }
 
     private static List<SecurityFindingResponse> parseFindings(String json) {

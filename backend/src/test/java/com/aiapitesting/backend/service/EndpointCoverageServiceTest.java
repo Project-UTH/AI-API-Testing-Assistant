@@ -996,32 +996,36 @@ class EndpointCoverageServiceTest {
     // ---- 17q G2 - trạng thái endpoint + độ tin kết luận ----
 
     @Test
-    void testState_coversAllFourStates_andBusinessOnlyOrEnvironmentFailIsNotATest() {
+    void testState_coversAllStates_andBusinessOnlyOrEnvironmentFailIsNotATest() {
         Endpoint none = endpoint("/a", "POST", false, emailRequiredSchema(List.of("201")));
         Endpoint businessOnly = endpoint("/b", "POST", false, emailRequiredSchema(List.of("201")));
         Endpoint notRun = endpoint("/c", "POST", false, emailRequiredSchema(List.of("201")));
         Endpoint failing = endpoint("/d", "POST", false, emailRequiredSchema(List.of("201")));
+        Endpoint doubtful = endpoint("/d2", "POST", false, emailRequiredSchema(List.of("201")));
         Endpoint ok = endpoint("/e", "POST", false, emailRequiredSchema(List.of("201")));
         TestCase business = testCase(businessOnly, "Nghiệp vụ", 400, "{}");
         business.setSource(TestCaseSource.BUSINESS);
         TestCase envFail = testCase(notRun, "Positive", 201, "{\"email\":\"a@b.com\"}");
         TestCase realFail = testCase(failing, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        TestCase unsureFail = testCase(doubtful, "Positive", 201, "{\"email\":\"a@b.com\"}");
         TestCase pass = testCase(ok, "Positive", 201, "{\"email\":\"a@b.com\"}");
-        stubProject(List.of(none, businessOnly, notRun, failing, ok), List.of(business, envFail, realFail, pass), List.of());
+        stubProject(List.of(none, businessOnly, notRun, failing, doubtful, ok), List.of(business, envFail, realFail, unsureFail, pass), List.of());
         when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
                 latest(business.getId(), TestResultStatus.FAILED, FailureCause.STABLE_FAILURE),
                 latest(envFail.getId(), TestResultStatus.FAILED, FailureCause.ENVIRONMENT),
-                latest(realFail.getId(), TestResultStatus.FAILED, FailureCause.UNDETERMINED),
+                latest(realFail.getId(), TestResultStatus.FAILED, FailureCause.STABLE_FAILURE),
+                latest(unsureFail.getId(), TestResultStatus.FAILED, FailureCause.STATE_CONFLICT),
                 latest(pass.getId(), TestResultStatus.PASSED)));
 
         var summary = endpointCoverageService.getCoverageSummary(projectId);
 
         assertThat(summary.endpoints()).extracting(r -> r.testState()).containsExactly(
                 EndpointTestState.NOT_GENERATED, EndpointTestState.NOT_GENERATED, EndpointTestState.NOT_RUN,
-                EndpointTestState.TESTED_FAILING, EndpointTestState.TESTED_OK);
-        assertThat(summary.overview().testedEndpoints()).isEqualTo(2);
+                EndpointTestState.TESTED_FAILING, EndpointTestState.TESTED_DOUBTFUL, EndpointTestState.TESTED_OK);
+        assertThat(summary.overview().testedEndpoints()).isEqualTo(3);
         assertThat(summary.overview().stateCounts()).containsEntry(EndpointTestState.NOT_GENERATED, 2)
                 .containsEntry(EndpointTestState.NOT_RUN, 1).containsEntry(EndpointTestState.TESTED_FAILING, 1)
+                .containsEntry(EndpointTestState.TESTED_DOUBTFUL, 1)
                 .containsEntry(EndpointTestState.TESTED_OK, 1);
         // % chỉ trên endpoint đã sinh: 2 endpoint chưa sinh không góp mục nào vào mẫu số "đã sinh".
         assertThat(summary.overview().generatedRelevantCount()).isLessThan(summary.overview().relevantCount());
@@ -1155,6 +1159,11 @@ class EndpointCoverageServiceTest {
             @Override
             public Boolean getUnstable() {
                 return unstable;
+            }
+
+            @Override
+            public Boolean getSpecDeviation() {
+                return null;
             }
 
             @Override

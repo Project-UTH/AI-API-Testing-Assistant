@@ -393,10 +393,11 @@ public class TestCaseGenerationService {
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
         TestCase testCase = testCaseRepository.findByIdAndEndpoint(testCaseId, endpoint)
                 .orElseThrow(() -> new TestCaseNotFoundException("Không tìm thấy test case với id đã cho"));
-        Integer before = testCase.getExpectedStatus();
+        // Mốc là kỳ vọng BAN ĐẦU (đổi nhiều lần 201→200→204 vẫn ghi "201 → 204").
+        Integer before = testCase.getOriginalExpectedStatus() != null ? testCase.getOriginalExpectedStatus() : testCase.getExpectedStatus();
         String note = expectationChangeNote(endpoint, before, expectedStatus);
         if (testCase.getOriginalExpectedStatus() == null) {
-            testCase.setOriginalExpectedStatus(before);
+            testCase.setOriginalExpectedStatus(testCase.getExpectedStatus());
         }
         if (Integer.valueOf(expectedStatus).equals(testCase.getOriginalExpectedStatus())) {
             // Đổi qua rồi đổi về đúng kỳ vọng ban đầu: không còn gì để ghi chú.
