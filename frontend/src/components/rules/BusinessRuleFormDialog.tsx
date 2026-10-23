@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { RuleParamsFields } from "@/components/rules/RuleParamsFields"
 import { ApiError } from "@/lib/api"
+import { reportReviewTiming } from "@/lib/reviewTiming"
 import { listEndpoints } from "@/lib/endpoints"
 import {
   createBusinessRule,
@@ -82,6 +83,7 @@ export function BusinessRuleFormDialog({ projectId, open, onOpenChange, rule, de
       return createBusinessRule(projectId, { endpointId, template, params, expectedStatus: expected, rationale: rationale || undefined, approve })
     },
     onSuccess: () => {
+      if (rule) reportReviewTiming(projectId, rule.id, "EDITED") // chỉ khi SỬA luật có sẵn (tạo mới không phải một lần duyệt)
       queryClient.invalidateQueries({ queryKey: ["rules", projectId] })
       queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
       onOpenChange(false)

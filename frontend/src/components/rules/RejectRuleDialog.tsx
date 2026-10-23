@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ApiError } from "@/lib/api"
+import { reportReviewTiming } from "@/lib/reviewTiming"
 import { rejectBusinessRule, RULE_REJECT_REASON_LABEL, type BusinessRule, type RuleRejectReason } from "@/lib/rules"
 
 /** Lý do chọn tay (DUPLICATE_OF_SPEC là lý do hệ thống tự loại, không cho người dùng chọn). */
@@ -33,6 +34,7 @@ export function RejectRuleDialog({ projectId, rule, onClose }: RejectRuleDialogP
   const mutation = useMutation({
     mutationFn: () => rejectBusinessRule(projectId, rule!.id, { reason: reason as RuleRejectReason, note: note || undefined }),
     onSuccess: () => {
+      if (rule) reportReviewTiming(projectId, rule.id, "REJECTED")
       queryClient.invalidateQueries({ queryKey: ["rules", projectId] })
       queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
       onClose()

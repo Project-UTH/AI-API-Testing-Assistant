@@ -7,6 +7,9 @@ import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveBatchResponse;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveRequest;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.CreateRequest;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.RejectRequest;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ReviewTimingRequest;
+import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ReviewTimingRow;
+import com.aiapitesting.backend.service.rule.RuleReviewTimingService;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.RuleResponse;
 import com.aiapitesting.backend.dto.rule.BusinessRuleDtos.UpdateRequest;
 import com.aiapitesting.backend.entity.RuleSource;
@@ -43,6 +46,7 @@ public class BusinessRuleController {
 
     private final BusinessRuleService businessRuleService;
     private final RuleTestService ruleTestService;
+    private final RuleReviewTimingService reviewTimingService;
 
     @GetMapping
     public PageResponse<RuleResponse> list(
@@ -79,6 +83,19 @@ public class BusinessRuleController {
     public ResponseEntity<ApiResponse<RuleResponse>> approve(
             @PathVariable UUID projectId, @PathVariable UUID ruleId, @RequestBody(required = false) ApproveRequest request) {
         return ResponseEntity.ok(ApiResponse.of(businessRuleService.approve(projectId, ruleId, request)));
+    }
+
+    /** Thực nghiệm E2: giao diện chỉ gọi khi người dùng đã bật đo thời gian duyệt. */
+    @PostMapping("/{ruleId}/review-timing")
+    public ResponseEntity<Void> recordReviewTiming(
+            @PathVariable UUID projectId, @PathVariable UUID ruleId, @RequestBody ReviewTimingRequest request) {
+        reviewTimingService.record(projectId, ruleId, request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/review-timing")
+    public ResponseEntity<ApiResponse<java.util.List<ReviewTimingRow>>> exportReviewTiming(@PathVariable UUID projectId) {
+        return ResponseEntity.ok(ApiResponse.of(reviewTimingService.export(projectId)));
     }
 
     @PostMapping("/approve-batch")

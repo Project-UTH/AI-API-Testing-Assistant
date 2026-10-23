@@ -56,6 +56,7 @@ public class ProjectService {
     private final AuthProfileRepository authProfileRepository;
     private final ApiTokenRepository apiTokenRepository;
     private final EndpointRoleRepository endpointRoleRepository;
+    private final com.aiapitesting.backend.repository.RuleReviewTimingRepository ruleReviewTimingRepository;
     private final CurrentUserService currentUserService;
     private final AesEncryptionService aesEncryptionService;
 
@@ -145,6 +146,7 @@ public class ProjectService {
         testCaseRepository.deleteAllByEndpointProject(project);
         testGenerationEventRepository.detachFromEndpointsOfProject(project); // giữ sổ token: xoá project không được đặt lại quota ngày
         businessRuleRepository.deleteAllByProject(project);
+        ruleReviewTimingRepository.deleteAllByProjectId(project.getId());
         requirementDocumentRepository.deleteAllByProject(project);
         endpointRoleRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);

@@ -1,6 +1,7 @@
-import { memo } from "react"
+import { memo, useRef } from "react"
 
 import { Button } from "@/components/ui/button"
+import { useRuleTimer } from "@/lib/reviewTiming"
 import { cn } from "@/lib/utils"
 import {
   expectedLabel,
@@ -23,6 +24,8 @@ interface RuleItemProps {
 
 /** 1 luật nghiệp vụ: câu luật + chip mẫu/nguồn/trạng thái + kỳ vọng + thao tác. memo: duyệt 1 luật không vẽ lại cả danh sách. */
 export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, onReject, onDelete, onViewQuote }: RuleItemProps) {
+  const itemRef = useRef<HTMLLIElement | null>(null)
+  useRuleTimer(itemRef, rule.id)
   const status = getRuleStatusDisplay(rule.status)
   const source = getRuleSourceDisplay(rule.source)
   const canApprove = rule.status === "PROPOSED" || rule.status === "CONFLICT"
@@ -31,7 +34,7 @@ export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, 
   const canDelete = rule.source === "USER" && !rule.reviewedAt
 
   return (
-    <li className={cn("flex flex-col gap-1.5 rounded-md border border-border p-3", rule.status === "REJECTED" && "opacity-60")}>
+    <li ref={itemRef} className={cn("flex flex-col gap-1.5 rounded-md border border-border p-3", rule.status === "REJECTED" && "opacity-60")}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className={cn("text-sm font-medium", rule.status === "REJECTED" && "line-through")}>{rule.sentence}</span>
         {status && (

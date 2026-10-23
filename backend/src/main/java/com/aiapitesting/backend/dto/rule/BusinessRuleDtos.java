@@ -41,6 +41,14 @@ public final class BusinessRuleDtos {
     public record NotApproved(UUID ruleId, String reason) {
     }
 
+    /** 17q G3.5 - thời gian duyệt 1 luật (chỉ gửi khi người dùng BẬT đo). focusedMs đã trừ lúc tab ẩn. */
+    public record ReviewTimingRequest(String decision, Integer focusedMs) {
+    }
+
+    /** Dòng xuất ẩn danh: không có người dùng, không có id/nội dung luật. */
+    public record ReviewTimingRow(String ruleSource, String template, boolean hadQuote, String decision, int focusedMs, Instant decidedAt) {
+    }
+
     public record RejectRequest(RuleRejectReason reason, String note) {
     }
 

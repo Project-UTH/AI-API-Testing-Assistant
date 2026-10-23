@@ -1753,7 +1753,7 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - Lưu ô chỉ dẫn vào job + vào metadata nguồn của luật. Hiện "chỉ dẫn lần trước" để người dùng chọn dùng lại.
   - *G3.3/G3.4/G3.6 ĐÃ LÀM 2026-10-23 (chưa chạy AI thật, test dùng ChatClient giả):* tải tài liệu .md/.txt; job `RULES` chia lô theo endpoint, ngân sách token cứng (mặc định 60.000, 5.000..1.000.000) + quota ngày, kiểm chứng tất định (trích dẫn nguyên văn, hằng số, mã lỗi), ghi sổ token cấp project; duyệt luật GIẢ ĐỊNH buộc chọn mã lỗi, duyệt hàng loạt chỉ luật có trích dẫn; UI tải tài liệu/chỉ dẫn/ngân sách/tô sáng trích dẫn. Chuyên gia review đã sửa: đoạn quá dài, JSON bị cắt, lỗi ghi tách khỏi lỗi định dạng, thiếu đầu vào.
   - **Còn lại G3:** G3.5 đo thời gian duyệt (E2: đồng ý đo, `focusedMs`), đo precision/recall trích luật bằng AI thật (G5, cần báo trước ước tính token), "hạn mức ngày chưa có giữ chỗ" khi chạy 3 job song song (ghi nhận, ước lượng input chỉ là xấp xỉ).
-- [ ] **G3.5 Đo thời gian duyệt (E2)** trong giao diện, khoảng 0,5 ngày.
+- [x] **G3.5 Đo thời gian duyệt (E2)** trong giao diện, khoảng 0,5 ngày.
   - Mỗi luật ghi `firstViewedAt`, `decidedAt`, `decision`, `editedFields`. Tính khoảng có focus, trừ thời gian tab ẩn (`visibilitychange`). Không ghi thao tác chuột/bàn phím.
   - Chỉ đo khi người tham gia đồng ý: hiện công khai dòng "Phiên duyệt đang được đo thời gian cho đánh giá E2" + công tắc tắt. Dữ liệu xuất ẩn danh.
 - [x] **G3.6 Ngân sách token do người dùng đặt**, khoảng 1 ngày.
@@ -1772,9 +1772,15 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
 - **Cắt được nếu thiếu thời gian:** G3.4 (dùng nút sinh cũ), luật INFERRED khi không có tài liệu, mẫu máy trạng thái, ghi đè "Không áp dụng" của mục spec.
 
 **G4. Gói mục tất định rẻ (khoảng 1,5 ngày, 0 token)**
-- [ ] Body JSON hỏng cú pháp (kỳ vọng 400, hay gặp 500), sai Content-Type (415), sai method (405).
-- [ ] Thêm mẫu stack trace/SQL/tên class vào `SensitiveDataScanner` (:54-58).
-- [ ] Tính cảnh báo HIGH lộ dữ liệu (M21) là một cột phát hiện riêng trong báo cáo đo.
+- [x] Body JSON hỏng cú pháp (kỳ vọng 400, hay gặp 500), sai Content-Type (415), sai method (405).
+- [x] Thêm mẫu stack trace/SQL/tên class vào `SensitiveDataScanner` (:54-58).
+- [x] Tính cảnh báo HIGH lộ dữ liệu (M21) là một cột phát hiện riêng trong báo cáo đo.
+
+- *G4 + G3.5 ĐÃ LÀM 2026-10-23 (924/928 test backend pass):*
+  - **G4:** probe tất định 0 token `HTTP_ROBUSTNESS` (JSON hỏng cú pháp → kỳ vọng 400; sai Content-Type text/plain → 415). 5xx hoặc 2xx là Fail nhãn `HTTP_ROBUSTNESS` (CHẮC); 401/403/404 không được coi là đạt (vẫn Fail theo mã). Chạy thật trên API chuẩn: 8/8 đạt, 0 Fail giả.
+  - **Quét rò rỉ chi tiết lỗi** (stack trace Java/Python/JS, lỗi SQL, tên lớp framework) ở MỌI mã trạng thái, cảnh báo riêng; script đo có cột "rò rỉ dữ liệu" tách khỏi cột probe.
+  - **CHƯA làm: sai method (405)** - gửi sai method tới API lỗi có thể xoá/sửa dữ liệu thật; cần cơ chế xác nhận riêng. Probe chưa tính vào độ bao phủ OWASP, và chưa có mutant nào để đo khả năng bắt lỗi (đo ở G5).
+  - **G3.5:** công tắc đo thời gian duyệt (mặc định TẮT, banner công khai khi bật), đo thời gian luật hiện trong khung nhìn khi tab mở và có focus, gửi khi duyệt/loại/sửa, xuất JSON ẩn danh; duyệt hàng loạt không được đo.
 
 **G5. Đo lại và viết kết quả (khoảng 2-3 ngày; token do người dùng duyệt trước mỗi lần chạy)**
 - [ ] Đo cấu hình A, B cũ và **C mới (có tài liệu + luật đã duyệt)** trên 3 bộ:

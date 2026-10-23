@@ -80,6 +80,8 @@ class ProjectServiceTest {
 
     @Mock
     private com.aiapitesting.backend.repository.BusinessRuleRepository businessRuleRepository;
+    @Mock
+    private com.aiapitesting.backend.repository.RuleReviewTimingRepository ruleReviewTimingRepository;
 
     @Mock
     private com.aiapitesting.backend.repository.RequirementDocumentRepository requirementDocumentRepository;

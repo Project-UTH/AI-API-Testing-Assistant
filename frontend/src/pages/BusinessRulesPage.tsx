@@ -14,6 +14,8 @@ import { ApproveGuessDialog } from "@/components/rules/ApproveGuessDialog"
 import { BatchApproveDialog } from "@/components/rules/BatchApproveDialog"
 import { DocViewerDialog } from "@/components/rules/DocViewerDialog"
 import { ExtractRulesPanel } from "@/components/rules/ExtractRulesPanel"
+import { ReviewTimingBanner } from "@/components/rules/ReviewTimingBanner"
+import { reportReviewTiming } from "@/lib/reviewTiming"
 import { ListToolbar, type ListFilterSelect } from "@/components/shared/ListToolbar"
 import { ListEmptyState } from "@/components/shared/ListEmptyState"
 import { Pagination } from "@/components/shared/Pagination"
@@ -89,7 +91,9 @@ export function BusinessRulesPage() {
   const approve = useMutation({
     mutationFn: (input: { rule: BusinessRule; conflictNote?: string; expectedStatus?: number }) =>
       approveBusinessRule(projectId, input.rule.id, { conflictNote: input.conflictNote, expectedStatus: input.expectedStatus }),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      reportReviewTiming(projectId, variables.rule.id, "APPROVED")
+      queryClient.invalidateQueries({ queryKey: ["rules", projectId, "review-timing"] })
       setGuessRule(null)
       setConflictRule(null)
       setConflictNote("")
@@ -205,6 +209,7 @@ export function BusinessRulesPage() {
       </p>
 
       <ExtractRulesPanel projectId={projectId} />
+      <ReviewTimingBanner projectId={projectId} />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button
