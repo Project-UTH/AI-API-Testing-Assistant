@@ -182,6 +182,56 @@ class ExecutionFailureAnalyzerTest {
         org.mockito.Mockito.verifyNoInteractions(testCaseDependencyRepository);
     }
 
+    // ---- 17q G3 - API nhận dữ liệu vi phạm luật nghiệp vụ đã duyệt ----
+
+    private TestResult ruleResult(Integer expected, Integer actual, boolean rejectedClass) {
+        TestResult r = result(TestResultStatus.FAILED, expected, actual, "fp");
+        r.getTestCase().setRuleId(UUID.randomUUID());
+        r.getTestCase().setChecklistItem("Luật: salaryMin ≤ salaryMax");
+        r.getTestCase().setExpectedStatusClass(rejectedClass ? ExpectedStatus.REJECTED : null);
+        return r;
+    }
+
+    @Test
+    void ruleTestExpectedRejectedButApiAcceptedIt_isRuleViolationAccepted_withEvidenceAndNotSuppressed() {
+        TestResult r = ruleResult(400, 201, true);
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, List.of(r));
+
+        assertThat(r.getFailureCause()).isEqualTo(FailureCause.RULE_VIOLATION_ACCEPTED);
+        assertThat(r.getFailureCause().suppressesBugAutomation()).isFalse();
+        assertThat(r.getFailureEvidence()).contains("201").contains("salaryMin ≤ salaryMax").contains("không sửa kỳ vọng");
+    }
+
+    @Test
+    void ruleTestWithSpecificExpectedCode_alsoCountsWhenApiReturns2xx() {
+        TestResult r = ruleResult(422, 200, false);
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+        analyzer.analyze(execution, List.of(r));
+        assertThat(r.getFailureCause()).isEqualTo(FailureCause.RULE_VIOLATION_ACCEPTED);
+    }
+
+    @Test
+    void ruleTestWhereApiAnswersWith401Or500_isNotLabelledRuleViolationAccepted() {
+        TestResult unauthorized = ruleResult(400, 401, true);
+        TestResult crashed = ruleResult(400, 500, true);
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+
+        analyzer.analyze(execution, List.of(unauthorized, crashed));
+
+        assertThat(unauthorized.getFailureCause()).isNotEqualTo(FailureCause.RULE_VIOLATION_ACCEPTED);
+        assertThat(crashed.getFailureCause()).isNotEqualTo(FailureCause.RULE_VIOLATION_ACCEPTED);
+    }
+
+    @Test
+    void nonRuleTestWith2xxInsteadOf4xx_keepsTheOrdinaryClassification() {
+        TestResult r = result(TestResultStatus.FAILED, 400, 201, "fp");
+        when(testResultRepository.findHistoryRowsByTestCaseIds(anyList())).thenReturn(List.of());
+        analyzer.analyze(execution, List.of(r));
+        assertThat(r.getFailureCause()).isNotEqualTo(FailureCause.RULE_VIOLATION_ACCEPTED);
+    }
+
     @Test
     void noFailuresAndNoUnstableTest_savesNothing() {
         List<TestResult> results = List.of(result(TestResultStatus.PASSED, 200, 200, "fp"),

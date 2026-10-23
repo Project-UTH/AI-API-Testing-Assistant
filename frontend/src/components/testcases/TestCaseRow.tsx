@@ -54,10 +54,17 @@ export const TestCaseRow = memo(function TestCaseRow({
           // nhưng không do AI viết - hiện "Hệ thống" cho khỏi hiểu nhầm.
           testCase.generationOrigin === "SYSTEM_FILLED"
             ? "bg-teal-500/10 text-teal-600 dark:text-teal-400"
-            : TEST_CASE_SOURCE_STYLES[testCase.source]
+            : testCase.generationOrigin === "RULE_TEMPLATE"
+              ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+              : TEST_CASE_SOURCE_STYLES[testCase.source]
         )}
       >
-        {testCase.generationOrigin === "SYSTEM_FILLED" ? "Hệ thống" : TEST_CASE_SOURCE_LABEL[testCase.source]}
+        {/* 17q G3 - test từ luật nghiệp vụ lưu source=BUSINESS (để bộ lọc "!= BUSINESS" loại khỏi % EP/BVA) nhưng KHÔNG phải AI đoán: luật do người duyệt. */}
+        {testCase.generationOrigin === "SYSTEM_FILLED"
+          ? "Hệ thống"
+          : testCase.generationOrigin === "RULE_TEMPLATE"
+            ? "Nghiệp vụ (bạn duyệt)"
+            : TEST_CASE_SOURCE_LABEL[testCase.source]}
       </span>
       {testCase.probeKind === "MASS_ASSIGNMENT" && (
         <span

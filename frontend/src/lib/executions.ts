@@ -33,6 +33,7 @@ export type FailureCauseCode =
   | "MASS_ASSIGNMENT"
   | "TOKEN_FORBIDDEN"
   | "API_WRONG_STATUS"
+  | "RULE_VIOLATION_ACCEPTED"
 
 /** Nhãn tiếng Việt cho từng nguyên nhân (khớp FailureCause backend) - dùng cho bộ lọc; mọi mã backend phải có ở đây. */
 export const FAILURE_CAUSE_LABEL: Record<FailureCauseCode, string> = {
@@ -52,6 +53,7 @@ export const FAILURE_CAUSE_LABEL: Record<FailureCauseCode, string> = {
   MASS_ASSIGNMENT: "Nhận field không khai báo (mass assignment)",
   TOKEN_FORBIDDEN: "Nghi token thiếu quyền cho endpoint này",
   API_WRONG_STATUS: "API trả sai mã lỗi (401 thay vì 400)",
+  RULE_VIOLATION_ACCEPTED: "API nhận dữ liệu vi phạm luật nghiệp vụ",
 }
 
 export interface FailureCause {

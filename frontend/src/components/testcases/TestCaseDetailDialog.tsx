@@ -142,7 +142,7 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
           )}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full bg-muted px-2 py-0.5 font-medium">
-              {SOURCE_LABEL[testCase.source]}
+              {testCase.generationOrigin === "RULE_TEMPLATE" ? "Nghiệp vụ (bạn duyệt)" : SOURCE_LABEL[testCase.source]}
             </span>
             {testCase.probeKind === "MASS_ASSIGNMENT" && (
               <span className="rounded-full border border-destructive/40 px-2 py-0.5 font-medium text-destructive">Probe bảo mật</span>

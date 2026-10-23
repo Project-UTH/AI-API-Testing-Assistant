@@ -79,7 +79,13 @@ public enum FailureCause {
      * sai kiểu/enum/định dạng...). Dấu hiệu API xử lý lỗi đầu vào sai mã (vd lỗi đọc JSON bị chuyển sang luồng xác thực) - là PHÁT HIỆN thật
      * của API đích, KHÔNG bị loại khỏi Bug Report. Black-box không chứng minh tuyệt đối (không có request đối chứng riêng). Thêm vào CUỐI enum.
      */
-    API_WRONG_STATUS("API trả sai mã lỗi (401 thay vì 400)", false);
+    API_WRONG_STATUS("API trả sai mã lỗi (401 thay vì 400)", false),
+    /**
+     * 17q G3 - test sinh từ luật nghiệp vụ NGƯỜI DÙNG ĐÃ DUYỆT, kỳ vọng "bị từ chối" nhưng API trả 2xx (nhận dữ liệu vi phạm luật). Oracle là luật
+     * do người chịu trách nhiệm nên là PHÁT HIỆN thật của API đích (trừ khi luật sai - người duyệt tự xét), KHÔNG bị loại khỏi Bug Report.
+     * Thêm vào CUỐI enum.
+     */
+    RULE_VIOLATION_ACCEPTED("API nhận dữ liệu vi phạm luật nghiệp vụ", false);
 
     private final String label;
     private final boolean notApiFault;
