@@ -10,6 +10,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { BusinessRuleFormDialog } from "@/components/rules/BusinessRuleFormDialog"
 import { RejectRuleDialog } from "@/components/rules/RejectRuleDialog"
 import { RuleItem } from "@/components/rules/RuleItem"
+import { ApproveGuessDialog } from "@/components/rules/ApproveGuessDialog"
+import { BatchApproveDialog } from "@/components/rules/BatchApproveDialog"
+import { DocViewerDialog } from "@/components/rules/DocViewerDialog"
+import { ExtractRulesPanel } from "@/components/rules/ExtractRulesPanel"
 import { ListToolbar, type ListFilterSelect } from "@/components/shared/ListToolbar"
 import { ListEmptyState } from "@/components/shared/ListEmptyState"
 import { Pagination } from "@/components/shared/Pagination"
@@ -17,6 +21,7 @@ import { useListFilters } from "@/hooks/useListFilters"
 import { ApiError } from "@/lib/api"
 import {
   approveBusinessRule,
+  approveBusinessRulesBatch,
   deleteBusinessRule,
   detectBusinessRules,
   generateRuleTests,
@@ -48,6 +53,10 @@ export function BusinessRulesPage() {
   const [conflictNote, setConflictNote] = useState("")
   const [generated, setGenerated] = useState<GenerateRuleTestsResult | null>(null)
   const [detectedMessage, setDetectedMessage] = useState<string | null>(null)
+  const [guessRule, setGuessRule] = useState<BusinessRule | null>(null)
+  const [viewing, setViewing] = useState<{ documentId: string; quote: string; offset: number | null } | null>(null)
+  const [batchOpen, setBatchOpen] = useState(false)
+  const [batchMessage, setBatchMessage] = useState<string | null>(null)
 
   const { data, isLoading, isError, isFetching, isPlaceholderData } = useQuery({
     queryKey: ["rules", projectId, "page", lf.params],
@@ -74,14 +83,30 @@ export function BusinessRulesPage() {
   }, [queryClient, projectId])
 
   const approve = useMutation({
-    mutationFn: (input: { rule: BusinessRule; conflictNote?: string }) =>
-      approveBusinessRule(projectId, input.rule.id, { conflictNote: input.conflictNote }),
+    mutationFn: (input: { rule: BusinessRule; conflictNote?: string; expectedStatus?: number }) =>
+      approveBusinessRule(projectId, input.rule.id, { conflictNote: input.conflictNote, expectedStatus: input.expectedStatus }),
     onSuccess: () => {
+      setGuessRule(null)
       setConflictRule(null)
       setConflictNote("")
       invalidate()
     },
   })
+  const batchApprove = useMutation({
+    mutationFn: (ids: string[]) => approveBusinessRulesBatch(projectId, ids),
+    onSuccess: (result) => {
+      setBatchOpen(false)
+      setBatchMessage(
+        `Đã duyệt ${result.approvedIds.length} luật.` + (result.notApproved.length > 0 ? ` ${result.notApproved.length} luật không đủ điều kiện duyệt hàng loạt.` : "")
+      )
+      invalidate()
+    },
+  })
+  const { data: citedPage } = useQuery({
+    queryKey: ["rules", projectId, "cited-proposed"],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED" }),
+  })
+  const citedProposed = useMemo(() => (citedPage?.data ?? []).filter((r) => r.quote !== null && r.source !== "INFERRED"), [citedPage])
   const remove = useMutation({ mutationFn: (rule: BusinessRule) => deleteBusinessRule(projectId, rule.id), onSuccess: invalidate })
   const detect = useMutation({
     mutationFn: () => detectBusinessRules(projectId),
@@ -117,10 +142,17 @@ export function BusinessRulesPage() {
         setConflictRule(rule)
         return
       }
+      if (rule.source === "INFERRED" && rule.expectedStatus === null) {
+        setGuessRule(rule)
+        return
+      }
       approve.mutate({ rule })
     },
     [approve]
   )
+  const onViewQuote = useCallback((rule: BusinessRule) => {
+    if (rule.documentId && rule.quote) setViewing({ documentId: rule.documentId, quote: rule.quote, offset: rule.quoteOffset })
+  }, [])
   const onEdit = useCallback((rule: BusinessRule) => {
     setEditing(rule)
     setFormOpen(true)
@@ -150,7 +182,7 @@ export function BusinessRulesPage() {
       options: (Object.keys(RULE_SOURCE_DISPLAY) as RuleSource[]).map((value) => ({ value, label: RULE_SOURCE_DISPLAY[value].label })),
     },
   ]
-  const error = [approve, remove, detect, generate].map((m) => m.error).find(Boolean)
+  const error = [approve, batchApprove, remove, detect, generate].map((m) => m.error).find(Boolean)
 
   return (
     <div>
@@ -159,6 +191,8 @@ export function BusinessRulesPage() {
         Luật "luật trước, test sau": bạn duyệt luật (và kỳ vọng), hệ thống sinh test từ luật đã duyệt - không dùng AI, không tốn token. Luật không có
         trong spec nên phải do người xác nhận.
       </p>
+
+      <ExtractRulesPanel projectId={projectId} />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button
@@ -180,6 +214,16 @@ export function BusinessRulesPage() {
           type="button"
           size="sm"
           variant="outline"
+          disabled={citedProposed.length === 0}
+          title={citedProposed.length === 0 ? "Không có luật có trích dẫn nào đang chờ duyệt" : "Đối chiếu từng luật với đoạn trích rồi duyệt một lượt"}
+          onClick={() => setBatchOpen(true)}
+        >
+          Duyệt {citedProposed.length} luật có trích dẫn…
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
           className="ml-auto"
           disabled={approvedCount === 0 || generate.isPending}
           title={approvedCount === 0 ? "Chưa có luật nào được duyệt" : "Sinh tất định, 0 token; cần test gốc đã Pass"}
@@ -190,6 +234,11 @@ export function BusinessRulesPage() {
         </Button>
       </div>
 
+      {batchMessage && (
+        <p role="status" className="mt-3 rounded-md bg-muted p-2 text-sm">
+          {batchMessage}
+        </p>
+      )}
       {detectedMessage && (
         <p role="status" className="mt-3 rounded-md bg-muted p-2 text-sm">
           {detectedMessage}
@@ -255,6 +304,7 @@ export function BusinessRulesPage() {
                   onEdit={onEdit}
                   onReject={setRejecting}
                   onDelete={onDelete}
+                  onViewQuote={onViewQuote}
                 />
               ))}
             </ul>
@@ -286,6 +336,20 @@ export function BusinessRulesPage() {
         rule={editing}
       />
       <RejectRuleDialog projectId={projectId} rule={rejecting} onClose={() => setRejecting(null)} />
+      <ApproveGuessDialog
+        rule={guessRule}
+        pending={approve.isPending}
+        onCancel={() => setGuessRule(null)}
+        onConfirm={(rule, expectedStatus) => approve.mutate({ rule, expectedStatus })}
+      />
+      <BatchApproveDialog
+        open={batchOpen}
+        rules={citedProposed}
+        pending={batchApprove.isPending}
+        onClose={() => setBatchOpen(false)}
+        onConfirm={(ids) => batchApprove.mutate(ids)}
+      />
+      <DocViewerDialog projectId={projectId} target={viewing} onClose={() => setViewing(null)} />
 
       <Dialog open={conflictRule !== null} onOpenChange={(open) => !open && setConflictRule(null)}>
         <DialogContent className="sm:max-w-md">

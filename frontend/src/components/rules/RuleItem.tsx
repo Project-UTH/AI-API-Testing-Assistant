@@ -18,10 +18,11 @@ interface RuleItemProps {
   onEdit: (rule: BusinessRule) => void
   onReject: (rule: BusinessRule) => void
   onDelete: (rule: BusinessRule) => void
+  onViewQuote: (rule: BusinessRule) => void
 }
 
 /** 1 luật nghiệp vụ: câu luật + chip mẫu/nguồn/trạng thái + kỳ vọng + thao tác. memo: duyệt 1 luật không vẽ lại cả danh sách. */
-export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, onReject, onDelete }: RuleItemProps) {
+export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, onReject, onDelete, onViewQuote }: RuleItemProps) {
   const status = getRuleStatusDisplay(rule.status)
   const source = getRuleSourceDisplay(rule.source)
   const canApprove = rule.status === "PROPOSED" || rule.status === "CONFLICT"
@@ -53,7 +54,19 @@ export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, 
       </div>
 
       {rule.quote && (
-        <blockquote className="border-l-2 border-emerald-500/50 pl-2 text-xs text-muted-foreground">“{rule.quote}”</blockquote>
+        <blockquote className="border-l-2 border-emerald-500/50 pl-2 text-xs text-muted-foreground">
+          “{rule.quote}”
+          {rule.documentId && rule.quoteOffset !== null && (
+            <button type="button" className="ml-2 text-primary underline underline-offset-2" onClick={() => onViewQuote(rule)}>
+              Xem trong tài liệu
+            </button>
+          )}
+        </blockquote>
+      )}
+      {rule.source === "INFERRED" && !rule.quote && rule.status === "PROPOSED" && (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          AI đoán, không có trích dẫn nào xác nhận. Khi duyệt bạn phải tự chọn mã lỗi kỳ vọng.
+        </p>
       )}
       {rule.rationale && !rule.quote && <p className="text-xs text-muted-foreground">{rule.rationale}</p>}
       {rule.statusNote && (
@@ -66,7 +79,7 @@ export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, 
       <div className="flex flex-wrap justify-end gap-1.5">
         {canApprove && (
           <Button type="button" size="xs" disabled={busy} onClick={() => onApprove(rule)}>
-            {rule.status === "CONFLICT" ? "Duyệt (kèm ghi chú)" : "Duyệt"}
+            {rule.status === "CONFLICT" ? "Duyệt (kèm ghi chú)" : rule.source === "INFERRED" ? "Duyệt (chọn mã lỗi)…" : "Duyệt"}
           </Button>
         )}
         {canEdit && (

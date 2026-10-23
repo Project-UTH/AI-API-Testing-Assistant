@@ -49,6 +49,10 @@ export interface BusinessRule {
   source: RuleSource
   rationale: string | null
   quote: string | null
+  /** Vị trí (ký tự) của đoạn trích trong tài liệu đã chuẩn hoá; dùng để tô sáng chính xác. */
+  quoteOffset: number | null
+  documentId: string | null
+  extractionJobId: string | null
   rejectReason: RuleRejectReason | null
   statusNote: string | null
   reviewedAt: string | null
@@ -272,3 +276,16 @@ export function getEndpointFields(projectId: string, endpointId: string): Promis
 export function expectedLabel(expectedStatus: number | null): string {
   return expectedStatus == null ? "Bị từ chối (4xx)" : `Mã ${expectedStatus}`
 }
+
+export interface ApproveBatchResult {
+  approvedIds: string[]
+  notApproved: { ruleId: string; reason: string }[]
+}
+
+/** Duyệt hàng loạt: backend chỉ nhận luật CÓ TRÍCH DẪN đang chờ duyệt, luật khác được trả lại kèm lý do. */
+export function approveBusinessRulesBatch(projectId: string, ruleIds: string[]): Promise<ApproveBatchResult> {
+  return apiFetch<ApproveBatchResult>(`/projects/${projectId}/business-rules/approve-batch`, { method: "POST", body: JSON.stringify({ ruleIds }) })
+}
+
+/** Mã lỗi hay gặp để người duyệt chọn cho luật GIẢ ĐỊNH (backend nhận mọi mã 4xx). */
+export const COMMON_REJECT_STATUSES = [400, 401, 403, 404, 409, 422] as const

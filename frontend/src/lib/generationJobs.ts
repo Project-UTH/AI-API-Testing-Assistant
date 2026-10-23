@@ -144,5 +144,5 @@ export const REASON_HELP: Record<string, string> = {
 
 /** Làm mới mọi dữ liệu bị ảnh hưởng khi job có thay đổi test case. */
 export function jobQueryKeys(projectId: string): unknown[][] {
-  return [["endpoints", projectId], ["project-coverage", projectId], ["test-cases", projectId], ["ai-usage"], ["generation-plan", projectId]]
+  return [["endpoints", projectId], ["project-coverage", projectId], ["test-cases", projectId], ["ai-usage"], ["generation-plan", projectId], ["rules", projectId], ["requirement-docs", projectId]]
 }

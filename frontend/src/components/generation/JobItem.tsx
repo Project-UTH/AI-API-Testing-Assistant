@@ -291,7 +291,52 @@ function StepRow({ step, now }: { step: GenerationStep; now: number }) {
   )
 }
 
+const STOP_TEXT: Record<string, string> = {
+  BUDGET_STOPPED: "Dừng vì chạm ngân sách token - phần đã trích được giữ lại. Tăng ngân sách rồi chạy lại để trích tiếp (luật trùng được bỏ qua).",
+  DAILY_QUOTA: "Dừng vì hết quota token AI trong ngày - phần đã trích được giữ lại.",
+  AI_ERROR: "Dừng vì gọi AI lỗi - phần đã trích được giữ lại.",
+  WRITE_ERROR: "Dừng vì lỗi hệ thống khi lưu luật - phần đã lưu ở các lô trước được giữ.",
+  NO_INPUT: "Không còn tài liệu hay chỉ dẫn nào để trích (tài liệu có thể vừa bị xoá).",
+}
+
+function RulesSummary({ job, projectId }: { job: GenerationJob; projectId: string }) {
+  const r = job.rules
+  return (
+    <footer className="border-t border-border px-4 py-3 text-xs" aria-live="polite">
+      {r ? (
+        <>
+          <p className="font-medium">
+            {job.dryRun ? "Chạy thử: " : ""}
+            {r.endpointCount} endpoint · {r.lotsDone}/{r.lotsPlanned} lô · {job.tokensUsed.toLocaleString("vi-VN")}/{r.tokenBudget.toLocaleString("vi-VN")} token
+            {job.dryRun ? ` · ước tính tối đa ~${r.estimatedTokens.toLocaleString("vi-VN")} token` : ""}
+          </p>
+          {!job.dryRun && (
+            <p className="mt-1">
+              Đề xuất mới: {r.fromDocument} có trích dẫn tài liệu · {r.fromInstruction} từ chỉ dẫn · {r.inferred} GIẢ ĐỊNH
+              {r.conflicts > 0 ? ` · ${r.conflicts} mâu thuẫn spec` : ""}. Tất cả đang ở "Chờ duyệt".
+            </p>
+          )}
+          {!job.dryRun && (r.skippedExisting > 0 || r.skippedInferred > 0 || r.skippedOverCap > 0 || r.rejectedAsDuplicateOfSpec > 0) && (
+            <p className="mt-1 text-muted-foreground">
+              Bỏ qua: {r.skippedExisting} đã có · {r.skippedInferred} không có trích dẫn · {r.skippedOverCap} vượt trần mỗi endpoint · {r.rejectedAsDuplicateOfSpec} trùng
+              ràng buộc spec
+              {Object.keys(r.dropped).length > 0 ? ` · ${Object.values(r.dropped).reduce((a, b) => a + b, 0)} sai endpoint/mẫu/field` : ""}
+            </p>
+          )}
+          {r.stoppedReason && <p className="mt-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2">{STOP_TEXT[r.stoppedReason] ?? r.stoppedReason}</p>}
+        </>
+      ) : (
+        job.errorMessage && <p className="text-destructive">{job.errorMessage}</p>
+      )}
+      <Link to={`/projects/${projectId}/rules`} className="mt-2 inline-block text-primary underline underline-offset-4">
+        Xem và duyệt luật
+      </Link>
+    </footer>
+  )
+}
+
 function Summary({ job, projectId }: { job: GenerationJob; projectId: string }) {
+  if (job.type === "RULES") return <RulesSummary job={job} projectId={projectId} />
   const needsHuman = job.results.filter((r) => r.status === "NEEDS_HUMAN" || r.status === "FAILED")
   const total = job.results.reduce((sum, r) => sum + r.filled, 0)
   const writeCalls = job.steps.filter(
