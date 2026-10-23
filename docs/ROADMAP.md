@@ -1732,7 +1732,7 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - **Frontend:** tab "Nghiệp vụ" (`/projects/:id/rules`): danh sách nhóm theo endpoint, chip trạng thái/nguồn/mẫu, Duyệt/Sửa/Loại (bắt buộc lý do)/Xoá, hộp thoại thêm/sửa luật (field chọn từ spec, câu luật xem trước), "Hệ thống phát hiện luật", "Sinh test từ N luật đã duyệt"; Coverage có dòng riêng "Nghiệp vụ: x/y luật đã duyệt có test" (không gộp với lớp spec; chưa có luật ghi "chưa có luật").
   - **Kiểm chứng trên hệ thống thật (0 token, `mutant-api`):** phát hiện 2 luật min/max, tự nhập luật ngày + tổng weight; sinh 5 test, Pass hết trên bản chuẩn; bật lỗi M23, M24, M25 (3 lỗi luật nghiệp vụ mà checklist tất định bỏ lọt 0/5) → mỗi lỗi bị đúng 1 test bắt, nhãn `RULE_VIOLATION_ACCEPTED`. **Lưu ý trung thực:** đây là minh hoạ cơ chế trên bộ phát triển (người nhập luật biết lỗi M), KHÔNG phải số đo độ chính xác - số đo là G5 trên held-out. Khung đo bật/tắt lỗi liên tục trên cùng 1 test nên có test bị gắn "không ổn định" (hạn chế đã biết của khung đo).
   - **G3.2 còn lại:** master-detail + đoạn trích tô sáng (cần G3.3), đo thời gian duyệt (G3.5). Không có "Duyệt tất cả" nên chưa cần cơ chế chống duyệt bừa; thêm khi có luật AI.
-- [ ] **G3.3 Tải tài liệu + AI trích luật + kiểm chứng trích dẫn**, nhánh `feature/requirement-doc`, khoảng 2,5 ngày backend + 1 ngày frontend.
+- [x] **G3.3 Tải tài liệu + AI trích luật + kiểm chứng trích dẫn**, nhánh `feature/requirement-doc`, khoảng 2,5 ngày backend + 1 ngày frontend.
   - Entity `RequirementDocument`: `projectId`, `fileName`, `sizeBytes`, `sha256`, `content` MEDIUMTEXT, `uploadedBy`, `createdAt`, `active`. Tải bản mới thì luật của bản cũ chuyển STALE, không xoá.
   - Giới hạn tài liệu: **chỉ .md/.txt UTF-8**, ≤ 200 KB/file, ≤ 5 file/project, quyền sở hữu qua `getOwnedProject`.
   - Quét secret (mẫu của `SensitiveDataScanner`) và cảnh báo trước khi gửi AI.
@@ -1748,13 +1748,15 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - **Sửa lỗi quota có sẵn:**
     - `TestGenerationEvent.endpoint` nullable + thêm `projectId`, để token trích luật cấp project được tính quota;
     - import REPLACE không xoá event token.
-- [ ] **G3.4 Gắn vào job + ô chỉ dẫn**, cùng nhánh G3.3, khoảng 1 ngày backend + 1 ngày frontend.
+- [x] **G3.4 Gắn vào job + ô chỉ dẫn**, cùng nhánh G3.3, khoảng 1 ngày backend + 1 ngày frontend.
   - Thêm loại job `TYPE_RULES` + bước giám sát "Đọc tài liệu", "Đề xuất luật", "Kiểm chứng trích dẫn".
   - Lưu ô chỉ dẫn vào job + vào metadata nguồn của luật. Hiện "chỉ dẫn lần trước" để người dùng chọn dùng lại.
+  - *G3.3/G3.4/G3.6 ĐÃ LÀM 2026-10-23 (chưa chạy AI thật, test dùng ChatClient giả):* tải tài liệu .md/.txt; job `RULES` chia lô theo endpoint, ngân sách token cứng (mặc định 60.000, 5.000..1.000.000) + quota ngày, kiểm chứng tất định (trích dẫn nguyên văn, hằng số, mã lỗi), ghi sổ token cấp project; duyệt luật GIẢ ĐỊNH buộc chọn mã lỗi, duyệt hàng loạt chỉ luật có trích dẫn; UI tải tài liệu/chỉ dẫn/ngân sách/tô sáng trích dẫn. Chuyên gia review đã sửa: đoạn quá dài, JSON bị cắt, lỗi ghi tách khỏi lỗi định dạng, thiếu đầu vào.
+  - **Còn lại G3:** G3.5 đo thời gian duyệt (E2: đồng ý đo, `focusedMs`), đo precision/recall trích luật bằng AI thật (G5, cần báo trước ước tính token), "hạn mức ngày chưa có giữ chỗ" khi chạy 3 job song song (ghi nhận, ước lượng input chỉ là xấp xỉ).
 - [ ] **G3.5 Đo thời gian duyệt (E2)** trong giao diện, khoảng 0,5 ngày.
   - Mỗi luật ghi `firstViewedAt`, `decidedAt`, `decision`, `editedFields`. Tính khoảng có focus, trừ thời gian tab ẩn (`visibilitychange`). Không ghi thao tác chuột/bàn phím.
   - Chỉ đo khi người tham gia đồng ý: hiện công khai dòng "Phiên duyệt đang được đo thời gian cho đánh giá E2" + công tắc tắt. Dữ liệu xuất ẩn danh.
-- [ ] **G3.6 Ngân sách token do người dùng đặt**, khoảng 1 ngày.
+- [x] **G3.6 Ngân sách token do người dùng đặt**, khoảng 1 ngày.
   - Wizard có ô "Giới hạn token cho lần sinh này" (mặc định 60.000) + **ước tính trước khi chạy**.
   - Đến ngưỡng thì job dừng các bước AI còn lại, giữ phần đã làm, ghi rõ lý do trong khung giám sát.
   - Đổi trần mềm hiện nay thành **trần thật**: kiểm trước mỗi lần gọi AI theo ước tính, không chỉ sau khi gọi.
