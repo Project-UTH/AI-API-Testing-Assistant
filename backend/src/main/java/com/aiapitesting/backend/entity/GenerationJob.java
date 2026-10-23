@@ -38,6 +38,7 @@ public class GenerationJob {
     public static final String TYPE_FULL = "FULL";
     public static final String TYPE_SYSTEM = "SYSTEM";
     public static final String TYPE_LEGACY = "LEGACY";
+    public static final String TYPE_RULES = "RULES";
 
     public static final String QUEUED = "QUEUED";
     public static final String RUNNING = "RUNNING";

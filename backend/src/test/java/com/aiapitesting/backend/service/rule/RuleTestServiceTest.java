@@ -68,6 +68,8 @@ class RuleTestServiceTest {
     private TestCaseService testCaseService;
 
     private final TestCaseChecklistPlanner planner = new TestCaseChecklistPlanner();
+    @Mock
+    private com.aiapitesting.backend.repository.GenerationJobRepository generationJobRepository;
     private RuleTestService service;
     private Project project;
     private Endpoint endpoint;
@@ -105,7 +107,7 @@ class RuleTestServiceTest {
         lenient().when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(latest(baseline.getId(), TestResultStatus.PASSED)));
         service = new RuleTestService(projectService, ruleRepository, ruleService, endpointRepository, testCaseRepository, dependencyRepository,
                 assertionRepository, testResultRepository, bugReportRepository, testCaseService, planner,
-                new RuleTestGenerator(planner), new TestCasePathValidator());
+                new RuleTestGenerator(planner), new TestCasePathValidator(), generationJobRepository);
     }
 
     private TestResultRepository.TestCaseLatestResult latest(UUID id, TestResultStatus status) {
@@ -134,6 +136,15 @@ class RuleTestServiceTest {
                 return null;
             }
         };
+    }
+
+    @Test
+    void generate_isRefusedWhileABackgroundJobIsActive() {
+        when(generationJobRepository.existsByProjectIdAndStatusIn(org.mockito.ArgumentMatchers.eq(project.getId()), any())).thenReturn(true);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.generate(project.getId(), null))
+                .isInstanceOf(com.aiapitesting.backend.exception.ExecutionInProgressException.class);
+        verify(testCaseRepository, org.mockito.Mockito.never()).saveAll(any());
     }
 
     @Test

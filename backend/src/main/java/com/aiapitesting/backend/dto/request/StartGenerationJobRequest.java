@@ -12,7 +12,7 @@ import java.util.UUID;
 /**
  * Bắt đầu 1 job sinh test chạy nền. Là lớp thường (mọi trường tuỳ chọn) để client gửi thiếu trường vẫn hợp lệ.
  *
- * <p>type: FULL (AI sinh test gốc + chạy xác nhận + hệ thống bổ sung; mặc định khi chọn 1 endpoint), SYSTEM (chỉ hệ thống, 0 token; mặc định khi chọn
+ * <p>type: RULES (AI trích luật từ tài liệu/chỉ dẫn, luật chờ duyệt; tokenCap là ngân sách cứng), FULL (AI sinh test gốc + chạy xác nhận + hệ thống bổ sung; mặc định khi chọn 1 endpoint), SYSTEM (chỉ hệ thống, 0 token; mặc định khi chọn
  * nhiều endpoint), LEGACY (nút 'Sinh Test Case' cũ: AI sinh theo nhóm đã tick). dryRun: chỉ liệt kê các bước sẽ làm, không gọi AI/API đích.
  */
 @Getter
@@ -35,4 +35,8 @@ public class StartGenerationJobRequest {
     private Boolean includeBoundary;
     private Boolean includeSecurity;
     private Boolean includeBusiness;
+    // Chỉ cho RULES (trích luật nghiệp vụ): tài liệu được chọn (null/rỗng = tất cả), chỉ dẫn thêm, có nhận luật GIẢ ĐỊNH không
+    private List<UUID> documentIds;
+    private String instruction;
+    private Boolean allowInferred;
 }

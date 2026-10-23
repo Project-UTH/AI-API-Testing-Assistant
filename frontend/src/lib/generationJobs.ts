@@ -4,7 +4,7 @@ import { apiFetch } from "@/lib/api"
 export type JobStatus = "QUEUED" | "RUNNING" | "CANCELLING" | "SUCCEEDED" | "NEEDS_HUMAN" | "FAILED" | "CANCELLED" | "INTERRUPTED"
 export type StepStatus = "RUNNING" | "OK" | "FAILED" | "SKIPPED"
 export type StepActor = "SYSTEM" | "AI"
-export type JobType = "FULL" | "SYSTEM" | "LEGACY"
+export type JobType = "FULL" | "SYSTEM" | "LEGACY" | "RULES"
 
 export interface GenerationStep {
   seq: number
@@ -32,6 +32,26 @@ export interface JobEndpointResult {
   filled: number
 }
 
+/** Kết quả cuối của job trích luật (type RULES); luật vẫn ở trạng thái chờ duyệt. */
+export interface RulesJobResult {
+  endpointCount: number
+  lotsPlanned: number
+  lotsDone: number
+  estimatedTokens: number
+  fromDocument: number
+  fromInstruction: number
+  inferred: number
+  rejectedAsDuplicateOfSpec: number
+  conflicts: number
+  skippedExisting: number
+  skippedOverCap: number
+  skippedInferred: number
+  dropped: Record<string, number>
+  /** BUDGET_STOPPED | DAILY_QUOTA | AI_ERROR | null */
+  stoppedReason: string | null
+  tokenBudget: number
+}
+
 export interface GenerationJob {
   id: string
   projectId: string
@@ -47,10 +67,14 @@ export interface GenerationJob {
   results: JobEndpointResult[]
   steps: GenerationStep[]
   lastSeq: number
+  rules: RulesJobResult | null
 }
 
 export interface StartJobBody {
-  endpointIds: string[]
+  endpointIds?: string[]
+  documentIds?: string[]
+  instruction?: string
+  allowInferred?: boolean
   type?: JobType
   dryRun?: boolean
   tokenCap?: number
@@ -89,6 +113,7 @@ export const JOB_TYPE_LABEL: Record<JobType, string> = {
   FULL: "Sinh test case (AI sinh test gốc + hệ thống bổ sung)",
   SYSTEM: "Sinh test case: chỉ bổ sung từ test gốc có sẵn (0 token)",
   LEGACY: "Sinh toàn bộ bằng AI (chức năng cũ đã bỏ)",
+  RULES: "AI trích luật nghiệp vụ từ tài liệu (luật chờ bạn duyệt)",
 }
 
 export const JOB_STATUS_LABEL: Record<JobStatus, string> = {

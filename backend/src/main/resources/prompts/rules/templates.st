@@ -1,0 +1,9 @@
+- COMPARE_FIELDS: so sánh 2 field với nhau. params: left, op (LT, LTE, EQ, GTE, GT), right. Ví dụ: lương tối thiểu không được lớn hơn lương tối đa.
+- REQUIRES: khi có field (hoặc field có đúng giá trị) thì bắt buộc phải có các field khác. params: field, fieldValue (tuỳ chọn), fields (danh sách field bắt buộc kèm theo).
+- ALL_OR_NONE: nhóm field phải có đủ tất cả hoặc không có field nào. params: fields.
+- ONLY_ONE: đúng 1 field trong nhóm được có. params: fields.
+- ZERO_OR_ONE: tối đa 1 field trong nhóm được có. params: fields.
+- OR: ít nhất 1 field trong nhóm phải có. params: fields.
+- DATE_RELATIVE: field ngày giờ so với thời điểm hiện tại cộng độ lệch. params: field, op (GTE hoặc LTE), offset (số nguyên, 0 = bây giờ), unit (DAY hoặc HOUR).
+- VALUE_RANGE: khoảng giá trị nghiệp vụ mà spec chưa khai. params: field, min, max (có thể bỏ một trong hai).
+- ARRAY_AGGREGATE: hàm tổng hợp trên các phần tử mảng so với một hằng. params: array, item (field con của phần tử), fn (SUM, COUNT hoặc DISTINCT), op, value.

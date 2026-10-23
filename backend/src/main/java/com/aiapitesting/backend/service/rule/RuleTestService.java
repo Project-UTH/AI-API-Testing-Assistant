@@ -65,11 +65,16 @@ public class RuleTestService {
     private final TestCaseChecklistPlanner planner;
     private final RuleTestGenerator generator;
     private final TestCasePathValidator testCasePathValidator;
+    private final com.aiapitesting.backend.repository.GenerationJobRepository generationJobRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
     public GenerateTestsResponse generate(UUID projectId, GenerateTestsRequest request) {
         Project project = projectService.getOwnedProject(projectId);
+        if (generationJobRepository.existsByProjectIdAndStatusIn(projectId, java.util.Set.of("QUEUED", "RUNNING", "CANCELLING"))) {
+            throw new com.aiapitesting.backend.exception.ExecutionInProgressException(
+                    "Project đang có job nền (sinh test hoặc trích luật) chưa xong - đợi xong hoặc huỷ job đó trước khi sinh test từ luật");
+        }
         boolean explicitRules = request != null && request.ruleIds() != null && !request.ruleIds().isEmpty();
         List<BusinessRule> rules = ruleRepository.findAllByProject(project).stream()
                 .filter(r -> !explicitRules || request.ruleIds().contains(r.getId()))

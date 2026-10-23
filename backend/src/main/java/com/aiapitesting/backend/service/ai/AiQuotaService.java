@@ -1,6 +1,7 @@
 package com.aiapitesting.backend.service.ai;
 
 import com.aiapitesting.backend.entity.Project;
+import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.exception.AiQuotaExceededException;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,10 +26,15 @@ public class AiQuotaService {
 
     /** Token còn được dùng hôm nay (>= 0). */
     public long remainingToday(Project project) {
+        return remainingToday(project.getOwner());
+    }
+
+    /** Dùng được ngoài phiên Hibernate (luồng job): truyền User đã tải đầy đủ. */
+    public long remainingToday(User owner) {
         Instant startOfToday = Instant.now().truncatedTo(ChronoUnit.DAYS);
         long used = testGenerationEventRepository.sumTotalTokensByOwnerAndCreatedAtBetween(
-                project.getOwner(), startOfToday, startOfToday.plus(1, ChronoUnit.DAYS));
-        Integer override = project.getOwner().getAiDailyTokenLimitOverride();
+                owner, startOfToday, startOfToday.plus(1, ChronoUnit.DAYS));
+        Integer override = owner.getAiDailyTokenLimitOverride();
         long limit = override != null ? override : dailyTokenLimit;
         return Math.max(0, limit - used);
     }
