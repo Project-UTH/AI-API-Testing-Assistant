@@ -34,6 +34,8 @@ public class StartGenerationJobRequest {
     private Boolean includeNegative;
     private Boolean includeBoundary;
     private Boolean includeSecurity;
+    /** Phạm vi probe OWASP (mass assignment, request lỗi định dạng, TRACE): 0 token, chỉ gửi thêm request tới API đích. Mặc định tắt. */
+    private Boolean includeOwasp;
     private Boolean includeBusiness;
     // Chỉ cho RULES (trích luật nghiệp vụ): tài liệu được chọn (null/rỗng = tất cả), chỉ dẫn thêm, có nhận luật GIẢ ĐỊNH không
     private List<UUID> documentIds;

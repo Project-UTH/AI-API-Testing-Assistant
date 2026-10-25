@@ -49,6 +49,23 @@ class HttpRobustnessProbeTest {
     }
 
     @Test
+    void wrongMethod_traceEnabledOrServerErrorFails_405AndOtherRejectionsPass_authIsInconclusive() {
+        assertThat(Variant.WRONG_METHOD.expectedStatus()).isEqualTo(405);
+        MassAssignmentProbe.Outcome enabled = HttpRobustnessProbe.evaluate(Variant.WRONG_METHOD, 200);
+        assertThat(enabled.verdict()).isEqualTo(Verdict.FAIL);
+        assertThat(enabled.finding().rule()).isEqualTo(HttpRobustnessProbe.RULE_ACCEPTED);
+        assertThat(enabled.detail()).contains("TRACE");
+        assertThat(HttpRobustnessProbe.evaluate(Variant.WRONG_METHOD, 500).verdict()).isEqualTo(Verdict.FAIL);
+        for (int status : new int[]{405, 501, 404, 400, 403}) {
+            assertThat(HttpRobustnessProbe.evaluate(Variant.WRONG_METHOD, status).verdict()).as("status %d", status).isEqualTo(Verdict.PASS);
+        }
+        assertThat(HttpRobustnessProbe.evaluate(Variant.WRONG_METHOD, 401).verdict()).isEqualTo(Verdict.INCONCLUSIVE);
+        // 422 là câu trả lời của validation, không phải của việc từ chối phương thức
+        assertThat(HttpRobustnessProbe.evaluate(Variant.WRONG_METHOD, 422).verdict()).isEqualTo(Verdict.INCONCLUSIVE);
+        assertThat(HttpRobustnessProbe.PROBE_HTTP_METHOD).isEqualTo("TRACE"); // không bao giờ là PUT/PATCH/DELETE: có thể xoá/sửa dữ liệu thật
+    }
+
+    @Test
     void noStatusOrUnknownVariant_isInconclusive_andProbeJsonRoundTrips() {
         assertThat(HttpRobustnessProbe.evaluate(Variant.MALFORMED_JSON, null).verdict()).isEqualTo(Verdict.INCONCLUSIVE);
         assertThat(HttpRobustnessProbe.evaluate(null, 500).verdict()).isEqualTo(Verdict.INCONCLUSIVE);

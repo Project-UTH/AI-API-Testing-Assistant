@@ -30,16 +30,21 @@ interface Props {
   onOpenChange: (open: boolean) => void
 }
 
-type GroupKey = "positive" | "negative" | "boundary" | "security"
+type GroupKey = "positive" | "negative" | "boundary" | "security" | "owasp"
 
 const GROUPS: { key: GroupKey; label: string; hint: string }[] = [
   { key: "positive", label: "Positive (luôn có)", hint: "test gốc: dữ liệu hợp lệ, API phải trả thành công; các nhóm khác dựa vào test này" },
   { key: "negative", label: "Negative", hint: "dữ liệu sai: thiếu trường bắt buộc, sai kiểu, sai định dạng; API phải báo lỗi 4xx" },
   { key: "boundary", label: "Boundary", hint: "giá trị biên: min/max, độ dài, rỗng, theo spec" },
   { key: "security", label: "Security", hint: "kiểm tra API chặn khi thiếu hoặc sai token; cần cấu hình xác thực của project" },
+  {
+    key: "owasp",
+    label: "OWASP probe (0 token)",
+    hint: "field lạ (mass assignment), JSON hỏng, sai Content-Type, phương thức TRACE. Chỉ gửi thêm request tới API đích, không sửa dữ liệu thật; cần test gốc hợp lệ",
+  },
 ]
 
-const DEFAULT_GROUPS: Record<GroupKey, boolean> = { positive: true, negative: true, boundary: true, security: false }
+const DEFAULT_GROUPS: Record<GroupKey, boolean> = { positive: true, negative: true, boundary: true, security: false, owasp: false }
 
 function loadGroups(projectId: string): Record<GroupKey, boolean> {
   try {
@@ -93,6 +98,7 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
         includeNegative: groups.negative,
         includeBoundary: groups.boundary,
         includeSecurity: groups.security,
+        includeOwasp: groups.owasp,
         includeBusiness: mode === "AI" && includeBusiness,
         tokenCap,
       }),

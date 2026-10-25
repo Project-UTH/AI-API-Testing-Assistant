@@ -115,11 +115,10 @@ public class CoverageGapFillService {
                 && spec.hasBody() && spec.bodyIsJson()
                 && (requested == null || requested.contains(EndpointCoverageService.OWASP_KEY))
                 && candidates.stream().noneMatch(c -> MassAssignmentProbe.KIND.equals(c.entity().getProbeKind()));
-        boolean needRobust = Boolean.TRUE.equals(endpoint.getScopeOwasp()) && MassAssignmentFields.isWriteMethod(endpoint.getMethod())
-                && spec.hasBody() && spec.bodyIsJson()
+        List<HttpRobustnessProbe.Variant> missingRobust = Boolean.TRUE.equals(endpoint.getScopeOwasp())
                 && (requested == null || requested.contains(EndpointCoverageService.OWASP_KEY))
-                && candidates.stream().noneMatch(c -> HttpRobustnessProbe.KIND.equals(c.entity().getProbeKind()));
-        if (missing.isEmpty() && missingAuthz.isEmpty() && !needProbe && !needRobust) {
+                ? missingRobustnessVariants(endpoint, spec, candidates) : List.of();
+        if (missing.isEmpty() && missingAuthz.isEmpty() && !needProbe && missingRobust.isEmpty()) {
             return new CoverageFillResponse(0, List.of(), List.of(), null, 0);
         }
 
@@ -188,10 +187,11 @@ public class CoverageGapFillService {
             }
         }
 
-        if (needRobust && baseline != null) {
-            // 17q G4: 2 test tất định về request lỗi định dạng (cần body hợp lệ làm gốc); không có gốc thì bỏ qua, mục mass assignment đã báo thiếu.
-            for (HttpRobustnessProbe.Variant variant : HttpRobustnessProbe.Variant.values()) {
-                pending.add(new Pending(toRobustnessEntity(endpoint, baseline.entity(), variant), baseline.entity()));
+        // 17q G4: test tất định về request lỗi định dạng. JSON hỏng/sai Content-Type cần body hợp lệ làm gốc; TRACE chỉ cần 1 case để mượn đường dẫn và xác thực.
+        for (HttpRobustnessProbe.Variant variant : missingRobust) {
+            Candidate source = variant == HttpRobustnessProbe.Variant.WRONG_METHOD ? securityBaseline : baseline;
+            if (source != null) {
+                pending.add(new Pending(toRobustnessEntity(endpoint, source.entity(), variant), source.entity()));
             }
         }
 
@@ -385,12 +385,39 @@ public class CoverageGapFillService {
                 .build();
     }
 
+    /** Biến thể probe độ bền áp dụng được cho endpoint này mà chưa có test (so theo từng biến thể, không theo "đã có probe nào chưa"). */
+    private List<HttpRobustnessProbe.Variant> missingRobustnessVariants(Endpoint endpoint, TestCaseChecklistPlanner.Spec spec, List<Candidate> candidates) {
+        java.util.Set<HttpRobustnessProbe.Variant> existing = new java.util.HashSet<>();
+        for (Candidate c : candidates) {
+            if (HttpRobustnessProbe.KIND.equals(c.entity().getProbeKind())) {
+                HttpRobustnessProbe.Variant v = HttpRobustnessProbe.variantOf(c.entity().getProbeFieldsJson());
+                if (v != null) {
+                    existing.add(v);
+                } else {
+                    existing.add(HttpRobustnessProbe.Variant.MALFORMED_JSON); // probe cũ không ghi biến thể (an toàn: không bù trùng)
+                    existing.add(HttpRobustnessProbe.Variant.WRONG_CONTENT_TYPE);
+                }
+            }
+        }
+        boolean jsonWrite = MassAssignmentFields.isWriteMethod(endpoint.getMethod()) && spec.hasBody() && spec.bodyIsJson();
+        List<HttpRobustnessProbe.Variant> missing = new ArrayList<>();
+        for (HttpRobustnessProbe.Variant variant : HttpRobustnessProbe.Variant.values()) {
+            boolean applicable = variant == HttpRobustnessProbe.Variant.WRONG_METHOD || jsonWrite;
+            if (applicable && !existing.contains(variant)) {
+                missing.add(variant);
+            }
+        }
+        return missing;
+    }
+
     /** Probe độ bền (17q G4): copy case gốc hợp lệ, làm hỏng body JSON hoặc gửi sai Content-Type. Kỳ vọng 400/415; runner chấm riêng theo probeKind. */
     private TestCase toRobustnessEntity(Endpoint endpoint, TestCase base, HttpRobustnessProbe.Variant variant) {
         String body = base.getRequestBody();
         String headers = base.getRequestHeaders();
         if (variant == HttpRobustnessProbe.Variant.MALFORMED_JSON) {
             body = HttpRobustnessProbe.malformedBody(body);
+        } else if (variant == HttpRobustnessProbe.Variant.WRONG_METHOD) {
+            body = null; // TRACE không mang body
         } else {
             Map<String, String> map = new java.util.LinkedHashMap<>();
             try {

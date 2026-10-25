@@ -154,6 +154,22 @@ class GenerationJobServiceTest {
     }
 
     @Test
+    void runJob_savesTheOwaspScopeOnTheEndpoint_fromTheIncludeOwaspFlag() {
+        for (boolean owasp : new boolean[]{true, false}) {
+            StartGenerationJobRequest req = request(e1.getId());
+            req.setType("SYSTEM");
+            req.setIncludeOwasp(owasp);
+            GenerationJob job = GenerationJob.builder().id(UUID.randomUUID()).projectId(projectId).ownerId(ownerId).type(GenerationJob.TYPE_SYSTEM)
+                    .status(GenerationJob.QUEUED).build();
+            when(jobs.findById(job.getId())).thenReturn(Optional.of(job));
+            when(endpointRepository.findById(e1.getId())).thenReturn(Optional.of(e1));
+            when(gapFill.fill(any(), any(), any())).thenReturn(new com.aiapitesting.backend.dto.response.CoverageFillResponse(0, List.of(), List.of(), null, 0));
+            service.runJob(job.getId(), projectId, List.of(e1.getId()), req);
+            assertThat(e1.getScopeOwasp()).isEqualTo(owasp);
+        }
+    }
+
+    @Test
     void start_rejectsASecondActiveJobInTheSameProject_andTooManyJobsPerUser() {
         when(jobs.existsByProjectIdAndStatusIn(eq(projectId), anyCollection())).thenReturn(true);
         assertThatThrownBy(() -> service.start(projectId, request(e1.getId()))).isInstanceOf(ExecutionInProgressException.class);

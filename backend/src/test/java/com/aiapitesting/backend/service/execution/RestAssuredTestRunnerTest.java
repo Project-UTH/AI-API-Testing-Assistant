@@ -74,6 +74,23 @@ class RestAssuredTestRunnerTest {
     }
 
     @Test
+    void run_wrongMethodProbe_sendsTraceInsteadOfTheEndpointMethod_andOtherCasesKeepTheirMethod() {
+        server.start();
+        Endpoint endpoint = Endpoint.builder().method("DELETE").path("/jobs/{id}").build();
+        TestCase probe = TestCase.builder().endpoint(endpoint).resolvedPath("/jobs/7").expectedStatus(405)
+                .probeKind(HttpRobustnessProbe.KIND).probeFieldsJson(HttpRobustnessProbe.probeJson(HttpRobustnessProbe.Variant.WRONG_METHOD)).build();
+
+        runner.run(project, probe, Map.of());
+
+        assertThat(handler.method).isEqualTo("TRACE"); // tuyệt đối không gửi DELETE thật tới API đích
+        assertThat(handler.path).isEqualTo("/jobs/7");
+
+        TestCase normal = TestCase.builder().endpoint(endpoint).resolvedPath("/jobs/7").expectedStatus(204).build();
+        runner.run(project, normal, Map.of());
+        assertThat(handler.method).isEqualTo("DELETE");
+    }
+
+    @Test
     void run_bearerAuthConfigured_sendsAuthorizationHeaderDecrypted() {
         server.start();
         AesEncryptionService aesEncryptionService =

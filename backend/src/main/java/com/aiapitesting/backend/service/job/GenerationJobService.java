@@ -413,6 +413,7 @@ public class GenerationJobService {
         endpoint.setScopeNegative(!Boolean.FALSE.equals(r.getIncludeNegative()));
         endpoint.setScopeBoundary(!Boolean.FALSE.equals(r.getIncludeBoundary()));
         endpoint.setScopeSecurity(Boolean.TRUE.equals(r.getIncludeSecurity()));
+        endpoint.setScopeOwasp(Boolean.TRUE.equals(r.getIncludeOwasp()));
         endpointRepository.save(endpoint);
     }
 

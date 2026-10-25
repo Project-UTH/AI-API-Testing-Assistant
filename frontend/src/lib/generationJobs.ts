@@ -86,6 +86,7 @@ export interface StartJobBody {
   includeNegative?: boolean
   includeBoundary?: boolean
   includeSecurity?: boolean
+  includeOwasp?: boolean
   includeBusiness?: boolean
 }
 

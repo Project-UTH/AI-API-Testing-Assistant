@@ -131,8 +131,17 @@ public class RestAssuredTestRunner {
             request = request.contentType(headerContentType);
         }
 
-        Response response = request.request(Method.valueOf(testCase.getEndpoint().getMethod()), path);
+        Response response = request.request(Method.valueOf(methodOf(testCase)), path);
         return new RunResult(response.statusCode(), response.getBody().asString());
+    }
+
+    /** Method thật của request: method của endpoint, trừ probe WRONG_METHOD (17q G4) cố ý gửi phương thức không được khai báo. */
+    static String methodOf(TestCase testCase) {
+        if (HttpRobustnessProbe.KIND.equals(testCase.getProbeKind())
+                && HttpRobustnessProbe.variantOf(testCase.getProbeFieldsJson()) == HttpRobustnessProbe.Variant.WRONG_METHOD) {
+            return HttpRobustnessProbe.PROBE_HTTP_METHOD;
+        }
+        return testCase.getEndpoint().getMethod();
     }
 
     /**
