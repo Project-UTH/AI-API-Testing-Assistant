@@ -277,6 +277,17 @@ Ghi lại vì đây là bằng chứng phép đo đã được kiểm tra chứ 
 
 14 Fail còn lại: 8 là mục biên ngầm (spec không khai ràng buộc nhưng API từ chối giá trị âm/rỗng). Chúng không hẳn là Fail giả: nội dung mục đã ghi "API trả 400 nghĩa là spec khai thiếu ràng buộc hoặc API có lỗi", tức là bất đồng thật giữa spec và API. 6 còn lại do quy ước "403 cho mọi lỗi framework" của API này và endpoint đăng nhập công khai; chưa có cấu hình cho 2 nhóm này. Lỗi S13 (đăng nhập nhận mọi mật khẩu) vẫn lọt. Token dùng cho lần đo lại: 0 (sổ CSDL không đổi: 654.968 / 225.406). Kết quả gốc: `docs/eval/results-shop-A-403-2026-10-25.json`.
 
+**Lỗi tổng quát hoá thứ hai tìm ra và đã sửa (S13).** Spec của shop khai `security` toàn cục và không ghi `security: []` cho `/auth/login`, nên khi import endpoint đăng nhập bị coi là cần token. Hệ quả: (1) bỏ qua ca "sai mật khẩu → 401" (nhận diện đăng nhập yêu cầu endpoint không cần token) nên lỗi S13 lọt; (2) sinh 2 ca "thiếu token / token sai" cho chính endpoint đăng nhập, Fail giả trên bản chuẩn. Sửa: khi import, endpoint POST mang tên đăng nhập (không phải đăng ký, đăng xuất, làm mới, đặt lại mật khẩu) chỉ kế thừa security toàn cục thì coi là công khai; người dùng vẫn đổi tay được. Đo lại (2 lượt, 0 token, sổ CSDL không đổi 654.968 / 225.406):
+
+| | Chưa khai quy ước | Khai 403 | Khai 403 + sửa nhận diện đăng nhập |
+|---|---|---|---|
+| mutant-shop: Fail giả trên bản chuẩn | 26/108 = 24,1% | 14/108 = 13,0% | 13/114 = 11,4% |
+| mutant-shop: lỗi được phát hiện | 9/15 | 10/15 | **11/15 = 73%** |
+| mutant-shop: lỗi xác thực (S12, S13) | 0/2 | 1/2 | **2/2** |
+| mutant-api: phát hiện / Fail giả | 21/42, 1,5% | | 21/42, 1,5% (không đổi, không hồi quy) |
+
+Kết quả gốc: `docs/eval/results-shop-A-403-login-2026-10-25.json`, `docs/eval/results-A-login-2026-10-25.json`. Trong 13 Fail còn lại của shop, 8 là bất đồng spec-API có thật (mục biên ngầm), 5 do quy ước "403 cho lỗi framework" chưa có cấu hình.
+
 ## 8. Chạy lại
 
 ```bash
