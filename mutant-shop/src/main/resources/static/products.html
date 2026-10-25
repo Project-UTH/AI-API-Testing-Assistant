@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Sản phẩm - Shop API Target</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #222; }
+  h1 { font-size: 1.4rem; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+  th { color: #555; }
+  form.inline { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; align-items: end; }
+  form.inline label { font-size: 0.8rem; color: #444; display: flex; flex-direction: column; gap: 4px; }
+  input { padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
+  button { padding: 8px 14px; background: #1a1a1a; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+  button.danger { background: #c0392b; }
+  .warn { color: #c0392b; }
+  .hint { color: #777; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+  <h1>Sản phẩm</h1>
+  <div id="auth-warning" class="warn" style="display:none">
+    Chưa có token. <a href="/login.html">Đăng nhập</a> trước.
+  </div>
+
+  <table id="product-table" style="display:none">
+    <thead>
+      <tr><th>ID</th><th>Tên</th><th>Giá</th><th>Tồn kho</th><th></th></tr>
+    </thead>
+    <tbody id="product-rows"></tbody>
+  </table>
+
+  <form class="inline" id="create-form">
+    <label>Tên <input type="text" id="f-name" required></label>
+    <label>Giá <input type="number" step="0.01" id="f-price" required></label>
+    <label>Tồn kho <input type="number" id="f-stock" required></label>
+    <button type="submit">Thêm sản phẩm</button>
+  </form>
+  <p class="hint">Id sẽ do backend tự sinh sau khi tạo.</p>
+  <p><a href="/index.html">&larr; Quay lại</a></p>
+
+<script>
+const token = localStorage.getItem('token');
+const authHeader = { 'Authorization': 'Bearer ' + token };
+
+async function loadProducts() {
+  if (!token) {
+    document.getElementById('auth-warning').style.display = 'block';
+    return;
+  }
+  const res = await fetch('/api/products', { headers: authHeader });
+  if (!res.ok) {
+    document.getElementById('auth-warning').style.display = 'block';
+    document.getElementById('auth-warning').textContent = 'Token không hợp lệ hoặc hết hạn - đăng nhập lại.';
+    return;
+  }
+  const products = await res.json();
+  const tbody = document.getElementById('product-rows');
+  tbody.innerHTML = '';
+  for (const p of products) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>' + p.id + '</td><td>' + p.name + '</td><td>' + p.price + '</td><td>' + p.stock + '</td>' +
+      '<td><button class="danger" onclick="deleteProduct(' + p.id + ')">Xoá</button></td>';
+    tbody.appendChild(tr);
+  }
+  document.getElementById('product-table').style.display = 'table';
+}
+
+async function deleteProduct(id) {
+  await fetch('/api/products/' + id, { method: 'DELETE', headers: authHeader });
+  loadProducts();
+}
+window.deleteProduct = deleteProduct;
+
+document.getElementById('create-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('f-name').value,
+    price: parseFloat(document.getElementById('f-price').value),
+    stock: parseInt(document.getElementById('f-stock').value, 10),
+  };
+  await fetch('/api/products', {
+    method: 'POST',
+    headers: { ...authHeader, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  e.target.reset();
+  loadProducts();
+});
+
+loadProducts();
+</script>
+</body>
+</html>
