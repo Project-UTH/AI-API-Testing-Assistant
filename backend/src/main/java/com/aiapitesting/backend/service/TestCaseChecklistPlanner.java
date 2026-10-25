@@ -1119,6 +1119,11 @@ public class TestCaseChecklistPlanner {
      * xác nhận (spec khai 401 hoặc response có token). Thà bỏ sót còn hơn sinh mục "sai mật khẩu → 401" sai cho endpoint đăng ký.
      */
     public static boolean looksLikeLogin(String method, String path, String summary, boolean declares401, boolean responseHasToken) {
+        return isNamedLogin(method, path, summary) && (declares401 || responseHasToken);
+    }
+
+    /** Chỉ dựa vào TÊN (POST, đường dẫn/mô tả nói là đăng nhập, không phải đăng ký/đặt lại...): đủ để biết endpoint này không thể đòi token. */
+    public static boolean isNamedLogin(String method, String path, String summary) {
         if (method == null || !"POST".equalsIgnoreCase(method)) {
             return false;
         }
@@ -1127,8 +1132,7 @@ public class TestCaseChecklistPlanner {
         if (NOT_LOGIN.matcher(p).find() || NOT_LOGIN.matcher(s).find()) {
             return false;
         }
-        boolean named = LOGIN_PATH.matcher(p).find() || LOGIN_SUMMARY.matcher(s).find();
-        return named && (declares401 || responseHasToken);
+        return LOGIN_PATH.matcher(p).find() || LOGIN_SUMMARY.matcher(s).find();
     }
 
     /**

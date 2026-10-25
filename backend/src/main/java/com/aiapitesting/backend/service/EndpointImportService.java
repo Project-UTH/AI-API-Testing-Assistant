@@ -473,7 +473,7 @@ public class EndpointImportService {
                 .summary(operation.getSummary())
                 .schema(buildSchemaJson(operation))
                 .responseSchemas(buildResponseSchemasJson(operation))
-                .requiresAuth(resolveRequiresAuth(operation, hasGlobalSecurity))
+                .requiresAuth(resolveRequiresAuth(operation, hasGlobalSecurity, method, path))
                 .requestContentType(preferredRequestContentType(operation))
                 .build();
     }
@@ -495,8 +495,13 @@ public class EndpointImportService {
      * sách RỖNG (không null) là operation CHỦ ĐỘNG khai báo "không cần auth", override lại global -
      * phải phân biệt rõ 2 trường hợp null vs rỗng, không coi cả 2 là "không yêu cầu" như nhau.
      */
-    private boolean resolveRequiresAuth(Operation operation, boolean hasGlobalSecurity) {
+    private boolean resolveRequiresAuth(Operation operation, boolean hasGlobalSecurity, String method, String path) {
         if (operation.getSecurity() == null) {
+            // Endpoint ĐĂNG NHẬP không thể đòi token (chưa có token để gửi) nhưng nhiều spec chỉ khai security toàn cục mà quên ghi 'security: []' cho nó
+            // (vd springdoc). Coi là công khai để checklist không sinh ca 'thiếu token' sai và có ca 'sai mật khẩu'. Người dùng vẫn đổi tay được.
+            if (hasGlobalSecurity && com.aiapitesting.backend.service.TestCaseChecklistPlanner.isNamedLogin(method, path, operation.getSummary())) {
+                return false;
+            }
             return hasGlobalSecurity;
         }
         return !operation.getSecurity().isEmpty();
