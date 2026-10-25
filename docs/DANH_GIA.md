@@ -267,7 +267,15 @@ Ghi lại vì đây là bằng chứng phép đo đã được kiểm tra chứ 
 
 **Số token dùng để ra các số liệu trên: 0.** Kiểm bằng sổ CSDL của hệ thống chính (mọi người dùng) trước và sau từng lần đo: tổng `test_generation_events.total_tokens` = 654.968 và tổng `generation_jobs.tokens_used` = 225.406 ở cả hai thời điểm; số dòng sổ 71 và 34 không đổi. Cấu hình A không gọi AI (job loại SYSTEM). Kết quả gốc: `docs/eval/results-A-2026-10-25.json`, `docs/eval/results-shop-A-2026-10-25.json` (trường `tokenAccounting`).
 
-**Việc nên làm tiếp (chưa làm):** cho phép khai báo theo project "mã trả về khi thiếu/sai token" (401 hoặc 403) và "bỏ mục biên ngầm", để hai nhóm Fail giả lớn nhất ở trên không loại mất bằng chứng. Roadmap G4 (hoãn) từng ghi "chưa gặp ca phân loại sai nào"; nay đã có bằng chứng.
+**Đã sửa sau phát hiện này (2026-10-25): quy ước API theo project.** Người dùng khai "API này trả 403 khi thiếu/sai token" (Cài đặt xác thực của project, hoặc `PUT /projects/{id}/api-conventions`). Quy ước chỉ áp dụng cho test cố ý bỏ hoặc làm sai token và kỳ vọng 401; test khác (vd sai mật khẩu đăng nhập) và mã khác 403 vẫn so khớp như thường, và API không chặn (200) vẫn Fail. Đo lại trên mutant-shop với quy ước 403, 2 lượt, 0 token:
+
+| mutant-shop | Chưa khai quy ước | Khai 403 |
+|---|---|---|
+| Fail giả trên bản chuẩn | 26/108 = 24,1% | 14/108 = 13,0% |
+| Lỗi được phát hiện | 9/15 = 60% | 10/15 = 67% |
+| Lỗi xác thực (S12 GET không cần token) | không phát hiện | **phát hiện** |
+
+14 Fail còn lại: 8 là mục biên ngầm (spec không khai ràng buộc nhưng API từ chối giá trị âm/rỗng). Chúng không hẳn là Fail giả: nội dung mục đã ghi "API trả 400 nghĩa là spec khai thiếu ràng buộc hoặc API có lỗi", tức là bất đồng thật giữa spec và API. 6 còn lại do quy ước "403 cho mọi lỗi framework" của API này và endpoint đăng nhập công khai; chưa có cấu hình cho 2 nhóm này. Lỗi S13 (đăng nhập nhận mọi mật khẩu) vẫn lọt. Token dùng cho lần đo lại: 0 (sổ CSDL không đổi: 654.968 / 225.406). Kết quả gốc: `docs/eval/results-shop-A-403-2026-10-25.json`.
 
 ## 8. Chạy lại
 
