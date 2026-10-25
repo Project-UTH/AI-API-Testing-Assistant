@@ -89,7 +89,7 @@ def ledger_total():
            "(select count(*) from test_generation_events), (select count(*) from generation_jobs)")
     out = subprocess.run(["docker", "compose", "exec", "-T", "mysql", "sh", "-c",
                           f'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "{sql}" $MYSQL_DATABASE'],
-                         cwd=REPO, capture_output=True, text=True, timeout=60).stdout.strip().splitlines()[-1].split()
+                         cwd=REPO, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL).stdout.strip().splitlines()[-1].split()
     return {"eventTokens": int(out[0]), "jobTokens": int(out[1]), "eventRows": int(out[2]), "jobRows": int(out[3])}
 
 
