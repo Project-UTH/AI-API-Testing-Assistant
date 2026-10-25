@@ -72,6 +72,7 @@ export function ProjectDetailPage() {
             onOpenChange={setTargetAuthOpen}
             projectId={id!}
             currentAuthType={project.targetAuthType}
+            currentUnauthenticatedStatus={project.unauthenticatedStatus}
           />
         </div>
       )}

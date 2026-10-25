@@ -193,6 +193,23 @@ class ProjectServiceTest {
     }
 
     @Test
+    void updateApiConventions_acceptsOnly401Or403_and401IsStoredAsDefault() {
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(projectRepository.save(project)).thenReturn(project);
+
+        projectService.updateApiConventions(projectId, 403);
+        assertThat(project.getUnauthenticatedStatus()).isEqualTo(403);
+        projectService.updateApiConventions(projectId, 401);
+        assertThat(project.getUnauthenticatedStatus()).isNull();
+        projectService.updateApiConventions(projectId, 403);
+        projectService.updateApiConventions(projectId, null);
+        assertThat(project.getUnauthenticatedStatus()).isNull();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> projectService.updateApiConventions(projectId, 404))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+    }
+
+    @Test
     void updateTargetAuth_withNone_clearsExistingAuth() {
         project.setTargetAuthType(TargetAuthType.API_KEY);
         project.setTargetAuthValueEncrypted("old-encrypted-value");

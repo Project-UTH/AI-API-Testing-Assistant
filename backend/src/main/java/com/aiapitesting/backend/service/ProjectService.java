@@ -110,6 +110,17 @@ public class ProjectService {
         return ProjectResponse.from(projectRepository.save(project));
     }
 
+    /** Quy ước của API đích (hiện: mã trả khi thiếu/sai token). Chỉ nhận 401 (chuẩn, lưu null) hoặc 403. */
+    @Transactional
+    public ProjectResponse updateApiConventions(UUID id, Integer unauthenticatedStatus) {
+        if (unauthenticatedStatus != null && unauthenticatedStatus != 401 && unauthenticatedStatus != 403) {
+            throw new InvalidRequestException("Mã khi thiếu/sai token chỉ có thể là 401 hoặc 403");
+        }
+        Project project = getOwnedProject(id);
+        project.setUnauthenticatedStatus(unauthenticatedStatus == null || unauthenticatedStatus == 401 ? null : unauthenticatedStatus);
+        return ProjectResponse.from(projectRepository.save(project));
+    }
+
     /** Dùng chung với EndpointImportService để tránh trùng logic validate cặp authType/authValue. */
     public void validateTargetAuthValue(TargetAuthType authType, String authValue) {
         if (authType != null && authType != TargetAuthType.NONE && (authValue == null || authValue.isBlank())) {

@@ -32,6 +32,29 @@ class ExpectedStatusTest {
         }
     }
 
+    private TestCase security(int expected, com.aiapitesting.backend.entity.TestCaseAuthOverride override) {
+        return TestCase.builder().expectedStatus(expected).authOverride(override).build();
+    }
+
+    @Test
+    void apiThatAnswers403WhenTokenIsMissingOrWrong_isAcceptedOnlyForSecurityTestsExpecting401() {
+        var none = com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE;
+        var invalid = com.aiapitesting.backend.entity.TestCaseAuthOverride.INVALID;
+        // mặc định (401 là chuẩn): 403 vẫn là Fail
+        assertThat(ExpectedStatus.matches(security(401, none), 403)).isFalse();
+        assertThat(ExpectedStatus.matches(security(401, none), 403, null)).isFalse();
+        assertThat(ExpectedStatus.matches(security(401, none), 403, 401)).isFalse();
+        // đã khai quy ước 403: chỉ test cố ý bỏ/làm sai token kỳ vọng 401 được nhận 403
+        assertThat(ExpectedStatus.matches(security(401, none), 403, 403)).isTrue();
+        assertThat(ExpectedStatus.matches(security(401, invalid), 403, 403)).isTrue();
+        // nhưng không nới sang test khác: sai mật khẩu đăng nhập (token mặc định), kỳ vọng khác 401, hoặc mã khác
+        assertThat(ExpectedStatus.matches(security(401, com.aiapitesting.backend.entity.TestCaseAuthOverride.DEFAULT), 403, 403)).isFalse();
+        assertThat(ExpectedStatus.matches(security(400, none), 403, 403)).isFalse();
+        assertThat(ExpectedStatus.matches(security(401, none), 404, 403)).isFalse();
+        assertThat(ExpectedStatus.matches(security(401, none), 200, 403)).isFalse(); // API không chặn vẫn là Fail
+        assertThat(ExpectedStatus.matches(security(401, none), 401, 403)).isTrue();
+    }
+
     @Test
     void rejected_doesNotMatchSuccessOrServerErrors() {
         for (int code : new int[]{200, 201, 204, 302, 500, 502, 503}) {

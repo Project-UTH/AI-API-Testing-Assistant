@@ -18,8 +18,21 @@ public final class ExpectedStatus {
     }
 
     public static boolean matches(TestCase testCase, Integer actual) {
+        return matches(testCase, actual, null);
+    }
+
+    /**
+     * @param deniedStatus quy ước của API đích về mã khi thiếu/sai token (Project.unauthenticatedStatus; null = 401). Chỉ áp dụng cho test CỐ Ý bỏ hoặc
+     *                     làm sai token (authOverride NONE/INVALID) kỳ vọng 401; test khác (vd sai mật khẩu đăng nhập) giữ nguyên.
+     */
+    public static boolean matches(TestCase testCase, Integer actual, Integer deniedStatus) {
         if (actual == null) {
             return false;
+        }
+        if (deniedStatus != null && deniedStatus == 403 && actual == 403 && Integer.valueOf(401).equals(testCase.getExpectedStatus())
+                && (testCase.getAuthOverride() == com.aiapitesting.backend.entity.TestCaseAuthOverride.NONE
+                || testCase.getAuthOverride() == com.aiapitesting.backend.entity.TestCaseAuthOverride.INVALID)) {
+            return true;
         }
         if (REJECTED.equals(testCase.getExpectedStatusClass())) {
             return actual >= 400 && actual <= 499 && !NOT_A_RULE_REJECTION.contains(actual);

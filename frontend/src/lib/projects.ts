@@ -8,6 +8,8 @@ export interface Project {
   createdAt: string
   targetBaseUrl: string | null
   targetAuthType: TargetAuthType
+  /** Mã API đích trả khi thiếu/sai token: 403 hoặc null (= 401, chuẩn). */
+  unauthenticatedStatus: number | null
 }
 
 export interface TargetAuthUpdateInput {
@@ -46,6 +48,10 @@ export function deleteProject(id: string): Promise<void> {
   return apiFetch<void>(`/projects/${id}`, {
     method: "DELETE",
   })
+}
+
+export function updateApiConventions(id: string, input: { unauthenticatedStatus: number | null }): Promise<Project> {
+  return apiFetch<Project>(`/projects/${id}/api-conventions`, { method: "PUT", body: JSON.stringify(input) })
 }
 
 export function updateTargetAuth(id: string, input: TargetAuthUpdateInput): Promise<Project> {

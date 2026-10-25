@@ -100,6 +100,9 @@ def run_once(args, run_no, target, system, mutants, log):
     pid = system.create_project(f"EVAL-SHOP-A-{run_no}-{stamp}", "Đo khả năng bắt lỗi trên hệ thống thứ hai (scripts/eval-shop-mutants.py)")
     system.import_spec(pid, target.spec(), args.target_url)
     system.set_target_auth(pid, token)
+    if args.unauthenticated_status:
+        # quy ước của API đích do người dùng khai (Project.unauthenticatedStatus): API này trả 403 khi thiếu/sai token
+        system.api.call("PUT", f"/projects/{pid}/api-conventions", {"unauthenticatedStatus": args.unauthenticated_status})
     eps = system.endpoints(pid)
     endpoint_id = {(e["method"], e["path"]): e["id"] for e in eps}
     log(f"  project {pid}: {len(eps)} endpoint đã import")
@@ -150,6 +153,7 @@ def main():
     ap.add_argument("--email", default="eval@aiapi.local")
     ap.add_argument("--password", default="eval12345")
     ap.add_argument("--model", default="(không dùng AI)")
+    ap.add_argument("--unauthenticated-status", type=int, default=0, help="khai quy ước API: mã trả khi thiếu/sai token (403 cho API này); 0 = không khai (401 chuẩn)")
     ap.add_argument("--keep-projects", action="store_true")
     ap.add_argument("--out", default="")
     args = ap.parse_args()

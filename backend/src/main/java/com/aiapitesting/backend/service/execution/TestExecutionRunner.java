@@ -298,7 +298,7 @@ public class TestExecutionRunner {
             MassAssignmentProbe.Outcome probe = probeOutcomeOf(testCase, result);
             boolean statusMatches = probe != null && probe.verdict() != MassAssignmentProbe.Verdict.INCONCLUSIVE
                     ? probe.verdict() == MassAssignmentProbe.Verdict.PASS
-                    : ExpectedStatus.matches(testCase, result.statusCode());
+                    : ExpectedStatus.matches(testCase, result.statusCode(), project.getUnauthenticatedStatus());
             // Quét 1 lần trên body THÔ; body lưu/hiển thị là bản đã che. Assertion + dependency vẫn dùng body thô (bên dưới).
             SensitiveDataScanner.Scan scan = scanSensitive(testCase, result.responseBody());
             Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
