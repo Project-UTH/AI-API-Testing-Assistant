@@ -228,6 +228,47 @@ Ghi lại vì đây là bằng chứng phép đo đã được kiểm tra chứ 
 - **Chưa đo trên API thật** (`ai-recruitment-agent`, 110 endpoint) để lấy tỉ lệ Fail giả ngoài đời, và chưa đo độ bao phủ theo từng tập con spec lớn. Đã có số thực địa từ trước (roadmap 17h/17n), không phải đo của đợt này.
 - **E2** (thời gian người duyệt test AI) và **E4** (quay demo) **chưa làm**, cần người thật: mẫu đo ở `docs/eval/E2-do-thoi-gian-duyet.md`.
 
+## 7A. Có tổng quát hoá sang hệ thống khác không? Đo trên hệ thống thứ hai (2026-10-25)
+
+**Câu hỏi:** checklist tất định (EP/BVA, Security, probe OWASP, 0 token) có cho kết quả chuẩn trên các hệ thống khác nhau không, hay chỉ tốt trên API tuyển dụng nhóm tự viết?
+
+**Cách đo.** Cùng khung đo (`scripts/eval-mutants.py`, cấu hình A, 2 lượt) trên 2 hệ thống: (1) `mutant-api` tuyển dụng (10 endpoint, 42 lỗi cài sẵn M01-M42, bộ phát triển); (2) `mutant-shop` (bản sao của `shop-api-target`: Spring, JWT, 7 endpoint, 15 lỗi cài sẵn S01-S15). Mỗi lỗi lật đúng 1 hành vi và có oracle kiểm riêng (mutant-shop: `mutant-shop/oracle.py`, 15/15). Test gốc do người viết (10 test cho tuyển dụng, 7 cho cửa hàng); phần còn lại do hệ thống tự bù. Giả thuyết "checklist có thể bắt lỗi này không" (`expectChecklist`) được ghi vào danh mục TRƯỚC khi đo.
+
+| | mutant-api (tuyển dụng) | mutant-shop (cửa hàng) |
+|---|---|---|
+| Số endpoint / số test chạy | 10 / 198 | 7 / 108 |
+| Lỗi bắt được và gán đúng nhãn lỗi API | 5/42 = 12% | 1/15 = 7% |
+| Lỗi có ít nhất 1 test Pass→Fail (phát hiện, kể cả chưa dám kết luận) | 21/42 = 50% | 9/15 = 60% |
+| **Fail giả trên bản chuẩn** | **1,5%** | **24,1%** (26/108) |
+| Token AI | 0 | 0 |
+
+**Kết luận có căn cứ.**
+- Khả năng bắt lỗi theo loại **nhất quán giữa 2 hệ thống**: validation và status code thường được phát hiện (100% và 56-100%), lỗi nghiệp vụ và lỗi trạng thái nhiều bước không bao giờ bị bắt bởi checklist (0/6 + 0/3 + 0/1). Đây là phân chia mà thiết kế dự kiến, và nó lặp lại ở hệ thống thứ hai.
+- Giả thuyết đặt trước đúng 13/15 trên mutant-shop: 4/4 lỗi dự đoán "checklist không bắt được" đều lọt; 9/11 lỗi dự đoán "bắt được" được bắt. 2 lỗi dự đoán sai là S12 (GET không cần token) và S13 (đăng nhập nhận mọi mật khẩu).
+- Probe độ bền request lỗi định dạng (G4) bắt được S15 (JSON hỏng trả 500 thay vì 400), có gán đúng nhãn `HTTP_ROBUSTNESS`; đây là lỗi duy nhất trên hệ thống này được gán đúng.
+
+**Điều đo được là KHÔNG chuẩn trên mọi hệ thống: tỉ lệ Fail giả.** Trên hệ thống thứ hai, 26/108 test Fail ngay trên bản chuẩn (24,1% so với 1,5%). Nguyên nhân (đếm trên 1 lượt):
+
+| Nguyên nhân | Số test | Bản chất |
+|---|---|---|
+| Security "thiếu token / token sai" kỳ vọng 401, API trả **403** | 12 | quy ước của API khác giả định mặc định của checklist |
+| Mục biên ngầm (name rỗng, price -1, stock -1, int32 nhỏ nhất) kỳ vọng thành công, API từ chối 400 | 8 | spec không khai ràng buộc, checklist đoán là hợp lệ |
+| Security trên endpoint đăng nhập (công khai) kỳ vọng 401, API trả 200 | 2 | endpoint đăng nhập không cần token |
+| Probe Content-Type sai kỳ vọng 415, API trả 403 | 2 | API này trả 403 cho mọi lỗi đi qua `/error` (đã ghi trong mã nguồn của nó) |
+| Thiếu tham số query bắt buộc kỳ vọng 400, API trả 403 | 2 | cùng quy ước 403 |
+
+**Hệ quả quan trọng:** các test Fail trên bản chuẩn bị loại khỏi bằng chứng (chỉ test Pass trên bản chuẩn mới được tính). Vì vậy test Security "thiếu token" của `GET /api/products/{id}` bị loại và lỗi S12 lọt. Nói cách khác, **sự khác biệt về quy ước 401/403 làm mất luôn khả năng phát hiện lỗi xác thực** trên hệ thống thứ hai. Với S13 (đăng nhập nhận mọi mật khẩu), trong các test Pass trên bản chuẩn không có test sai-mật-khẩu nào; chưa điều tra sâu nguyên nhân (nghi ngờ nhận diện endpoint đăng nhập theo tên field, hệ thống này dùng `username` thay vì `email`).
+
+**Phạm vi đo được (nói rõ để không suy rộng):**
+- Đo trên 2 hệ thống chạy được tại chỗ. Các hệ thống đã thử trước đó (thư viện sách Basic Auth/form, Swagger 2.0 XML, xác thực query string) chỉ có kết quả "import và chạy được, phân loại Fail hợp lý" trong roadmap 17h, chưa có số đo Fail giả hay phát hiện lỗi, vì không còn ứng dụng đích chạy lại được trong repo.
+- Cả 2 hệ thống đều là Spring Boot do nhóm tự viết hoặc chọn; chưa có API của bên thứ ba (Node, .NET, quy ước lỗi khác).
+- Cỡ mẫu nhỏ: 15 và 42 lỗi, 2 lượt; số liệu A tất định nên 2 lượt cho kết quả giống hệt, không phải bằng chứng thống kê.
+- Lỗi trên mutant-shop do chính tác giả viết sau khi biết checklist hoạt động thế nào; giả thuyết đặt trước giảm nhưng không loại bỏ thiên lệch.
+
+**Số token dùng để ra các số liệu trên: 0.** Kiểm bằng sổ CSDL của hệ thống chính (mọi người dùng) trước và sau từng lần đo: tổng `test_generation_events.total_tokens` = 654.968 và tổng `generation_jobs.tokens_used` = 225.406 ở cả hai thời điểm; số dòng sổ 71 và 34 không đổi. Cấu hình A không gọi AI (job loại SYSTEM). Kết quả gốc: `docs/eval/results-A-2026-10-25.json`, `docs/eval/results-shop-A-2026-10-25.json` (trường `tokenAccounting`).
+
+**Việc nên làm tiếp (chưa làm):** cho phép khai báo theo project "mã trả về khi thiếu/sai token" (401 hoặc 403) và "bỏ mục biên ngầm", để hai nhóm Fail giả lớn nhất ở trên không loại mất bằng chứng. Roadmap G4 (hoãn) từng ghi "chưa gặp ca phân loại sai nào"; nay đã có bằng chứng.
+
 ## 8. Chạy lại
 
 ```bash
