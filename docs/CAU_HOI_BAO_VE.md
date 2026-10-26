@@ -80,7 +80,7 @@ Không có một con số "đủ"; trả lời bằng 3 trục độc lập, kh�
 
 **15. Thiếu gì so với công cụ học thuật?**
 - Có: probe tất định độ bền request (JSON hỏng, sai Content-Type, TRACE), mass assignment, quét rò rỉ (dữ liệu nhạy cảm, stack trace, lỗi SQL), Test Data Chaining cho test gốc.
-- Chưa có: suy luận chuỗi stateful kiểu RESTler từ response, fuzzing quy mô lớn, shrinking, retry flaky tự động, body lồng sâu, upload file, tự lấy token đăng nhập, kiểm tra BOLA (hướng phát triển).
+- Chưa có: suy luận chuỗi stateful kiểu RESTler từ response, fuzzing quy mô lớn, shrinking, retry flaky tự động, body lồng sâu, upload file, tự lấy token đăng nhập, kiểm tra BOLA, chạy trong pipeline CI/CD (hướng phát triển, câu 21).
 
 **16. Chi phí AI thế nào? Có kiểm soát không?**
 - Quota token theo user/ngày (mặc định 2.000.000); **trần cứng cho mỗi lần trích luật** do người dùng đặt (mặc định 60.000, khoảng 5.000-1.000.000; kiểm trước mỗi lần gọi, hết thì dừng và giữ phần đã làm); "chạy thử" cho biết số lô và ước tính, 0 token; sổ token cấp project (xoá project hay import lại không đặt lại quota ngày).
@@ -88,7 +88,7 @@ Không có một con số "đủ"; trả lời bằng 3 trục độc lập, kh�
 - Đợt đo G5 dùng **339.132 token** (dự đoán 320.106, +5,9%), đối chiếu sổ CSDL trước/sau từng bước.
 
 **17. Bảo mật của chính công cụ?**
-- Token đích mã hoá AES-256, không log; che giá trị nhạy cảm trong response và trong tài liệu trước khi gửi AI; token CI chỉ lưu SHA-256; phân quyền theo sở hữu project có **test tích hợp thật** (Spring Security + JWT + MySQL) cho API luật, tài liệu và job trích luật: người dùng khác bị 403, id của project khác không dùng được. Phạm vi chặn SSRF khi import URL xem roadmap P0-2.
+- Token đích mã hoá AES-256, không log; che giá trị nhạy cảm trong response và trong tài liệu trước khi gửi AI; phân quyền theo sở hữu project có **test tích hợp thật** (Spring Security + JWT + MySQL) cho API luật, tài liệu và job trích luật: người dùng khác bị 403, id của project khác không dùng được. Phạm vi chặn SSRF khi import URL xem roadmap P0-2.
 
 **18. Vì sao bỏ chức năng AI sinh toàn bộ test case?**
 - Đo thật: AI sinh checklist chậm (97-121 giây), tốn 20-39 nghìn token/endpoint, nhiều Fail giả do thiếu id/ngày/mã danh mục; phần EP/BVA hệ thống làm nhanh hơn, rẻ hơn, ít nhiễu hơn. Nay AI chỉ làm phần cần ngữ nghĩa và luôn có kiểm chứng.
@@ -98,6 +98,9 @@ Không có một con số "đủ"; trả lời bằng 3 trục độc lập, kh�
 
 **20. Chạy test có làm bẩn dữ liệu của hệ thống đích không?**
 - Có: test gốc và test bù chạy GHI THẬT (có hộp xác nhận, nên dùng môi trường test); tuỳ chọn "Dọn dữ liệu đã tạo". Probe phương thức không hỗ trợ cố ý dùng **TRACE** (chỉ phản chiếu request) để API lỗi cũng không xoá/sửa được dữ liệu thật. Chưa có chặn production/allowlist host.
+
+**21. Hệ thống có tích hợp CI/CD không?**
+- Đây là **hướng phát triển**. Ý tưởng: pipeline (GitHub Actions, GitLab CI, Jenkins) gọi hệ thống bằng token API gắn với một project để chạy bộ test mỗi lần đẩy code, chờ kết quả, tải báo cáo JUnit và kết thúc xanh/đỏ; chỉ Fail do lỗi thật của API làm đỏ, Fail nghi do dữ liệu test/token/môi trường chỉ cảnh báo; chạy tất định, không tốn token AI. Hệ thống có nguyên mẫu nhưng **chưa nằm trong phạm vi đánh giá hay demo**, nên không khẳng định kết quả nào về phần này.
 
 ## E. Câu hỏi thật của giảng viên (dán vào đây)
 

@@ -12,7 +12,7 @@ Kiểm thử API REST thủ công tốn công và dễ bỏ sót: người kiể
 
 - Import OpenAPI/Swagger, sinh test case theo hướng **hybrid** (mục 4), cho người dùng review/sửa trước khi chạy, thực thi test, phân loại nguyên nhân Fail kèm độ tin, hỗ trợ bug report.
 - Trả lời được, bằng số liệu, ba câu hỏi: hệ thống bắt được bao nhiêu lỗi, tốn bao nhiêu (token), và "đủ" nghĩa là gì (ba trục độc lập, mục 6).
-- Phạm vi: giao diện desktop >= 1024px; xác thực đích bằng token tĩnh (Bearer, Basic, API key, query string) và nhiều profile vai trò. **Ngoài phạm vi:** OAuth/refresh token, fuzzing quy mô lớn, máy trạng thái, kiểm tra BOLA (hướng phát triển), tự host mô hình AI.
+- Phạm vi: giao diện desktop >= 1024px; xác thực đích bằng token tĩnh (Bearer, Basic, API key, query string) và nhiều profile vai trò. **Ngoài phạm vi:** OAuth/refresh token, fuzzing quy mô lớn, máy trạng thái, kiểm tra BOLA, chạy trong pipeline CI/CD (các mục này là hướng phát triển, mục 8), tự host mô hình AI.
 
 ## 3. Kiến trúc
 
@@ -73,7 +73,9 @@ Các module 1-14 (nền tảng, project, import, review, thực thi, chuỗi d�
 
 ## 8. Hướng phát triển
 
-BOLA (hai profile cùng vai, kiểm tra quyền sở hữu dữ liệu); máy trạng thái và mẫu luật "không trùng"; cấu hình thêm cho API trả 403 với mọi lỗi framework; log lý do từng luật bị bộ kiểm chứng loại; đo thời gian và tỉ lệ duyệt sai với người dùng thật (E2); đo trên API của bên thứ ba; OWASP API4 (kích thước tham số); hỗ trợ tài liệu PDF.
+**Tích hợp CI/CD (ý tưởng).** Cho pipeline (GitHub Actions, GitLab CI, Jenkins) tự chạy bộ test của project mỗi lần đẩy code: pipeline gọi hệ thống bằng một token API gắn với đúng một project, chờ kết quả, tải báo cáo JUnit rồi kết thúc xanh hoặc đỏ theo kết luận. Chỉ Fail do lỗi thật của API làm đỏ pipeline; Fail nghi do dữ liệu test, token hay môi trường chỉ cảnh báo. Chạy tất định, không gọi AI, không tốn token. Hệ thống hiện có nguyên mẫu của ý tưởng này (API chạy bằng token, báo cáo JUnit/HTML) nhưng **chưa nằm trong phạm vi đánh giá hay demo**, nên báo cáo trình bày nó là hướng phát triển chứ không phải kết quả.
+
+Các hướng khác: BOLA (hai profile cùng vai, kiểm tra quyền sở hữu dữ liệu); máy trạng thái và mẫu luật "không trùng"; cấu hình thêm cho API trả 403 với mọi lỗi framework; log lý do từng luật bị bộ kiểm chứng loại; đo thời gian và tỉ lệ duyệt sai với người dùng thật (E2); đo trên API của bên thứ ba; OWASP API4 (kích thước tham số); hỗ trợ tài liệu PDF.
 
 ## 9. Chạy lại và tái lập
 

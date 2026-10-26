@@ -56,4 +56,5 @@
 - **Làm sao biết là bug thật?** Black-box không biết chắc. Hệ thống chỉ "nghi kèm bằng chứng và độ tin"; fail nghi do test/môi trường/token/không ổn định bị chặn khỏi bug tự động. Không sửa kỳ vọng cho khớp hành vi sai.
 - **Xác thực:** token tĩnh (Bearer, Basic, X-API-Key/header, query string) + nhiều profile vai trò; chưa có đăng nhập động/refresh token/OAuth2.
 - **Chi phí AI:** quota theo người dùng/ngày (mặc định 2.000.000), trần cứng mỗi lần trích (mặc định 60.000); chạy nhiều job song song cùng chủ có thể vượt quota ngày vài chục nghìn token.
+- **Tích hợp CI/CD** là hướng phát triển (ý tưởng ở `docs/BAO_CAO.md` mục 8), không demo.
 - **Giao diện** tối ưu cho màn hình >= 1024px; chưa hỗ trợ điện thoại.
