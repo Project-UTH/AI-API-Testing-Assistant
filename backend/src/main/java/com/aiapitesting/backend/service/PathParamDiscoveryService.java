@@ -51,13 +51,31 @@ public class PathParamDiscoveryService {
             TestCase probe = TestCase.builder().endpoint(list.get()).name("Tự tìm id thật").resolvedPath(candidatePath).expectedStatus(200).build();
             RestAssuredTestRunner.RunResult result = runner.run(project, probe, Map.of());
             if (result.statusCode() < 200 || result.statusCode() > 299) {
-                return new Discovery(null, label + " trả " + result.statusCode() + " (cần token/quyền phù hợp)");
+                String api = apiError(result.responseBody());
+                return new Discovery(null, label + " trả " + result.statusCode() + (api != null ? " (" + api + ")"
+                        : result.statusCode() == 401 || result.statusCode() == 403 ? " (cần token/quyền phù hợp)" : ""));
             }
             String id = firstId(result.responseBody(), paramName);
             return id == null ? new Discovery(null, label + " không có phần tử nào (hệ thống đích chưa có dữ liệu)") : new Discovery(id, label);
         } catch (RuntimeException e) {
             log.warn("Tu tim id that that bai: {}", e.getClass().getSimpleName());
             return new Discovery(null, label + " không gọi được");
+        }
+    }
+
+    /** "MA_LOI: thông điệp" từ phản hồi lỗi JSON của API đích (cắt ngắn); null nếu không có. */
+    String apiError(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode json = objectMapper.readTree(body);
+            String code = json.path("error").asText(json.path("code").asText(""));
+            String message = json.path("message").asText("");
+            String text = code.isBlank() ? message : message.isBlank() ? code : code + ": " + message;
+            return text.isBlank() ? null : text.length() > 160 ? text.substring(0, 160) : text;
+        } catch (Exception e) {
+            return null;
         }
     }
 

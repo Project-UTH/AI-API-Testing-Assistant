@@ -338,7 +338,7 @@ public class BaselineVerificationService {
         }
         JobProgress.Step step = p.start(endpoint.getId(), endpoint.getMethod() + " " + endpoint.getPath(), "CREATE_RESOURCE", "SYSTEM",
                 "Chưa có dữ liệu thật cho {" + paramName + "}: tự tạo bằng " + creatorLabel + " (AI sinh test gốc rồi chạy thật, có ghi dữ liệu và tốn token)");
-        BaselineResponse created = execute(projectId, creator.get().getId(), new BaselineRequest(true, req.getMaxRepairRounds(), given, false, false), p, depth + 1);
+        BaselineResponse created = execute(projectId, creator.get().getId(), new BaselineRequest(true, 1, given, false, false), p, depth + 1); // dữ liệu phụ: tối đa 1 lần sửa để không đốt token
         boolean ok = "CONFIRMED".equals(created.status()) || "ALREADY_HAS_BASELINE".equals(created.status());
         if (ok && dependencySuggestionService.hasCreatorSource(projectId, endpoint.getId(), paramName)) {
             step.ok("Đã tạo dữ liệu bằng " + creatorLabel + "; nối chuỗi lấy id từ phản hồi của nó");
@@ -398,10 +398,36 @@ public class BaselineVerificationService {
             return new Diagnosis(Decision.HUMAN, "RESOURCE_NOT_FOUND",
                     "API trả 404 với tham số đường dẫn: id này không tồn tại - nhập id thật hoặc tạo trước 1 test POST tạo tài nguyên (chuỗi dữ liệu).");
         }
+        String prerequisite = http == 404 ? notFoundPrerequisite(o.body()) : null;
+        if (prerequisite != null) {
+            // 404 với mã lỗi *_NOT_FOUND ở endpoint không có tham số đường dẫn: thiếu dữ liệu tiên quyết (vd HR chưa có công ty), AI sửa request cũng vô ích
+            // và mỗi lần sửa tốn hàng chục nghìn token -> dừng ngay, nói rõ cho người dùng.
+            return new Diagnosis(Decision.HUMAN, "PREREQUISITE_MISSING",
+                    "API trả 404: " + prerequisite + ". Thường là dữ liệu tiên quyết chưa có (vd tài khoản chưa tạo công ty) - AI không sửa được; hãy tạo dữ liệu đó trước rồi chạy lại.");
+        }
         if (http >= 500) {
             return new Diagnosis(Decision.HUMAN, "SERVER_ERROR", "API trả " + http + " với test hợp lệ - nghi lỗi phía API, AI không sửa được.");
         }
         return new Diagnosis(Decision.REPAIR, null, "API trả " + http + " - gửi thông báo lỗi thật cho AI sửa.");
+    }
+
+    /** "MA_LOI: thông điệp" nếu phản hồi JSON có mã lỗi kết thúc bằng _NOT_FOUND (vd COMPANY_NOT_FOUND); ngược lại null. */
+    static String notFoundPrerequisite(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            String code = json.path("error").asText(json.path("code").asText(""));
+            if (!code.toUpperCase(Locale.ROOT).endsWith("_NOT_FOUND")) {
+                return null;
+            }
+            String message = json.path("message").asText("");
+            String text = message.isBlank() ? code : code + " - " + message;
+            return text.length() > 200 ? text.substring(0, 200) : text;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ---- Chạy 1 test và chờ kết quả ----

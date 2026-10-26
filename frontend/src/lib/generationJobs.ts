@@ -156,6 +156,7 @@ export const REASON_HELP: Record<string, string> = {
   REPAIR_EXHAUSTED: "AI đã sửa nhưng chưa Pass: xem phản hồi của API và sửa tay test gốc ở trang Test case.",
   TOKEN_BUDGET: "Đã chạm trần token cho lần chạy này. Sửa tay test gốc rồi bấm Bổ sung.",
   EXECUTION_TIMEOUT: "Lần chạy thử quá thời gian chờ. Kiểm tra API đích có chạy không rồi thử lại.",
+  PREREQUISITE_MISSING: "API báo thiếu dữ liệu tiên quyết (404 *_NOT_FOUND, vd tài khoản HR chưa tạo công ty). AI không sửa được: tạo dữ liệu đó trước (thường bằng test POST tạo tài nguyên tương ứng) rồi chạy lại.",
   EXECUTION_ERROR: "Không gọi được API đích: kiểm tra Target URL và mạng rồi thử lại.",
   NO_BASELINE: "Endpoint chưa có test gốc hợp lệ: bấm 'Sinh test case' để AI sinh, hoặc tự thêm 1 test đúng.",
 }

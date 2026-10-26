@@ -327,6 +327,18 @@ class BaselineVerificationServiceTest {
         assertThat(askCount).isZero();
     }
 
+    @Test
+    void notFoundWithAPrerequisiteErrorCode_stopsImmediately_insteadOfBurningTokensOnRepairs() {
+        RunOutcome companyMissing = new RunOutcome(TestResultStatus.FAILED, 404, "{\"error\":\"COMPANY_NOT_FOUND\",\"message\":\"HR chưa tạo hồ sơ công ty\"}", null, false);
+        var d = BaselineVerificationService.diagnose(companyMissing, false);
+        assertThat(d.decision()).isEqualTo(BaselineVerificationService.Decision.HUMAN);
+        assertThat(d.reason()).isEqualTo("PREREQUISITE_MISSING");
+        assertThat(d.message()).contains("COMPANY_NOT_FOUND").contains("HR chưa tạo hồ sơ công ty");
+        // 404 thường (sai đường dẫn, không có mã *_NOT_FOUND) vẫn để AI sửa
+        assertThat(BaselineVerificationService.diagnose(new RunOutcome(TestResultStatus.FAILED, 404, "{\"message\":\"Not Found\"}", null, false), false).decision())
+                .isEqualTo(BaselineVerificationService.Decision.REPAIR);
+    }
+
     // ---- Giám sát từng bước, chạy thử, huỷ và trần token ----
 
     /** Ghi lại các bước để kiểm tra; có thể cấu hình huỷ sau N lần kiểm tra và trần token. */
