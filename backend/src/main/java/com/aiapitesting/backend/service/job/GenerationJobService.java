@@ -262,8 +262,18 @@ public class GenerationJobService {
 
     private RulesJobResult runRulesPhase(GenerationJob job, UUID projectId, List<UUID> endpointIds, StartGenerationJobRequest req, JobContext ctx) {
         try {
-            return ruleExtraction.run(rulesRequest(job, projectId, endpointIds, req, RuleExtractionService.budgetOf(req.getRulesTokenBudget()),
-                    ctx.tokensUsed()), ctx);
+            // MỘT trần token tổng cho cả lần chạy: checklist chỉ được dùng phần còn lại sau khi sinh test gốc. Chưa đặt trần (0) thì dùng mức mặc định.
+            int remaining = job.getTokenCap() > 0 ? job.getTokenCap() - ctx.tokensUsed() : RuleExtractionService.DEFAULT_BUDGET;
+            if (req.getRulesTokenBudget() != null && req.getRulesTokenBudget() > 0) {
+                remaining = Math.min(remaining, req.getRulesTokenBudget()); // tương thích client cũ
+            }
+            if (!ctx.isDryRun() && remaining < RuleExtractionService.MIN_BUDGET) {
+                ctx.start(null, "Checklist nghiệp vụ", "RULES_PLAN", "SYSTEM", "Kiểm tra trần token").ok(
+                        "Bỏ qua lập checklist: trần token tổng còn lại " + Math.max(0, remaining) + " token, không đủ (cần ít nhất " + RuleExtractionService.MIN_BUDGET
+                                + "). Tăng 'Trần token AI của lần chạy' rồi chạy lại");
+                return null;
+            }
+            return ruleExtraction.run(rulesRequest(job, projectId, endpointIds, req, Math.min(remaining, RuleExtractionService.MAX_BUDGET), ctx.tokensUsed()), ctx);
         } catch (JobCancelledException e) {
             throw e;
         } catch (RuntimeException e) {

@@ -102,7 +102,6 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
   const withoutDocs = endpoints.filter((e) => docsForEndpoint(value, docIds, e.id).length === 0)
   const hasInput = selected.length > 0 || value.instruction.trim().length > 0
   const effectiveSuggest = !hasInput || value.suggest
-  const budget = budgetOf(value)
 
   const upload = useMutation({
     mutationFn: (file: File) => uploadRequirementDoc(projectId, file),
@@ -337,29 +336,10 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
         </span>
       </Label>
 
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="rule-budget" className="text-xs">
-            Ngân sách token cho phần checklist (trần cứng)
-          </Label>
-          <input
-            id="rule-budget"
-            type="number"
-            min={MIN_RULES_BUDGET}
-            max={MAX_RULES_BUDGET}
-            step={5000}
-            value={value.budget}
-            onChange={(e) => onChange({ ...value, budget: e.target.value })}
-            className="h-8 w-36 rounded-md border border-input bg-transparent px-2 text-sm"
-          />
-          {String(budget) !== value.budget && (
-            <span className="text-[11px] text-amber-700 dark:text-amber-400">Sẽ dùng {budget.toLocaleString("vi-VN")} (trong khoảng 5.000 đến 1.000.000)</span>
-          )}
-        </div>
-        <p className="max-w-sm text-xs text-muted-foreground">
-          Không giới hạn số mục: <strong>ngân sách này là giới hạn duy nhất</strong>. Hết thì dừng và giữ phần đã làm. Tính riêng, không lấy từ phần sinh test gốc.
-        </p>
-      </div>
+      <p className="text-xs text-muted-foreground">
+        Không giới hạn số mục. Token của phần checklist nằm trong <strong>"Trần token AI của lần chạy"</strong> bên dưới (một trần tổng cho cả test gốc và checklist); chạm
+        trần thì dừng và giữ phần đã làm.
+      </p>
 
       <Label className="items-start gap-2 font-normal">
         <Checkbox checked={value.consent} onCheckedChange={(v) => onChange({ ...value, consent: v === true })} className="mt-0.5" />

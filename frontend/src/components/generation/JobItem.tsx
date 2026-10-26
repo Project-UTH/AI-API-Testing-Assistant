@@ -48,24 +48,15 @@ const STATUS_TONE: Record<string, string> = {
   INTERRUPTED: "border-destructive/40",
 }
 
-function formatElapsed(ms: number): string {
+export function formatElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000))
   return s >= 60 ? `${Math.floor(s / 60)}p ${String(s % 60).padStart(2, "0")}s` : `${s}s`
 }
 
-/** 1 job: tự polling (gộp các bước mới theo seq), hiện thành pill thu nhỏ hoặc panel giám sát đầy đủ. */
-export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDismiss }: Props) {
+/** Polling 1 job (gộp các bước mới theo seq); dùng chung cho khung giám sát nổi và trang chính của lần sinh test. */
+export function useJobPolling(projectId: string, jobId: string) {
   const queryClient = useQueryClient()
-  const [now, setNow] = useState(() => Date.now())
-  const panelRef = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    if (!expanded) return
-    // chờ hộp thoại vừa đóng trả focus xong rồi mới chuyển focus vào panel
-    const t = setTimeout(() => panelRef.current?.focus({ preventScroll: true }), 150)
-    return () => clearTimeout(t)
-  }, [expanded])
-
-  const { data: job, error, isError: pollFailed, dataUpdatedAt } = useQuery({
+  const result = useQuery({
     queryKey: ["gen-job", jobId],
     queryFn: async (): Promise<GenerationJob> => {
       const previous = queryClient.getQueryData<GenerationJob>(["gen-job", jobId])
@@ -84,13 +75,7 @@ export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDi
     retry: 3,
     staleTime: 0,
   })
-
-  // Job không còn tồn tại (xoá project, đổi tài khoản...) -> tự gỡ khỏi khung.
-  const notFound = error instanceof ApiError && error.code === "NOT_FOUND"
-  useEffect(() => {
-    if (notFound) onDismiss()
-  }, [notFound, onDismiss])
-
+  const job = result.data
   // Khi job kết thúc: làm mới dữ liệu bị ảnh hưởng (test case, coverage, quota AI...).
   const wasActive = useRef(false)
   useEffect(() => {
@@ -104,6 +89,28 @@ export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDi
       for (const key of jobQueryKeys(projectId)) queryClient.invalidateQueries({ queryKey: key })
     }
   }, [job, projectId, queryClient])
+  return result
+}
+
+/** 1 job: tự polling (gộp các bước mới theo seq), hiện thành pill thu nhỏ hoặc panel giám sát đầy đủ. */
+export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDismiss }: Props) {
+  const queryClient = useQueryClient()
+  const [now, setNow] = useState(() => Date.now())
+  const panelRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!expanded) return
+    // chờ hộp thoại vừa đóng trả focus xong rồi mới chuyển focus vào panel
+    const t = setTimeout(() => panelRef.current?.focus({ preventScroll: true }), 150)
+    return () => clearTimeout(t)
+  }, [expanded])
+
+  const { data: job, error, isError: pollFailed, dataUpdatedAt } = useJobPolling(projectId, jobId)
+
+  // Job không còn tồn tại (xoá project, đổi tài khoản...) -> tự gỡ khỏi khung.
+  const notFound = error instanceof ApiError && error.code === "NOT_FOUND"
+  useEffect(() => {
+    if (notFound) onDismiss()
+  }, [notFound, onDismiss])
 
   const active = !!job && !isTerminal(job.status)
   useEffect(() => {
@@ -241,12 +248,17 @@ export function JobItem({ projectId, jobId, expanded, onExpand, onMinimize, onDi
         ))}
       </div>
 
+      <div className="border-t border-border px-4 py-2 text-xs">
+        <Link to={`/projects/${projectId}/jobs/${job.id}`} className="font-medium text-primary underline underline-offset-4">
+          Mở trang chính của lần sinh test (duyệt checklist, sinh test)
+        </Link>
+      </div>
       {isTerminal(job.status) && <Summary job={job} projectId={projectId} />}
     </section>
   )
 }
 
-function StepRow({ step, now }: { step: GenerationStep; now: number }) {
+export function StepRow({ step, now }: { step: GenerationStep; now: number }) {
   const stepMs = step.status === "RUNNING" && step.startedAt ? now - new Date(step.startedAt).getTime() : 0
   const icon =
     step.status === "RUNNING" ? (
@@ -390,7 +402,7 @@ function Summary({ job, projectId }: { job: GenerationJob; projectId: string }) 
   )
 }
 
-function CancelButton({ onConfirm, pending, compact = false }: { onConfirm: () => void; pending: boolean; compact?: boolean }) {
+export function CancelButton({ onConfirm, pending, compact = false }: { onConfirm: () => void; pending: boolean; compact?: boolean }) {
   const [open, setOpen] = useState(false)
   return (
     <>

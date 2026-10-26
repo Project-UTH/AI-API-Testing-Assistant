@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { Loader2, Sparkles } from "lucide-react"
 
@@ -24,7 +25,6 @@ import { getProject } from "@/lib/projects"
 import { listRequirementDocs } from "@/lib/requirementDocs"
 import {
   BusinessChecklistFields,
-  budgetOf,
   buildDocumentsByEndpoint,
   docsForEndpoint,
   EMPTY_CHECKLIST_INPUT,
@@ -79,6 +79,7 @@ function saveGroups(projectId: string, groups: Record<GroupKey, boolean>) {
  */
 export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange }: Props) {
   const { track } = useGenerationJobs()
+  const navigate = useNavigate()
   const isWrite = endpoints.some((e) => WRITE_METHODS.includes(e.method.toUpperCase()))
   const params = Array.from(new Set(endpoints.flatMap((e) => pathParamNames(e.path))))
   const many = endpoints.length > 1
@@ -129,13 +130,14 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
         instruction: useChecklist ? checklistInput.instruction.trim() || undefined : undefined,
         suggest: useChecklist ? effectiveSuggest : undefined,
         documentsByEndpoint,
-        rulesTokenBudget: useChecklist ? budgetOf(checklistInput) : undefined,
         tokenCap,
       }),
     onSuccess: (job) => {
       saveGroups(projectId, groups)
       track(job)
       onOpenChange(false)
+      // Trang chính của lần sinh test: xem tiến trình, rồi duyệt checklist và sinh test ngay tại đó.
+      navigate(`/projects/${projectId}/jobs/${job.id}`)
     },
   })
 
@@ -278,7 +280,7 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
               value={tokenCap}
               onChange={(e) => setTokenCap(Number(e.target.value))}
             >
-              {[30000, 60000, 120000, 250000, 500000].map((n) => (
+              {[30000, 60000, 120000, 250000, 500000, 1000000].map((n) => (
                 <option key={n} value={n}>
                   {n.toLocaleString("vi-VN")}
                 </option>
@@ -287,11 +289,17 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
           </div>
           <p className="text-xs text-muted-foreground" hidden={mode === "SYSTEM"}>
             Ước tính {(endpoints.length * 10000).toLocaleString("vi-VN")}–{(endpoints.length * 10000 * (1 + rounds)).toLocaleString("vi-VN")} token cho test gốc (mỗi lần gọi AI ~6.500–27.000)
-            {useChecklist ? ` + khoảng ${checklistEstimate.toLocaleString("vi-VN")} token cho checklist nghiệp vụ (ngân sách riêng, trần cứng ${budgetOf(checklistInput).toLocaleString("vi-VN")})` : ""}.
+            {useChecklist ? ` + khoảng ${checklistEstimate.toLocaleString("vi-VN")} token cho checklist nghiệp vụ (nằm trong trần token tổng bên dưới)` : ""}.
             Không giới hạn thời gian: bước AI có thể kéo dài vài phút, bạn theo dõi từng bước và bấm Huỷ khi cần. Chạm trần token thì job dừng ở bước an toàn.
           </p>
           {useChecklist && !checklistInput.consent && (
             <p className="text-xs text-muted-foreground">Tick đồng ý gửi tài liệu/chỉ dẫn tới AI bên ngoài (ở khối checklist nghiệp vụ) để bắt đầu.</p>
+          )}
+          {useChecklist && endpoints.length * 10000 + checklistEstimate > tokenCap && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Ước tính test gốc ({(endpoints.length * 10000).toLocaleString("vi-VN")}) cộng checklist (~{checklistEstimate.toLocaleString("vi-VN")}) có thể vượt trần tổng{" "}
+              {tokenCap.toLocaleString("vi-VN")}: nếu vượt, phần checklist sẽ dừng sớm hoặc bị bỏ qua. Cân nhắc tăng "Trần token AI của lần chạy".
+            </p>
           )}
           {!targetUrl && <p className="text-xs text-destructive">Project chưa có Target URL: import lại spec và điền URL trước.</p>}
           {mutation.isError && (

@@ -73,13 +73,18 @@ export function BusinessRulesPage() {
   return <EndpointChecklistView />
 }
 
-function EndpointChecklistView() {
+/**
+ * Màn duyệt checklist của 1 endpoint: checklist hệ thống (tick) + checklist AI (duyệt) + nút sinh test cuối. endpointIdProp: dùng khi nhúng trong trang
+ * của lần sinh test (không đọc từ URL); embedded: ẩn link quay lại và tiêu đề vì trang chứa đã có.
+ */
+export function EndpointChecklistView({ endpointIdProp, embedded = false }: { endpointIdProp?: string; embedded?: boolean }) {
   const { id } = useParams<{ id: string }>()
   const projectId = id!
   const queryClient = useQueryClient()
   const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
+  const endpointId = endpointIdProp ?? lf.filters.endpointId
   const { data: endpointsPage } = useQuery({ queryKey: ["endpoints", projectId], queryFn: () => listEndpoints(projectId) })
-  const thisEndpoint = (endpointsPage?.data ?? []).find((e) => e.id === lf.filters.endpointId)
+  const thisEndpoint = (endpointsPage?.data ?? []).find((e) => e.id === endpointId)
   const endpointLabel = thisEndpoint ? `${thisEndpoint.method} ${thisEndpoint.path}` : "endpoint"
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<BusinessRule | null>(null)
@@ -111,18 +116,18 @@ function EndpointChecklistView() {
         size: lf.size,
         status: lf.filters.status || undefined,
         source: lf.filters.source || undefined,
-        endpointId: lf.filters.endpointId || undefined,
+        endpointId: endpointId || undefined,
       }),
     placeholderData: keepPreviousData,
   })
   const { data: approvedPage } = useQuery({
-    queryKey: ["rules", projectId, "approved-count", lf.filters.endpointId],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "APPROVED", endpointId: lf.filters.endpointId || undefined }),
+    queryKey: ["rules", projectId, "approved-count", endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "APPROVED", endpointId: endpointId || undefined }),
   })
   const approvedCount = approvedPage?.totalElements ?? 0
   const { data: pendingPage } = useQuery({
-    queryKey: ["rules", projectId, "pending-count", lf.filters.endpointId],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "PROPOSED", endpointId: lf.filters.endpointId || undefined }),
+    queryKey: ["rules", projectId, "pending-count", endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "PROPOSED", endpointId: endpointId || undefined }),
   })
   const pendingCount = pendingPage?.totalElements ?? 0
 
@@ -158,20 +163,20 @@ function EndpointChecklistView() {
   })
   // Mục có trích dẫn = nguồn tài liệu hoặc chỉ dẫn: lọc ở backend để không bị 200 mục GIẢ ĐỊNH/hệ thống đứng trước che mất.
   const { data: docPage } = useQuery({
-    queryKey: ["rules", projectId, "cited-proposed", "DOC", lf.filters.endpointId],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "DOC", endpointId: lf.filters.endpointId || undefined }),
+    queryKey: ["rules", projectId, "cited-proposed", "DOC", endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "DOC", endpointId: endpointId || undefined }),
   })
   const { data: instructionPage } = useQuery({
-    queryKey: ["rules", projectId, "cited-proposed", "INSTRUCTION", lf.filters.endpointId],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INSTRUCTION", endpointId: lf.filters.endpointId || undefined }),
+    queryKey: ["rules", projectId, "cited-proposed", "INSTRUCTION", endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INSTRUCTION", endpointId: endpointId || undefined }),
   })
   const citedProposed = useMemo(
     () => [...(docPage?.data ?? []), ...(instructionPage?.data ?? [])].filter((r) => r.quote !== null),
     [docPage, instructionPage]
   )
   const { data: guessPage } = useQuery({
-    queryKey: ["rules", projectId, "guess-proposed", lf.filters.endpointId],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INFERRED", endpointId: lf.filters.endpointId || undefined }),
+    queryKey: ["rules", projectId, "guess-proposed", endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INFERRED", endpointId: endpointId || undefined }),
   })
   const guessProposed = useMemo(() => (guessPage?.data ?? []).filter((r) => r.quote === null), [guessPage])
   const revert = useMutation({
@@ -198,7 +203,6 @@ function EndpointChecklistView() {
   const generate = useMutation({
     // Đang xem checklist của 1 endpoint: sinh test cho đúng các mục hệ thống đã tick VÀ các mục AI đã duyệt của endpoint đó (bước cuối của luồng duyệt).
     mutationFn: async () => {
-      const endpointId = lf.filters.endpointId
       let created = 0
       if (endpointId && systemKeys.size > 0) {
         created = (await fillCoverageGaps(projectId, endpointId, [...systemKeys])).createdCount
@@ -270,10 +274,12 @@ function EndpointChecklistView() {
 
   return (
     <div>
-      <Link to={`/projects/${projectId}`} className="text-xs text-primary underline underline-offset-4">
-        ← Về danh sách endpoint
-      </Link>
-      <h2 className="mt-2 text-lg font-semibold">
+      {!embedded && (
+        <Link to={`/projects/${projectId}`} className="text-xs text-primary underline underline-offset-4">
+          ← Về danh sách endpoint
+        </Link>
+      )}
+      <h2 className={embedded ? "text-base font-semibold" : "mt-2 text-lg font-semibold"}>
         Checklist nghiệp vụ: <span className="font-mono text-base">{endpointLabel}</span>
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
@@ -281,7 +287,7 @@ function EndpointChecklistView() {
         rồi hệ thống mới sinh test từ mục đã chọn (0 token). Để AI lập checklist: bấm "Sinh test case" cho endpoint này và tick "AI bổ sung checklist nghiệp vụ".
       </p>
 
-      <SystemChecklistReview projectId={projectId} endpointId={lf.filters.endpointId} selected={systemKeys} onChange={setSystemKeys} />
+      <SystemChecklistReview projectId={projectId} endpointId={endpointId} selected={systemKeys} onChange={setSystemKeys} />
       <AiQuestionsCard projectId={projectId} />
       <ReviewTimingBanner projectId={projectId} />
 
@@ -321,7 +327,7 @@ function EndpointChecklistView() {
           onClick={() => generate.mutate()}
         >
           {generate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          {lf.filters.endpointId ? `Sinh test từ checklist đã duyệt (${systemKeys.size} hệ thống + ${approvedCount} AI)` : `Sinh test từ ${approvedCount} mục đã duyệt`}
+          {endpointId ? `Sinh test từ checklist đã duyệt (${systemKeys.size} hệ thống + ${approvedCount} AI)` : `Sinh test từ ${approvedCount} mục đã duyệt`}
         </Button>
       </div>
 
