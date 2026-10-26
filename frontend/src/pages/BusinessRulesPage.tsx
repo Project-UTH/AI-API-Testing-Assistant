@@ -14,6 +14,8 @@ import { ApproveGuessDialog } from "@/components/rules/ApproveGuessDialog"
 import { BatchApproveDialog } from "@/components/rules/BatchApproveDialog"
 import { DocViewerDialog } from "@/components/rules/DocViewerDialog"
 import { ReviewTimingBanner } from "@/components/rules/ReviewTimingBanner"
+import { SystemChecklistReview } from "@/components/rules/SystemChecklistReview"
+import { fillCoverageGaps } from "@/lib/coverage"
 import { AiQuestionsCard } from "@/components/rules/AiQuestionsCard"
 import { reportReviewTiming } from "@/lib/reviewTiming"
 import { ListToolbar, type ListFilterSelect } from "@/components/shared/ListToolbar"
@@ -57,6 +59,9 @@ export function BusinessRulesPage() {
   const [conflictRule, setConflictRule] = useState<BusinessRule | null>(null)
   const [conflictNote, setConflictNote] = useState("")
   const [generated, setGenerated] = useState<GenerateRuleTestsResult | null>(null)
+  // Mục checklist HỆ THỐNG (EP/BVA/bảo mật) bạn tick ở màn duyệt của 1 endpoint; chỉ các mục này được sinh test.
+  const [systemKeys, setSystemKeys] = useState<Set<string>>(new Set())
+  const [systemCreated, setSystemCreated] = useState(0)
   const [detectedMessage, setDetectedMessage] = useState<string | null>(null)
   const [guessRule, setGuessRule] = useState<BusinessRule | null>(null)
   const [viewing, setViewing] = useState<{ documentId: string; quote: string; offset: number | null } | null>(null)
@@ -163,10 +168,21 @@ export function BusinessRulesPage() {
     },
   })
   const generate = useMutation({
-    // Đang xem checklist của 1 endpoint thì chỉ sinh test cho endpoint đó.
-    mutationFn: () => generateRuleTests(projectId, lf.filters.endpointId ? { endpointIds: [lf.filters.endpointId] } : {}),
-    onSuccess: (result) => {
-      setGenerated(result)
+    // Đang xem checklist của 1 endpoint: sinh test cho đúng các mục hệ thống đã tick VÀ các mục AI đã duyệt của endpoint đó (bước cuối của luồng duyệt).
+    mutationFn: async () => {
+      const endpointId = lf.filters.endpointId
+      let created = 0
+      if (endpointId && systemKeys.size > 0) {
+        created = (await fillCoverageGaps(projectId, endpointId, [...systemKeys])).createdCount
+      }
+      const rules = await generateRuleTests(projectId, endpointId ? { endpointIds: [endpointId] } : {})
+      return { rules, created }
+    },
+    onSuccess: ({ rules, created }) => {
+      setGenerated(rules)
+      setSystemCreated(created)
+      setSystemKeys(new Set())
+      queryClient.invalidateQueries({ queryKey: ["endpoint-coverage", projectId] })
       invalidate()
     },
   })
@@ -240,7 +256,10 @@ export function BusinessRulesPage() {
           </Button>
         </p>
       )}
-      <AiQuestionsCard projectId={projectId} />
+      {lf.filters.endpointId && (
+        <SystemChecklistReview projectId={projectId} endpointId={lf.filters.endpointId} selected={systemKeys} onChange={setSystemKeys} />
+      )}
+      {!lf.filters.endpointId && <AiQuestionsCard projectId={projectId} />}
       <ReviewTimingBanner projectId={projectId} />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -278,12 +297,12 @@ export function BusinessRulesPage() {
           size="sm"
           variant="outline"
           className="ml-auto"
-          disabled={approvedCount === 0 || generate.isPending}
-          title={approvedCount === 0 ? "Chưa có mục nào được duyệt" : "Sinh tất định, 0 token; cần test gốc đã Pass"}
+          disabled={(approvedCount === 0 && systemKeys.size === 0) || generate.isPending}
+          title={approvedCount === 0 && systemKeys.size === 0 ? "Chưa có mục nào được duyệt hoặc chọn" : "Sinh tất định, 0 token; cần test gốc đã Pass"}
           onClick={() => generate.mutate()}
         >
           {generate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          Sinh test từ {approvedCount} mục đã duyệt
+          {lf.filters.endpointId ? `Sinh test từ checklist đã duyệt (${systemKeys.size} hệ thống + ${approvedCount} AI)` : `Sinh test từ ${approvedCount} mục đã duyệt`}
         </Button>
       </div>
 
@@ -312,7 +331,9 @@ export function BusinessRulesPage() {
       )}
       {generated && (
         <div role="status" className="mt-3 rounded-md border border-border p-3 text-sm">
-          <p className="font-medium">Đã sinh {generated.createdCount} test từ checklist nghiệp vụ.</p>
+          <p className="font-medium">
+            Đã sinh {generated.createdCount + systemCreated} test{systemCreated > 0 ? ` (${systemCreated} từ checklist hệ thống, ${generated.createdCount} từ checklist nghiệp vụ AI)` : " từ checklist nghiệp vụ"}.
+          </p>
           {generated.notGenerated.length > 0 && (
             <ul className="mt-1.5 list-disc pl-5 text-xs text-muted-foreground">
               {generated.notGenerated.map((n) => (

@@ -117,7 +117,8 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
         confirmWrite,
         maxRepairRounds: rounds,
         pathParamValues: Object.fromEntries(Object.entries(values).filter(([, v]) => v.trim() !== "")),
-        fillCoverage: true,
+        // Có checklist nghiệp vụ AI: chưa tự bổ sung test của hệ thống - checklist hệ thống + AI hiện ở màn duyệt, bạn duyệt rồi mới sinh test.
+        fillCoverage: !useChecklist,
         includePositive: true,
         includeNegative: groups.negative,
         includeBoundary: groups.boundary,
@@ -238,7 +239,10 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
               <Checkbox checked={checklist} onCheckedChange={(c) => setChecklist(c === true)} className="mt-0.5" />
               <span>
                 <span className="font-medium">+ AI bổ sung checklist nghiệp vụ</span>
-                <span className="text-muted-foreground"> - từ tài liệu/chỉ dẫn của bạn và/hoặc AI gợi ý thêm; bạn duyệt rồi hệ thống mới sinh test (0 token)</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  - sau khi có test gốc Pass, AI lập checklist theo tài liệu/chỉ dẫn và/hoặc gợi ý thêm. Chưa sinh test nào khác: bạn xem checklist của hệ thống và của AI, duyệt, rồi mới sinh test (0 token)
+                </span>
               </span>
             </label>
             {checklist && <BusinessChecklistFields projectId={projectId} value={checklistInput} onChange={setChecklistInput} endpoints={endpoints.map((e) => ({ id: e.id, method: e.method, path: e.path }))} />}

@@ -337,8 +337,8 @@ function RulesBlock({ job, projectId }: { job: GenerationJob; projectId: string 
         </>
       )}
       {!job.dryRun && (
-        <Link to={`/projects/${projectId}/rules?status=PROPOSED`} className="mt-2 inline-block text-primary underline underline-offset-4">
-          Duyệt checklist ({pending} chờ duyệt)
+        <Link to={job.results.length === 1 ? `/projects/${projectId}/rules?endpointId=${job.results[0].endpointId}` : `/projects/${projectId}/rules?status=PROPOSED`} className="mt-2 inline-block text-primary underline underline-offset-4">
+          Mở màn duyệt checklist ({pending} mục AI chờ duyệt{job.results.length === 1 ? " + checklist hệ thống" : ""})
         </Link>
       )}
     </div>

@@ -187,7 +187,7 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
         </ul>
       )}
 
-      {selected.length > 0 && endpoints.length > 0 && (
+      {selected.length > 0 && endpoints.length > 1 && (
         <div className="flex flex-col gap-2 rounded-md border border-border p-2.5">
           <Label className="items-start gap-2 text-xs font-normal">
             <Checkbox
