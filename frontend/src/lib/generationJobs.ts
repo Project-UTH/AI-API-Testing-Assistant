@@ -50,6 +50,12 @@ export interface RulesJobResult {
   /** BUDGET_STOPPED | DAILY_QUOTA | AI_ERROR | null */
   stoppedReason: string | null
   tokenBudget: number
+  /** Chỗ tài liệu còn thiếu mà AI nêu thành câu hỏi (không đoán). Job cũ có thể không có. */
+  questions?: string[] | null
+  /** Số mục làn "AI gợi ý thêm" đã lưu (đã tính trong inferred). */
+  suggested?: number
+  /** Lý do dừng riêng của làn gợi ý. */
+  suggestStoppedReason?: string | null
 }
 
 export interface GenerationJob {
@@ -88,6 +94,11 @@ export interface StartJobBody {
   includeSecurity?: boolean
   includeOwasp?: boolean
   includeBusiness?: boolean
+  /** FULL/SYSTEM: sau khi sinh test gốc, AI lập checklist nghiệp vụ để bạn duyệt. */
+  businessChecklist?: boolean
+  /** Bật làn "AI gợi ý thêm" (GIẢ ĐỊNH); backend tự bật khi không có tài liệu lẫn chỉ dẫn. */
+  suggest?: boolean
+  rulesTokenBudget?: number
 }
 
 export function startJob(projectId: string, body: StartJobBody): Promise<GenerationJob> {
@@ -102,6 +113,10 @@ export function cancelJob(projectId: string, jobId: string): Promise<GenerationJ
   return apiFetch<GenerationJob>(`/projects/${projectId}/generation-jobs/${jobId}/cancel`, { method: "POST" })
 }
 
+export function listRecentJobs(projectId: string): Promise<GenerationJob[]> {
+  return apiFetch<GenerationJob[]>(`/projects/${projectId}/generation-jobs`)
+}
+
 export function listActiveJobs(projectId: string): Promise<GenerationJob[]> {
   return apiFetch<GenerationJob[]>(`/projects/${projectId}/generation-jobs?active=true`)
 }
@@ -114,7 +129,7 @@ export const JOB_TYPE_LABEL: Record<JobType, string> = {
   FULL: "Sinh test case (AI sinh test gốc + hệ thống bổ sung)",
   SYSTEM: "Sinh test case: chỉ bổ sung từ test gốc có sẵn (0 token)",
   LEGACY: "Sinh toàn bộ bằng AI (chức năng cũ đã bỏ)",
-  RULES: "AI trích luật nghiệp vụ từ tài liệu (luật chờ bạn duyệt)",
+  RULES: "AI lập checklist nghiệp vụ (mục chờ bạn duyệt)",
 }
 
 export const JOB_STATUS_LABEL: Record<JobStatus, string> = {

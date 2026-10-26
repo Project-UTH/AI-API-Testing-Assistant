@@ -19,7 +19,8 @@ interface Props {
  */
 export function ApproveGuessDialog({ rule, pending, error, onCancel, onConfirm }: Props) {
   const [custom, setCustom] = useState("")
-  const [picked, setPicked] = useState<number | null>(null)
+  // Điền sẵn mã AI gợi ý (nếu có); người duyệt vẫn phải bấm xác nhận hoặc đổi mã.
+  const [picked, setPicked] = useState<number | null>(rule?.suggestedStatus ?? null)
   const value = custom.trim() ? Number(custom) : picked
   const valid = value !== null && Number.isInteger(value) && value >= 400 && value <= 499
 
@@ -27,13 +28,14 @@ export function ApproveGuessDialog({ rule, pending, error, onCancel, onConfirm }
     <Dialog open={rule !== null} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Duyệt luật GIẢ ĐỊNH</DialogTitle>
+          <DialogTitle>Duyệt mục GIẢ ĐỊNH</DialogTitle>
           <DialogDescription>
-            AI đoán luật này, không có trích dẫn từ tài liệu. Nếu đúng là quy tắc của hệ thống, hãy chọn mã lỗi mà API phải trả khi bị vi phạm. Nếu API trả
+            AI gợi ý mục này, không có trích dẫn từ tài liệu. Nếu đúng là quy tắc của hệ thống, hãy xác nhận mã lỗi mà API phải trả khi bị vi phạm (mã AI gợi ý đã được điền sẵn, bạn có thể đổi). Nếu API trả
             khác mã này, đó sẽ được ghi nhận là phát hiện lỗi của API.
           </DialogDescription>
         </DialogHeader>
         <p className="rounded-md bg-muted p-2 text-sm font-medium">{rule?.sentence}</p>
+        {rule?.suggestedStatus != null && <p className="text-xs text-muted-foreground">AI gợi ý mã {rule.suggestedStatus}. Chỉ có hiệu lực khi bạn bấm Duyệt.</p>}
         <fieldset className="flex flex-wrap gap-1.5">
           <legend className="sr-only">Mã lỗi kỳ vọng khi vi phạm</legend>
           {COMMON_REJECT_STATUSES.map((code) => (

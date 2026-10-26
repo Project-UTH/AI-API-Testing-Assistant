@@ -20,10 +20,12 @@ interface RuleItemProps {
   onReject: (rule: BusinessRule) => void
   onDelete: (rule: BusinessRule) => void
   onViewQuote: (rule: BusinessRule) => void
+  /** Xác nhận nhanh mã lỗi AI gợi ý cho mục GIẢ ĐỊNH (1 thao tác của người duyệt, không tự động). */
+  onConfirmSuggested: (rule: BusinessRule, status: number) => void
 }
 
 /** 1 luật nghiệp vụ: câu luật + chip mẫu/nguồn/trạng thái + kỳ vọng + thao tác. memo: duyệt 1 luật không vẽ lại cả danh sách. */
-export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, onReject, onDelete, onViewQuote }: RuleItemProps) {
+export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, onReject, onDelete, onViewQuote, onConfirmSuggested }: RuleItemProps) {
   const itemRef = useRef<HTMLLIElement | null>(null)
   useRuleTimer(itemRef, rule.id)
   const status = getRuleStatusDisplay(rule.status)
@@ -48,7 +50,15 @@ export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, 
           </span>
         )}
         <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{getRuleTemplateLabel(rule.template)}</span>
-        <span className="text-xs text-muted-foreground">→ vi phạm: {expectedLabel(rule.expectedStatus)}</span>
+        <span className="text-xs text-muted-foreground">→ khi vi phạm: {expectedLabel(rule.expectedStatus)}</span>
+        {rule.status === "PROPOSED" && rule.source === "INFERRED" && rule.suggestedStatus !== null && (
+          <span
+            className="rounded-full border border-dashed border-amber-600/60 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400"
+            title="Mã lỗi AI nghĩ API nên trả. Chỉ là gợi ý: có hiệu lực khi bạn xác nhận."
+          >
+            AI gợi ý {rule.suggestedStatus}
+          </span>
+        )}
         {rule.status === "APPROVED" && (
           <span className="text-xs text-muted-foreground">
             · {rule.testCount > 0 ? `${rule.testCount} test đã sinh` : "chưa sinh test"}
@@ -68,7 +78,7 @@ export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, 
       )}
       {rule.source === "INFERRED" && !rule.quote && rule.status === "PROPOSED" && (
         <p className="text-xs text-amber-700 dark:text-amber-400">
-          AI đoán, không có trích dẫn nào xác nhận. Khi duyệt bạn phải tự chọn mã lỗi kỳ vọng.
+          AI gợi ý, không có trích dẫn nào xác nhận. Khi duyệt bạn xác nhận hoặc đổi mã lỗi kỳ vọng.
         </p>
       )}
       {rule.rationale && !rule.quote && <p className="text-xs text-muted-foreground">{rule.rationale}</p>}
@@ -80,9 +90,20 @@ export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, 
       )}
 
       <div className="flex flex-wrap justify-end gap-1.5">
+        {canApprove && rule.source === "INFERRED" && rule.status === "PROPOSED" && rule.suggestedStatus !== null && (
+          <Button type="button" size="xs" disabled={busy} onClick={() => onConfirmSuggested(rule, rule.suggestedStatus as number)}>
+            Xác nhận {rule.suggestedStatus}
+          </Button>
+        )}
         {canApprove && (
-          <Button type="button" size="xs" disabled={busy} onClick={() => onApprove(rule)}>
-            {rule.status === "CONFLICT" ? "Duyệt (kèm ghi chú)" : rule.source === "INFERRED" ? "Duyệt (chọn mã lỗi)…" : "Duyệt"}
+          <Button
+            type="button"
+            size="xs"
+            variant={rule.source === "INFERRED" && rule.status === "PROPOSED" && rule.suggestedStatus !== null ? "outline" : "default"}
+            disabled={busy}
+            onClick={() => onApprove(rule)}
+          >
+            {rule.status === "CONFLICT" ? "Duyệt (kèm ghi chú)" : rule.source === "INFERRED" ? (rule.suggestedStatus !== null ? "Đổi mã…" : "Duyệt (chọn mã lỗi)…") : "Duyệt"}
           </Button>
         )}
         {canEdit && (

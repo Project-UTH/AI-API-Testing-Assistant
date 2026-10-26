@@ -45,6 +45,8 @@ export interface BusinessRule {
   /** Câu luật tiếng Việt do backend dựng - luôn dùng bản này để hiển thị. */
   sentence: string
   expectedStatus: number | null
+  /** Mã lỗi AI GỢI Ý cho mục GIẢ ĐỊNH (chỉ điền sẵn khi duyệt; không có hiệu lực cho tới khi người duyệt xác nhận). */
+  suggestedStatus: number | null
   status: RuleStatus
   source: RuleSource
   rationale: string | null

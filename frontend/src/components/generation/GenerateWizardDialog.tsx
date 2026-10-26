@@ -21,6 +21,14 @@ import { pathParamNames, WRITE_METHODS } from "@/lib/baseline"
 import type { Endpoint } from "@/lib/endpoints"
 import { startJob } from "@/lib/generationJobs"
 import { getProject } from "@/lib/projects"
+import { listRequirementDocs } from "@/lib/requirementDocs"
+import {
+  BusinessChecklistFields,
+  budgetOf,
+  EMPTY_CHECKLIST_INPUT,
+  estimateChecklistTokens,
+  type ChecklistInput,
+} from "@/components/generation/BusinessChecklistFields"
 
 interface Props {
   projectId: string
@@ -80,9 +88,21 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
   const [mode, setMode] = useState<"AI" | "SYSTEM">("AI")
   const [groups, setGroups] = useState<Record<GroupKey, boolean>>(() => loadGroups(projectId))
   const [dryRun, setDryRun] = useState(false)
-  const [includeBusiness, setIncludeBusiness] = useState(false)
+  // "AI bổ sung checklist nghiệp vụ": AI lập mục checklist để bạn duyệt (không sinh test). Consent luôn bắt đầu lại ở trạng thái chưa tick.
+  const [checklist, setChecklist] = useState(false)
+  const [checklistInput, setChecklistInput] = useState<ChecklistInput>(EMPTY_CHECKLIST_INPUT)
   const [tokenCap, setTokenCap] = useState(120000)
   const [values, setValues] = useState<Record<string, string>>({})
+
+  const { data: docs = [] } = useQuery({
+    queryKey: ["requirement-docs", projectId],
+    queryFn: () => listRequirementDocs(projectId),
+    enabled: open && checklist,
+  })
+  const selectedDocs = docs.filter((d) => !checklistInput.excluded.has(d.id))
+  const hasChecklistInput = selectedDocs.length > 0 || checklistInput.instruction.trim().length > 0
+  const effectiveSuggest = !hasChecklistInput || checklistInput.suggest
+  const useChecklist = mode === "AI" && checklist
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -99,7 +119,11 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
         includeBoundary: groups.boundary,
         includeSecurity: groups.security,
         includeOwasp: groups.owasp,
-        includeBusiness: mode === "AI" && includeBusiness,
+        businessChecklist: useChecklist,
+        documentIds: useChecklist ? selectedDocs.map((d) => d.id) : undefined,
+        instruction: useChecklist ? checklistInput.instruction.trim() || undefined : undefined,
+        suggest: useChecklist ? effectiveSuggest : undefined,
+        rulesTokenBudget: useChecklist ? budgetOf(checklistInput) : undefined,
         tokenCap,
       }),
     onSuccess: (job) => {
@@ -110,11 +134,14 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
   })
 
   const targetUrl = project?.targetBaseUrl ?? null
-  const canRun = !mutation.isPending && !!targetUrl && (!isWrite || confirmWrite)
+  const checklistEstimate = useChecklist
+    ? estimateChecklistTokens(endpoints.length, selectedDocs.reduce((sum, d) => sum + d.sizeBytes, 0) + checklistInput.instruction.length, effectiveSuggest, hasChecklistInput)
+    : 0
+  const canRun = !mutation.isPending && !!targetUrl && (!isWrite || confirmWrite) && (!useChecklist || checklistInput.consent)
 
   return (
     <AlertDialog open={open} onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
-      <AlertDialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <AlertDialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <AlertDialogHeader>
           <AlertDialogTitle>
             {many ? `Sinh test case cho ${endpoints.length} endpoint` : `Sinh test case: ${endpoints[0].method} ${endpoints[0].path}`}
@@ -184,6 +211,16 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
               ))}
             </div>
           )}
+          <div hidden={mode === "SYSTEM"}>
+            <label className="flex items-start gap-2 text-xs" title="AI lập checklist nghiệp vụ để bạn duyệt; chưa duyệt thì chưa có test nào">
+              <Checkbox checked={checklist} onCheckedChange={(c) => setChecklist(c === true)} className="mt-0.5" />
+              <span>
+                <span className="font-medium">+ AI bổ sung checklist nghiệp vụ</span>
+                <span className="text-muted-foreground"> - từ tài liệu/chỉ dẫn của bạn và/hoặc AI gợi ý thêm; bạn duyệt rồi hệ thống mới sinh test (0 token)</span>
+              </span>
+            </label>
+            {checklist && <BusinessChecklistFields projectId={projectId} value={checklistInput} onChange={setChecklistInput} />}
+          </div>
           <div className="flex flex-wrap items-center gap-3" hidden={mode === "SYSTEM"}>
             <Label htmlFor="gw-rounds" className="text-xs">
               Số lần AI sửa tối đa
@@ -200,13 +237,6 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
                 </option>
               ))}
             </select>
-            <label
-              className="flex items-center gap-2 text-xs"
-              title="Sau khi checklist đủ, AI đoán thêm luật nghiệp vụ không có trong spec. Là GIẢ ĐỊNH, tốn thêm token, không tính vào độ bao phủ, cần bạn duyệt."
-            >
-              <Checkbox checked={includeBusiness} onCheckedChange={(c) => setIncludeBusiness(c === true)} />
-              + AI bổ sung nghiệp vụ còn thiếu (GIẢ ĐỊNH)
-            </label>
             <label className="flex items-center gap-2 text-xs" title="Chỉ liệt kê các bước sẽ làm, không gọi AI và không gọi API đích">
               <Checkbox checked={dryRun} onCheckedChange={(c) => setDryRun(c === true)} />
               Chạy thử (không gọi AI/API đích)
@@ -230,9 +260,13 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
             </select>
           </div>
           <p className="text-xs text-muted-foreground" hidden={mode === "SYSTEM"}>
-            Ước tính {(endpoints.length * 10000 * (1 + (includeBusiness ? 1 : 0))).toLocaleString("vi-VN")}–{(endpoints.length * 10000 * (1 + rounds + (includeBusiness ? 1 : 0))).toLocaleString("vi-VN")} token (mỗi lần gọi AI ~6.500–27.000).
+            Ước tính {(endpoints.length * 10000).toLocaleString("vi-VN")}–{(endpoints.length * 10000 * (1 + rounds)).toLocaleString("vi-VN")} token cho test gốc (mỗi lần gọi AI ~6.500–27.000)
+            {useChecklist ? ` + khoảng ${checklistEstimate.toLocaleString("vi-VN")} token cho checklist nghiệp vụ (ngân sách riêng, trần cứng ${budgetOf(checklistInput).toLocaleString("vi-VN")})` : ""}.
             Không giới hạn thời gian: bước AI có thể kéo dài vài phút, bạn theo dõi từng bước và bấm Huỷ khi cần. Chạm trần token thì job dừng ở bước an toàn.
           </p>
+          {useChecklist && !checklistInput.consent && (
+            <p className="text-xs text-muted-foreground">Tick đồng ý gửi tài liệu/chỉ dẫn tới AI bên ngoài (ở khối checklist nghiệp vụ) để bắt đầu.</p>
+          )}
           {!targetUrl && <p className="text-xs text-destructive">Project chưa có Target URL: import lại spec và điền URL trước.</p>}
           {mutation.isError && (
             <p role="alert" className="text-sm text-destructive">

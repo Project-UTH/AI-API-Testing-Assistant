@@ -296,18 +296,22 @@ const STOP_TEXT: Record<string, string> = {
   DAILY_QUOTA: "Dừng vì hết quota token AI trong ngày - phần đã trích được giữ lại.",
   AI_ERROR: "Dừng vì gọi AI lỗi - phần đã trích được giữ lại.",
   WRITE_ERROR: "Dừng vì lỗi hệ thống khi lưu luật - phần đã lưu ở các lô trước được giữ.",
-  NO_INPUT: "Không còn tài liệu hay chỉ dẫn nào để trích (tài liệu có thể vừa bị xoá).",
+  NO_INPUT: "Không có tài liệu hay chỉ dẫn để trích (hãy bật AI gợi ý thêm hoặc thêm tài liệu). Tài liệu có thể vừa bị xoá.",
 }
 
-function RulesSummary({ job, projectId }: { job: GenerationJob; projectId: string }) {
+/** Phần tóm tắt checklist nghiệp vụ (job RULES cũ hoặc pha trích trong job FULL/SYSTEM). */
+function RulesBlock({ job, projectId }: { job: GenerationJob; projectId: string }) {
   const r = job.rules
+  if (!r) return null
+  const pending = r.fromDocument + r.fromInstruction + r.inferred + r.conflicts
   return (
-    <footer className="border-t border-border px-4 py-3 text-xs" aria-live="polite">
-      {r ? (
+    <div className="mt-2 border-t border-border pt-2" aria-live="polite">
+      <p className="font-medium">Checklist nghiệp vụ</p>
+      {(
         <>
           <p className="font-medium">
             {job.dryRun ? "Chạy thử: " : ""}
-            {r.endpointCount} endpoint · {r.lotsDone}/{r.lotsPlanned} lô · {job.tokensUsed.toLocaleString("vi-VN")}/{r.tokenBudget.toLocaleString("vi-VN")} token
+            {r.endpointCount} endpoint · {r.lotsDone}/{r.lotsPlanned} lô · ngân sách checklist {r.tokenBudget.toLocaleString("vi-VN")} token
             {job.dryRun ? ` · ước tính tối đa ~${r.estimatedTokens.toLocaleString("vi-VN")} token` : ""}
           </p>
           {!job.dryRun && (
@@ -318,19 +322,34 @@ function RulesSummary({ job, projectId }: { job: GenerationJob; projectId: strin
           )}
           {!job.dryRun && (r.skippedExisting > 0 || r.skippedInferred > 0 || r.skippedOverCap > 0 || r.rejectedAsDuplicateOfSpec > 0) && (
             <p className="mt-1 text-muted-foreground">
-              Bỏ qua: {r.skippedExisting} đã có · {r.skippedInferred} không có trích dẫn · {r.skippedOverCap} vượt trần mỗi endpoint · {r.rejectedAsDuplicateOfSpec} trùng
+              Bỏ qua: {r.skippedExisting} đã có · {r.skippedInferred} không có trích dẫn · {r.skippedOverCap} vượt trần · {r.rejectedAsDuplicateOfSpec} trùng
               ràng buộc spec
               {Object.keys(r.dropped ?? {}).length > 0 ? ` · ${Object.values(r.dropped ?? {}).reduce((a, b) => a + b, 0)} sai endpoint/mẫu/field` : ""}
             </p>
           )}
           {r.stoppedReason && <p className="mt-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2">{STOP_TEXT[r.stoppedReason] ?? r.stoppedReason}</p>}
+          {r.suggestStoppedReason && (
+            <p className="mt-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2">AI gợi ý thêm: {STOP_TEXT[r.suggestStoppedReason] ?? r.suggestStoppedReason}</p>
+          )}
+          {r.questions && r.questions.length > 0 && (
+            <p className="mt-1.5 rounded-md border border-border bg-muted/40 p-2">AI có {r.questions.length} câu hỏi về chỗ tài liệu còn thiếu: xem ở màn duyệt.</p>
+          )}
         </>
-      ) : (
-        job.errorMessage && <p className="text-destructive">{job.errorMessage}</p>
       )}
-      <Link to={`/projects/${projectId}/rules`} className="mt-2 inline-block text-primary underline underline-offset-4">
-        Xem và duyệt luật
-      </Link>
+      {!job.dryRun && (
+        <Link to={`/projects/${projectId}/rules?status=PROPOSED`} className="mt-2 inline-block text-primary underline underline-offset-4">
+          Duyệt checklist ({pending} chờ duyệt)
+        </Link>
+      )}
+    </div>
+  )
+}
+
+function RulesSummary({ job, projectId }: { job: GenerationJob; projectId: string }) {
+  return (
+    <footer className="border-t border-border px-4 py-3 text-xs" aria-live="polite">
+      {job.errorMessage && <p className="text-destructive">{job.errorMessage}</p>}
+      <RulesBlock job={job} projectId={projectId} />
     </footer>
   )
 }
@@ -364,6 +383,7 @@ function Summary({ job, projectId }: { job: GenerationJob; projectId: string }) 
       <Link to={`/projects/${projectId}/test-cases`} className="mt-2 inline-block text-primary underline underline-offset-4">
         Xem test case
       </Link>
+      <RulesBlock job={job} projectId={projectId} />
     </footer>
   )
 }

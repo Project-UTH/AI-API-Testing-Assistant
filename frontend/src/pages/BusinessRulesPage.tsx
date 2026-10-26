@@ -13,8 +13,8 @@ import { RuleItem } from "@/components/rules/RuleItem"
 import { ApproveGuessDialog } from "@/components/rules/ApproveGuessDialog"
 import { BatchApproveDialog } from "@/components/rules/BatchApproveDialog"
 import { DocViewerDialog } from "@/components/rules/DocViewerDialog"
-import { ExtractRulesPanel } from "@/components/rules/ExtractRulesPanel"
 import { ReviewTimingBanner } from "@/components/rules/ReviewTimingBanner"
+import { AiQuestionsCard } from "@/components/rules/AiQuestionsCard"
 import { reportReviewTiming } from "@/lib/reviewTiming"
 import { ListToolbar, type ListFilterSelect } from "@/components/shared/ListToolbar"
 import { ListEmptyState } from "@/components/shared/ListEmptyState"
@@ -166,6 +166,10 @@ export function BusinessRulesPage() {
     },
     [approve]
   )
+  const onConfirmSuggested = useCallback(
+    (rule: BusinessRule, expectedStatus: number) => approve.mutate({ rule, expectedStatus }),
+    [approve]
+  )
   const onViewQuote = useCallback((rule: BusinessRule) => {
     if (rule.documentId && rule.quote) setViewing({ documentId: rule.documentId, quote: rule.quote, offset: rule.quoteOffset })
   }, [])
@@ -202,13 +206,13 @@ export function BusinessRulesPage() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold">Luật nghiệp vụ</h2>
+      <h2 className="text-lg font-semibold">Checklist nghiệp vụ</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Luật "luật trước, test sau": bạn duyệt luật (và kỳ vọng), hệ thống sinh test từ luật đã duyệt - không dùng AI, không tốn token. Luật không có
-        trong spec nên phải do người xác nhận.
+        AI chỉ <em>đề xuất</em> mục checklist (từ tài liệu bạn gửi và/hoặc gợi ý thêm, nhãn GIẢ ĐỊNH); bạn duyệt, rồi hệ thống sinh test từ mục đã duyệt - không
+        dùng AI, không tốn token. Để AI lập checklist: bấm "Sinh test case" ở trang Endpoint và tick "AI bổ sung checklist nghiệp vụ".
       </p>
 
-      <ExtractRulesPanel projectId={projectId} />
+      <AiQuestionsCard projectId={projectId} />
       <ReviewTimingBanner projectId={projectId} />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -221,11 +225,11 @@ export function BusinessRulesPage() {
           }}
         >
           <Plus className="h-3.5 w-3.5" />
-          Thêm luật
+          Thêm mục
         </Button>
         <Button type="button" size="sm" variant="outline" disabled={detect.isPending} onClick={() => detect.mutate()}>
           {detect.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-          Hệ thống phát hiện luật
+          Hệ thống phát hiện mục
         </Button>
         <Button
           type="button"
@@ -235,7 +239,7 @@ export function BusinessRulesPage() {
           title={citedProposed.length === 0 ? "Không có luật có trích dẫn nào đang chờ duyệt" : "Đối chiếu từng luật với đoạn trích rồi duyệt một lượt"}
           onClick={() => setBatchOpen(true)}
         >
-          Duyệt {citedProposed.length} luật có trích dẫn…
+          Duyệt {citedProposed.length} mục có trích dẫn…
         </Button>
         <Button
           type="button"
@@ -247,7 +251,7 @@ export function BusinessRulesPage() {
           onClick={() => generate.mutate()}
         >
           {generate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          Sinh test từ {approvedCount} luật đã duyệt
+          Sinh test từ {approvedCount} mục đã duyệt
         </Button>
       </div>
 
@@ -322,6 +326,7 @@ export function BusinessRulesPage() {
                   onReject={setRejecting}
                   onDelete={onDelete}
                   onViewQuote={onViewQuote}
+                  onConfirmSuggested={onConfirmSuggested}
                 />
               ))}
             </ul>
@@ -339,7 +344,7 @@ export function BusinessRulesPage() {
           size={data.size}
           onPageChange={(p) => lf.setPage(p)}
           isFetching={isFetching}
-          itemLabel="luật"
+          itemLabel="mục"
         />
       )}
 
