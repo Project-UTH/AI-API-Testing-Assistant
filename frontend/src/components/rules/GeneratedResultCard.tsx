@@ -17,13 +17,15 @@ interface Props {
   aiCount: number
   /** Mục đã duyệt nhưng chưa sinh được test, kèm lý do. */
   notGenerated: { ruleId: string; sentence: string; reason: string }[]
+  /** Ẩn link "Xem các test" khi đã ở trang Test case. */
+  hideTestsLink?: boolean
 }
 
 /**
  * Bước 4 hoàn tất: hiện NGAY ĐẦU trang (cuộn tới) để biết đã xong và việc tiếp theo là gì - chạy các test vừa sinh trên API đích, hoặc xem chúng ở tab Test case.
  * Chạy là chạy THẬT (có thể ghi dữ liệu), nên có tuỳ chọn dọn dữ liệu đã tạo.
  */
-export function GeneratedResultCard({ projectId, endpointId, testCaseIds, systemCount, aiCount, notGenerated }: Props) {
+export function GeneratedResultCard({ projectId, endpointId, testCaseIds, systemCount, aiCount, notGenerated, hideTestsLink }: Props) {
   const navigate = useNavigate()
   const ref = useRef<HTMLElement | null>(null)
   const [cleanup, setCleanup] = useState(true)
@@ -65,9 +67,11 @@ export function GeneratedResultCard({ projectId, endpointId, testCaseIds, system
           <Checkbox checked={cleanup} onCheckedChange={(c) => setCleanup(c === true)} />
           Dọn dữ liệu đã tạo trên API đích sau khi chạy
         </label>
-        <Link to={`/projects/${projectId}/test-cases?endpointId=${endpointId}`} className="text-xs text-primary underline underline-offset-4">
-          Xem các test ở tab Test case
-        </Link>
+        {!hideTestsLink && (
+          <Link to={`/projects/${projectId}/test-cases?endpointId=${endpointId}`} className="text-xs text-primary underline underline-offset-4">
+            Xem các test ở tab Test case
+          </Link>
+        )}
       </div>
       {run.isError && (
         <p role="alert" className="mt-2 text-xs text-destructive">

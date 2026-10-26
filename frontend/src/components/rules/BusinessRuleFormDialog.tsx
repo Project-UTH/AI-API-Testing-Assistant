@@ -14,6 +14,7 @@ import {
   createBusinessRule,
   getEndpointFields,
   RULE_TEMPLATE_DISPLAY,
+  templateFit,
   RULE_TEMPLATE_ORDER,
   ruleSentence,
   updateBusinessRule,
@@ -130,15 +131,21 @@ export function BusinessRuleFormDialog({ projectId, open, onOpenChange, rule, de
           <fieldset className="flex flex-col gap-1.5" disabled={editing}>
             <legend className="text-xs font-medium">Mẫu mục</legend>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {RULE_TEMPLATE_ORDER.map((t) => (
+              {RULE_TEMPLATE_ORDER.map((t) => {
+                // Có endpoint + field: ví dụ ghép từ field thật của endpoint; mẫu không có field phù hợp bị mờ và không chọn được (trừ khi đang sửa mục có sẵn).
+                const fit = endpointId && fields.length > 0 ? templateFit(t, fields) : null
+                const blocked = !!fit && !fit.usable && !editing && template !== t
+                return (
                 <label
                   key={t}
-                  className={`flex cursor-pointer flex-col rounded-md border p-2 text-sm ${template === t ? "border-primary bg-primary/5" : "border-border"}`}
+                  title={blocked ? `Endpoint này không dùng được mẫu này: ${fit?.reason}` : undefined}
+                  className={`flex flex-col rounded-md border p-2 text-sm ${blocked ? "cursor-not-allowed opacity-50" : "cursor-pointer"} ${template === t ? "border-primary bg-primary/5" : "border-border"}`}
                 >
                   <span className="flex items-center gap-2 font-medium">
                     <input
                       type="radio"
                       name="rule-template"
+                      disabled={blocked}
                       checked={template === t}
                       onChange={() => {
                         setTemplate(t)
@@ -147,9 +154,12 @@ export function BusinessRuleFormDialog({ projectId, open, onOpenChange, rule, de
                     />
                     {RULE_TEMPLATE_DISPLAY[t].label}
                   </span>
-                  <span className="pl-6 text-xs text-muted-foreground">{RULE_TEMPLATE_DISPLAY[t].example}</span>
+                  <span className="pl-6 text-xs text-muted-foreground">
+                    {fit ? (fit.usable ? `Ví dụ từ endpoint này: ${fit.example}` : `Không dùng được: ${fit.reason}`) : RULE_TEMPLATE_DISPLAY[t].example}
+                  </span>
                 </label>
-              ))}
+                )
+              })}
             </div>
           </fieldset>
 

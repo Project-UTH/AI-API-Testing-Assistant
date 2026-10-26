@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useNavigate, useParams } from "react-router-dom"
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
+import { GeneratedResultCard } from "@/components/rules/GeneratedResultCard"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import { History, Loader2, Play, Plus } from "lucide-react"
 
@@ -76,6 +77,8 @@ export function TestCasesPage() {
 
 function TestCasesPageContent({ projectId }: { projectId: string }) {
   const navigate = useNavigate()
+  // Vừa sinh test từ màn duyệt checklist: hiện thẻ "Bước 4 hoàn tất" (chạy ngay các test vừa sinh) ở đầu trang.
+  const justGenerated = (useLocation().state as { justGenerated?: { ids: string[]; systemCount: number; aiCount: number; endpointId: string; notGenerated: { ruleId: string; sentence: string; reason: string }[] } } | null)?.justGenerated
   const queryClient = useQueryClient()
   const topRef = useRef<HTMLDivElement>(null)
   const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
@@ -314,6 +317,17 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
 
   return (
     <div ref={topRef} className={cn(selectedIds.size > 0 && "pb-20")}>
+      {justGenerated && (
+        <GeneratedResultCard
+          projectId={projectId}
+          endpointId={justGenerated.endpointId}
+          testCaseIds={justGenerated.ids}
+          systemCount={justGenerated.systemCount}
+          aiCount={justGenerated.aiCount}
+          notGenerated={justGenerated.notGenerated}
+          hideTestsLink
+        />
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold">Test Case</h2>
         <div className="flex flex-wrap items-center gap-2">

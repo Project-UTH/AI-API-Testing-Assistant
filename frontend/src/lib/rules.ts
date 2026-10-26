@@ -83,6 +83,57 @@ export const RULE_TEMPLATE_ORDER: RuleTemplate[] = [
   "UNIQUE",
 ]
 
+/** Mẫu có dùng được với endpoint này không, và ví dụ ghép từ CHÍNH field của endpoint (thay cho ví dụ chung chung). */
+export interface TemplateFit {
+  usable: boolean
+  example: string
+  /** Khi không dùng được: vì sao. */
+  reason: string
+}
+
+const DATE_NAME = /date|time|deadline|expire|due|at$|ngay|han/i
+
+export function templateFit(template: RuleTemplate, fields: EndpointField[]): TemplateFit {
+  const numeric = fields.filter((f) => f.numeric)
+  const textual = fields.filter((f) => !f.numeric && (f.type === null || f.type === "string"))
+  const arrays = fields.filter((f) => f.type === "array")
+  const comparable = [...numeric, ...textual]
+  const name = (f: EndpointField) => f.ref
+  const no = (reason: string): TemplateFit => ({ usable: false, example: "", reason })
+  const ok = (example: string): TemplateFit => ({ usable: true, example, reason: "" })
+  switch (template) {
+    case "COMPARE_FIELDS": {
+      const pool = numeric.length >= 2 ? numeric : comparable
+      return pool.length < 2 ? no("Cần ít nhất 2 field số hoặc chuỗi để so sánh") : ok(`${name(pool[0])} ≤ ${name(pool[1])}`)
+    }
+    case "REQUIRES":
+      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`Có ${name(fields[0])} thì phải có ${name(fields[1])}`)
+    case "ALL_OR_NONE":
+      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`${name(fields[0])}, ${name(fields[1])} phải đi cùng nhau`)
+    case "ONLY_ONE":
+      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`${name(fields[0])} hoặc ${name(fields[1])}, đúng một`)
+    case "ZERO_OR_ONE":
+      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`không gửi cả ${name(fields[0])} lẫn ${name(fields[1])}`)
+    case "OR":
+      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`${name(fields[0])} hoặc ${name(fields[1])}, ít nhất một`)
+    case "DATE_RELATIVE": {
+      const f = textual.find((x) => DATE_NAME.test(x.name)) ?? textual[0]
+      return f ? ok(`${name(f)} không ở quá khứ`) : no("Không có field chuỗi (ngày/giờ) nào")
+    }
+    case "VALUE_RANGE": {
+      const f = numeric[0]
+      return f ? ok(`${name(f)} trong [${f.minimum ?? 0}, ${f.maximum ?? "…"}]`) : no("Không có field số nào")
+    }
+    case "ARRAY_AGGREGATE": {
+      const arr = arrays.find((a) => fields.some((f) => f.numeric && f.ref.startsWith(`${a.ref}[0].`)))
+      const item = arr ? fields.find((f) => f.numeric && f.ref.startsWith(`${arr.ref}[0].`)) : undefined
+      return arr && item ? ok(`Tổng ${item.ref.slice(arr.ref.length + 4)} của ${arr.ref}[] = …`) : no("Không có mảng nào chứa field số")
+    }
+    case "UNIQUE":
+      return fields.length < 1 ? no("Endpoint không có field nào") : ok(`không tạo trùng theo ${name(fields[0])}`)
+  }
+}
+
 export const RULE_TEMPLATE_DISPLAY: Record<RuleTemplate, { label: string; example: string }> = {
   COMPARE_FIELDS: { label: "So sánh 2 field", example: "salaryMin ≤ salaryMax" },
   REQUIRES: { label: "Có A thì phải có B", example: "Có type = REMOTE thì phải có timezone" },

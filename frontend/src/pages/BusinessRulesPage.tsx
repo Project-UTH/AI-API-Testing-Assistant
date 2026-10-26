@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Link, useParams, useSearchParams } from "react-router-dom"
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Plus, Sparkles } from "lucide-react"
 
@@ -82,6 +82,7 @@ export function EndpointChecklistView({ endpointIdProp, embedded = false }: { en
   const { id } = useParams<{ id: string }>()
   const projectId = id!
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
   const endpointId = endpointIdProp ?? lf.filters.endpointId
   const { data: endpointsPage } = useQuery({ queryKey: ["endpoints", projectId], queryFn: () => listEndpoints(projectId) })
@@ -219,6 +220,10 @@ export function EndpointChecklistView({ endpointIdProp, embedded = false }: { en
       setGenerated(rules)
       setSystemCreated(created)
       setGeneratedIds(ids)
+      // Xong bước cuối: chuyển thẳng sang trang Test case (lọc theo endpoint), kèm thẻ "Bước 4 hoàn tất" để chạy ngay các test vừa sinh.
+      navigate(`/projects/${projectId}/test-cases?endpointId=${endpointId}`, {
+        state: { justGenerated: { ids, systemCount: created, aiCount: rules.createdCount, notGenerated: rules.notGenerated, endpointId } },
+      })
       setSystemKeys(new Set())
       queryClient.invalidateQueries({ queryKey: ["endpoint-coverage", projectId] })
       invalidate()
