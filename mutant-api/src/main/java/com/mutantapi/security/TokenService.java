@@ -42,6 +42,28 @@ public class TokenService {
         return parse(token).map(c -> new AuthUser(Long.parseLong(c.getSubject()), c.get("role", String.class)));
     }
 
+    /**
+     * CHI dung cho mutant H07 (held-out): decode payload JWT (sub, role, exp) KHONG xac minh chu ky.
+     * Ban chuan luon dung verify().
+     */
+    public Optional<AuthUser> decodeUnverified(String token) {
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length != 3) {
+                return Optional.empty();
+            }
+            com.fasterxml.jackson.databind.JsonNode payload = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(java.util.Base64.getUrlDecoder().decode(parts[1]));
+            if (!payload.hasNonNull("sub") || !payload.hasNonNull("role") || !payload.hasNonNull("exp")
+                    || payload.get("exp").asLong() * 1000 < System.currentTimeMillis()) {
+                return Optional.empty();
+            }
+            return Optional.of(new AuthUser(Long.parseLong(payload.get("sub").asText()), payload.get("role").asText()));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
     private Optional<Claims> parse(String token) {
         try {
             return Optional.of(Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload());

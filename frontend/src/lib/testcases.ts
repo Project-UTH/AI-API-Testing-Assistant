@@ -23,7 +23,7 @@ export const TEST_CASE_SOURCE_STYLES: Record<TestCaseSource, string> = {
  * AI_CHECKLIST = AI sinh, đạt mục checklist; AI_EXTRA = AI đề xuất thêm ngoài checklist;
  * SYSTEM_FILLED = hệ thống tự bù mục AI làm thiếu/sai.
  */
-export type TestCaseGenerationOrigin = "AI_CHECKLIST" | "AI_EXTRA" | "SYSTEM_FILLED" | "AI_BUSINESS" | "AI_BASELINE"
+export type TestCaseGenerationOrigin = "AI_CHECKLIST" | "AI_EXTRA" | "SYSTEM_FILLED" | "AI_BUSINESS" | "AI_BASELINE" | "RULE_TEMPLATE"
 
 export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label: string; className: string; title: string }> = {
   AI_CHECKLIST: {
@@ -44,12 +44,17 @@ export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label
   AI_BUSINESS: {
     label: "AI đoán nghiệp vụ",
     className: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-    title: "Luật nghiệp vụ do AI đoán, không có trong spec. Là GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả, không tính vào độ bao phủ",
+    title: "Checklist nghiệp vụ do AI đoán, không có trong spec. Là GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả, không tính vào độ bao phủ",
   },
   AI_BASELINE: {
     label: "Test gốc",
     className: "bg-green-500/10 text-green-700 dark:text-green-400",
     title: "Test gốc hợp lệ do AI sinh và đã được chạy thật xác nhận Pass, dùng làm nền để hệ thống bổ sung checklist",
+  },
+  RULE_TEMPLATE: {
+    label: "Từ checklist nghiệp vụ",
+    className: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
+    title: "Sinh tất định từ checklist nghiệp vụ bạn đã duyệt (kỳ vọng do bạn chịu trách nhiệm); không tính vào % EP/BVA",
   },
 }
 
@@ -87,12 +92,6 @@ export interface GenerationPlanSummary {
   items: ChecklistItemResponse[]
 }
 
-export interface GenerateTestCasesResponse {
-  testCases: TestCase[]
-  /** Từ 15i luôn có (cả khi chỉ sinh Security); kiểu vẫn cho null để an toàn với phản hồi cũ. */
-  planSummary: GenerationPlanSummary | null
-}
-
 /** Module 15b (Tier 1) - đối chiếu tất định với spec, chỉ áp dụng cho case kỳ vọng thành công. */
 export type TestCaseReliability = "RELIABLE" | "NEEDS_REVIEW"
 
@@ -120,6 +119,21 @@ export interface TestCaseAssertionInput {
   jsonPath: string
   operator: AssertionOperator
   expectedValue: string | null
+}
+
+/** 1 quan hệ: test dependentTestCaseId đang lấy dữ liệu từ test sourceTestCaseId. */
+export interface TestCaseDependent {
+  sourceTestCaseId: string
+  dependentTestCaseId: string
+  dependentTestCaseName: string
+  dependentEndpointId: string
+  dependentEndpointLabel: string
+  placeholderName: string
+  jsonPath: string
+}
+
+export function listTestCaseDependents(projectId: string): Promise<TestCaseDependent[]> {
+  return apiFetch<TestCaseDependent[]>(`/projects/${projectId}/test-case-dependents`)
 }
 
 export interface TestCaseDependency {
@@ -177,6 +191,13 @@ export interface TestCase {
   /** Module 17 (17b-2) - "MASS_ASSIGNMENT" cho test probe bảo mật tự sinh; probeFields = tên field đã tiêm. */
   probeKind?: string | null
   probeFields?: string[]
+  /** 17q G1 - kỳ vọng ban đầu trước khi hệ thống tự đổi sau lần chạy thật test gốc (null = chưa đổi) + lý do. */
+  originalExpectedStatus?: number | null
+  expectationNote?: string | null
+  /** 17q G3 - "REJECTED" = kỳ vọng "bị từ chối (4xx)"; ruleId = checklist nghiệp vụ đã sinh test; sendTwice = gửi 2 lần. */
+  expectedStatusClass?: string | null
+  ruleId?: string | null
+  sendTwice?: boolean
 }
 
 export interface ReliabilityDisplay {
@@ -185,39 +206,25 @@ export interface ReliabilityDisplay {
   title: string
 }
 
+/** 17q G1 - hệ thống đã tự đổi kỳ vọng của test gốc sau lần chạy thật (giữ dấu vết, không được ẩn). */
+export function expectationChanged(testCase: TestCase): boolean {
+  return testCase.originalExpectedStatus != null && testCase.originalExpectedStatus !== testCase.expectedStatus
+}
+
 /**
- * Gộp logic hiển thị Tier 1 (15b) + Tier 2 (15d) ở 1 chỗ, dùng chung TestCasesPage/TestCaseDetailDialog.
- * - RELIABLE (Tier 1) -> "Đáng tin" xanh.
- * - NEEDS_REVIEW (Tier 1) + reliabilityAiConfirmed=true (Tier 2 xác nhận lỗi thật) -> vẫn "Cần xem lại" vàng, kèm note AI.
- * - NEEDS_REVIEW (Tier 1) + reliabilityAiConfirmed=false (Tier 2 cho là false positive) -> đổi sang "Đáng tin (AI xác minh)" xanh nhạt.
- * - NEEDS_REVIEW (Tier 1) + reliabilityAiConfirmed=null (Tier 2 chưa chạy) -> giữ nguyên "Cần xem lại" theo Tier 1.
+ * 17q G2 - nhãn đối chiếu tất định với spec (Tier 1, 15b) đổi nghĩa thành "Kỳ vọng cần xem": CHỈ hiện khi có vấn đề (NEEDS_REVIEW) và
+ * test không phải do hệ thống bù (test hệ thống sinh từ chính spec nên luôn khớp spec - nhãn xanh cũ không mang thông tin). Không
+ * còn nhãn "Đáng tin" xanh và không còn phần AI xác nhận (Tier 2, luồng cũ đã bỏ). Độ tin của KẾT LUẬN xem ở Coverage/kết quả chạy.
  */
 export function getReliabilityDisplay(testCase: TestCase): ReliabilityDisplay | null {
-  if (!testCase.reliabilityStatus) {
+  if (testCase.reliabilityStatus !== "NEEDS_REVIEW" || testCase.generationOrigin === "SYSTEM_FILLED") {
     return null
   }
-  if (testCase.reliabilityStatus === "RELIABLE") {
-    return {
-      label: "Đáng tin",
-      tone: "reliable",
-      title: "Giá trị AI sinh khớp đúng ràng buộc (required/enum/min-max) trong spec",
-    }
+  return {
+    label: "Kỳ vọng cần xem",
+    tone: "needsReview",
+    title: testCase.reliabilityNotes.length > 0 ? testCase.reliabilityNotes.join("; ") : "Giá trị/kỳ vọng lệch ràng buộc của spec",
   }
-  if (testCase.reliabilityAiConfirmed === true) {
-    return {
-      label: "Cần xem lại",
-      tone: "needsReview",
-      title: `AI xác nhận: ${testCase.reliabilityAiNote ?? testCase.reliabilityNotes.join("; ")}`,
-    }
-  }
-  if (testCase.reliabilityAiConfirmed === false) {
-    return {
-      label: "Đáng tin (AI xác minh)",
-      tone: "reliable",
-      title: testCase.reliabilityAiNote ?? "AI xác nhận đây là false positive",
-    }
-  }
-  return { label: "Cần xem lại", tone: "needsReview", title: testCase.reliabilityNotes.join("; ") }
 }
 
 export interface TestCaseInput {
@@ -233,15 +240,6 @@ export interface TestCaseInput {
   authProfileId?: string | null
   dependencies?: TestCaseDependencyInput[]
   assertions?: TestCaseAssertionInput[]
-}
-
-export interface GenerateTestCasesOptions {
-  includeSecurity?: boolean
-  includePositive?: boolean
-  includeNegative?: boolean
-  includeBoundary?: boolean
-  /** Nhóm nghiệp vụ: AI đoán luật không có trong spec (mọi lý do đều là GIẢ ĐỊNH). */
-  includeBusiness?: boolean
 }
 
 /** Báo cáo checklist của lần sinh nhóm Basic gần nhất - null nếu chưa có (Module 15h). */

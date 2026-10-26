@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Loader2 } from "lucide-react"
 
 import { coverageRowCounts, type CoverageEndpointRow } from "@/lib/coverage"
+import { CoverageCountsText } from "@/components/coverage/TestStateChip"
 import { getLatestGenerationPlan, type GenerationPlanSummary } from "@/lib/testcases"
 
 interface GenerationPlanReportProps {
@@ -38,13 +39,16 @@ export function GenerationPlanReport({ projectId, endpointId, freshPlan, coverag
       {counts && (
         <p className="flex flex-wrap items-center gap-x-2">
           <span className="font-medium">Coverage:</span>
-          <span>
-            <span className="font-semibold">
-              {counts.covered}/{counts.relevant} mục
-            </span>{" "}
-            · {counts.executed} đã chạy
-            {counts.missing > 0 && <span className="text-amber-600 dark:text-amber-400"> · thiếu {counts.missing}</span>}
-          </span>
+          <CoverageCountsText
+            relevant={counts.relevant}
+            covered={counts.covered}
+            executed={counts.executed}
+            certain={counts.certain}
+            doubtful={counts.doubtful}
+            missing={counts.missing}
+            specGap={counts.specGap}
+            baselineVerified={coverage?.baselineVerified}
+          />
           <Link
             to={`/projects/${projectId}/coverage?endpoint=${endpointId}`}
             className="text-primary underline-offset-4 hover:underline"

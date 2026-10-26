@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 const TABS = [
   { to: "", label: "Endpoint", end: true },
   { to: "test-cases", label: "Test case", end: false },
+  { to: "documents", label: "Tài liệu", end: false },
   { to: "coverage", label: "Coverage", end: false },
   { to: "history", label: "Lịch sử", end: false },
   { to: "bug-reports", label: "Bug Report", end: false },

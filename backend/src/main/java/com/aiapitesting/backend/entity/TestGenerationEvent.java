@@ -30,9 +30,24 @@ public class TestGenerationEvent {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "endpoint_id", nullable = false)
+    /**
+     * Nullable từ 17q G3.3: sự kiện CẤP PROJECT (trích luật từ tài liệu, không thuộc endpoint nào) và sự kiện đã tách khỏi endpoint khi import REPLACE
+     * hay xoá project (giữ lại để quota ngày không bị đặt về 0). Lịch sử/feed vẫn JOIN endpoint nên tự loại các sự kiện này.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "endpoint_id")
     private Endpoint endpoint;
+
+    /** 17q G3.3 - chủ sở hữu + project của sự kiện (không FK): quota tính theo cột này, không phụ thuộc endpoint còn tồn tại hay không. */
+    @Column(name = "owner_id")
+    private UUID ownerId;
+
+    @Column(name = "project_id")
+    private UUID projectId;
+
+    /** null = sinh test case (như cũ); "RULE_EXTRACT" = AI trích luật nghiệp vụ từ tài liệu. */
+    @Column(name = "event_type", length = 20)
+    private String eventType;
 
     @Column(name = "test_case_count", nullable = false)
     private int testCaseCount;
@@ -60,5 +75,18 @@ public class TestGenerationEvent {
     @PrePersist
     protected void onCreate() {
         this.createdAt = Instant.now();
+        if ((ownerId == null || projectId == null) && endpoint != null) {
+            // Suy từ endpoint để các nơi tạo sự kiện cũ không phải sửa; lỗi (phiên đã đóng) chỉ bỏ qua - backfill lúc khởi động sẽ điền sau.
+            try {
+                if (projectId == null) {
+                    projectId = endpoint.getProject().getId();
+                }
+                if (ownerId == null) {
+                    ownerId = endpoint.getProject().getOwner().getId();
+                }
+            } catch (RuntimeException ignored) {
+                // không đủ thông tin để suy ngay lúc này
+            }
+        }
     }
 }

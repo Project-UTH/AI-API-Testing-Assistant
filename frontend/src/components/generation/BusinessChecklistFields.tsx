@@ -1,0 +1,393 @@
+import { useEffect, useRef, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { AlertTriangle, FileText, Loader2, Trash2, Upload } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { ApiError } from "@/lib/api"
+import { deleteRequirementDoc, listRequirementDocs, MAX_DOC_BYTES, MAX_DOCS, uploadRequirementDoc } from "@/lib/requirementDocs"
+
+export const MAX_INSTRUCTION = 4_000
+
+/** Trạng thái nhập của khối "AI lập checklist nghiệp vụ" (do hộp thoại cha giữ để gửi khi bấm Bắt đầu). */
+export interface ChecklistInput {
+  excluded: Set<string>
+  instruction: string
+  suggest: boolean
+  /** Gợi ý rộng (true) hay gợi ý thường (false) khi làn gợi ý đang bật. */
+  suggestBroad: boolean
+  consent: boolean
+  /**
+   * Phân công tài liệu theo endpoint: null = mọi tài liệu đang tick dùng cho MỌI endpoint (mặc định); có giá trị = tài liệu -> các endpoint dùng nó
+   * (tài liệu không có khoá = dùng cho mọi endpoint, nên tài liệu mới tải lên mặc định áp dụng cho tất cả endpoint đang chọn).
+   */
+  assign: Record<string, string[]> | null
+  /** Đã tự tick/bỏ tick tài liệu theo "viết cho endpoint nào" của lần mở hộp thoại này (chỉ làm 1 lần để không ghi đè lựa chọn của bạn). */
+  autoApplied: boolean
+}
+
+export const EMPTY_CHECKLIST_INPUT: ChecklistInput = {
+  excluded: new Set(),
+  instruction: "",
+  suggest: false,
+  suggestBroad: false,
+  consent: false,
+  assign: null,
+  autoApplied: false,
+}
+
+export interface EndpointRef {
+  id: string
+  method: string
+  path: string
+}
+
+/** Tài liệu nào dùng cho endpoint nào, theo phân công hiện tại (chỉ tính tài liệu đang tick). */
+export function docsForEndpoint(input: ChecklistInput, docIds: string[], endpointId: string): string[] {
+  return docIds.filter((docId) => !input.excluded.has(docId) && (input.assign === null || input.assign[docId] === undefined || input.assign[docId].includes(endpointId)))
+}
+
+/** endpointId -> tài liệu riêng của endpoint; undefined khi người dùng không tuỳ chỉnh (backend dùng chung documentIds). */
+export function buildDocumentsByEndpoint(input: ChecklistInput, docIds: string[], endpoints: EndpointRef[]): Record<string, string[]> | undefined {
+  if (input.assign === null) return undefined
+  return Object.fromEntries(endpoints.map((e) => [e.id, docsForEndpoint(input, docIds, e.id)]))
+}
+
+function errorText(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Đã xảy ra lỗi, vui lòng thử lại"
+}
+
+interface Props {
+  projectId: string
+  value: ChecklistInput
+  onChange: (next: ChecklistInput) => void
+  /** Các endpoint đang được sinh test: để chọn tài liệu riêng cho từng endpoint. */
+  endpoints: EndpointRef[]
+}
+
+/**
+ * Khối nhập cho "AI lập checklist nghiệp vụ": tài liệu (.md/.txt), chỉ dẫn thêm, nút "AI gợi ý thêm" và ngân sách token.
+ * Không có tài liệu lẫn chỉ dẫn thì "AI gợi ý thêm" tự bật và bị khoá (AI chỉ còn cách gợi ý từ spec). AI chỉ ĐỀ XUẤT mục checklist; bạn duyệt rồi
+ * hệ thống mới sinh test (tất định, 0 token).
+ */
+export function BusinessChecklistFields({ projectId, value, onChange, endpoints }: Props) {
+  const queryClient = useQueryClient()
+  const fileInput = useRef<HTMLInputElement | null>(null)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const [openDoc, setOpenDoc] = useState<string | null>(null)
+  const [filter, setFilter] = useState("")
+
+  const { data: docs = [], isLoading } = useQuery({ queryKey: ["requirement-docs", projectId], queryFn: () => listRequirementDocs(projectId) })
+  const endpointKeys = endpoints.map((e) => `${e.method.toUpperCase()} ${e.path}`)
+  // Tài liệu đã khai báo "viết cho endpoint X": chỉ tick sẵn khi sinh test cho X; tài liệu chung (chưa khai báo) vẫn tick sẵn. Làm 1 lần khi mở hộp thoại.
+  useEffect(() => {
+    if (value.autoApplied || isLoading) return
+    const excluded = new Set(value.excluded)
+    for (const d of docs) {
+      if (d.forEndpoints.length > 0 && !d.forEndpoints.some((k) => endpointKeys.includes(k))) excluded.add(d.id)
+    }
+    onChange({ ...value, excluded, autoApplied: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs, isLoading, value.autoApplied])
+  const selected = docs.filter((d) => !value.excluded.has(d.id))
+  const docIds = docs.map((d) => d.id)
+  const withoutDocs = endpoints.filter((e) => docsForEndpoint(value, docIds, e.id).length === 0)
+  const hasInput = selected.length > 0 || value.instruction.trim().length > 0
+  const effectiveSuggest = !hasInput || value.suggest
+
+  const upload = useMutation({
+    mutationFn: (file: File) => uploadRequirementDoc(projectId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["requirement-docs", projectId] })
+      queryClient.invalidateQueries({ queryKey: ["rules", projectId] }) // thay bản cũ có thể làm mục cũ thành lỗi thời
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteRequirementDoc(projectId, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["requirement-docs", projectId] }),
+  })
+
+  function onFiles(files: FileList | null) {
+    upload.reset()
+    remove.reset()
+    const file = files?.[0]
+    if (fileInput.current) fileInput.current.value = ""
+    setLocalError(null)
+    if (!file) return
+    if (!/\.(md|txt)$/i.test(file.name)) return setLocalError("Chỉ nhận tệp .md hoặc .txt")
+    if (file.size > MAX_DOC_BYTES) return setLocalError(`Tệp quá lớn (tối đa ${MAX_DOC_BYTES / 1000} KB)`)
+    upload.mutate(file)
+  }
+
+  const error = localError ?? [upload, remove].map((m) => m.error).find(Boolean)
+
+  return (
+    <div className="mt-2 flex flex-col gap-3 rounded-md border border-border p-3">
+      <p className="text-xs text-muted-foreground">
+        AI đọc tài liệu và chỉ dẫn của bạn rồi lập <strong>checklist nghiệp vụ</strong> để bạn duyệt. Chưa duyệt thì chưa có test nào. Mục có trích dẫn
+        nguyên văn được hệ thống kiểm lại từng chữ.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input ref={fileInput} type="file" accept=".md,.txt,text/markdown,text/plain" className="sr-only" id="req-doc-file" onChange={(e) => onFiles(e.target.files)} />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={upload.isPending || docs.length >= MAX_DOCS}
+          title={docs.length >= MAX_DOCS ? `Tối đa ${MAX_DOCS} tài liệu - xoá bớt hoặc tải trùng tên để thay bản cũ` : undefined}
+          onClick={() => fileInput.current?.click()}
+        >
+          {upload.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          Tải tài liệu (.md / .txt)
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {docs.length}/{MAX_DOCS} · tối đa {MAX_DOC_BYTES / 1000} KB mỗi tệp · lưu vào project ngay khi tải; tải trùng tên sẽ thay bản cũ
+        </span>
+      </div>
+
+      {isLoading && <p className="text-xs text-muted-foreground">Đang tải danh sách tài liệu...</p>}
+      {docs.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {docs.map((d) => (
+            <li key={d.id} className="rounded-md border border-border px-2.5 py-1.5 text-xs">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id={`doc-${d.id}`}
+                  checked={!value.excluded.has(d.id)}
+                  onCheckedChange={(checked) => {
+                    const next = new Set(value.excluded)
+                    if (checked) next.delete(d.id)
+                    else next.add(d.id)
+                    onChange({ ...value, excluded: next })
+                  }}
+                />
+                <Label htmlFor={`doc-${d.id}`} className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-normal">
+                  <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="truncate font-medium">{d.fileName}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {(d.sizeBytes / 1000).toFixed(1)} KB · {d.lineCount} dòng
+                  </span>
+                  {d.forEndpoints.length > 0 && (
+                    <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary" title={d.forEndpoints.join(", ")}>
+                      viết cho {d.forEndpoints.length === 1 ? d.forEndpoints[0] : `${d.forEndpoints.length} endpoint`}
+                    </span>
+                  )}
+                </Label>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Xoá tài liệu ${d.fileName}`}
+                  disabled={remove.isPending}
+                  onClick={() => window.confirm(`Xoá tài liệu "${d.fileName}"? Mục checklist đã trích vẫn giữ đoạn trích của chúng.`) && remove.mutate(d.id)}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+              {d.warnings.length > 0 && (
+                <p className="mt-1 flex items-start gap-1 pl-6 text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
+                  Có {d.warnings.length} chuỗi giống mật khẩu/khoá (dòng {d.warnings.map((w) => w.line).join(", ")}). Chúng được che khi gửi AI, nhưng nên xoá
+                  khỏi tài liệu.
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {selected.length > 0 && endpoints.length > 1 && (
+        <div className="flex flex-col gap-2 rounded-md border border-border p-2.5">
+          <Label className="items-start gap-2 text-xs font-normal">
+            <Checkbox
+              checked={value.assign !== null}
+              onCheckedChange={(c) =>
+                onChange({
+                  ...value,
+                  // Bật: mỗi tài liệu đã khai báo "viết cho endpoint X" mặc định chỉ gán cho X (nếu X có trong lần sinh này); tài liệu chung gán cho tất cả.
+                  assign:
+                    c === true
+                      ? Object.fromEntries(
+                          docs
+                            .filter((d) => d.forEndpoints.some((k) => endpointKeys.includes(k)))
+                            .map((d) => [d.id, endpoints.filter((e) => d.forEndpoints.includes(`${e.method.toUpperCase()} ${e.path}`)).map((e) => e.id)])
+                        )
+                      : null,
+                })
+              }
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium">Chọn tài liệu riêng cho từng endpoint</span>
+              <span className="block text-muted-foreground">
+                Mặc định mọi tài liệu đã tick dùng cho cả {endpoints.length} endpoint. Bật để mỗi tài liệu chỉ dùng cho các endpoint bạn chọn (tài liệu mới tải lên mặc định áp dụng cho tất cả).
+              </span>
+            </span>
+          </Label>
+          {value.assign !== null && (
+            <ul className="flex flex-col gap-1.5">
+              {selected.map((d) => {
+                const chosen = value.assign?.[d.id] ?? endpoints.map((e) => e.id)
+                const open = openDoc === d.id
+                const shown = endpoints.filter((e) => `${e.method} ${e.path}`.toLowerCase().includes(filter.trim().toLowerCase()))
+                const setChosen = (ids: string[]) => onChange({ ...value, assign: { ...(value.assign ?? {}), [d.id]: ids } })
+                return (
+                  <li key={d.id} className="rounded-md border border-border px-2.5 py-1.5 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate font-medium">{d.fileName}</span>
+                      <span className="text-muted-foreground">
+                        Áp dụng cho {chosen.length}/{endpoints.length} endpoint
+                      </span>
+                      <Button type="button" size="xs" variant="outline" aria-expanded={open} onClick={() => { setOpenDoc(open ? null : d.id); setFilter("") }}>
+                        {open ? "Thu gọn" : "Chọn endpoint…"}
+                      </Button>
+                    </div>
+                    {open && (
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            aria-label="Lọc endpoint"
+                            placeholder="Lọc endpoint…"
+                            value={filter}
+                            onChange={(e) => setFilter(e.target.value)}
+                            className="h-7 w-48 rounded-md border border-input bg-transparent px-2 text-xs"
+                          />
+                          <Button type="button" size="xs" variant="ghost" onClick={() => setChosen([...new Set([...chosen, ...shown.map((e) => e.id)])])}>
+                            Chọn các endpoint đang hiện
+                          </Button>
+                          <Button type="button" size="xs" variant="ghost" onClick={() => setChosen(chosen.filter((id) => !shown.some((e) => e.id === id)))}>
+                            Bỏ các endpoint đang hiện
+                          </Button>
+                        </div>
+                        <ul className="max-h-40 overflow-y-auto rounded-md border border-border p-1.5">
+                          {shown.map((e) => (
+                            <li key={e.id}>
+                              <Label className="items-center gap-2 py-0.5 text-xs font-normal">
+                                <Checkbox
+                                  checked={chosen.includes(e.id)}
+                                  onCheckedChange={(c) => setChosen(c === true ? [...chosen, e.id] : chosen.filter((id) => id !== e.id))}
+                                />
+                                <span className="font-mono">
+                                  {e.method} {e.path}
+                                </span>
+                              </Label>
+                            </li>
+                          ))}
+                          {shown.length === 0 && <li className="text-muted-foreground">Không có endpoint nào khớp.</li>}
+                        </ul>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {value.assign !== null && withoutDocs.length > 0 && (
+            <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
+              {withoutDocs.length} endpoint không được gán tài liệu nào
+              {value.instruction.trim() ? " (chỉ dùng chỉ dẫn của bạn)" : value.suggest ? ": chỉ chạy làn AI gợi ý (mục GIẢ ĐỊNH)" : ": sẽ không có mục nào trừ khi bật AI gợi ý thêm"}.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1">
+        <Label htmlFor="rule-instruction" className="text-xs">
+          Chỉ dẫn thêm cho AI (tuỳ chọn)
+        </Label>
+        <Textarea
+          id="rule-instruction"
+          rows={3}
+          maxLength={MAX_INSTRUCTION}
+          value={value.instruction}
+          onChange={(e) => onChange({ ...value, instruction: e.target.value })}
+          placeholder='Ví dụ: "Chú ý các quy định về ngày hết hạn và lương". Có thể dán trực tiếp đoạn quy định nghiệp vụ; nếu AI hỏi lại chỗ tài liệu thiếu, trả lời vào đây rồi chạy lại.'
+        />
+        <span className="self-end text-[11px] text-muted-foreground">
+          {value.instruction.length}/{MAX_INSTRUCTION}
+        </span>
+      </div>
+
+      <Label className="items-start gap-2 font-normal">
+        <Checkbox
+          checked={effectiveSuggest}
+          disabled={!hasInput}
+          onCheckedChange={(c) => onChange({ ...value, suggest: c === true })}
+          className="mt-0.5"
+          aria-describedby="suggest-hint"
+        />
+        <span className="text-xs">
+          <strong>AI gợi ý thêm</strong> (ngoài tài liệu · nhãn GIẢ ĐỊNH, không có trích dẫn)
+          <HelpTip text="AI nêu thêm các mục nghiệp vụ nó nghĩ API nên có nhưng tài liệu không nói. Là GIẢ ĐỊNH: bạn quyết định giữ hay loại." />
+          <span id="suggest-hint" className="block text-muted-foreground">
+            {hasInput
+              ? "Tắt thì AI chỉ lập mục dựa trên tài liệu và chỉ dẫn của bạn."
+              : "Chưa có tài liệu hay chỉ dẫn nên AI chỉ có thể gợi ý từ spec: mọi mục sẽ là GIẢ ĐỊNH để bạn duyệt."}
+          </span>
+        </span>
+      </Label>
+      {effectiveSuggest && (
+        <fieldset className="ml-6 flex flex-col gap-1.5 text-xs" aria-label="Mức độ gợi ý">
+          <legend className="sr-only">Mức độ gợi ý</legend>
+          <label className="flex items-start gap-2">
+            <input type="radio" name="suggest-level" checked={!value.suggestBroad} onChange={() => onChange({ ...value, suggestBroad: false })} className="mt-0.5" />
+            <span>
+              <strong>Gợi ý thường</strong>
+              <HelpTip text="AI chỉ nêu những luật nó khá chắc (ít mà chắc). Ít mục sai nhưng có thể không ra mục nào, nhất là với endpoint ít field. Đã đo: 5/5 mục đúng trên API tuyển dụng thử nghiệm." />
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input type="radio" name="suggest-level" checked={value.suggestBroad} onChange={() => onChange({ ...value, suggestBroad: true })} className="mt-0.5" />
+            <span>
+              <strong>Gợi ý rộng</strong>
+              <HelpTip text="AI nêu cả những luật có khả năng (độ chắc thấp hơn): nhiều mục hơn nhưng cũng nhiều mục sai hơn, bạn lọc khi duyệt. Mục có nhãn 'GIẢ ĐỊNH (gợi ý rộng)'. Chưa đo độ chính xác riêng của chế độ này." />
+            </span>
+          </label>
+        </fieldset>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        Không giới hạn số mục. Token của phần checklist nằm trong <strong>"Trần token AI của lần chạy"</strong> bên dưới (một trần tổng cho cả test gốc và checklist); chạm
+        trần thì dừng và giữ phần đã làm.
+      </p>
+
+      <Label className="items-start gap-2 font-normal">
+        <Checkbox checked={value.consent} onCheckedChange={(v) => onChange({ ...value, consent: v === true })} className="mt-0.5" />
+        <span className="text-xs">Tôi đồng ý gửi tài liệu và chỉ dẫn tới dịch vụ AI bên ngoài (chuỗi giống mật khẩu/khoá đã được che).</span>
+      </Label>
+
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {typeof error === "string" ? error : errorText(error)}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Dấu "?" giải thích ngắn: rê chuột hoặc focus bằng bàn phím để đọc (title + aria-label). */
+function HelpTip({ text }: { text: string }) {
+  return (
+    <span
+      role="img"
+      tabIndex={0}
+      aria-label={text}
+      title={text}
+      className="ml-1 inline-flex size-4 cursor-help items-center justify-center rounded-full border border-muted-foreground/40 align-middle text-[10px] font-semibold text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      ?
+    </span>
+  )
+}
+
+/** Ước tính token của phần checklist: lô 12 endpoint, mỗi lô đọc cả tài liệu (tối đa 40.000 ký tự) + tối đa 4.000 token trả lời; làn gợi ý thêm 1 lệnh gọi mỗi lô. */
+export function estimateChecklistTokens(endpointCount: number, docChars: number, suggest: boolean, hasInput: boolean): number {
+  const lots = Math.max(1, Math.ceil(endpointCount / 12))
+  const perDocLot = hasInput ? Math.ceil((Math.min(40_000, docChars) + 6_000) * 0.4) + 4_000 : 0
+  const perSuggestLot = suggest ? 3_000 + 4_000 : 0
+  return lots * (perDocLot + perSuggestLot)
+}

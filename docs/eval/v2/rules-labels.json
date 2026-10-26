@@ -1,0 +1,70 @@
+{
+ "70de9ffb-59c1-4d5a-a1d0-d8cdb015cf36": {
+  "correct": true,
+  "gold": "R24"
+ },
+ "3a4289cb-a342-4675-899f-1caca835a064": {
+  "correct": false,
+  "gold": null
+ },
+ "072d67af-fb3e-4158-8e4e-aef8af864eb1": {
+  "correct": true,
+  "gold": "R28"
+ },
+ "38a29b61-5867-4811-b777-d2e7c459c1b1": {
+  "correct": true,
+  "gold": "R43"
+ },
+ "63f57202-00c7-4238-ad80-436aa30c12e2": {
+  "correct": true,
+  "gold": "R47"
+ },
+ "7171207a-5287-4e07-a921-783027dd85f2": {
+  "correct": true,
+  "gold": "R66"
+ },
+ "2b3901df-bb10-4819-865c-8bded2f40582": {
+  "correct": true,
+  "gold": "R24"
+ },
+ "ce4e27c8-8e81-4717-83e6-ae251d329a23": {
+  "correct": true,
+  "gold": "R28"
+ },
+ "a3861b62-a917-4f4a-84de-61445f2d0188": {
+  "correct": false,
+  "gold": null
+ },
+ "3e02acd0-091a-4c1e-9376-3fc91794ab01": {
+  "correct": true,
+  "gold": "R43"
+ },
+ "dab933fc-987e-410c-bafc-37ca1c5191ce": {
+  "correct": true,
+  "gold": "R47"
+ },
+ "ef2261e7-1be2-4074-9178-b6095e5b5fee": {
+  "correct": true,
+  "gold": "R66"
+ },
+ "127a52c5-d915-4641-9577-e97b4ed68d41": {
+  "correct": true,
+  "gold": "R24"
+ },
+ "f79c4421-c427-4d41-b626-f4174c1807b4": {
+  "correct": true,
+  "gold": "R28"
+ },
+ "667e91a9-2cb1-4f23-8462-9b6e9abae418": {
+  "correct": true,
+  "gold": "R43"
+ },
+ "e532e68e-8151-47e5-8318-711541fbfa3e": {
+  "correct": true,
+  "gold": "R47"
+ },
+ "98965c4a-841a-4c5b-b5ce-8ea1a82dc1ae": {
+  "correct": true,
+  "gold": "R66"
+ }
+}

@@ -45,6 +45,9 @@ curl -XPOST localhost:8083/__reset                             # tắt hết mut
 
 ## Danh mục mutant
 
+Có thêm **bộ held-out H01–H15** (cờ `H01`…`H15`, cùng cơ chế bật/tắt, mặc định tắt), chỉ dùng cho phép đo G5 — đặc tả ở
+`docs/eval/heldout-mutants.md`. Một số H trùng hành vi với mutant M cũ (ghi trong `KNOWN_OVERLAPS` của `MutantProbesTest`).
+
 Danh mục đầy đủ (id, loại, endpoint, mô tả) nằm trong `MutantFlag.java` và trả về ở `GET /__mutants`. Mỗi mutant là **một cờ rẽ
 nhánh đúng một chỗ trong code**. Cột "kỳ vọng" là **giả thuyết trước khi đo** về việc checklist tất định (Positive/Negative/Boundary/
 Security) có bắt được không — không phải kết luận; kết quả đo thật ở `docs/DANH_GIA.md`.

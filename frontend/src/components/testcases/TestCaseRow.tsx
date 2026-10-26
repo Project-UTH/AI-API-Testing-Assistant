@@ -2,9 +2,11 @@ import { memo } from "react"
 import { Eye, Info, Lock, Pencil, ShieldAlert, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { DependentsChip } from "@/components/testcases/DependentsChip"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import {
+  expectationChanged,
   getReliabilityDisplay,
   originDisplay,
   TEST_CASE_SOURCE_LABEL,
@@ -13,6 +15,7 @@ import {
 } from "@/lib/testcases"
 
 interface TestCaseRowProps {
+  projectId: string
   testCase: TestCase
   selected: boolean
   lockPending: boolean
@@ -27,6 +30,7 @@ interface TestCaseRowProps {
 
 /** 1 dòng test case. memo: gõ ô tìm kiếm hay đổi chọn ở dòng khác không làm vẽ lại cả trang. */
 export const TestCaseRow = memo(function TestCaseRow({
+  projectId,
   testCase,
   selected,
   lockPending,
@@ -53,10 +57,17 @@ export const TestCaseRow = memo(function TestCaseRow({
           // nhưng không do AI viết - hiện "Hệ thống" cho khỏi hiểu nhầm.
           testCase.generationOrigin === "SYSTEM_FILLED"
             ? "bg-teal-500/10 text-teal-600 dark:text-teal-400"
-            : TEST_CASE_SOURCE_STYLES[testCase.source]
+            : testCase.generationOrigin === "RULE_TEMPLATE"
+              ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+              : TEST_CASE_SOURCE_STYLES[testCase.source]
         )}
       >
-        {testCase.generationOrigin === "SYSTEM_FILLED" ? "Hệ thống" : TEST_CASE_SOURCE_LABEL[testCase.source]}
+        {/* 17q G3 - test từ checklist nghiệp vụ lưu source=BUSINESS (để bộ lọc "!= BUSINESS" loại khỏi % EP/BVA) nhưng KHÔNG phải AI đoán: mục do người duyệt. */}
+        {testCase.generationOrigin === "SYSTEM_FILLED"
+          ? "Hệ thống"
+          : testCase.generationOrigin === "RULE_TEMPLATE"
+            ? "Nghiệp vụ (bạn duyệt)"
+            : TEST_CASE_SOURCE_LABEL[testCase.source]}
       </span>
       {testCase.probeKind === "MASS_ASSIGNMENT" && (
         <span
@@ -97,7 +108,19 @@ export const TestCaseRow = memo(function TestCaseRow({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate text-sm">{testCase.name}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">→ {testCase.expectedStatus}</span>
+      <DependentsChip projectId={projectId} testCaseId={testCase.id} testCaseName={testCase.name} />
+      <span
+        className="shrink-0 text-xs text-muted-foreground"
+        title={expectationChanged(testCase) ? `Hệ thống đã đổi kỳ vọng sau khi chạy thật test gốc: ${testCase.expectationNote ?? ""}` : undefined}
+      >
+        → {testCase.expectedStatusClass === "REJECTED" ? "4xx (bị từ chối)" : testCase.expectedStatus}
+        {testCase.sendTwice && " · gửi 2 lần"}
+        {expectationChanged(testCase) && (
+          <span className="ml-1">
+            (trước: <span className="line-through">{testCase.originalExpectedStatus}</span>)
+          </span>
+        )}
+      </span>
       <Button
         size="icon-sm"
         variant="ghost"

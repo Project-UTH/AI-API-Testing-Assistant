@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
-import { updateTargetAuth } from "@/lib/projects"
+import { updateApiConventions, updateTargetAuth } from "@/lib/projects"
 import type { TargetAuthType } from "@/lib/endpoints"
 import { AUTH_TYPE_OPTIONS, authValueHint, authValueLabel } from "@/lib/authTypes"
 
@@ -23,6 +23,8 @@ interface TargetAuthDialogProps {
   onOpenChange: (open: boolean) => void
   projectId: string
   currentAuthType: TargetAuthType
+  /** Mã API đích trả khi thiếu/sai token (403 hoặc null = 401). */
+  currentUnauthenticatedStatus?: number | null
 }
 
 const selectClassName =
@@ -33,19 +35,23 @@ export function TargetAuthDialog({
   onOpenChange,
   projectId,
   currentAuthType,
+  currentUnauthenticatedStatus = null,
 }: TargetAuthDialogProps) {
   const queryClient = useQueryClient()
   const [authType, setAuthType] = useState<TargetAuthType>(currentAuthType)
   const [authValue, setAuthValue] = useState("")
+  const [deniedStatus, setDeniedStatus] = useState<string>(currentUnauthenticatedStatus === 403 ? "403" : "401")
 
   useEffect(() => {
     if (open) {
       setAuthType(currentAuthType)
       setAuthValue("")
+      setDeniedStatus(currentUnauthenticatedStatus === 403 ? "403" : "401")
       mutation.reset()
+      conventions.reset()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, currentAuthType])
+  }, [open, currentAuthType, currentUnauthenticatedStatus])
 
   const mutation = useMutation({
     mutationFn: () => updateTargetAuth(projectId, { authType, authValue: authType === "NONE" ? undefined : authValue }),
@@ -53,6 +59,11 @@ export function TargetAuthDialog({
       queryClient.invalidateQueries({ queryKey: ["projects", projectId] })
       onOpenChange(false)
     },
+  })
+
+  const conventions = useMutation({
+    mutationFn: () => updateApiConventions(projectId, { unauthenticatedStatus: deniedStatus === "403" ? 403 : null }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
   })
 
   function handleSubmit(e: React.FormEvent) {
@@ -107,6 +118,24 @@ export function TargetAuthDialog({
               />
             </div>
           )}
+
+          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+            <Label htmlFor="unauth-status">Mã API trả khi thiếu hoặc sai token</Label>
+            <p className="text-xs text-muted-foreground">
+              Chuẩn là 401. Một số API (vd Spring Security mặc định) trả 403. Chọn đúng quy ước của API này để test Security "thiếu token / token sai" không bị Fail giả.
+              Chỉ áp dụng cho test cố ý bỏ hoặc làm sai token; các test khác vẫn so khớp mã như thường. Lưu riêng, không cần nhập lại token.
+            </p>
+            <div className="flex items-center gap-2">
+              <select id="unauth-status" className={cn(selectClassName, "max-w-48")} value={deniedStatus} onChange={(e) => setDeniedStatus(e.target.value)}>
+                <option value="401">401 Unauthorized (chuẩn)</option>
+                <option value="403">403 Forbidden</option>
+              </select>
+              <Button type="button" size="sm" variant="outline" disabled={conventions.isPending} onClick={() => conventions.mutate()}>
+                {conventions.isPending ? "Đang lưu..." : conventions.isSuccess ? "Đã lưu" : "Lưu quy ước"}
+              </Button>
+            </div>
+            {conventions.isError && <p className="text-sm text-destructive">{conventions.error instanceof ApiError ? conventions.error.message : "Đã xảy ra lỗi"}</p>}
+          </div>
 
           {mutation.isError && (
             <p className="text-sm text-destructive">

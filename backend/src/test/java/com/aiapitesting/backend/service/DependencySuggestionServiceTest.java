@@ -38,6 +38,9 @@ class DependencySuggestionServiceTest {
     @Mock
     private TestCaseDependencyRepository testCaseDependencyRepository;
 
+    @Mock
+    private com.aiapitesting.backend.repository.TestResultRepository testResultRepository;
+
     @Spy
     private TestCasePathValidator testCasePathValidator = new TestCasePathValidator();
 
@@ -78,6 +81,51 @@ class DependencySuggestionServiceTest {
         assertThat(suggestions.get(0).paramName()).isEqualTo("petId");
         assertThat(suggestions.get(0).sourceTestCaseId()).isEqualTo(earliest.getId());
         assertThat(suggestions.get(0).suggestedJsonPath()).isEqualTo("$.id");
+    }
+
+    @Test
+    void listDependents_mapsEachDependencyToTheConsumerTestAndItsEndpoint() {
+        Endpoint post = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/jobs").build();
+        Endpoint put = Endpoint.builder().id(UUID.randomUUID()).project(project).method("PUT").path("/jobs/{jobId}").build();
+        TestCase source = TestCase.builder().id(UUID.randomUUID()).endpoint(post).name("tạo job").build();
+        TestCase consumer = TestCase.builder().id(UUID.randomUUID()).endpoint(put).name("sửa job").build();
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of(
+                com.aiapitesting.backend.entity.TestCaseDependency.builder().testCase(consumer).dependsOnTestCase(source).placeholderName("jobId").jsonPath("$.id").build()));
+
+        var result = dependencySuggestionService.listDependents(projectId);
+
+        assertThat(result).singleElement().satisfies(d -> {
+            assertThat(d.sourceTestCaseId()).isEqualTo(source.getId());
+            assertThat(d.dependentTestCaseId()).isEqualTo(consumer.getId());
+            assertThat(d.dependentEndpointLabel()).isEqualTo("PUT /jobs/{jobId}");
+            assertThat(d.placeholderName()).isEqualTo("jobId");
+            assertThat(d.jsonPath()).isEqualTo("$.id");
+        });
+    }
+
+    @Test
+    void hasCreatorSource_ignoresDraftThatNeverPassed_andPrefersTheHealthySource() {
+        Endpoint put = Endpoint.builder().id(UUID.randomUUID()).project(project).method("PUT").path("/jobs/{jobId}/x").build();
+        Endpoint post = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/jobs").build();
+        TestCase draft = TestCase.builder().id(UUID.randomUUID()).endpoint(post).name("nháp lỗi").expectedStatus(200)
+                .createdAt(Instant.parse("2026-01-01T00:00:00Z")).build();
+        TestCase healthy = TestCase.builder().id(UUID.randomUUID()).endpoint(post).name("test gốc khoá").expectedStatus(201).locked(true)
+                .createdAt(Instant.parse("2026-01-02T00:00:00Z")).build();
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(put.getId(), project)).thenReturn(Optional.of(put));
+        when(endpointRepository.findByProjectAndPathAndMethod(project, "/jobs", "POST")).thenReturn(Optional.of(post));
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(post)).thenReturn(List.of(draft));
+        when(testCaseRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+        when(testResultRepository.existsByTestCaseAndStatus(draft, com.aiapitesting.backend.entity.TestResultStatus.PASSED)).thenReturn(false);
+
+        // chỉ có test nháp chưa bao giờ Pass: KHÔNG tính là nguồn để nối chuỗi
+        assertThat(dependencySuggestionService.hasCreatorSource(projectId, put.getId(), "jobId")).isFalse();
+
+        // có thêm test gốc đã khoá (cũ hơn thì vẫn ưu tiên test khỏe): tính là nguồn
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(post)).thenReturn(List.of(draft, healthy));
+        when(testCaseRepository.findById(healthy.getId())).thenReturn(Optional.of(healthy));
+        assertThat(dependencySuggestionService.hasCreatorSource(projectId, put.getId(), "jobId")).isTrue();
     }
 
     @Test

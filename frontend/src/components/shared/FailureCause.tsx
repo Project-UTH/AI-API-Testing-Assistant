@@ -19,8 +19,10 @@ const CAUSE_STYLES: Record<FailureCauseCode, string> = {
   AUTHZ_VIOLATION: "bg-destructive/10 text-destructive",
   TEST_DATA_SUSPECT: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   MASS_ASSIGNMENT: "bg-destructive/10 text-destructive",
+  HTTP_ROBUSTNESS: "bg-destructive/10 text-destructive",
   TOKEN_FORBIDDEN: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   API_WRONG_STATUS: "bg-destructive/10 text-destructive",
+  RULE_VIOLATION_ACCEPTED: "bg-destructive/10 text-destructive",
 }
 
 /** Gợi ý việc nên làm cho từng nguyên nhân - chỉ là gợi ý cho nghi ngờ, không phải kết luận. */
@@ -45,8 +47,12 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
     "API từ chối đầu vào (400/422) và phản hồi nói dữ liệu không hợp lệ (vd ngày quá khứ, giá trị không có trong danh mục). Ưu tiên Sửa test case: đổi dữ liệu thành giá trị hợp lệ rồi chạy lại. Chỉ tạo Bug Report nếu đã chắc dữ liệu hợp lệ mà API vẫn từ chối.",
   MASS_ASSIGNMENT:
     "Phát hiện bảo mật: API nhận field không khai báo trong schema (giá trị đánh dấu xuất hiện lại trong phản hồi) hoặc lỗi 5xx khi nhận chúng. Kiểm tra whitelist/DTO ở backend, rồi xoá dữ liệu probe đã ghi trên hệ thống đích. Đây là lỗ hổng, không phải lỗi test.",
+  HTTP_ROBUSTNESS:
+    "Phát hiện thật của API đích: gửi JSON cú pháp hỏng hoặc sai Content-Type mà API trả lỗi máy chủ (5xx) hoặc chấp nhận thay vì từ chối bằng 4xx (400/415/422). Nên tạo Bug Report; không sửa kỳ vọng để test Pass.",
   API_WRONG_STATUS:
     "API trả 401 cho request đầu vào sai (kỳ vọng 400/422) dù token đã được API chấp nhận ở test khác. Nhiều khả năng đây là lỗi của API đích (xử lý lỗi đầu vào sai mã): nên tạo Bug Report. Không sửa kỳ vọng cho khớp 401.",
+  RULE_VIOLATION_ACCEPTED:
+    "Test sinh từ 1 checklist nghiệp vụ BẠN ĐÃ DUYỆT: request cố ý vi phạm mục nhưng API vẫn nhận (trả 2xx). Nhiều khả năng là lỗi của API đích: nên tạo Bug Report. Nếu mục sai, Sửa hoặc Loại mục ở tab Nghiệp vụ - không sửa kỳ vọng cho khớp hành vi của API.",
   TOKEN_FORBIDDEN:
     "API trả 403 (đã xác thực nhưng không đủ quyền) trong khi token mặc định dùng được ở test khác. Mở Sửa test case và chọn profile vai trò đúng cho endpoint này (nút Vai trò của project). Chỉ coi là lỗi API nếu chắc vai trò mặc định phải được phép.",
 }
@@ -99,20 +105,6 @@ const BANNER_TEXT: Partial<Record<FailureCauseCode, string>> = {
   ENVIRONMENT: "cùng lỗi khi gọi hệ thống đích - nghi hệ thống đích không sẵn sàng hoặc không tới được.",
   TEST_SETUP: "không chạy được vì cấu hình test chưa đủ.",
   RESOURCE_NOT_FOUND: "gọi bằng id dự phòng và nhận 404 - test chưa chạm tới logic cần kiểm.",
-}
-
-/**
- * Banner đầu trang kết quả: khi nhiều test cùng fail vì 1 nguyên nhân KHÔNG phải do API, nói thẳng một lần thay vì
- * để người dùng tự đọc từng dòng Fail rồi điều tra từng test. Gom ở frontend từ nhãn backend đã chấm sẵn.
- */
-export function FailureCauseBanner({ results, projectId }: { results: TestResult[]; projectId: string }) {
-  const counts: Partial<Record<FailureCauseCode, number>> = {}
-  for (const r of results) {
-    if (r.failureCause?.notApiFault) {
-      counts[r.failureCause.code] = (counts[r.failureCause.code] ?? 0) + 1
-    }
-  }
-  return <FailureCauseSummaryBanner counts={counts} total={results.length} projectId={projectId} />
 }
 
 /** Các nguyên nhân "không phải do API" (khớp FailureCause.notApiFault ở backend) - chỉ những mã này được gom vào banner. */

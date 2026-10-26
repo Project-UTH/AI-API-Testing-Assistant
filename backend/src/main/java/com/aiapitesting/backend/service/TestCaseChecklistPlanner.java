@@ -1119,6 +1119,11 @@ public class TestCaseChecklistPlanner {
      * xác nhận (spec khai 401 hoặc response có token). Thà bỏ sót còn hơn sinh mục "sai mật khẩu → 401" sai cho endpoint đăng ký.
      */
     public static boolean looksLikeLogin(String method, String path, String summary, boolean declares401, boolean responseHasToken) {
+        return isNamedLogin(method, path, summary) && (declares401 || responseHasToken);
+    }
+
+    /** Chỉ dựa vào TÊN (POST, đường dẫn/mô tả nói là đăng nhập, không phải đăng ký/đặt lại...): đủ để biết endpoint này không thể đòi token. */
+    public static boolean isNamedLogin(String method, String path, String summary) {
         if (method == null || !"POST".equalsIgnoreCase(method)) {
             return false;
         }
@@ -1127,8 +1132,7 @@ public class TestCaseChecklistPlanner {
         if (NOT_LOGIN.matcher(p).find() || NOT_LOGIN.matcher(s).find()) {
             return false;
         }
-        boolean named = LOGIN_PATH.matcher(p).find() || LOGIN_SUMMARY.matcher(s).find();
-        return named && (declares401 || responseHasToken);
+        return LOGIN_PATH.matcher(p).find() || LOGIN_SUMMARY.matcher(s).find();
     }
 
     /**
@@ -1259,6 +1263,41 @@ public class TestCaseChecklistPlanner {
      * Tên trường số có "anh em" (salaryMin/salaryMax, minAge/maxAge...) -> true nếu là phía CAO. Cặp from/to và start/end KHÔNG áp
      * dụng cho trường kiểu id (fromAccountId/toAccountId là 2 id độc lập, không có ràng buộc min ≤ max).
      */
+    /**
+     * 17q G3 - các cặp field "biên dưới/biên trên" của body (salaryMin/salaryMax, fromDate/toDate...) theo cùng quy ước đặt tên với
+     * {@link #pairedBoundSides}; mỗi phần tử là {tên field dưới, tên field trên}. Dùng để hệ thống TỰ ĐỀ XUẤT luật "dưới ≤ trên" (0 token).
+     */
+    public List<String[]> pairedBounds(Spec spec) {
+        Map<String, FieldRule> byLowerName = new HashMap<>();
+        for (FieldRule rule : spec.rules()) {
+            if (rule.location() == ParamLocation.BODY && rule.numeric() && !rule.nested()) {
+                byLowerName.put(rule.name().toLowerCase(Locale.ROOT), rule);
+            }
+        }
+        List<String[]> pairs = new ArrayList<>();
+        for (FieldRule rule : byLowerName.values()) {
+            String name = rule.name().toLowerCase(Locale.ROOT);
+            for (int i = 0; i < BOUND_PAIRS.size(); i++) {
+                if ((i == 1 || i == 2) && isIdLike(rule.name())) {
+                    continue;
+                }
+                String low = BOUND_PAIRS.get(i)[0];
+                String high = BOUND_PAIRS.get(i)[1];
+                FieldRule other = null;
+                if (name.startsWith(low)) {
+                    other = byLowerName.get(high + name.substring(low.length()));
+                } else if (name.endsWith(low)) {
+                    other = byLowerName.get(name.substring(0, name.length() - low.length()) + high);
+                }
+                if (other != null && pairs.stream().noneMatch(p -> p[0].equals(rule.name()))) {
+                    pairs.add(new String[]{rule.name(), other.name()});
+                }
+            }
+        }
+        pairs.sort(java.util.Comparator.comparing((String[] p) -> p[0]));
+        return pairs;
+    }
+
     private Map<String, Boolean> pairedBoundSides(Spec spec) {
         Map<String, FieldRule> byLowerName = new HashMap<>();
         for (FieldRule rule : spec.rules()) {

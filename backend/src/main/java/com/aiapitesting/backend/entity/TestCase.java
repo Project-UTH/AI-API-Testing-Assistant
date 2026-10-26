@@ -79,6 +79,40 @@ public class TestCase {
     @Column(nullable = false)
     private Integer expectedStatus;
 
+    /**
+     * 17q G1 - kỳ vọng ban đầu (do AI đoán) khi hệ thống tự đổi kỳ vọng của test gốc sang mã 2xx API thật trả. Null = chưa
+     * từng đổi. Giữ lại để truy vết - đổi kỳ vọng không được che lỗi: chênh lệch so với spec được báo riêng ở kết quả chạy.
+     */
+    private Integer originalExpectedStatus;
+
+    /**
+     * 17q - loại mục checklist mà test hệ thống bù nhắm tới (tên ChecklistItemType); null = test khác/dữ liệu cũ. Dùng để biết test
+     * thuộc mục "biên ngầm" (spec thiếu ràng buộc) ở trang kết quả chạy - thống nhất độ tin với trang Coverage.
+     */
+    @Column(length = 40)
+    private String checklistType;
+
+    /**
+     * 17q G3 - lớp kỳ vọng. "REJECTED" = bị từ chối đầu vào (4xx bất kỳ trừ 401/403/404/405/415/429 - những mã đó là lỗi cách gọi, không
+     * phải từ chối nghiệp vụ); expectedStatus vẫn NOT NULL và lưu 400 làm mã đại diện (hiển thị, nhãn API_WRONG_STATUS khi API trả 401...).
+     * null = so đúng expectedStatus như mọi test khác.
+     */
+    @Column(length = 12)
+    private String expectedStatusClass;
+
+    /** 17q G3 - gửi request 2 lần liên tiếp (mẫu UNIQUE); lần 1 phải 2xx, lần 2 mới được chấm. */
+    @Column(nullable = false, columnDefinition = "TINYINT(1) DEFAULT 0")
+    @Builder.Default
+    private boolean sendTwice = false;
+
+    /** 17q G3 - luật nghiệp vụ đã sinh ra test này (null = không từ luật). UUID thường, không FK (luật sống qua import REPLACE). */
+    @Column(name = "rule_id")
+    private java.util.UUID ruleId;
+
+    /** 17q G1 - ghi chú lý do đổi kỳ vọng (kèm kết luận lệch spec nếu có); null = chưa đổi. */
+    @Column(length = 500)
+    private String expectationNote;
+
     /** Module 17 (17b-2) - loại test bảo mật tự sinh (hiện chỉ "MASS_ASSIGNMENT"); null = test thường. VARCHAR (không enum) để thêm loại mới về sau. */
     @Column(length = 30)
     private String probeKind;

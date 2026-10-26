@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { MoreVertical, Plus } from "lucide-react"
@@ -17,16 +17,23 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import { Pagination } from "@/components/shared/Pagination"
 import { ProjectFormDialog } from "@/components/projects/ProjectFormDialog"
 import { DeleteProjectDialog } from "@/components/projects/DeleteProjectDialog"
 import { listProjects, type Project } from "@/lib/projects"
+
+const PAGE_SIZE = 12
 
 export function ProjectsPage() {
   const navigate = useNavigate()
   const { data, isLoading, isError } = useQuery({
     queryKey: ["projects"],
-    queryFn: () => listProjects(),
+    queryFn: () => listProjects(200),
   })
+  // Tải tối đa 200 project mới nhất rồi tìm/phân trang ở máy: trước đây chỉ hiện 20 project đầu và không có cách xem phần còn lại.
+  const [search, setSearch] = useState("")
+  const [page, setPage] = useState(0)
 
   const [formOpen, setFormOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | undefined>()
@@ -48,7 +55,14 @@ export function ProjectsPage() {
     setDeleteOpen(true)
   }
 
-  const projects = data?.data ?? []
+  const allProjects = data?.data ?? []
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return q ? allProjects.filter((p) => p.name.toLowerCase().includes(q) || (p.description ?? "").toLowerCase().includes(q)) : allProjects
+  }, [allProjects, search])
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages - 1)
+  const projects = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
 
   return (
     <div>
@@ -64,6 +78,20 @@ export function ProjectsPage() {
           Tạo Project
         </Button>
       </div>
+
+      {allProjects.length > PAGE_SIZE && (
+        <div className="mt-4 max-w-sm">
+          <Input
+            aria-label="Tìm project theo tên"
+            placeholder="Tìm project theo tên hoặc mô tả..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(0)
+            }}
+          />
+        </div>
+      )}
 
       {isLoading && (
         <p className="mt-8 text-muted-foreground">Đang tải...</p>
@@ -132,6 +160,21 @@ export function ProjectsPage() {
           </Card>
         ))}
       </div>
+
+      {filtered.length > PAGE_SIZE && (
+        <Pagination
+          className="mt-4"
+          page={currentPage}
+          totalPages={totalPages}
+          totalElements={filtered.length}
+          shownCount={projects.length}
+          size={PAGE_SIZE}
+          onPageChange={setPage}
+          isFetching={false}
+          itemLabel="project"
+        />
+      )}
+      {search.trim() && filtered.length === 0 && <p className="mt-6 text-muted-foreground">Không có project nào khớp "{search}".</p>}
 
       <ProjectFormDialog
         open={formOpen}

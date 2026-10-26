@@ -1,0 +1,85 @@
+import { useState } from "react"
+
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { COMMON_REJECT_STATUSES, type BusinessRule } from "@/lib/rules"
+
+interface Props {
+  rule: BusinessRule | null
+  pending: boolean
+  error?: string | null
+  onCancel: () => void
+  onConfirm: (rule: BusinessRule, expectedStatus: number) => void
+}
+
+/**
+ * Mục GIẢ ĐỊNH (AI đoán, không có trích dẫn) không thể duyệt "cho qua": không có nguồn nào nêu mã lỗi, nên người duyệt phải tự chọn mã lỗi
+ * kỳ vọng. Backend cũng từ chối duyệt nếu thiếu mã này.
+ */
+export function ApproveGuessDialog({ rule, pending, error, onCancel, onConfirm }: Props) {
+  const [custom, setCustom] = useState("")
+  // Điền sẵn mã AI gợi ý (nếu có); người duyệt vẫn phải bấm xác nhận hoặc đổi mã.
+  const [picked, setPicked] = useState<number | null>(rule?.suggestedStatus ?? null)
+  const value = custom.trim() ? Number(custom) : picked
+  const valid = value !== null && Number.isInteger(value) && value >= 400 && value <= 499
+
+  return (
+    <Dialog open={rule !== null} onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Duyệt mục GIẢ ĐỊNH</DialogTitle>
+          <DialogDescription>
+            AI gợi ý mục này, không có trích dẫn từ tài liệu. Nếu đúng là quy tắc của hệ thống, hãy xác nhận mã lỗi mà API phải trả khi bị vi phạm (mã AI gợi ý đã được điền sẵn, bạn có thể đổi). Nếu API trả
+            khác mã này, đó sẽ được ghi nhận là phát hiện lỗi của API.
+          </DialogDescription>
+        </DialogHeader>
+        <p className="rounded-md bg-muted p-2 text-sm font-medium">{rule?.sentence}</p>
+        {rule?.suggestedStatus != null && <p className="text-xs text-muted-foreground">AI gợi ý mã {rule.suggestedStatus}. Chỉ có hiệu lực khi bạn bấm Duyệt.</p>}
+        <fieldset className="flex flex-wrap gap-1.5">
+          <legend className="sr-only">Mã lỗi kỳ vọng khi vi phạm</legend>
+          {COMMON_REJECT_STATUSES.map((code) => (
+            <Button
+              key={code}
+              type="button"
+              size="sm"
+              variant={picked === code && !custom.trim() ? "default" : "outline"}
+              aria-pressed={picked === code && !custom.trim()}
+              onClick={() => {
+                setPicked(code)
+                setCustom("")
+              }}
+            >
+              {code}
+            </Button>
+          ))}
+        </fieldset>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="guess-status" className="text-xs">
+            Hoặc nhập mã khác (400-499)
+          </Label>
+          <input
+            id="guess-status"
+            inputMode="numeric"
+            value={custom}
+            onChange={(e) => setCustom(e.target.value.replace(/\D/g, "").slice(0, 3))}
+            className="h-8 w-28 rounded-md border border-input bg-transparent px-2 text-sm"
+          />
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Huỷ
+          </Button>
+          <Button type="button" disabled={!valid || pending} onClick={() => rule && valid && onConfirm(rule, value)}>
+            Duyệt với mã {valid ? value : "…"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

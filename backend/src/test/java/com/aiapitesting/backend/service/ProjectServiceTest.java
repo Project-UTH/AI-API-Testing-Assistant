@@ -79,6 +79,17 @@ class ProjectServiceTest {
     private TestGenerationEventRepository testGenerationEventRepository;
 
     @Mock
+    private com.aiapitesting.backend.repository.BusinessRuleRepository businessRuleRepository;
+    @Mock
+    private com.aiapitesting.backend.repository.RuleReviewTimingRepository ruleReviewTimingRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.RequirementDocumentRepository requirementDocumentRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.RequirementDocumentUsageRepository requirementDocumentUsageRepository;
+
+    @Mock
     private BugReportRepository bugReportRepository;
 
     @Mock
@@ -118,7 +129,7 @@ class ProjectServiceTest {
         // bug_report_events.endpoint_id / endpoints.project_id)
         InOrder inOrder = inOrder(bugReportRepository, bugReportEventRepository, testExecutionEndpointRepository,
                 testResultRepository, testExecutionRepository, testCaseDependencyRepository, testCaseRepository,
-                testGenerationEventRepository, endpointRepository, authProfileRepository, projectRepository);
+                testGenerationEventRepository, businessRuleRepository, endpointRepository, authProfileRepository, projectRepository);
         inOrder.verify(bugReportRepository).deleteAllByProject(project);
         inOrder.verify(bugReportEventRepository).deleteAllByEndpointProject(project);
         inOrder.verify(testExecutionEndpointRepository).deleteAllByExecutionProject(project);
@@ -126,7 +137,8 @@ class ProjectServiceTest {
         inOrder.verify(testExecutionRepository).deleteAllByProject(project);
         inOrder.verify(testCaseDependencyRepository).deleteAllByProject(project);
         inOrder.verify(testCaseRepository).deleteAllByEndpointProject(project);
-        inOrder.verify(testGenerationEventRepository).deleteAllByEndpointProject(project);
+        inOrder.verify(testGenerationEventRepository).detachFromEndpointsOfProject(project);
+        inOrder.verify(businessRuleRepository).deleteAllByProject(project);
         inOrder.verify(endpointRepository).deleteAllByProject(project);
         inOrder.verify(authProfileRepository).deleteAllByProject(project);
         inOrder.verify(projectRepository).delete(project);
@@ -181,6 +193,23 @@ class ProjectServiceTest {
 
         assertThat(project.getTargetAuthType()).isEqualTo(TargetAuthType.BEARER_TOKEN);
         assertThat(project.getTargetAuthValueEncrypted()).isEqualTo("encrypted-token");
+    }
+
+    @Test
+    void updateApiConventions_acceptsOnly401Or403_and401IsStoredAsDefault() {
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(projectRepository.save(project)).thenReturn(project);
+
+        projectService.updateApiConventions(projectId, 403);
+        assertThat(project.getUnauthenticatedStatus()).isEqualTo(403);
+        projectService.updateApiConventions(projectId, 401);
+        assertThat(project.getUnauthenticatedStatus()).isNull();
+        projectService.updateApiConventions(projectId, 403);
+        projectService.updateApiConventions(projectId, null);
+        assertThat(project.getUnauthenticatedStatus()).isNull();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> projectService.updateApiConventions(projectId, 404))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
     }
 
     @Test

@@ -135,6 +135,78 @@
 
 ---
 
+## 16. Luật nghiệp vụ, độ bao phủ theo endpoint, probe tất định (17q, thêm 2026-10-26)
+
+*Cần: hệ thống đang chạy, `mutant-api` cổng 8083 với `MUTANT_CONTROL=true`, project dựng bằng `python scripts/seed-demo-rules.py` (0 token). Bước **[TỐN TOKEN AI THẬT]** chỉ khi chạy `--with-ai` hoặc hộp thoại "Sinh test case" có tick "+ AI bổ sung checklist nghiệp vụ" (khoảng 14.000 token làn tài liệu; làn "AI gợi ý thêm" ước tính thêm 10.000-15.000, CHƯA đo).*
+
+**Test tự động (backend, không cần môi trường):** `cd backend && ./mvnw test` → 943 test pass, 0 fail (gồm 6 test phân quyền tích hợp thật cần MySQL đang chạy: `RuleAndDocumentOwnershipTest`).
+
+**Tài liệu và trích luật**
+- [ ] Tải tệp `.pdf` → bị từ chối "Chỉ nhận tệp .md hoặc .txt"; tải tệp không phải UTF-8 → `DOCUMENT_ENCODING_INVALID`; tệp > 200 KB → `DOCUMENT_TOO_LARGE`; tải tệp thứ 31 → `DOCUMENT_LIMIT_REACHED` (giới hạn 30 tài liệu mỗi project).
+- [ ] Tải tệp có dòng `api_key = ...` → cảnh báo dòng số mấy, KHÔNG hiện giá trị; kiểm prompt gửi AI không chứa giá trị (che trước khi gửi).
+- [ ] Tải lại tệp trùng tên → bản cũ bị thay, luật từ bản cũ chuyển "Lỗi thời".
+- [ ] "Chạy thử (0 token)" → khung giám sát hiện số lô, ước tính token; sổ token không đổi.
+- [ ] **[TỐN TOKEN AI THẬT]** Hộp thoại "Sinh test case" → tick "+ AI bổ sung checklist nghiệp vụ" (có tài liệu, "AI gợi ý thêm" tắt) với ngân sách 20.000 → job xong, luật ở "Chờ duyệt", mỗi luật có đoạn trích; "Xem trong tài liệu" tô sáng đúng đoạn.
+- [ ] Ngân sách quá nhỏ (5.000) → dừng ngay, lý do "chạm ngân sách", không gọi AI.
+- [ ] Hai job cùng project → job thứ hai bị từ chối (409); bấm "Sinh test từ luật" khi có job đang chạy → 409.
+
+**Duyệt luật**
+- [ ] Luật GIẢ ĐỊNH (không trích dẫn): nút Duyệt mở hộp thoại bắt chọn mã lỗi 400-499; API duyệt không kèm mã → 409.
+- [ ] "Duyệt N luật có trích dẫn": mặc định không tick sẵn; luật GIẢ ĐỊNH và luật mâu thuẫn spec không nằm trong danh sách.
+- [ ] Sửa một luật có trích dẫn → trích dẫn bị bỏ, nguồn thành "Bạn nhập", không còn trong danh sách duyệt hàng loạt.
+- [ ] Công tắc "Đo thời gian duyệt" mặc định TẮT; bật thì hiện dòng thông báo công khai; duyệt/loại/sửa → banner tăng số quyết định; xuất JSON không có id luật hay nội dung.
+
+**Test từ luật và bắt lỗi**
+- [ ] Luật đã duyệt → "Sinh test từ N luật" → test có nhãn nguồn nghiệp vụ; chạy trên API chuẩn: tất cả Pass.
+- [ ] Bật `M23` (hoặc `M24`, `M25`) bằng `/__mutants` rồi chạy lại → Fail nhãn "API nhận dữ liệu vi phạm luật nghiệp vụ", độ tin CHẮC; `POST /__reset` để tắt.
+- [ ] Sinh lại test của luật đã có bug report → test có bug report được giữ lại, không bị xoá.
+
+**Probe tất định và quy ước API**
+- [ ] Hộp thoại "Sinh test case": nhóm "OWASP probe (0 token)" mặc định tắt; bật → có thêm test "JSON cú pháp hỏng" (kỳ vọng 400), "Content-Type sai" (415), "phương thức TRACE" (405). Chạy trên API chuẩn: Pass; request TRACE thật sự được gửi (không phải DELETE).
+- [ ] Hộp thoại Xác thực → "Mã API trả khi thiếu hoặc sai token" = 403 → test Security "thiếu token" trên API trả 403 chuyển Pass; test khác (vd sai mật khẩu đăng nhập) không bị nới.
+- [ ] Import spec có `security` toàn cục và `/auth/login` không khai `security: []` → endpoint đăng nhập được coi là công khai (có ca "sai mật khẩu", không có ca "thiếu token").
+
+**Đo đạc (chạy lại số liệu báo cáo, 0 token trừ khi ghi khác)**
+- [ ] `python scripts/eval-mutants.py --config A --runs 2 --include-heldout` → khớp số đã đo (phát hiện 21/42 dev, 3/15 held-out, Fail giả 1,5%; gán đúng 6/57).
+- [ ] `cd mutant-shop && python oracle.py` → 15/15; `python scripts/eval-shop-mutants.py --runs 2 --unauthenticated-status 403` → khớp số đã đo (gán đúng 1/15, phát hiện 73%).
+
+## 17. Luồng "test gốc Pass → AI lập checklist → duyệt → sinh test" theo từng endpoint (thêm 2026-10-26, G3.6-G3.12)
+
+*Cần: hệ thống đang chạy; API đích có thật. Mục **[TỐN TOKEN AI THẬT]** chỉ khi bỏ tick "Chạy thử". Tài khoản trên API đích phải đúng vai trò và đủ điều kiện nghiệp vụ (vd HR đã có công ty) nếu không test gốc sẽ không Pass.*
+
+**Hộp thoại và trang chính của lần sinh test**
+- [ ] Hộp thoại "Sinh test case" (1 endpoint): có "+ AI bổ sung checklist nghiệp vụ"; KHÔNG có ô "ngân sách checklist" riêng (chỉ "Trần token AI của lần chạy"); KHÔNG có "Chọn tài liệu riêng cho từng endpoint" (chỉ hiện khi chọn từ 2 endpoint).
+- [ ] Chọn nhiều endpoint → "Chọn tài liệu riêng cho từng endpoint" → bỏ 1 endpoint khỏi 1 tài liệu → dòng "Áp dụng cho x/N endpoint"; endpoint không có tài liệu → khung vàng cảnh báo; ước tính token đổi theo phân công.
+- [ ] Bấm "Bắt đầu sinh" → tự mở `/projects/:id/jobs/:jobId` (KHÔNG còn khung job nhỏ nổi ở góc): thanh 4 bước, thẻ "Việc bạn cần làm tiếp", tiến trình chi tiết.
+- [ ] Chạy thử → thẻ "Đây là lần chạy thử", không tạo checklist, sổ token không đổi.
+- [ ] **[TỐN TOKEN AI THẬT]** Endpoint chưa có test gốc → AI sinh, chạy thật, Pass, khoá; sau đó AI lập checklist; checklist CHỈ lập cho endpoint đã có test gốc Pass (endpoint chưa có → bước giám sát nói rõ).
+- [ ] Nếu AI không đề xuất mục nào: khung "AI lập checklist nghiệp vụ" nêu lý do (trùng spec, câu hỏi...), không báo lỗi.
+
+**Màn duyệt (chip "Checklist" trên dòng endpoint; KHÔNG có tab Checklist chung)**
+- [ ] Mở `/projects/:id/rules` không kèm endpoint → hướng dẫn "checklist thuộc từng endpoint", link về danh sách.
+- [ ] Hiện cả "Checklist của hệ thống" (tick từng mục, mục chưa sinh được gom 1 dòng lý do) và checklist AI; nút cuối "Sinh test từ checklist đã duyệt (x hệ thống + y AI)".
+- [ ] Mục GIẢ ĐỊNH có chip "AI gợi ý 400": "Xác nhận 400" duyệt ngay, "Đổi mã…" mở hộp thoại điền sẵn; mã gợi ý KHÔNG có hiệu lực khi chưa xác nhận.
+- [ ] "Duyệt hàng loạt": mục có trích dẫn không tick sẵn; mục GIẢ ĐỊNH chỉ duyệt khi tick và có mã 4xx riêng; mã sai → bị bỏ qua kèm lý do. "Hoàn tác" (10 giây) đưa về "Chờ duyệt"; đã sinh test rồi thì hoàn tác bị từ chối.
+- [ ] Bấm sinh test → tự chuyển sang tab Test case (lọc theo endpoint) với thẻ "Bước 4 hoàn tất: đã sinh N test" và nút "Chạy N test vừa sinh" (có tuỳ chọn dọn dữ liệu).
+- [ ] Câu hỏi "AI cần bạn làm rõ": nhập câu trả lời → "Gửi N câu trả lời cho AI" → job mới chỉ lập lại checklist (không sinh lại test gốc, không đổi phạm vi test của endpoint), mục mới có nhãn "Từ chỉ dẫn".
+- [ ] Thẻ mẫu khi thêm/sửa mục: ví dụ ghép từ field của endpoint đang chọn; mẫu không có field phù hợp bị mờ kèm lý do.
+
+**Tài liệu**
+- [ ] Tab "Tài liệu": danh sách, đọc nội dung, "Tài liệu này viết cho:" chọn endpoint; bảng "đã gửi cho AI" theo tài liệu/theo endpoint; chip "Đã dùng cho N endpoint".
+- [ ] Tài liệu khai báo viết cho endpoint X: sinh test cho X → tick sẵn; sinh cho endpoint khác → bỏ tick; tài liệu chung vẫn tick.
+- [ ] Gán quá 8 tài liệu cho 1 endpoint trong 1 lần sinh → bị từ chối.
+
+**Tham số đường dẫn `{id}`**
+- [ ] Endpoint có `{id}`, chưa có dữ liệu → bước DISCOVER_ID thử GET danh sách (0 token); danh sách rỗng → bước CREATE_RESOURCE cho AI sinh + chạy thật POST tạo tài nguyên (chỉ khi đã xác nhận ghi thật và body JSON; tối đa 2 cấp); cả hai thất bại → NEEDS_HUMAN kèm danh sách đã thử.
+- [ ] POST tạo tài nguyên là tải tệp (multipart) → không thử tạo, nói rõ lý do.
+- [ ] API trả 404 `*_NOT_FOUND` ở endpoint không có tham số (vd HR chưa có công ty) → dừng ngay "thiếu dữ liệu tiên quyết", KHÔNG để AI sửa tốn token.
+- [ ] Test POST nháp chưa bao giờ Pass KHÔNG được dùng làm nguồn nối chuỗi; thông báo "test nguồn chưa Pass" nêu đúng nguyên nhân.
+- [ ] Test gốc mới được khoá → test gốc nháp cũ của endpoint bị dọn (trừ test đang là nguồn nối chuỗi).
+- [ ] Tab Test case: test là nguồn của test khác có chip "Được N test dùng"; bấm → danh sách test phụ thuộc, lấy gì từ đâu.
+
+**Khác**
+- [ ] Trang Project: ô tìm kiếm + phân trang 12 project/trang khi có hơn 12 project.
+
 ## Kết quả lần chạy thật gần nhất (2026-10-15, qua Docker + shop-api-target thật)
 
 **Đã verify OK:** login/register, project CRUD + ownership check, coverage API (schemaReadable/provenance/boundary thật hoạt động đúng trên dữ liệu thật), dashboard summary, admin users/audit-log + role enforcement (403 đúng cho non-admin), history feed, bug reports list, execution thật end-to-end khi `targetBaseUrl` đúng môi trường, backend 212/212 unit test, frontend build/tsc sạch.

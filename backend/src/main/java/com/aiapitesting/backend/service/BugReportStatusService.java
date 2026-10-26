@@ -59,9 +59,23 @@ public class BugReportStatusService {
         }
     }
 
+    private static boolean isSpecDeviationBug(BugReport bug) {
+        return bug.getSourceTestResult() != null && bug.getSourceTestResult().getStatus() == TestResultStatus.PASSED;
+    }
+
     private boolean applyRule(BugReport bug, TestResult result) {
         TestResultStatus status = result.getStatus();
         if (status == TestResultStatus.PASSED) {
+            // 17q G1 - bug "lệch spec" sinh từ 1 lần chạy PASS: lần Pass mới mà vẫn còn lệch spec không có nghĩa là đã sửa.
+            if (isSpecDeviationBug(bug) && result.getSpecDeviationsJson() != null) {
+                if (bug.getStatus() == BugStatus.CLOSED) {
+                    bug.setStatus(BugStatus.REOPENED);
+                    bug.setPendingCloseSuggestion(false);
+                    appendNote(bug, "[hệ thống] Tự động chuyển sang Reopened do lần chạy mới vẫn lệch spec");
+                    return true;
+                }
+                return false;
+            }
             if (ELIGIBLE_FOR_CLOSE_SUGGESTION.contains(bug.getStatus()) && !bug.isPendingCloseSuggestion()) {
                 bug.setPendingCloseSuggestion(true);
                 appendNote(bug, "[hệ thống] Gợi ý đóng do có lần chạy mới Pass, chờ xác nhận");
@@ -71,6 +85,10 @@ public class BugReportStatusService {
         }
 
         // status == FAILED
+        // 17q G1 - bug "lệch spec" nói về mã thành công; 1 lần Fail (vd 500) là chuyện khác, không phải bằng chứng lệch spec quay lại.
+        if (isSpecDeviationBug(bug)) {
+            return false;
+        }
         if (bug.getStatus() == BugStatus.CLOSED) {
             if (testEditedSinceBug(bug, result)) {
                 // Test đã được sửa kể từ lần chạy sinh ra bug: Fail này có thể do chính lần sửa, không đủ bằng chứng để mở lại.

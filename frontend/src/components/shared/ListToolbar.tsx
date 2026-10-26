@@ -18,6 +18,8 @@ export interface ListFilterSelect {
 }
 
 interface ListToolbarProps {
+  /** true = chỉ hiện bộ lọc, không có ô tìm kiếm (danh sách không có gì để tìm theo chữ). */
+  hideSearch?: boolean
   searchValue: string
   onSearchChange: (value: string) => void
   searchPlaceholder: string
@@ -34,6 +36,7 @@ interface ListToolbarProps {
 
 /** Thanh tìm kiếm + bộ lọc dùng chung cho các danh sách lớn (Endpoint, Test case, Coverage, Kết quả chạy). */
 export function ListToolbar({
+  hideSearch = false,
   searchValue,
   onSearchChange,
   searchPlaceholder,
@@ -51,6 +54,7 @@ export function ListToolbar({
       className={cn("flex flex-wrap items-center gap-2", className)}
       onSubmit={(event) => event.preventDefault()}
     >
+      {!hideSearch && (
       <div className="relative min-w-[14rem] flex-1">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <Input
@@ -63,6 +67,7 @@ export function ListToolbar({
           className="pl-8"
         />
       </div>
+      )}
       {selects.map((select) => (
         <select
           key={select.key}

@@ -1,7 +1,25 @@
 # Đánh giá độ chính xác bằng lỗi cài sẵn (Module 17o)
 
-*Đo ngày 2026-10-21. Mọi con số dưới đây được sinh từ file kết quả JSON trong `docs/eval/` bằng `scripts/eval/make-report-tables.py`,
-chạy lại được (xem mục 8). Nếu một con số ở đây khác file JSON thì file JSON là đúng.*
+*Đo ngày 2026-10-21, đo lại trên hệ thống mới ngày 2026-10-26. Mọi con số dưới đây chạy lại được bằng các lệnh ở mục 8.*
+
+## 0. Đọc trước: bộ số liệu nào là bộ chuẩn của báo cáo
+
+Tài liệu này được viết nhiều đợt, nên có 3 bộ số cùng tồn tại. **Bộ chuẩn để trích trong báo cáo là mục 7B** (42 lỗi dev + 15 lỗi held-out, đo 2026-10-26); các mục 1-6 là phép đo gốc ngày 2026-10-21 trên 27 lỗi đầu tiên và giữ lại để thấy quá trình, không dùng làm số cuối.
+
+| Bộ | Mẫu số | Ngày | A (đúng nhãn / phát hiện) | B | Fail giả A |
+|---|---|---|---|---|---|
+| Mục 1-6 (gốc) | 27 lỗi M01-M27 | 2026-10-21 | 4 / 14 | 3-4 / 17 | 4,3% |
+| Cùng 27 lỗi, đo lại sau G1-G4 | 27 lỗi M01-M27 | 2026-10-26 | 4 / 15 | 4 / 18 | 1,5% |
+| **Mục 7B (chuẩn)** | 42 lỗi dev M01-M42 | 2026-10-26 | 5 / 21 | 5 / 25 | 1,5% |
+| **Mục 7B (chuẩn)** | 15 lỗi held-out H01-H15 | 2026-10-26 | 1 / 3 | 1 / 6 | (cùng bản chuẩn) |
+
+**Đo lại ngày 2026-10-26 trên hệ thống mới (57 lỗi) cho đúng các số của dòng "Mục 7B" ở trên:** dev A 5/21 và B 5/25, held-out A 1/3 và B 1/6, Fail giả A 1,5%; B tốn 96.342 token mỗi lượt (289.025 cho 3 lượt), Fail giả B 18,8%.
+
+Thay đổi từ 14 lên 15 và từ 4,3% xuống 1,5% nhiều khả năng do các cải tiến G1-G4 (luật lệch spec 2xx, nhãn độ tin, probe độ bền) và sửa nhận diện đăng nhập; chưa tách riêng đóng góp từng thay đổi.
+
+**Hai thuật ngữ, không được lẫn:** **"phát hiện"** = có ít nhất 1 test Pass trên bản chuẩn chuyển Fail khi bật đúng 1 lỗi (kể cả khi nhãn nguyên nhân chưa chắc); **"đúng nhãn"** = test Fail đó được gán nhãn nguyên nhân là lỗi của API. Độ lệch chuẩn bằng 0 ở cấu hình A vì A tất định (cùng đầu vào cho cùng kết quả), **không phải bằng chứng thống kê**.
+
+**Các đe doạ ảnh hưởng tới MỌI số liệu cuối (tóm tắt, chi tiết ở mục 7, 7A, 7B):** (1) mutant và API do nhóm tự viết, nhỏ; (2) bộ held-out do AI cùng họ viết, không độc lập hoàn toàn, và H10 đã được dùng để sửa bộ sinh test nên không còn là mẫu ngoài tập; (3) người gán nhãn luật là người phát triển hệ thống; (4) cỡ mẫu nhỏ (15 lỗi held-out, 5 luật khác nhau); (5) chưa đo với người duyệt thật (E2) và chưa có API của bên thứ ba.
 
 ## 1. Câu hỏi và trả lời ngắn
 
@@ -57,7 +75,7 @@ Môi trường: model `claude-sonnet-5`, 11 file prompt (hash `92e2dbe9a6970e46`
 
 ## 3. Kết quả
 
-*(Các bảng dưới đây do `scripts/eval/make-report-tables.py` sinh trực tiếp từ `results-A-run12.json` và `results-B-merged.json`.)*
+*(Các bảng dưới đây sinh trực tiếp từ kết quả của cấu hình A, 2 lượt, và cấu hình B, 3 lượt.)*
 
 ### Tổng quan theo cấu hình
 
@@ -150,7 +168,7 @@ Nguyên nhân Fail giả trên bản chuẩn - C - chỉ AI nghiệp vụ (xấp
 
 Môi trường đo: model `claude-sonnet-5`, 11 file prompt (hash 92e2dbe9a6970e46), commit 7cd347a111 (có thay đổi chưa commit), ngày 2026-10-21.
 
-### So sánh với Schemathesis 4.32.2 (`docs/eval/schemathesis-2026-10-21.json`)
+### So sánh với Schemathesis 4.32.2
 
 Cùng `mutant-api`, cùng 27 mutant, `--max-examples 25 --seed 1`, 1 token HR. Schemathesis tự báo vài lỗi ngay trên bản chuẩn (15 cặp (thao tác, mã lỗi) trên bản chuẩn, chủ yếu phản hồi không khớp spec) nên mutant chỉ tính là
 phát hiện khi có lỗi **mới** (thao tác, mã) so với baseline gồm 2 lượt bản chuẩn (seed 1 và 2, đều 15 lỗi).
@@ -226,7 +244,143 @@ Ghi lại vì đây là bằng chứng phép đo đã được kiểm tra chứ 
 - **Mô phỏng gán profile thủ công** che một lỗi của hệ thống (mục 6.4); số đo "hiện trạng" khi không gán sẽ thấp hơn cho endpoint ứng viên.
 - **Schemathesis chỉ chạy cấu hình mặc định**, không tinh chỉnh; so sánh mang tính tham khảo.
 - **Chưa đo trên API thật** (`ai-recruitment-agent`, 110 endpoint) để lấy tỉ lệ Fail giả ngoài đời, và chưa đo độ bao phủ theo từng tập con spec lớn. Đã có số thực địa từ trước (roadmap 17h/17n), không phải đo của đợt này.
-- **E2** (thời gian người duyệt test AI) và **E4** (quay demo) **chưa làm**, cần người thật: mẫu đo ở `docs/eval/E2-do-thoi-gian-duyet.md`.
+- **E2** (thời gian người duyệt test AI) và **E4** (quay demo) **chưa làm**, cần người thật (đã có mẫu phiếu đo thời gian duyệt).
+
+## 7A. Có tổng quát hoá sang hệ thống khác không? Đo trên hệ thống thứ hai (2026-10-25)
+
+**Câu hỏi:** checklist tất định (EP/BVA, Security, probe OWASP, 0 token) có cho kết quả chuẩn trên các hệ thống khác nhau không, hay chỉ tốt trên API tuyển dụng nhóm tự viết?
+
+**Cách đo.** Cùng khung đo (`scripts/eval-mutants.py`, cấu hình A, 2 lượt) trên 2 hệ thống: (1) `mutant-api` tuyển dụng (10 endpoint, 42 lỗi cài sẵn M01-M42, bộ phát triển); (2) `mutant-shop` (bản sao của `shop-api-target`: Spring, JWT, 7 endpoint, 15 lỗi cài sẵn S01-S15). Mỗi lỗi lật đúng 1 hành vi và có oracle kiểm riêng (mutant-shop: `mutant-shop/oracle.py`, 15/15). Test gốc do người viết (10 test cho tuyển dụng, 7 cho cửa hàng); phần còn lại do hệ thống tự bù. Giả thuyết "checklist có thể bắt lỗi này không" (`expectChecklist`) được ghi vào danh mục TRƯỚC khi đo.
+
+| | mutant-api (tuyển dụng) | mutant-shop (cửa hàng) |
+|---|---|---|
+| Số endpoint / số test chạy | 10 / 198 | 7 / 108 |
+| Lỗi bắt được và gán đúng nhãn lỗi API | 5/42 = 12% | 1/15 = 7% |
+| Lỗi có ít nhất 1 test Pass→Fail (phát hiện, kể cả chưa dám kết luận) | 21/42 = 50% | 9/15 = 60% |
+| **Fail giả trên bản chuẩn** | **1,5%** | **24,1%** (26/108) |
+| Token AI | 0 | 0 |
+
+**Kết luận có căn cứ.**
+- Khả năng bắt lỗi theo loại **nhất quán giữa 2 hệ thống**: validation và status code thường được phát hiện (100% và 56-100%), lỗi nghiệp vụ và lỗi trạng thái nhiều bước không bao giờ bị bắt bởi checklist (0/6 + 0/3 + 0/1). Đây là phân chia mà thiết kế dự kiến, và nó lặp lại ở hệ thống thứ hai.
+- Giả thuyết đặt trước đúng 13/15 trên mutant-shop: 4/4 lỗi dự đoán "checklist không bắt được" đều lọt; 9/11 lỗi dự đoán "bắt được" được bắt. 2 lỗi dự đoán sai là S12 (GET không cần token) và S13 (đăng nhập nhận mọi mật khẩu).
+- Probe độ bền request lỗi định dạng (G4) bắt được S15 (JSON hỏng trả 500 thay vì 400), có gán đúng nhãn `HTTP_ROBUSTNESS`; đây là lỗi duy nhất trên hệ thống này được gán đúng.
+
+**Điều đo được là KHÔNG chuẩn trên mọi hệ thống: tỉ lệ Fail giả.** Trên hệ thống thứ hai, 26/108 test Fail ngay trên bản chuẩn (24,1% so với 1,5%). Nguyên nhân (đếm trên 1 lượt):
+
+| Nguyên nhân | Số test | Bản chất |
+|---|---|---|
+| Security "thiếu token / token sai" kỳ vọng 401, API trả **403** | 12 | quy ước của API khác giả định mặc định của checklist |
+| Mục biên ngầm (name rỗng, price -1, stock -1, int32 nhỏ nhất) kỳ vọng thành công, API từ chối 400 | 8 | spec không khai ràng buộc, checklist đoán là hợp lệ |
+| Security trên endpoint đăng nhập (công khai) kỳ vọng 401, API trả 200 | 2 | endpoint đăng nhập không cần token |
+| Probe Content-Type sai kỳ vọng 415, API trả 403 | 2 | API này trả 403 cho mọi lỗi đi qua `/error` (đã ghi trong mã nguồn của nó) |
+| Thiếu tham số query bắt buộc kỳ vọng 400, API trả 403 | 2 | cùng quy ước 403 |
+
+**Hệ quả quan trọng:** các test Fail trên bản chuẩn bị loại khỏi bằng chứng (chỉ test Pass trên bản chuẩn mới được tính). Vì vậy test Security "thiếu token" của `GET /api/products/{id}` bị loại và lỗi S12 lọt. Nói cách khác, **sự khác biệt về quy ước 401/403 làm mất luôn khả năng phát hiện lỗi xác thực** trên hệ thống thứ hai. Với S13 (đăng nhập nhận mọi mật khẩu), trong các test Pass trên bản chuẩn không có test sai-mật-khẩu nào; chưa điều tra sâu nguyên nhân (nghi ngờ nhận diện endpoint đăng nhập theo tên field, hệ thống này dùng `username` thay vì `email`).
+
+**Phạm vi đo được (nói rõ để không suy rộng):**
+- Đo trên 2 hệ thống chạy được tại chỗ. Các hệ thống đã thử trước đó (thư viện sách Basic Auth/form, Swagger 2.0 XML, xác thực query string) chỉ có kết quả "import và chạy được, phân loại Fail hợp lý" trong roadmap 17h, chưa có số đo Fail giả hay phát hiện lỗi, vì không còn ứng dụng đích chạy lại được trong repo.
+- Cả 2 hệ thống đều là Spring Boot do nhóm tự viết hoặc chọn; chưa có API của bên thứ ba (Node, .NET, quy ước lỗi khác).
+- Cỡ mẫu nhỏ: 15 và 42 lỗi, 2 lượt; số liệu A tất định nên 2 lượt cho kết quả giống hệt, không phải bằng chứng thống kê.
+- Lỗi trên mutant-shop do chính tác giả viết sau khi biết checklist hoạt động thế nào; giả thuyết đặt trước giảm nhưng không loại bỏ thiên lệch.
+
+**Số token dùng để ra các số liệu trên: 0.** Kiểm bằng sổ CSDL của hệ thống chính (mọi người dùng) trước và sau từng lần đo: tổng `test_generation_events.total_tokens` = 654.968 và tổng `generation_jobs.tokens_used` = 225.406 ở cả hai thời điểm; số dòng sổ 71 và 34 không đổi. Cấu hình A không gọi AI (job loại SYSTEM).
+
+**Đã sửa sau phát hiện này (2026-10-25): quy ước API theo project.** Người dùng khai "API này trả 403 khi thiếu/sai token" (Cài đặt xác thực của project, hoặc `PUT /projects/{id}/api-conventions`). Quy ước chỉ áp dụng cho test cố ý bỏ hoặc làm sai token và kỳ vọng 401; test khác (vd sai mật khẩu đăng nhập) và mã khác 403 vẫn so khớp như thường, và API không chặn (200) vẫn Fail. Đo lại trên mutant-shop với quy ước 403, 2 lượt, 0 token:
+
+| mutant-shop | Chưa khai quy ước | Khai 403 |
+|---|---|---|
+| Fail giả trên bản chuẩn | 26/108 = 24,1% | 14/108 = 13,0% |
+| Lỗi được phát hiện | 9/15 = 60% | 10/15 = 67% |
+| Lỗi xác thực (S12 GET không cần token) | không phát hiện | **phát hiện** |
+
+14 Fail còn lại: 8 là mục biên ngầm (spec không khai ràng buộc nhưng API từ chối giá trị âm/rỗng). Chúng không hẳn là Fail giả: nội dung mục đã ghi "API trả 400 nghĩa là spec khai thiếu ràng buộc hoặc API có lỗi", tức là bất đồng thật giữa spec và API. 6 còn lại do quy ước "403 cho mọi lỗi framework" của API này và endpoint đăng nhập công khai; chưa có cấu hình cho 2 nhóm này. Lỗi S13 (đăng nhập nhận mọi mật khẩu) vẫn lọt. Token dùng cho lần đo lại: 0 (sổ CSDL không đổi: 654.968 / 225.406).
+
+**Lỗi tổng quát hoá thứ hai tìm ra và đã sửa (S13).** Spec của shop khai `security` toàn cục và không ghi `security: []` cho `/auth/login`, nên khi import endpoint đăng nhập bị coi là cần token. Hệ quả: (1) bỏ qua ca "sai mật khẩu → 401" (nhận diện đăng nhập yêu cầu endpoint không cần token) nên lỗi S13 lọt; (2) sinh 2 ca "thiếu token / token sai" cho chính endpoint đăng nhập, Fail giả trên bản chuẩn. Sửa: khi import, endpoint POST mang tên đăng nhập (không phải đăng ký, đăng xuất, làm mới, đặt lại mật khẩu) chỉ kế thừa security toàn cục thì coi là công khai; người dùng vẫn đổi tay được. Đo lại (2 lượt, 0 token, sổ CSDL không đổi 654.968 / 225.406):
+
+| | Chưa khai quy ước | Khai 403 | Khai 403 + sửa nhận diện đăng nhập |
+|---|---|---|---|
+| mutant-shop: Fail giả trên bản chuẩn | 26/108 = 24,1% | 14/108 = 13,0% | 13/114 = 11,4% |
+| mutant-shop: lỗi được phát hiện | 9/15 | 10/15 | **11/15 = 73%** |
+| mutant-shop: lỗi xác thực (S12, S13) | 0/2 | 1/2 | **2/2** |
+| mutant-api: phát hiện / Fail giả | 21/42, 1,5% | | 21/42, 1,5% (không đổi, không hồi quy) |
+
+Trong 13 Fail còn lại của shop, 8 là bất đồng spec-API có thật (mục biên ngầm), 5 do quy ước "403 cho lỗi framework" chưa có cấu hình.
+
+## 7B. Đo G5 (2026-10-26): trích luật bằng AI, cấu hình C và bộ held-out
+
+**Ba cấu hình so sánh, cùng API tuyển dụng (10 endpoint), cùng 10 test gốc do người viết:**
+- **A** = checklist tất định (0 token).
+- **B** = A + AI nghiệp vụ đoán thêm test (66 test/lượt, 3 lượt).
+- **C-luật** = A + test sinh tất định từ luật mà AI trích từ tài liệu SRS và người duyệt (9 test/lượt, 3 lượt). Bằng chứng chỉ tính test sinh từ luật, test gốc chỉ là bối cảnh.
+
+**Số token chính xác** (đối chiếu sổ CSDL `test_generation_events` trước/sau từng bước, trùng với tổng token các job):
+
+| Bước | Token | Dự đoán trước | Ghi chú |
+|---|---|---|---|
+| AI trích luật, 3 lượt | **42.564** (14.066 + 13.876 + 14.622) | 41.355 | +2,9%; trần cứng 25.000/lượt, không lượt nào chạm |
+| Cấu hình B, 3 lượt | **296.568** (98.593 + 98.850 + 99.125) | 278.751 | +6,4%; trần cứng 120.000/lượt |
+| **Tổng AI của G5** | **339.132** | 320.106 | +5,9%; trần cứng cộng lại 435.000 |
+| A trên dev + held-out, C, các phép đo hệ thống thứ hai | **0** | 0 | sổ không đổi |
+
+**Kết quả khả năng bắt lỗi** (số lỗi bị bắt; "đúng" = test Fail được gán đúng nhãn lỗi API, "phát hiện" = có test Pass→Fail kể cả nhãn chưa chắc; kết quả giống hệt giữa các lượt):
+
+| | A (0 token) | B (+296.568 token) | C-luật (+42.564 token) |
+|---|---|---|---|
+| Bộ phát triển M01-M42 (in-sample) | 5 đúng / 21 phát hiện | 5 / 25 | 3 / 3 |
+| Held-out chồng bộ M (H02, H06, H10, H13, H14) | 1 / 1 | 1 / 2 | 0 / 0 |
+| **Held-out MỚI** (10 lỗi) | 0 / 2 | 0 / 4 | **1 / 2** |
+| Held-out tất cả (15) | 1 / 3 | 1 / 6 | 1 / 2 |
+| Fail giả trên bản chuẩn | 1,5% | 19,8% | **0%** |
+| Test thêm mỗi lượt | 0 | 66 | 9 |
+
+**Hợp A + luật** (cùng bằng chứng, không tính B): dev 8 đúng / 24 phát hiện trên 42; held-out 2 / 5 trên 15. Chi phí thêm so với A: ≈ 14.188 token/lượt trích luật (trung bình), bằng khoảng **1/7** chi phí của B (98.856 token/lượt).
+
+**Trích luật bằng AI (3 lượt):** mỗi lượt giữ **5 luật có trích dẫn nguyên văn**, 0 luật GIẢ ĐỊNH. Đó là **cùng 5 luật khác nhau** (R24, R28, R43, R47, R66) ở cả 3 lượt, tức **5/5 luật đúng và ổn định giữa 3 lượt** (15 là số lần xuất hiện, không phải 15 mẫu độc lập), sau kiểm chứng. Trên bộ đáp án 7 luật mà 9 mẫu luật biểu diễn được (R24, R28, R43, R47, R59, R60, R66) tìm được 5, thiếu R59 và R60 (số phần tử của mảng tiêu chí): **recall 5/7 = 71%**, giống nhau ở cả 3 lượt. R73 (không nộp đơn trùng) không tính vì mẫu UNIQUE chưa được đưa vào prompt. Mỗi lượt AI đề xuất thêm 3-6 luật bị bộ kiểm chứng tất định loại vì sai tham số (tổng đề xuất 8, 8 và 11); **chưa biết lý do cụ thể từng luật bị loại** vì hệ thống chỉ ghi số lượng, và chưa rõ R59/R60 có nằm trong số đó không. Nên nói chính xác: "luật người dùng nhìn thấy đều đúng", chứ không phải "AI đề xuất đúng 100%": tỉ lệ đề xuất qua được kiểm chứng là 15/27 = 56%.
+
+**Đọc kết quả:**
+1. **AI nghiệp vụ cũ (B) đắt và nhiễu**: ≈ 99 nghìn token/lượt cho 66 test, 19,8% Fail giả (đúng như kết quả cũ 23%), và các lỗi nghiệp vụ nó phát hiện chỉ ở mức "nghi ngờ" (nhãn nguyên nhân mơ hồ), chưa lần nào được gán đúng.
+2. **Luật có người duyệt (C) gọn và chắc hơn**: 9 test, 0 Fail giả, bắt **đúng nhãn** M23, M24, M25 (dev) và H08 (held-out mới, lỗi "quên kiểm tra salaryMin ≤ salaryMax ở PUT"), cộng H09 mức nghi ngờ. Đây là lỗi mà checklist A bỏ lọt hoàn toàn.
+3. **Nhưng C chỉ bắt được lỗi vi phạm một luật có trong tài liệu và có trong mẫu**: chỉ 3/15 held-out (H08, H09, H10) vi phạm một trong 5 luật đã trích; H11 (không nộp đơn trùng, mẫu UNIQUE chưa đưa vào prompt) và H12 (máy trạng thái) nằm ngoài khả năng. H10 (tổng trọng số dùng `> 100` thay vì `!= 100`) bị **lọt** dù luật R66 đã được trích đúng, nghi do test sinh ra chỉ thử tổng lớn hơn 100; chưa điều tra (không sửa hệ thống sau khi thấy held-out).
+4. **Ba cấu hình bổ sung cho nhau chứ không thay nhau**: B không thêm lỗi nào được gán đúng so với A; C thêm đúng nhãn 4 lỗi nghiệp vụ mà A không bắt được.
+
+**Hạn chế riêng của đợt đo này (thêm vào mục 7):**
+- **Người gán nhãn luật là người phát triển hệ thống** và biết đáp án; 15 luật đều trùng đáp án nên khó thiên lệch nhưng không loại bỏ được. Không có người duyệt thứ hai.
+- **Mô phỏng người duyệt**: coi như người duyệt cẩn thận (duyệt đúng các luật đúng). Người thật có thể duyệt sai; E2 chưa đo.
+- **Held-out không hoàn toàn độc lập**: do AI cùng họ viết, rút từ cùng 86 luật chuẩn với tài liệu SRS, và 5/15 chồng bộ M. Phép đo trích luật chỉ trên một tài liệu và một hệ thống (API tuyển dụng); tài liệu do AI viết nên có thể dễ trích hơn tài liệu thật.
+- **Cỡ mẫu nhỏ** (15 lỗi held-out, 3 lượt giống hệt nhau), không có kiểm định thống kê.
+- **Cấu hình B đo lại cho kết quả gần như cũ** (Fail giả 19,8% rồi 18,8% khi đo lại trên hệ thống mới, so với 23,2%) nên số liệu B cũ vẫn đúng; thay đổi nhỏ: M09 từ bỏ lọt thành nghi ngờ, M11 từ nghi ngờ thành đúng.
+
+**Điều tra H10 (2026-10-26): vì sao test sinh từ luật R66 bỏ lọt lỗi.** Luật "tổng trọng số = 100" được trích đúng và cho đúng 1 test: đổi tổng thành 101 (`RuleTestGenerator.arrayAggregate`, nhánh `EQ`/`LTE` chỉ tạo `giá trị + 1`). Mutant H10 viết `total > 100` thay vì `total != 100`: tổng 101 vẫn bị từ chối nên test Pass, còn tổng nhỏ hơn 100 lại lọt. Tái hiện trực tiếp trên API (0 token): bản chuẩn trả 200 / 400 / 400 và H10 trả 200 / 400 / **200** cho tổng 100 / 101 / 99. Kết luận: **lỗi nằm ở bộ sinh test, không phải ở AI hay ở luật**: với luật "bằng" chỉ thử một phía vi phạm. Cùng kiểu thiếu sót có thể có ở `COUNT` (số phần tử) và ở biên "đúng bằng giá trị giới hạn" của các phép ≤ / ≥. Cách sửa dự kiến: với `EQ` sinh cả hai phía (giá trị − 1 và + 1), với `LTE`/`GTE` thêm test "đúng bằng giới hạn phải được chấp nhận".
+**Đã sửa sau đó (cùng ngày), ghi rõ là cải tiến SAU KHI thấy kết quả held-out.** `RuleTestGenerator.arrayAggregate` nay thử cả hai phía của giới hạn: luật "bằng" sinh cả tổng − 1 và + 1; luật ≤ / ≥ / < / > thêm test "sát giới hạn phía hợp lệ phải được chấp nhận" (tổng và số phần tử). Có 3 test đơn vị mới (944 test backend pass). Đo lại cấu hình C bằng đúng 5 luật AI đã trích (dựng lại dưới dạng luật nhập tay, vì bộ sinh chỉ phụ thuộc mẫu + tham số), 0 token, `docs/eval/results-C-replay-2026-10-26.json`:
+
+| C-luật (1 lượt đại diện, 3 lượt trích ra cùng 5 luật) | Trước khi sửa | Sau khi sửa |
+|---|---|---|
+| Test sinh từ luật | 9 | 10 |
+| Fail giả trên bản chuẩn | 0% | 0% |
+| Bộ dev: đúng / phát hiện | 3 / 3 (M23, M24, M25) | 3 / 3 (không đổi, không hồi quy; M25 nay do 2 test bắt thay vì 1) |
+| Held-out: đúng / phát hiện | 1 / 2 (H08) | 2 / 3 (H08, **H10**) |
+
+**Cách đọc cho đúng:** (1) bộ dev không có lỗi nào mới được bắt, nên cải tiến này chưa có bằng chứng ngoài tập; chỉ có bằng chứng là không làm hỏng và chặt hơn ở M25. (2) H10 giờ được bắt, nhưng H10 là lỗi đã dùng để phát hiện thiếu sót nên **không còn là mẫu độc lập**: không đưa vào số "held-out mới" ở bảng 7B (các bảng đó giữ nguyên số đo TRƯỚC khi sửa). (3) Chỉ 1 trong 15 lỗi held-out chịu ảnh hưởng.
+
+Đo lại ngày 2026-10-26 trên hệ thống mới: cấu hình A vẫn 6/57 (held-out 1/15); cấu hình B 6/57 đúng nhãn (như A), phát hiện 54% so với 42% của A, Fail giả 18,8%, 289.025 token cho 3 lượt (biến thể chỉ AI nghiệp vụ: 1/57, Fail giả 46,4%); cấu hình C held-out 2/15, trích luật 44.212 token cho 3 lượt. Gợi ý thường (3 lượt, chỉ từ spec): đúng 15/17 mục (88%), 11.771 token. Gợi ý rộng: đúng 15/31 mục (48%), 17.050 token.
+
+## 7C. Luồng "AI lập checklist theo từng endpoint" (2026-10-26, G3.6-G3.12): số đo và giới hạn
+
+Trên API tuyển dụng thật: 47.396 token, 1 lỗi thật (401 thay vì 400), 3/4 mục có trích dẫn nhưng đoạn trích không nêu luật. **Mỗi con số là 1-3 lượt, một API, người gán nhãn là người phát triển.**
+
+| Phép đo | Token | Kết quả |
+|---|---|---|
+| Làn "AI gợi ý thêm", chỉ spec (mutant-api), lượt đầu | 3.782 | 5/6 mục đúng, mã gợi ý 422 trong khi API trả 400 |
+| Như trên sau khi đổi prompt (mặc định 400), 3 lượt | 4.053 / 3.803 / 3.924 | 5/5 mục đúng ở cả 3 lượt, mã 400; mục sai 2, 0, 0 |
+| **Đo lại trên hệ thống mới: gợi ý thường, 3 lượt** | 3.942 / 3.938 / 3.891 | 15/17 mục đúng (88%); sai: consent → coverLetter |
+| **Đo lại: gợi ý rộng, 3 lượt** | 4.800 / 6.397 / 5.853 | 15/31 mục đúng (48%): cùng 5 luật đúng, thêm các mục sai về salaryCurrency, nhóm lương, tên tiêu chí |
+| SRS + gợi ý thêm (mutant-api) | 18.408 | 5/5 mục có trích dẫn đúng; 1 câu hỏi trùng "vấn đề mở" của SRS |
+| Trọn luồng qua giao diện (10 endpoint, SRS) | 18.209 | 5 mục duyệt → 10 test; chuẩn 11/11 Pass; M23, M24, M25 đều bị bắt |
+| **API tuyển dụng của nhóm khác, SRS thật, 22 endpoint** | 47.396 | 4 mục có trích dẫn (3 sai nghĩa), các mục GIẢ ĐỊNH và câu hỏi còn lại; **1 lỗi thật** (401 thay vì 400); không có đáp án |
+
+Ba phát hiện về sai sót của hệ thống trong lúc đo (đã sửa): (1) mã gợi ý 422 lệch với API 400 → prompt mặc định 400, mã chỉ điền sẵn; (2) một lần chạy tốn 51.892 token vì AI sửa 3 lần một lỗi nó không sửa được (API trả 404 `COMPANY_NOT_FOUND`) → dừng sớm khi 404 mã `*_NOT_FOUND` ở endpoint không có tham số, test phụ chỉ sửa tối đa 1 lần; (3) nối chuỗi vào test POST nháp chưa bao giờ Pass làm test sau bị chặn → chỉ nối vào test đã khoá hoặc đã Pass, tự dọn test nháp cũ.
+
+Giới hạn: bộ kiểm chứng trích dẫn không bắt được đoạn trích đúng chữ nhưng sai nghĩa (3/4 trên SRS thật ở lần đo lại; 2/5 ở lần đo đầu); chỉ 10 mẫu luật; chưa đo người duyệt thật (E2); prompt mã gợi ý được chỉnh sau khi thấy kết quả.
 
 ## 8. Chạy lại
 
@@ -251,6 +405,3 @@ python scripts/eval/make-report-tables.py docs/eval/results-A-run12.json docs/ev
 # 6. Schemathesis (cài trong venv riêng)
 python scripts/eval/run-schemathesis.py --st <đường dẫn st> --out docs/eval/schemathesis-2026-10-21.json
 ```
-
-File kết quả: `results-A-run12.json` (A, 2 lượt), `results-B-run1.json` + `results-B-run23.json` → `results-B-merged.json` (B và C, 3 lượt; lượt 1 được đánh giá lại bằng phương pháp đã sửa trên
-project đã sinh, 88.272 token đã tiêu trước đó), `schemathesis-2026-10-21.json`, `pilot-B-2026-10-21.json` (lần thử đốt nhầm token, giữ làm bằng chứng cho mục 5).

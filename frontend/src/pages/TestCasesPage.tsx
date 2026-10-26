@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useNavigate, useParams } from "react-router-dom"
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
+import { GeneratedResultCard } from "@/components/rules/GeneratedResultCard"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import { History, Loader2, Play, Plus } from "lucide-react"
 
@@ -76,6 +77,8 @@ export function TestCasesPage() {
 
 function TestCasesPageContent({ projectId }: { projectId: string }) {
   const navigate = useNavigate()
+  // Vừa sinh test từ màn duyệt checklist: hiện thẻ "Bước 4 hoàn tất" (chạy ngay các test vừa sinh) ở đầu trang.
+  const justGenerated = (useLocation().state as { justGenerated?: { ids: string[]; systemCount: number; aiCount: number; endpointId: string; notGenerated: { ruleId: string; sentence: string; reason: string }[] } } | null)?.justGenerated
   const queryClient = useQueryClient()
   const topRef = useRef<HTMLDivElement>(null)
   const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
@@ -87,7 +90,12 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
   })
   const { data: page, isLoading, isError, isFetching, isPlaceholderData } = useQuery({
     queryKey: ["test-cases", projectId, "page", lf.params],
-    queryFn: () => listTestCasesPage(projectId, lf.params),
+    // 17q G2 - bộ lọc chỉ còn "Kỳ vọng cần xem"; link cũ ?reliability=RELIABLE bị bỏ qua thay vì lọc ngầm.
+    queryFn: () =>
+      listTestCasesPage(projectId, {
+        ...lf.params,
+        reliability: lf.params.reliability === "NEEDS_REVIEW" ? "NEEDS_REVIEW" : undefined,
+      }),
     placeholderData: keepPreviousData,
   })
 
@@ -296,13 +304,10 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
     },
     {
       key: "reliability",
-      label: "Lọc theo độ tin cậy",
-      allLabel: "Mọi độ tin cậy",
-      value: lf.filters.reliability,
-      options: [
-        { value: "RELIABLE", label: "Đáng tin" },
-        { value: "NEEDS_REVIEW", label: "Cần xem lại" },
-      ],
+      label: "Lọc theo kỳ vọng cần xem",
+      allLabel: "Mọi test case",
+      value: lf.filters.reliability === "NEEDS_REVIEW" ? "NEEDS_REVIEW" : "",
+      options: [{ value: "NEEDS_REVIEW", label: "Kỳ vọng cần xem" }],
     },
   ]
 
@@ -312,6 +317,17 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
 
   return (
     <div ref={topRef} className={cn(selectedIds.size > 0 && "pb-20")}>
+      {justGenerated && (
+        <GeneratedResultCard
+          projectId={projectId}
+          endpointId={justGenerated.endpointId}
+          testCaseIds={justGenerated.ids}
+          systemCount={justGenerated.systemCount}
+          aiCount={justGenerated.aiCount}
+          notGenerated={justGenerated.notGenerated}
+          hideTestsLink
+        />
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold">Test Case</h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -483,6 +499,7 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
                     {group.cases.map((testCase) => (
                       <TestCaseRow
                         key={testCase.id}
+                        projectId={projectId}
                         testCase={testCase}
                         selected={selectedIds.has(testCase.id)}
                         lockPending={lockPendingIds.has(testCase.id)}

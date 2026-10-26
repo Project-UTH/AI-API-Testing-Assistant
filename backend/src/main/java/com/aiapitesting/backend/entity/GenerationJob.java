@@ -38,6 +38,7 @@ public class GenerationJob {
     public static final String TYPE_FULL = "FULL";
     public static final String TYPE_SYSTEM = "SYSTEM";
     public static final String TYPE_LEGACY = "LEGACY";
+    public static final String TYPE_RULES = "RULES";
 
     public static final String QUEUED = "QUEUED";
     public static final String RUNNING = "RUNNING";
@@ -86,6 +87,10 @@ public class GenerationJob {
     /** JSON kết quả từng endpoint [{endpointId,label,status,reason,message,tokens,filled}]. */
     @Column(columnDefinition = "TEXT")
     private String resultJson;
+
+    /** JSON {@code RulesJobResult} của pha trích checklist nghiệp vụ chạy trong job FULL/SYSTEM (job RULES cũ vẫn để ở resultJson). */
+    @Column(columnDefinition = "TEXT")
+    private String rulesResultJson;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

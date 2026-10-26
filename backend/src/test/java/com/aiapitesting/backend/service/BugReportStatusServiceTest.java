@@ -53,6 +53,33 @@ class BugReportStatusServiceTest {
     }
 
     @Test
+    void onNewTestResult_specDeviationBug_passStillDeviating_doesNotSuggestClose_butPassWithoutDeviationDoes() {
+        TestResult source = TestResult.builder().status(TestResultStatus.PASSED).specDeviationsJson("[\"lệch\"]").build();
+        BugReport bug = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.PENDING).pendingCloseSuggestion(false)
+                .sourceTestResult(source).build();
+        when(bugReportRepository.findAllByTestCase(testCase)).thenReturn(List.of(bug));
+
+        bugReportStatusService.onNewTestResult(TestResult.builder().testCase(testCase).status(TestResultStatus.PASSED)
+                .specDeviationsJson("[\"lệch\"]").build());
+        assertThat(bug.isPendingCloseSuggestion()).isFalse();
+
+        bugReportStatusService.onNewTestResult(TestResult.builder().testCase(testCase).status(TestResultStatus.PASSED).build());
+        assertThat(bug.isPendingCloseSuggestion()).isTrue();
+    }
+
+    @Test
+    void onNewTestResult_closedSpecDeviationBug_unrelatedFail_doesNotReopen() {
+        TestResult source = TestResult.builder().status(TestResultStatus.PASSED).specDeviationsJson("[\"lệch\"]").build();
+        BugReport bug = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.CLOSED).pendingCloseSuggestion(false)
+                .sourceTestResult(source).build();
+        when(bugReportRepository.findAllByTestCase(testCase)).thenReturn(List.of(bug));
+
+        bugReportStatusService.onNewTestResult(TestResult.builder().testCase(testCase).status(TestResultStatus.FAILED).build());
+
+        assertThat(bug.getStatus()).isEqualTo(BugStatus.CLOSED);
+    }
+
+    @Test
     void onNewTestResult_passedWhileNew_doesNothing() {
         BugReport bug = BugReport.builder().id(UUID.randomUUID()).status(BugStatus.NEW).pendingCloseSuggestion(false).build();
         when(bugReportRepository.findAllByTestCase(testCase)).thenReturn(List.of(bug));

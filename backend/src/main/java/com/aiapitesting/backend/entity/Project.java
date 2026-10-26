@@ -49,6 +49,13 @@ public class Project {
     private String targetBaseUrl;
 
     /**
+     * Quy ước của API đích về mã trả khi THIẾU/SAI token: null = 401 (chuẩn). Nhiều API (vd Spring Security mặc định) trả 403. Người dùng khai rõ
+     * để test Security 'thiếu token/token sai' không bị Fail giả chỉ vì khác quy ước; chỉ áp dụng cho test cố ý bỏ/làm sai token (authOverride NONE/INVALID).
+     */
+    @Column(name = "unauthenticated_status")
+    private Integer unauthenticatedStatus;
+
+    /**
      * Module 16 - thời điểm token đích được đặt/đổi/xoá gần nhất. CHỈ lưu thời điểm (không lưu/hash token - quy tắc
      * bảo mật CLAUDE.md), dùng làm bằng chứng "token đổi sau lần Pass gần nhất" khi nghi token hết hạn.
      */

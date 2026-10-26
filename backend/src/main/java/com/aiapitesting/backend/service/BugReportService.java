@@ -39,6 +39,7 @@ import com.aiapitesting.backend.repository.ProjectRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
+import com.aiapitesting.backend.service.execution.SpecStatusDeviation;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -170,13 +171,25 @@ public class BugReportService {
         TestCase testCase = result.getTestCase();
         Endpoint endpoint = testCase.getEndpoint();
 
+        if (isSpecDeviationResult(result)) {
+            // 17q G1 - test Pass nhưng mã thành công lệch spec: bug mức thấp, mô tả chênh lệch thay vì "Fail".
+            String deviation = firstSpecDeviation(result);
+            return new BugReportDraftResponse(
+                    testCase.getId(), testCase.getName(), result.getId(),
+                    ComponentRefResponse.from(endpoint),
+                    "Lệch spec: " + endpoint.getMethod() + " " + endpoint.getPath(),
+                    buildDescription(project, endpoint, testCase, result),
+                    deviation == null ? "API trả " + result.getResponseStatus() : deviation,
+                    "Mã trạng thái thành công đúng như spec khai",
+                    project.getName(), true);
+        }
         return new BugReportDraftResponse(
                 testCase.getId(), testCase.getName(), result.getId(),
                 ComponentRefResponse.from(endpoint),
                 "Fail: " + testCase.getName(),
                 buildDescription(project, endpoint, testCase, result),
                 null, null,
-                project.getName());
+                project.getName(), false);
     }
 
     /**
@@ -205,7 +218,13 @@ public class BugReportService {
         sb.append("3. Kiểm tra status code và nội dung response.\n\n");
 
         sb.append("Kết quả mong đợi:\n");
-        sb.append("Status code: ").append(testCase.getExpectedStatus());
+        if (isSpecDeviationResult(result)) {
+            // 17q G1 - kỳ vọng của test có thể đã bị đổi theo mã API trả: mốc đúng ở đây là mã spec khai, không phải expectedStatus.
+            sb.append("Status code thuộc các mã thành công spec khai: ").append(SpecStatusDeviation.declaredSuccessCodes(
+                    SpecStatusDeviation.declaredStatusCodes(endpoint.getSchema())));
+        } else {
+            sb.append("Status code: ").append(testCase.getExpectedStatus());
+        }
         for (AssertionResultResponse a : assertions) {
             sb.append("\n- ").append(a.jsonPath()).append(" ").append(a.operator());
             if (a.operator() != AssertionOperator.EXISTS && a.expectedValue() != null) {
@@ -217,6 +236,12 @@ public class BugReportService {
         sb.append("Kết quả thực tế:\n");
         sb.append("Status code: ")
                 .append(result.getResponseStatus() == null ? "không xác định" : result.getResponseStatus());
+        if (isSpecDeviationResult(result)) {
+            String deviation = firstSpecDeviation(result);
+            if (deviation != null) {
+                sb.append(" (").append(deviation).append(")");
+            }
+        }
         for (AssertionResultResponse a : assertions) {
             sb.append("\n- ").append(a.jsonPath()).append(" → thực tế \"")
                     .append(a.actualValue() == null ? "—" : a.actualValue())
@@ -277,6 +302,10 @@ public class BugReportService {
         if (bugReportRepository.existsBySourceTestResultId(sourceResult.getId())) {
             throw new InvalidRequestException("Lần chạy này đã có Bug Report rồi");
         }
+        if (isSpecDeviationResult(sourceResult)
+                && bugReportRepository.existsOpenSpecDeviationBug(sourceResult.getTestCase().getEndpoint(), BugStatus.CLOSED)) {
+            throw new InvalidRequestException("Endpoint này đã có Bug Report lệch spec đang mở");
+        }
         User currentUser = currentUserService.getCurrentUser();
         BugReport bug = buildAndSaveBugReport(project, sourceResult, currentUser,
                 request.summary(), request.testEnvironment(), request.stepsToReproduce(),
@@ -334,7 +363,7 @@ public class BugReportService {
             if (!firstResultOfTestCase
                     || result.getStatus() != TestResultStatus.FAILED || bugReportRepository.existsBySourceTestResultId(result.getId())
                     || isUnreliableFailure(result)
-                    || bugReportRepository.existsByTestCaseAndStatusNot(result.getTestCase(), BugStatus.CLOSED)) {
+                    || bugReportRepository.existsOpenFailBugForTestCase(result.getTestCase(), BugStatus.CLOSED)) {
                 skipped++;
                 continue;
             }
@@ -491,13 +520,33 @@ public class BugReportService {
                 .orElseThrow(() -> new BugReportNotFoundException("Không tìm thấy Bug Report với id đã cho"));
     }
 
+    /**
+     * Lần chạy dùng làm nguồn Bug Report: Fail, hoặc (17q G1) Pass nhưng có cảnh báo mã thành công lệch spec - chỉ tạo THỦ CÔNG,
+     * không vào luồng sinh hàng loạt (mỗi test dương cùng endpoint sẽ thành 1 bug trùng).
+     */
     private TestResult getOwnedFailedTestResult(Project project, UUID testResultId) {
         TestResult result = testResultRepository.findByIdAndTestCaseEndpointProject(testResultId, project)
                 .orElseThrow(() -> new TestResultNotFoundException("Không tìm thấy lần chạy với id đã cho"));
-        if (result.getStatus() != TestResultStatus.FAILED) {
-            throw new InvalidRequestException("Chỉ tạo Bug Report từ lần chạy có kết quả Fail");
+        if (result.getStatus() != TestResultStatus.FAILED && !isSpecDeviationResult(result)) {
+            throw new InvalidRequestException("Chỉ tạo Bug Report từ lần chạy có kết quả Fail hoặc có cảnh báo lệch spec");
         }
         return result;
+    }
+
+    private static boolean isSpecDeviationResult(TestResult result) {
+        return result.getStatus() == TestResultStatus.PASSED && result.getSpecDeviationsJson() != null;
+    }
+
+    /** Câu cảnh báo lệch spec đầu tiên của lần chạy (dùng làm tóm tắt bug), null nếu không có. */
+    private String firstSpecDeviation(TestResult result) {
+        try {
+            List<String> deviations = objectMapper.readValue(result.getSpecDeviationsJson(),
+                    new TypeReference<List<String>>() {
+                    });
+            return deviations.isEmpty() ? null : deviations.get(0);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void appendNote(BugReport bug, String line) {

@@ -80,7 +80,7 @@ function render() {
   const mutantHtml = Object.entries(groups).map(([label, items]) =>
     "<h2>" + label + "</h2>" + items.map((m) =>
       '<label class="item' + (enabled.has(m.id) ? " on" : "") + '"><input type="checkbox" data-id="' + m.id + '"' + (enabled.has(m.id) ? " checked" : "") + ">" +
-      '<span class="id">' + m.id + '</span><span class="desc">' + m.description + (m.inReport === false ? '<span class="badge">bổ sung, chưa đo</span>' : "") + '<div class="ep">' + m.endpoint + "</div></span></label>"
+      '<span class="id">' + m.id + '</span><span class="desc">' + m.description + (m.heldout ? '<span class="badge">held-out G5</span>' : m.inReport === false ? '<span class="badge">bổ sung, chưa đo</span>' : "") + '<div class="ep">' + m.endpoint + "</div></span></label>"
     ).join("")
   ).join("");
   const byEndpoint = {};

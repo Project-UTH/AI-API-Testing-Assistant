@@ -8,7 +8,7 @@ import java.util.Map;
  * Đường dẫn tới field trong body JSON: {@code a} (cấp gốc), {@code a.b} (object lồng), {@code items[0].sku} (phần tử đầu của mảng object).
  * Khoá phẳng có sẵn trong map (kể cả khi tên chứa dấu chấm) luôn được ưu tiên để spec phẳng giữ nguyên hành vi.
  */
-final class BodyPath {
+public final class BodyPath {
 
     private BodyPath() {
     }
@@ -29,7 +29,7 @@ final class BodyPath {
         return dot < 0 ? null : path.substring(0, dot);
     }
 
-    static boolean contains(Map<String, Object> root, String path) {
+    public static boolean contains(Map<String, Object> root, String path) {
         if (path != null && path.endsWith("[0]") && !root.containsKey(path)) {
             return get(root, path) != null;
         }
@@ -38,7 +38,7 @@ final class BodyPath {
     }
 
     @SuppressWarnings("unchecked")
-    static Object get(Map<String, Object> root, String path) {
+    public static Object get(Map<String, Object> root, String path) {
         if (path != null && path.endsWith("[0]") && !root.containsKey(path)) {
             Object list = get(root, path.substring(0, path.length() - 3));
             return list instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map ? l.get(0) : null;
@@ -48,7 +48,7 @@ final class BodyPath {
     }
 
     /** Gán giá trị vào object cha ĐÃ CÓ. Trả false nếu không gán được (cha vắng/khác kiểu) - không tự dựng cha để khỏi sinh body sai cấu trúc. */
-    static boolean set(Map<String, Object> root, String path, Object value) {
+    public static boolean set(Map<String, Object> root, String path, Object value) {
         Map<String, Object> holder = holderOf(root, path, true);
         if (holder == null) {
             return false;
@@ -57,7 +57,7 @@ final class BodyPath {
         return true;
     }
 
-    static void remove(Map<String, Object> root, String path) {
+    public static void remove(Map<String, Object> root, String path) {
         Map<String, Object> holder = holderOf(root, path, false);
         if (holder != null) {
             holder.remove(lastKey(path, root));

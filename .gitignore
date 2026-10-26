@@ -1,3 +1,5 @@
 node_modules/
 .env
 .schemathesis/
+mutant-shop/target/
+__pycache__/

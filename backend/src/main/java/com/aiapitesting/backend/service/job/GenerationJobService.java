@@ -7,10 +7,12 @@ import com.aiapitesting.backend.dto.response.BaselineResponse;
 import com.aiapitesting.backend.dto.response.CoverageFillResponse;
 import com.aiapitesting.backend.dto.response.GenerateTestCasesResponse;
 import com.aiapitesting.backend.dto.response.GenerationJobResponse;
+import com.aiapitesting.backend.dto.response.RulesJobResult;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.GenerationJob;
 import com.aiapitesting.backend.entity.GenerationJobStep;
 import com.aiapitesting.backend.entity.Project;
+import com.aiapitesting.backend.entity.RequirementDocument;
 import com.aiapitesting.backend.exception.ExecutionInProgressException;
 import com.aiapitesting.backend.exception.GenerationJobNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
@@ -19,7 +21,9 @@ import com.aiapitesting.backend.repository.GenerationJobRepository;
 import com.aiapitesting.backend.repository.GenerationJobStepRepository;
 import com.aiapitesting.backend.service.CoverageGapFillService;
 import com.aiapitesting.backend.service.ProjectService;
+import com.aiapitesting.backend.service.rule.RequirementDocumentService;
 import com.aiapitesting.backend.service.ai.BaselineVerificationService;
+import com.aiapitesting.backend.service.ai.RuleExtractionService;
 import com.aiapitesting.backend.service.ai.TestCaseGenerationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +54,7 @@ public class GenerationJobService {
 
     static final int MAX_ENDPOINTS = 200;
     static final int MAX_ACTIVE_PER_USER = 3;
+    static final int MAX_INSTRUCTION_CHARS = 4000;
     private static final Set<String> ACTIVE = Set.of(GenerationJob.QUEUED, GenerationJob.RUNNING, GenerationJob.CANCELLING);
 
     private final GenerationJobRepository jobs;
@@ -60,6 +65,8 @@ public class GenerationJobService {
     private final BaselineVerificationService baseline;
     private final CoverageGapFillService gapFill;
     private final TestCaseGenerationService generation;
+    private final RuleExtractionService ruleExtraction;
+    private final RequirementDocumentService documents;
     private final Executor executor;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<UUID, Object> projectLocks = new ConcurrentHashMap<>();
@@ -67,6 +74,7 @@ public class GenerationJobService {
     public GenerationJobService(
             GenerationJobRepository jobs, GenerationJobStepRepository steps, ProjectService projectService, EndpointRepository endpointRepository,
             JobStepRecorder recorder, BaselineVerificationService baseline, CoverageGapFillService gapFill, TestCaseGenerationService generation,
+            RuleExtractionService ruleExtraction, RequirementDocumentService documents,
             @Qualifier("jobExecutor") Executor executor
     ) {
         this.jobs = jobs;
@@ -77,6 +85,8 @@ public class GenerationJobService {
         this.baseline = baseline;
         this.gapFill = gapFill;
         this.generation = generation;
+        this.ruleExtraction = ruleExtraction;
+        this.documents = documents;
         this.executor = executor;
     }
 
@@ -97,25 +107,40 @@ public class GenerationJobService {
     // ---- API ----
 
     public GenerationJobResponse start(UUID projectId, StartGenerationJobRequest request) {
-        if (request == null || request.getEndpointIds() == null || request.getEndpointIds().isEmpty()) {
+        boolean rules = request != null && request.getType() != null && GenerationJob.TYPE_RULES.equalsIgnoreCase(request.getType());
+        if (!rules && (request == null || request.getEndpointIds() == null || request.getEndpointIds().isEmpty())) {
             throw new InvalidRequestException("Phải chọn ít nhất 1 endpoint để sinh test");
         }
-        if (request.getEndpointIds().size() > MAX_ENDPOINTS) {
+        if (!rules && request.getEndpointIds().size() > MAX_ENDPOINTS) {
             throw new InvalidRequestException("Tối đa " + MAX_ENDPOINTS + " endpoint cho 1 job");
         }
         Project project = projectService.getOwnedProject(projectId);
         UUID ownerId = project.getOwner().getId();
-        List<UUID> ids = request.getEndpointIds().stream().distinct().toList();
-        List<Endpoint> found = endpointRepository.findAllById(ids);
-        if (found.size() != ids.size() || found.stream().anyMatch(e -> !projectId.equals(e.getProject().getId()))) {
-            throw new InvalidRequestException("Có endpoint không thuộc project này");
-        }
-        String type = request.getType() == null ? (ids.size() == 1 ? GenerationJob.TYPE_FULL : GenerationJob.TYPE_SYSTEM) : request.getType().toUpperCase();
-        if (!Set.of(GenerationJob.TYPE_FULL, GenerationJob.TYPE_SYSTEM).contains(type)) {
-            throw new InvalidRequestException("Loại job không hợp lệ: " + type);
-        }
-        if (!hasAnyGroup(request)) {
-            throw new InvalidRequestException("Phải chọn ít nhất 1 nhóm test để sinh (Positive/Negative/Boundary/Security)");
+        List<UUID> ids;
+        String type;
+        if (rules) {
+            type = GenerationJob.TYPE_RULES;
+            ids = rulesEndpointIds(project, request);
+            validateRulesInput(project, request);
+        } else {
+            ids = request.getEndpointIds().stream().distinct().toList();
+            List<Endpoint> found = endpointRepository.findAllById(ids);
+            if (found.size() != ids.size() || found.stream().anyMatch(e -> !projectId.equals(e.getProject().getId()))) {
+                throw new InvalidRequestException("Có endpoint không thuộc project này");
+            }
+            type = request.getType() == null ? (ids.size() == 1 ? GenerationJob.TYPE_FULL : GenerationJob.TYPE_SYSTEM) : request.getType().toUpperCase();
+            if (!Set.of(GenerationJob.TYPE_FULL, GenerationJob.TYPE_SYSTEM).contains(type)) {
+                throw new InvalidRequestException("Loại job không hợp lệ: " + type);
+            }
+            if (!hasAnyGroup(request)) {
+                throw new InvalidRequestException("Phải chọn ít nhất 1 nhóm test để sinh (Positive/Negative/Boundary/Security)");
+            }
+            if (Boolean.TRUE.equals(request.getChecklistOnly()) && !Boolean.TRUE.equals(request.getBusinessChecklist())) {
+                throw new InvalidRequestException("Chế độ chỉ lập lại checklist cần bật checklist nghiệp vụ");
+            }
+            if (Boolean.TRUE.equals(request.getBusinessChecklist())) {
+                validateRulesInput(project, request);
+            }
         }
 
         GenerationJob job;
@@ -129,13 +154,136 @@ public class GenerationJobService {
             job = jobs.save(GenerationJob.builder()
                     .projectId(projectId).ownerId(ownerId).type(type).status(GenerationJob.QUEUED)
                     .dryRun(Boolean.TRUE.equals(request.getDryRun()))
-                    .tokenCap(request.getTokenCap() == null ? 0 : Math.max(0, request.getTokenCap()))
-                    .paramsJson(toJson(request))
+                    .tokenCap(rules ? RuleExtractionService.budgetOf(request.getTokenCap())
+                            : request.getTokenCap() == null ? 0 : Math.max(0, request.getTokenCap()))
+                    .paramsJson(rules ? toJson(java.util.Map.of("type", "RULES", "allowInferred", Boolean.TRUE.equals(request.getAllowInferred()),
+                            "documentIds", request.getDocumentIds() == null ? List.of() : request.getDocumentIds())) : paramsWithoutInstruction(request))
                     .build());
         }
         UUID jobId = job.getId();
         executor.execute(() -> runJob(jobId, projectId, ids, request));
         return toResponse(job, List.of(), 0);
+    }
+
+    /** Chỉ dẫn của người dùng có thể chứa thông tin nhạy cảm: không lưu vào params của job. */
+    private String paramsWithoutInstruction(StartGenerationJobRequest request) {
+        java.util.Map<String, Object> map = objectMapper.convertValue(request, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {
+        });
+        map.remove("instruction");
+        return toJson(map);
+    }
+
+    /** Trích luật: endpoint chọn (hoặc tất cả endpoint của project nếu không chọn), bỏ endpoint đã biến mất khỏi spec. */
+    private List<UUID> rulesEndpointIds(Project project, StartGenerationJobRequest request) {
+        List<Endpoint> all = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project);
+        List<UUID> wanted = request.getEndpointIds() == null ? List.of() : request.getEndpointIds().stream().distinct().toList();
+        if (!wanted.isEmpty() && !all.stream().map(Endpoint::getId).collect(java.util.stream.Collectors.toSet()).containsAll(wanted)) {
+            throw new InvalidRequestException("Có endpoint không thuộc project này");
+        }
+        List<UUID> ids = all.stream().filter(e -> !Boolean.TRUE.equals(e.getMissingFromSpec()))
+                .map(Endpoint::getId).filter(id -> wanted.isEmpty() || wanted.contains(id)).toList();
+        if (ids.isEmpty()) {
+            throw new InvalidRequestException("Project chưa có endpoint nào để trích luật");
+        }
+        return ids;
+    }
+
+    private void validateRulesInput(Project project, StartGenerationJobRequest request) {
+        String instruction = request.getInstruction() == null ? "" : request.getInstruction().trim();
+        if (instruction.length() > MAX_INSTRUCTION_CHARS) {
+            throw new InvalidRequestException("Chỉ dẫn tối đa " + MAX_INSTRUCTION_CHARS + " ký tự");
+        }
+        List<RequirementDocument> docs = documents.activeDocuments(project, request.getDocumentIds());
+        if (request.getDocumentIds() != null && !request.getDocumentIds().isEmpty()
+                && docs.size() != request.getDocumentIds().stream().distinct().count()) {
+            throw new InvalidRequestException("Có tài liệu không thuộc project này hoặc đã bị xoá");
+        }
+        validateDocumentAssignments(project, request, docs);
+        // Không có tài liệu lẫn chỉ dẫn thì AI chỉ có thể GỢI Ý từ spec: bật làn gợi ý tự động (xem effectiveSuggest), nên vẫn hợp lệ.
+    }
+
+    private static final int MAX_ASSIGNMENT_ENTRIES = 500;
+
+    /** Phân công tài liệu theo endpoint: không tin client, chỉ nhận endpoint của job và tài liệu còn dùng của project. */
+    private void validateDocumentAssignments(Project project, StartGenerationJobRequest request, List<RequirementDocument> activeDocs) {
+        java.util.Map<UUID, List<UUID>> byEndpoint = request.getDocumentsByEndpoint();
+        if (byEndpoint == null) {
+            return;
+        }
+        if (byEndpoint.size() > MAX_ASSIGNMENT_ENTRIES) {
+            throw new InvalidRequestException("Phân công tài liệu theo endpoint tối đa " + MAX_ASSIGNMENT_ENTRIES + " endpoint");
+        }
+        java.util.Set<UUID> activeIds = documents.activeDocuments(project, null).stream().map(RequirementDocument::getId).collect(java.util.stream.Collectors.toSet());
+        java.util.Set<UUID> allowedEndpoints = request.getEndpointIds() == null || request.getEndpointIds().isEmpty()
+                ? endpointRepository.findAllByProjectOrderByCreatedAtAsc(project).stream().map(Endpoint::getId).collect(java.util.stream.Collectors.toSet())
+                : new java.util.HashSet<>(request.getEndpointIds());
+        for (java.util.Map.Entry<UUID, List<UUID>> entry : byEndpoint.entrySet()) {
+            if (!allowedEndpoints.contains(entry.getKey())) {
+                throw new InvalidRequestException("Phân công tài liệu cho endpoint không thuộc job này");
+            }
+            List<UUID> ids = entry.getValue() == null ? List.of() : entry.getValue();
+            if (ids.size() > RequirementDocumentService.MAX_DOCUMENTS_PER_ENDPOINT || !activeIds.containsAll(ids)) {
+                throw new InvalidRequestException("Có tài liệu được phân công không thuộc project này hoặc đã bị xoá");
+            }
+        }
+    }
+
+    /** endpointId -> tài liệu dùng cho endpoint đó; null khi không có phân công riêng (mọi endpoint dùng chung documentIds như cũ). */
+    private java.util.Map<UUID, List<UUID>> resolveDocsByEndpoint(Project project, StartGenerationJobRequest req, List<UUID> endpointIds) {
+        if (req.getDocumentsByEndpoint() == null) {
+            return null;
+        }
+        List<UUID> shared = documents.activeDocuments(project, req.getDocumentIds()).stream().map(RequirementDocument::getId).toList();
+        java.util.Map<UUID, List<UUID>> resolved = new java.util.HashMap<>();
+        for (UUID endpointId : endpointIds) {
+            List<UUID> own = req.getDocumentsByEndpoint().get(endpointId);
+            resolved.put(endpointId, own != null ? own : shared);
+        }
+        return resolved;
+    }
+
+    /** Không có tài liệu/chỉ dẫn thì làn "AI gợi ý thêm" luôn bật; có thì theo lựa chọn của người dùng. */
+    private boolean effectiveSuggest(Project project, StartGenerationJobRequest request) {
+        String instruction = request.getInstruction() == null ? "" : request.getInstruction().trim();
+        boolean hasInput = !instruction.isEmpty() || !documents.activeDocuments(project, request.getDocumentIds()).isEmpty();
+        return !hasInput || Boolean.TRUE.equals(request.getSuggest());
+    }
+
+    private RuleExtractionService.Request rulesRequest(GenerationJob job, UUID projectId, List<UUID> endpointIds, StartGenerationJobRequest req,
+                                                      int tokenBudget, int startTokens) {
+        Project project = projectService.getOwnedProject(projectId);
+        boolean suggest = effectiveSuggest(project, req);
+        return new RuleExtractionService.Request(project, job.getOwnerId(), endpointRepository.findAllById(endpointIds),
+                documents.activeDocuments(project, req.getDocumentIds()), req.getInstruction(),
+                Boolean.TRUE.equals(req.getAllowInferred()) || suggest, job.getId(), tokenBudget, suggest, startTokens,
+                resolveDocsByEndpoint(project, req, endpointIds), suggest && Boolean.TRUE.equals(req.getSuggestBroad()));
+    }
+
+    /** Pha trích checklist trong job FULL/SYSTEM. Lỗi ở pha này (AI lỗi, hết quota) KHÔNG làm hỏng kết quả test đã sinh; huỷ thì lan ra như thường. */
+    /** Trạng thái kết quả endpoint nghĩa là endpoint đã có test gốc hợp lệ (hoặc chạy thử): đủ điều kiện lập checklist nghiệp vụ. */
+    private static final java.util.Set<String> BASELINE_OK = java.util.Set.of("CONFIRMED", "ALREADY_HAS_BASELINE", "FILLED", "DRY_RUN");
+
+    private RulesJobResult runRulesPhase(GenerationJob job, UUID projectId, List<UUID> endpointIds, StartGenerationJobRequest req, JobContext ctx) {
+        try {
+            // MỘT trần token tổng cho cả lần chạy: checklist chỉ được dùng phần còn lại sau khi sinh test gốc. Chưa đặt trần (0) thì dùng mức mặc định.
+            int remaining = job.getTokenCap() > 0 ? job.getTokenCap() - ctx.tokensUsed() : RuleExtractionService.DEFAULT_BUDGET;
+            if (req.getRulesTokenBudget() != null && req.getRulesTokenBudget() > 0) {
+                remaining = Math.min(remaining, req.getRulesTokenBudget()); // tương thích client cũ
+            }
+            if (!ctx.isDryRun() && remaining < RuleExtractionService.MIN_BUDGET) {
+                ctx.start(null, "Checklist nghiệp vụ", "RULES_PLAN", "SYSTEM", "Kiểm tra trần token").ok(
+                        "Bỏ qua lập checklist: trần token tổng còn lại " + Math.max(0, remaining) + " token, không đủ (cần ít nhất " + RuleExtractionService.MIN_BUDGET
+                                + "). Tăng 'Trần token AI của lần chạy' rồi chạy lại");
+                return null;
+            }
+            return ruleExtraction.run(rulesRequest(job, projectId, endpointIds, req, Math.min(remaining, RuleExtractionService.MAX_BUDGET), ctx.tokensUsed()), ctx);
+        } catch (JobCancelledException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("Pha trich checklist cua job {} that bai: {}", job.getId(), e.getClass().getSimpleName());
+            ctx.start(null, "Checklist nghiệp vụ", "RULES_AI", "SYSTEM", "Trích checklist nghiệp vụ").fail("Lỗi khi trích checklist - test đã sinh vẫn được giữ");
+            return null;
+        }
     }
 
     @Transactional(readOnly = true)
@@ -168,16 +316,6 @@ public class GenerationJobService {
         return toResponse(jobs.save(job), List.of(), 0);
     }
 
-    /** Dọn job + bước của project khi xoá project. */
-    @Transactional
-    public void deleteForProject(UUID projectId) {
-        List<UUID> ids = jobs.findIdsByProjectId(projectId);
-        if (!ids.isEmpty()) {
-            steps.deleteAllByJobIdIn(ids);
-            jobs.deleteAllByProjectId(projectId);
-        }
-    }
-
     // ---- Chạy job (trên jobExecutor, có SecurityContext của người bấm) ----
 
     void runJob(UUID jobId, UUID projectId, List<UUID> endpointIds, StartGenerationJobRequest req) {
@@ -189,13 +327,47 @@ public class GenerationJobService {
         job.setStartedAt(Instant.now());
         jobs.save(job);
         JobContext ctx = new JobContext(jobId, recorder, job.isDryRun(), job.getTokenCap(), 0);
+        if (GenerationJob.TYPE_RULES.equals(job.getType())) {
+            runRulesJob(job, projectId, endpointIds, req, ctx);
+            return;
+        }
         List<GenerationJobResponse.EndpointResult> results = new ArrayList<>();
         String finalStatus;
         String error = null;
+        RulesJobResult rulesResult = null;
         try {
-            for (UUID endpointId : orderForChaining(endpointIds)) {
+            if (Boolean.TRUE.equals(req.getChecklistOnly())) {
+                // Chỉ lập lại checklist: dùng test gốc Pass có sẵn của từng endpoint, không sinh/chạy lại gì khác.
+                for (UUID endpointId : endpointIds) {
+                    ctx.checkCancelled();
+                    Endpoint endpoint = endpointRepository.findById(endpointId).orElseThrow();
+                    String label = endpoint.getMethod() + " " + endpoint.getPath();
+                    boolean hasBaseline = gapFill.hasConfirmedBaseline(projectId, endpointId);
+                    ctx.start(endpointId, label, "PRECHECK", "SYSTEM", "Kiểm tra test gốc có sẵn").ok(
+                            hasBaseline ? "Đã có test gốc Pass: giữ nguyên, chỉ lập lại checklist nghiệp vụ" : "Chưa có test gốc Pass nên chưa lập checklist");
+                    results.add(new GenerationJobResponse.EndpointResult(endpointId, label, hasBaseline ? "ALREADY_HAS_BASELINE" : "NEEDS_HUMAN",
+                            hasBaseline ? null : "NO_BASELINE", hasBaseline ? "Dùng test gốc có sẵn" : "Chưa có test gốc Pass", 0, 0));
+                }
+            } else {
+                for (UUID endpointId : orderForChaining(endpointIds)) {
+                    ctx.checkCancelled();
+                    results.add(runEndpoint(job, projectId, endpointId, req, ctx));
+                }
+            }
+            if (Boolean.TRUE.equals(req.getBusinessChecklist())) {
                 ctx.checkCancelled();
-                results.add(runEndpoint(job, projectId, endpointId, req, ctx));
+                // Checklist nghiệp vụ đi theo từng endpoint: chỉ lập cho endpoint đã có 1 test gốc hợp lệ Pass (vừa xác nhận hoặc có sẵn). Endpoint chưa có
+                // test gốc thì không có dữ liệu nền để sinh test từ checklist, nên bỏ qua (nói rõ ở bước giám sát) thay vì để người dùng duyệt mục không sinh được test.
+                List<UUID> eligible = results.stream().filter(r -> BASELINE_OK.contains(r.status())).map(GenerationJobResponse.EndpointResult::endpointId).toList();
+                int skipped = endpointIds.size() - eligible.size();
+                if (skipped > 0) {
+                    ctx.start(null, "Checklist nghiệp vụ", "RULES_PLAN", "SYSTEM", "Chọn endpoint để lập checklist").ok(
+                            skipped + " endpoint chưa có test gốc hợp lệ Pass nên chưa lập checklist (sinh test gốc cho chúng rồi lập checklist sau); "
+                                    + eligible.size() + " endpoint đủ điều kiện");
+                }
+                if (!eligible.isEmpty()) {
+                    rulesResult = runRulesPhase(job, projectId, eligible, req, ctx);
+                }
             }
             boolean anyHuman = results.stream().anyMatch(r -> "NEEDS_HUMAN".equals(r.status()) || "FAILED".equals(r.status()));
             boolean allFailed = !results.isEmpty() && results.stream().allMatch(r -> "FAILED".equals(r.status()));
@@ -214,6 +386,36 @@ public class GenerationJobService {
         done.setFinishedAt(Instant.now());
         done.setErrorMessage(error);
         done.setResultJson(toJson(results));
+        done.setRulesResultJson(rulesResult == null ? null : toJson(rulesResult));
+        jobs.save(done);
+    }
+
+    /** Job trích luật: kết thúc SUCCEEDED khi luật đã nằm ở PROPOSED chờ duyệt (job không giữ chỗ chờ duyệt). */
+    private void runRulesJob(GenerationJob job, UUID projectId, List<UUID> endpointIds, StartGenerationJobRequest req, JobContext ctx) {
+        UUID jobId = job.getId();
+        String finalStatus;
+        String error = null;
+        RulesJobResult result = null;
+        try {
+            result = ruleExtraction.run(rulesRequest(job, projectId, endpointIds, req, job.getTokenCap(), 0), ctx);
+            finalStatus = "AI_ERROR".equals(result.stoppedReason()) && result.lotsDone() == 0 ? GenerationJob.FAILED : GenerationJob.SUCCEEDED;
+            if (GenerationJob.FAILED.equals(finalStatus)) {
+                error = "Gọi AI thất bại - không có luật nào được đề xuất";
+            }
+        } catch (JobCancelledException e) {
+            finalStatus = GenerationJob.CANCELLED;
+        } catch (RuntimeException e) {
+            log.warn("Job trich luat {} that bai: {}", jobId, e.getClass().getSimpleName());
+            finalStatus = GenerationJob.FAILED;
+            error = e.getMessage();
+        }
+        recorder.closeRunningSteps(jobId, GenerationJob.CANCELLED.equals(finalStatus) ? "SKIPPED" : "FAILED",
+                GenerationJob.CANCELLED.equals(finalStatus) ? "Đã huỷ khi bước này đang chạy" : "Bước bị dừng do job kết thúc");
+        GenerationJob done = jobs.findById(jobId).orElse(job);
+        done.setStatus(finalStatus);
+        done.setFinishedAt(Instant.now());
+        done.setErrorMessage(error);
+        done.setResultJson(result == null ? null : toJson(result));
         jobs.save(done);
     }
 
@@ -325,6 +527,7 @@ public class GenerationJobService {
         endpoint.setScopeNegative(!Boolean.FALSE.equals(r.getIncludeNegative()));
         endpoint.setScopeBoundary(!Boolean.FALSE.equals(r.getIncludeBoundary()));
         endpoint.setScopeSecurity(Boolean.TRUE.equals(r.getIncludeSecurity()));
+        endpoint.setScopeOwasp(Boolean.TRUE.equals(r.getIncludeOwasp()));
         endpointRepository.save(endpoint);
     }
 
@@ -337,8 +540,19 @@ public class GenerationJobService {
                 s.getHttpStatus(), s.getTokens(), s.getStartedAt(), s.getFinishedAt())).toList();
         int lastSeq = stepList.stream().mapToInt(GenerationJobStep::getSeq).max().orElse(afterSeq);
         return new GenerationJobResponse(job.getId(), job.getProjectId(), job.getType(), job.getStatus(), job.isDryRun(), job.getTokenCap(),
-                job.getTokensUsed(), job.getErrorMessage(), job.getCreatedAt(), job.getStartedAt(), job.getFinishedAt(), readResults(job.getResultJson()),
-                mapped, lastSeq);
+                job.getTokensUsed(), job.getErrorMessage(), job.getCreatedAt(), job.getStartedAt(), job.getFinishedAt(), GenerationJob.TYPE_RULES.equals(job.getType()) ? List.of() : readResults(job.getResultJson()),
+                mapped, lastSeq, readRules(GenerationJob.TYPE_RULES.equals(job.getType()) ? job.getResultJson() : job.getRulesResultJson()));
+    }
+
+    private RulesJobResult readRules(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, RulesJobResult.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private List<GenerationJobResponse.EndpointResult> readResults(String json) {

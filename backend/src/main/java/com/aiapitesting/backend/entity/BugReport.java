@@ -11,7 +11,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Bug report tạo từ 1 TestResult FAILED (sourceTestResult), không phải cả TestExecution - cần
+ * Bug report tạo từ 1 TestResult FAILED, hoặc (17q G1) 1 TestResult PASSED có mã thành công lệch spec - tạo thủ công (sourceTestResult),
+ * không phải cả TestExecution - cần
  * đúng cấp độ chi tiết "kỳ vọng ↔ thực tế của 1 lần chạy cụ thể". project/endpoint denormalized
  * từ testCase để ownership check không phải luôn nhảy qua testCase.getEndpoint().getProject().
  */

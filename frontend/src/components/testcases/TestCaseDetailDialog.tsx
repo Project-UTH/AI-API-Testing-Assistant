@@ -24,6 +24,7 @@ import {
 import { ApiError } from "@/lib/api"
 import {
   confidenceCheck,
+  expectationChanged,
   originDisplay,
   getReliabilityDisplay,
   type AssertionOperator,
@@ -130,15 +131,25 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
               </p>
             </div>
           )}
+          {expectationChanged(testCase) && (
+            <div role="note" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+              <p className="font-medium text-amber-700 dark:text-amber-400">Kỳ vọng đã được hệ thống đổi</p>
+              {testCase.expectationNote && <p className="mt-1">{testCase.expectationNote}</p>}
+              <p className="mt-1 text-muted-foreground">
+                Test gốc chỉ dùng làm nền nên được chỉnh để Pass; chênh lệch so với spec được ghi thành cảnh báo ở kết quả chạy.
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full bg-muted px-2 py-0.5 font-medium">
-              {SOURCE_LABEL[testCase.source]}
+              {testCase.generationOrigin === "RULE_TEMPLATE" ? "Nghiệp vụ (bạn duyệt)" : SOURCE_LABEL[testCase.source]}
             </span>
             {testCase.probeKind === "MASS_ASSIGNMENT" && (
               <span className="rounded-full border border-destructive/40 px-2 py-0.5 font-medium text-destructive">Probe bảo mật</span>
             )}
             <span className="rounded-full bg-muted px-2 py-0.5 font-medium">
               Kỳ vọng {testCase.expectedStatus}
+              {expectationChanged(testCase) && ` (đã đổi từ ${testCase.originalExpectedStatus})`}
             </span>
             {testCase.locked && (
               <span className="rounded-full bg-amber-500/10 px-2 py-0.5 font-medium text-amber-600 dark:text-amber-400">
@@ -197,34 +208,13 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
             </Field>
           )}
 
-          {testCase.reliabilityStatus === "NEEDS_REVIEW" && testCase.reliabilityNotes.length > 0 && (
-            <Field label="Cần xem lại vì (đối chiếu tất định với spec)">
+          {testCase.reliabilityStatus === "NEEDS_REVIEW" && testCase.generationOrigin !== "SYSTEM_FILLED" && testCase.reliabilityNotes.length > 0 && (
+            <Field label="Kỳ vọng cần xem vì (đối chiếu tất định với spec)">
               <ul className="flex flex-col gap-1 text-sm text-amber-600 dark:text-amber-400">
                 {testCase.reliabilityNotes.map((note, index) => (
                   <li key={index}>• {note}</li>
                 ))}
               </ul>
-            </Field>
-          )}
-
-          {testCase.reliabilityAiConfirmed !== null && (
-            <Field
-              label={
-                testCase.reliabilityAiConfirmed
-                  ? "AI xác nhận - đây là lỗi thật (tốn thêm token)"
-                  : "AI xác nhận - đây là false positive, chủ đích (tốn thêm token)"
-              }
-            >
-              <p
-                className={cn(
-                  "text-sm",
-                  testCase.reliabilityAiConfirmed
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-emerald-600 dark:text-emerald-400"
-                )}
-              >
-                {testCase.reliabilityAiNote}
-              </p>
             </Field>
           )}
 

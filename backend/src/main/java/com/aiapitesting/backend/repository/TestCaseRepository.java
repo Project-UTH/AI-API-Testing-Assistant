@@ -49,11 +49,22 @@ public interface TestCaseRepository extends JpaRepository<TestCase, UUID>, JpaSp
      * case đang khoá không bao giờ bị xoá khi regenerate.
      */
     @Modifying
-    @Query("DELETE FROM TestCase tc WHERE tc.endpoint = :endpoint AND tc.source = :source AND tc.locked = false")
+    @Query("DELETE FROM TestCase tc WHERE tc.endpoint = :endpoint AND tc.source = :source AND tc.locked = false "
+            + "AND (tc.generationOrigin IS NULL OR tc.generationOrigin <> com.aiapitesting.backend.entity.TestCaseGenerationOrigin.RULE_TEMPLATE)")
     void deleteAllByEndpointAndSourceAndLockedFalse(@Param("endpoint") Endpoint endpoint, @Param("source") TestCaseSource source);
 
-    // Lấy trước danh sách sắp bị xoá - để guard kiểm tra TestCaseDependency trước khi xoá thật.
-    List<TestCase> findAllByEndpointAndSourceAndLockedFalse(Endpoint endpoint, TestCaseSource source);
+    // Lấy trước danh sách sắp bị xoá - để guard kiểm tra TestCaseDependency trước khi xoá thật. (17q G3: không gồm test sinh từ luật.)
+    @Query("SELECT tc FROM TestCase tc WHERE tc.endpoint = :endpoint AND tc.source = :source AND tc.locked = false "
+            + "AND (tc.generationOrigin IS NULL OR tc.generationOrigin <> com.aiapitesting.backend.entity.TestCaseGenerationOrigin.RULE_TEMPLATE)")
+    List<TestCase> findAllByEndpointAndSourceAndLockedFalse(@Param("endpoint") Endpoint endpoint, @Param("source") TestCaseSource source);
+
+    // 17q G3 - test đã sinh từ 1 luật (đếm, và xoá khi sinh lại).
+    List<TestCase> findAllByRuleId(UUID ruleId);
+
+    long countByRuleId(UUID ruleId);
+
+    @Query("SELECT tc FROM TestCase tc JOIN FETCH tc.endpoint WHERE tc.ruleId IN :ruleIds")
+    List<TestCase> findAllByRuleIdIn(@Param("ruleIds") java.util.Collection<UUID> ruleIds);
 
     // Gợi ý liên kết tự động - lấy test case 2xx tạo sớm nhất của 1 endpoint.
     List<TestCase> findAllByEndpointOrderByCreatedAtAsc(Endpoint endpoint);

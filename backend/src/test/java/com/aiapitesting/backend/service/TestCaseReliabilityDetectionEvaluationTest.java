@@ -145,12 +145,6 @@ class TestCaseReliabilityDetectionEvaluationTest {
 
         double precision = truePositive == 0 ? 0 : (double) truePositive / (truePositive + falsePositive);
         double recall = truePositive == 0 ? 0 : (double) truePositive / (truePositive + falseNegative);
-        double f1 = (precision + recall) == 0 ? 0 : 2 * precision * recall / (precision + recall);
-
-        System.out.printf(
-                "[Module 15f - Tier 1 Precision/Recall] TP=%d FP=%d FN=%d TN=%d | Precision=%.2f Recall=%.2f F1=%.2f%s%n",
-                truePositive, falsePositive, falseNegative, trueNegative, precision, recall, f1,
-                misclassified.isEmpty() ? "" : " | sai lệch: " + misclassified);
 
         // Ngưỡng tối thiểu - bộ dữ liệu này tự thành test hồi quy, không chỉ 1 lần đo rồi bỏ. Precision
         // KHÔNG đặt 1.0 vì J/K là false positive THẬT, chủ ý đưa vào để đo đúng hạn chế một chiều của

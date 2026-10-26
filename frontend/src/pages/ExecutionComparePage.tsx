@@ -66,8 +66,10 @@ const CAUSE_LABEL: Record<string, string> = {
   AUTHZ_VIOLATION: "Sai lệch phân quyền",
   TEST_DATA_SUSPECT: "Nghi dữ liệu test không hợp lệ",
   MASS_ASSIGNMENT: "Nhận field không khai báo (mass assignment)",
+  HTTP_ROBUSTNESS: "Xử lý sai request lỗi định dạng (JSON hỏng / sai Content-Type)",
   TOKEN_FORBIDDEN: "Nghi token thiếu quyền cho endpoint này",
   API_WRONG_STATUS: "API trả sai mã lỗi (401 thay vì 400)",
+  RULE_VIOLATION_ACCEPTED: "API nhận dữ liệu vi phạm checklist nghiệp vụ",
 }
 
 const SHOWN_ORDER: ExecutionDiffCategory[] = [

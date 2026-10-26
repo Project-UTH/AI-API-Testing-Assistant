@@ -1,0 +1,17 @@
+Sổ token TRƯỚC: {'eventTokens': 1685222, 'jobTokens': 116062, 'eventRows': 172, 'jobRows': 19}
+    ... job QUEUED 0 token
+S1-chi-spec: job SUCCEEDED, 4800/25000 token, 14.1s, 11 mục; kết quả {'endpointCount': 10, 'lotsPlanned': 1, 'lotsDone': 0, 'estimatedTokens': 7401, 'fromDocument': 0, 'fromInstruction': 0, 'inferred': 11, 'rejectedAsDuplicateOfSpec': 0, 'conflicts': 0, 'skippedExisting': 0, 'skippedOverCap': 0, 'skippedInferred': 0, 'dropped': {'MALFORMED': 1}, 'stoppedReason': None, 'tokenBudget': 25000, 'questions': [], 'suggested': 11, 'suggestStoppedReason': None}
+Sổ token SAU: {'eventTokens': 1690022, 'jobTokens': 120862, 'eventRows': 173, 'jobRows': 20}
+TOKEN: chênh lệch sổ = 4800, tổng job = 4800. Đã ghi docs\eval\v2\suggest-broad-1.json
+Sổ token TRƯỚC: {'eventTokens': 1690022, 'jobTokens': 120862, 'eventRows': 173, 'jobRows': 20}
+    ... job RUNNING 0 token
+    ... job RUNNING 0 token
+S1-chi-spec: job SUCCEEDED, 6397/25000 token, 26.2s, 11 mục; kết quả {'endpointCount': 10, 'lotsPlanned': 1, 'lotsDone': 0, 'estimatedTokens': 7401, 'fromDocument': 0, 'fromInstruction': 0, 'inferred': 11, 'rejectedAsDuplicateOfSpec': 0, 'conflicts': 0, 'skippedExisting': 0, 'skippedOverCap': 0, 'skippedInferred': 0, 'dropped': {'INVALID_PARAMS': 1}, 'stoppedReason': None, 'tokenBudget': 25000, 'questions': [], 'suggested': 11, 'suggestStoppedReason': None}
+Sổ token SAU: {'eventTokens': 1696419, 'jobTokens': 127259, 'eventRows': 174, 'jobRows': 21}
+TOKEN: chênh lệch sổ = 6397, tổng job = 6397. Đã ghi docs\eval\v2\suggest-broad-2.json
+Sổ token TRƯỚC: {'eventTokens': 1696419, 'jobTokens': 127259, 'eventRows': 174, 'jobRows': 21}
+    ... job RUNNING 0 token
+    ... job RUNNING 0 token
+S1-chi-spec: job SUCCEEDED, 5853/25000 token, 20.2s, 9 mục; kết quả {'endpointCount': 10, 'lotsPlanned': 1, 'lotsDone': 0, 'estimatedTokens': 7401, 'fromDocument': 0, 'fromInstruction': 0, 'inferred': 9, 'rejectedAsDuplicateOfSpec': 0, 'conflicts': 0, 'skippedExisting': 0, 'skippedOverCap': 0, 'skippedInferred': 0, 'dropped': {'INVALID_PARAMS': 1, 'MALFORMED': 1}, 'stoppedReason': None, 'tokenBudget': 25000, 'questions': [], 'suggested': 9, 'suggestStoppedReason': None}
+Sổ token SAU: {'eventTokens': 1702272, 'jobTokens': 133112, 'eventRows': 175, 'jobRows': 22}
+TOKEN: chênh lệch sổ = 5853, tổng job = 5853. Đã ghi docs\eval\v2\suggest-broad-3.json

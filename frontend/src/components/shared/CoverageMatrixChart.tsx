@@ -1,66 +1,86 @@
+import { cn } from "@/lib/utils"
+import { getTestStateDisplay, TEST_STATE_ORDER, type CoverageOverview, type EndpointTestState } from "@/lib/coverage"
 
-/** Donut đơn giản, tự vẽ SVG - theo đúng pattern PassRateDonut (components/shared/PassRateCard.tsx), không dùng thư viện chart. */
-function MiniDonut({ percent, color }: { percent: number; color: string }) {
-  const size = 72
-  const strokeWidth = 8
-  const radius = (size - strokeWidth) / 2
-  const circumference = 2 * Math.PI * radius
-  const dash = (percent / 100) * circumference
-
-  return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--color-border)" strokeWidth={strokeWidth} />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeDasharray={`${dash} ${circumference - dash}`}
-          strokeLinecap="round"
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-sm font-bold tabular-nums text-foreground">{percent}%</span>
-      </div>
-    </div>
-  )
+interface CoverageOverviewCardProps {
+  overview: CoverageOverview
+  /** Trạng thái đang lọc (bấm lại chip đang chọn để bỏ lọc). */
+  selectedState?: string
+  onSelectState: (state: EndpointTestState | null) => void
 }
 
-interface CoverageSummaryProps {
-  coveragePercent: number
-  executedPercent: number
+function percentOf(part: number, whole: number) {
+  return whole === 0 ? 0 : Math.round((part * 1000) / whole) / 10
 }
 
 /**
- * Hai donut cạnh nhau: "đã có test case" vs "đã chạy có kết quả" - có test mới là thiết kế, chạy ra Pass/Fail
- * mới là đã kiểm thật (Module 15c + 15j).
+ * 17q G2 - tổng quan Coverage của project lấy ENDPOINT làm đơn vị: số chính là "X/N endpoint đã kiểm thử" + phân bố 4 trạng thái
+ * (thanh xếp chồng + chip bấm để lọc). Không còn % gộp làm số chính: endpoint chưa sinh test không bị tính là "0%"; % (số phụ)
+ * chỉ tính trên endpoint đã sinh và luôn kèm mẫu số. Phân bố luôn tính trên toàn project, không đổi theo bộ lọc.
  */
-export function CoverageSummary({ coveragePercent, executedPercent }: CoverageSummaryProps) {
+export function CoverageOverviewCard({ overview, selectedState, onSelectState }: CoverageOverviewCardProps) {
+  const total = overview.endpointCount
+  const counts = TEST_STATE_ORDER.map((state) => ({ state, count: overview.stateCounts?.[state] ?? 0 }))
+  const tested = overview.testedEndpoints ?? 0
+  const generatedEndpoints = total - (overview.stateCounts?.NOT_GENERATED ?? 0)
+  const generatedRelevant = overview.generatedRelevantCount ?? 0
+
   return (
-    <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
-      <div className="flex items-center gap-3">
-        <MiniDonut percent={coveragePercent} color="#10b981" />
-        <div className="text-sm">
-          <p className="font-medium text-foreground">Đã có test case</p>
-          <p className="text-xs text-muted-foreground">% mục cần kiểm (tự tính từ spec) đã có test đạt</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <MiniDonut percent={executedPercent} color="#0ea5e9" />
-        <div className="text-sm">
-          <p className="font-medium text-foreground">Đã chạy có kết quả</p>
-          <p className="text-xs text-muted-foreground">% mục mà test đã chạy ra Pass/Fail thật</p>
-        </div>
-      </div>
-      {executedPercent < coveragePercent && (
-        <p className="w-full text-xs text-sky-600 dark:text-sky-400">
-          {coveragePercent}% mục đã có test nhưng mới {executedPercent}% đã chạy ra kết quả - phần chênh lệch mới là thiết
-          kế, chưa được kiểm thật trên API.
+    <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-base font-semibold">
+          <span className="tabular-nums">
+            {tested}/{total}
+          </span>{" "}
+          endpoint đã kiểm thử
+          <span className="ml-2 text-xs font-normal text-muted-foreground">(đã chạy ra kết luận ít nhất 1 lần)</span>
         </p>
+        {generatedEndpoints > 0 && (
+          <p
+            className="text-xs text-muted-foreground"
+            title="Chỉ tính trên các endpoint đã sinh test - endpoint chưa sinh không bị tính là 0%"
+          >
+            Có test {percentOf(overview.generatedCoveredCount ?? 0, generatedRelevant)}% · đã chạy{" "}
+            {percentOf(overview.generatedExecutedCount ?? 0, generatedRelevant)}% · trên {generatedRelevant} mục của {generatedEndpoints}{" "}
+            endpoint đã sinh
+          </p>
+        )}
+      </div>
+
+      {total > 0 && (
+        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+          {counts.map(({ state, count }) =>
+            count > 0 ? (
+              <div key={state} className={getTestStateDisplay(state)?.bar} style={{ width: `${(count * 100) / total}%` }} />
+            ) : null
+          )}
+        </div>
       )}
+
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Lọc endpoint theo trạng thái kiểm thử">
+        {counts.map(({ state, count }) => {
+          const display = getTestStateDisplay(state)!
+          const active = selectedState === state
+          return (
+            <button
+              key={state}
+              type="button"
+              aria-pressed={active}
+              title={`${display.title}. Bấm để ${active ? "bỏ lọc" : "lọc danh sách"}.`}
+              onClick={() => onSelectState(active ? null : state)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                active ? "border-primary bg-primary/10 font-medium" : "border-border hover:bg-muted"
+              )}
+            >
+              <span className={cn("h-2 w-2 rounded-full", display.dot)} />
+              {display.label}
+              <span className="tabular-nums font-semibold">{count}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <p className="text-xs text-muted-foreground">Độ phủ đo mức đủ tình huống theo spec, không đo khả năng bắt lỗi.</p>
     </div>
   )
 }

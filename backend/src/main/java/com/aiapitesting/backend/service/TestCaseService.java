@@ -165,6 +165,12 @@ public class TestCaseService {
         testCase.setDescription(request.description());
         testCase.setRequestHeaders(request.requestHeaders());
         testCase.setRequestBody(request.requestBody());
+        if (!java.util.Objects.equals(testCase.getExpectedStatus(), request.expectedStatus())) {
+            // 17q G1 - người dùng tự đặt lại kỳ vọng: ghi chú "hệ thống đã đổi" không còn đúng.
+            testCase.setOriginalExpectedStatus(null);
+            testCase.setExpectationNote(null);
+            testCase.setExpectedStatusClass(null); // người dùng đặt mã cụ thể: không còn là "bị từ chối bất kỳ 4xx"
+        }
         testCase.setExpectedStatus(request.expectedStatus());
         testCase.setResolvedPath(request.resolvedPath());
         testCase.setPathParamFallbacks(request.pathParamFallbacks());

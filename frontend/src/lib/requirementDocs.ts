@@ -1,0 +1,64 @@
+import { apiFetch } from "@/lib/api"
+
+/** 17q G3.3 - tài liệu nghiệp vụ (.md/.txt) làm nguồn cho AI trích mục. */
+export interface RequirementDocument {
+  id: string
+  fileName: string
+  sizeBytes: number
+  lineCount: number
+  active: boolean
+  createdAt: string
+  /** Cảnh báo chuỗi giống bí mật: chỉ có số dòng + mã quy tắc, không bao giờ có giá trị. */
+  warnings: { line: number; rule: string }[]
+  /** Khoá endpoint ("METHOD path") tài liệu này được VIẾT CHO; rỗng = tài liệu chung. Chỉ để tick sẵn khi sinh test. */
+  forEndpoints: string[]
+}
+
+export interface RequirementDocumentContent {
+  id: string
+  fileName: string
+  content: string
+}
+
+/** 1 dòng lịch sử: tài liệu đã gửi cho AI để lập checklist của endpoint này (lần gần nhất, số lần). */
+export interface RequirementDocUsage {
+  documentId: string
+  fileName: string
+  /** false: tài liệu đã bị xoá hoặc thay bản (id cũ). */
+  documentActive: boolean
+  endpointKey: string
+  lastUsedAt: string
+  timesUsed: number
+}
+
+export const MAX_DOC_BYTES = 200_000
+export const MAX_DOCS = 30
+
+export function listRequirementDocs(projectId: string): Promise<RequirementDocument[]> {
+  return apiFetch<RequirementDocument[]>(`/projects/${projectId}/requirement-documents`)
+}
+
+export function getRequirementDocUsage(projectId: string): Promise<RequirementDocUsage[]> {
+  return apiFetch<RequirementDocUsage[]>(`/projects/${projectId}/requirement-documents/usage`)
+}
+
+export function uploadRequirementDoc(projectId: string, file: File): Promise<RequirementDocument> {
+  const form = new FormData()
+  form.append("file", file)
+  return apiFetch<RequirementDocument>(`/projects/${projectId}/requirement-documents`, { method: "POST", body: form })
+}
+
+export function setRequirementDocEndpoints(projectId: string, documentId: string, endpointKeys: string[]): Promise<RequirementDocument> {
+  return apiFetch<RequirementDocument>(`/projects/${projectId}/requirement-documents/${documentId}/endpoints`, {
+    method: "PUT",
+    body: JSON.stringify({ endpointKeys }),
+  })
+}
+
+export function deleteRequirementDoc(projectId: string, documentId: string): Promise<void> {
+  return apiFetch<void>(`/projects/${projectId}/requirement-documents/${documentId}`, { method: "DELETE" })
+}
+
+export function getRequirementDocContent(projectId: string, documentId: string): Promise<RequirementDocumentContent> {
+  return apiFetch<RequirementDocumentContent>(`/projects/${projectId}/requirement-documents/${documentId}/content`)
+}

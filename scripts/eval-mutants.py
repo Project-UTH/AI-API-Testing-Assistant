@@ -323,10 +323,12 @@ def evaluate(system, target, pid, tests, mutants, label, log, evidence_ids=None)
         target.enable([m["id"]])
         results = system.run(pid, clean_pass)
         caught, suspect, findings = [], [], []
+        leak_hits = 0
         for r in results:
             if r["testCaseId"] in noise or r["testCaseId"] not in scope:
                 continue
             if r.get("securityFindings") and r["testCaseId"] not in clean_findings:
+                leak_hits += sum(1 for f in r["securityFindings"] if is_leak_finding(f))
                 findings.append({"test": names.get(r["testCaseId"], r["testCaseId"]), "status": r["status"],
                                  "findings": json.dumps(r["securityFindings"], ensure_ascii=False)[:300]})
             c = classify(r)
@@ -339,15 +341,26 @@ def evaluate(system, target, pid, tests, mutants, label, log, evidence_ids=None)
                 suspect.append(evidence)
         outcome = "caught" if caught else "suspect" if suspect else "flagged" if findings else "missed"
         per_mutant.append({"id": m["id"], "category": m["category"], "expectChecklist": m["expectChecklist"],
+                           "heldout": bool(m.get("heldout")),
                            "outcome": outcome, "caughtBy": caught[:5], "caughtCount": len(caught),
                            "suspectBy": suspect[:5], "suspectCount": len(suspect),
-                           "securityFindings": findings[:5], "securityFindingsCount": len(findings)})
+                           "securityFindings": findings[:5], "securityFindingsCount": len(findings),
+                           "leakFindingsCount": leak_hits})
         log(f"    {m['id']} {m['category']:<16} -> {outcome:<7} ({len(caught)} bắt, {len(suspect)} nghi ngờ)")
     target.reset()
     return {"label": label, "tests": len(scope), "contextTests": len(ids) - len(scope), "cleanPass": scope_pass,
             "falseFailures": len(scope) - scope_pass,
             "falseFailureCauses": false_causes, "falseFailureDetails": false_details,
             "noiseTests": [names.get(i, i) for i in noise], "mutants": per_mutant}
+
+
+LEAK_RULE_PREFIXES = ("VALUE_", "FIELD_", "ERROR_LEAK")
+
+
+def is_leak_finding(finding):
+    """17q G4: rò rỉ dữ liệu/chi tiết lỗi (cột riêng) khác với phát hiện của probe (mass assignment, độ bền request lỗi định dạng)."""
+    rule = finding.get("rule", "") if isinstance(finding, dict) else str(finding)
+    return rule.startswith(LEAK_RULE_PREFIXES)
 
 
 def reuse_project(args, config, run_no, target, system, mutants, log):
@@ -463,18 +476,32 @@ def summarize(runs, config):
         return sum(1 for m in selected if m["outcome"] == "caught" or (flag and m["outcome"] in ("suspect",))) / n if n else 0.0
 
     categories = sorted({m["category"] for m in per_run[0]["mutants"]})
+    # 17q G5 - bộ phát triển (M) và bộ held-out (H) phải báo cáo TÁCH riêng; "ALL" chỉ còn ý nghĩa khi chỉ đo 1 bộ.
+    has_heldout = any(m.get("heldout") for m in per_run[0]["mutants"])
+
+    def in_scope(m, scope):
+        if scope == "ALL":
+            return True
+        if scope == "DEV":
+            return not m.get("heldout")
+        if scope == "HELDOUT":
+            return bool(m.get("heldout"))
+        return m["category"] == scope
+
     table = {}
-    for scope in ["ALL"] + categories:
+    for scope in ["ALL"] + (["DEV", "HELDOUT"] if has_heldout else []) + categories:
         strict, lenient, counts = [], [], []
         for pr in per_run:
-            sel = [m for m in pr["mutants"] if scope == "ALL" or m["category"] == scope]
+            sel = [m for m in pr["mutants"] if in_scope(m, scope)]
             strict.append(rate(sel, False))
             lenient.append(rate(sel, True))
             counts.append((sum(1 for m in sel if m["outcome"] == "caught"), len(sel)))
-        flagged = [sum(1 for m in pr["mutants"] if (scope == "ALL" or m["category"] == scope) and m["outcome"] == "flagged")
+        flagged = [sum(1 for m in pr["mutants"] if in_scope(m, scope) and m["outcome"] == "flagged")
                    for pr in per_run]
+        # cột riêng: số mutant có CẢNH BÁO RÒ RỈ (dữ liệu nhạy cảm/stack trace/SQL) bất kể có bị bắt bởi test hay không
+        leaks = [sum(1 for m in pr["mutants"] if in_scope(m, scope) and m.get("leakFindingsCount", 0) > 0) for pr in per_run]
         table[scope] = {"caughtStrictMean": statistics.mean(strict), "caughtStrictStdev": statistics.pstdev(strict),
-                        "caughtOrSuspectMean": statistics.mean(lenient), "perRun": counts, "flaggedOnlyPerRun": flagged}
+                        "caughtOrSuspectMean": statistics.mean(lenient), "perRun": counts, "flaggedOnlyPerRun": flagged, "leakWarningPerRun": leaks}
     ff = [pr["falseFailures"] / pr["tests"] for pr in per_run if pr["tests"]]
     return {"runs": len(per_run), "detection": table,
             "falseFailureRate": {"mean": statistics.mean(ff) if ff else None, "stdev": statistics.pstdev(ff) if ff else None},
@@ -488,7 +515,8 @@ def print_summary(config, s, runs):
         sd = f" ± {v['caughtStrictStdev'] * 100:.0f}" if s["runs"] > 1 else ""
         per = " ".join(f"{c}/{t}" for c, t in v["perRun"])
         extra = f"  (+{sum(v['flaggedOnlyPerRun']) / s['runs']:.0f} chỉ có cảnh báo bảo mật)" if any(v["flaggedOnlyPerRun"]) else ""
-        print(f"{scope:<18}{v['caughtStrictMean'] * 100:>13.0f}%{sd:<5}{v['caughtOrSuspectMean'] * 100:>10.0f}%        {per}{extra}")
+        leak = f"  [rò rỉ dữ liệu: {sum(v['leakWarningPerRun']) / s['runs']:.0f} mutant có cảnh báo]" if any(v.get("leakWarningPerRun", [])) else ""
+        print(f"{scope:<18}{v['caughtStrictMean'] * 100:>13.0f}%{sd:<5}{v['caughtOrSuspectMean'] * 100:>10.0f}%        {per}{extra}{leak}")
     ff = s["falseFailureRate"]
     if ff["mean"] is not None:
         print(f"Fail giả trên bản chuẩn: {ff['mean'] * 100:.1f}%")
@@ -572,7 +600,9 @@ def main():
     ap.add_argument("--target-url", default="http://host.docker.internal:8083", help="mutant-api tính từ backend (Docker)")
     ap.add_argument("--email", default="eval@aiapi.local")
     ap.add_argument("--password", default="eval12345")
-    ap.add_argument("--mutants", default="", help="chỉ đo các mutant này, vd M01,M07 (mặc định: tất cả)")
+    ap.add_argument("--mutants", default="", help="chỉ đo các mutant này, vd M01,M07 (mặc định: tất cả, trừ bộ held-out)")
+    ap.add_argument("--include-heldout", action="store_true",
+                    help="17q - đo cả bộ held-out H01-H15 (CHỈ dùng 1 lần ở G5; mặc định loại để không vô tình 'nhìn đề')")
     ap.add_argument("--skip-paths", nargs="*", default=[], help="bỏ qua endpoint theo path (vd để thử 1 endpoint)")
     ap.add_argument("--seed-baselines", action="store_true", help="B: tạo trước test gốc do người viết (bỏ AI sinh test gốc)")
     ap.add_argument("--token-cap", type=int, default=200000, help="trần token cho 1 job AI")
@@ -604,6 +634,8 @@ def main():
     catalog = target.catalog()
     wanted = {x.strip() for x in args.mutants.split(",") if x.strip()}
     mutants = [m for m in catalog if not wanted or m["id"] in wanted]
+    if not args.include_heldout:
+        mutants = [m for m in mutants if not m.get("heldout")]
     if not mutants:
         raise SystemExit("Không có mutant nào khớp --mutants")
     spec_paths = json.loads(target.spec())["paths"]
@@ -636,7 +668,10 @@ def main():
         log(f"\n--- Lượt {n}/{args.runs} - cấu hình {args.config} ---")
         runs.append(run_once(args, args.config, n, target, system, mutants, log))
 
-    result = {"environment": environment_info(args), "mutantCatalog": catalog, "runs": runs, "summary": {}}
+    # 17q - chỉ ghi catalog của các mutant ĐÃ ĐO: không để mô tả bộ held-out lọt vào file kết quả của bộ phát triển.
+    measured_ids = {m["id"] for m in mutants}
+    result = {"environment": environment_info(args), "mutantCatalog": [m for m in catalog if m["id"] in measured_ids],
+              "runs": runs, "summary": {}}
     for cfg in ("A", "B", "C"):
         s = summarize(runs, cfg)
         if s:

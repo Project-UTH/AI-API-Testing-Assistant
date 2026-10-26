@@ -204,6 +204,37 @@ class EndpointImportServiceTest {
         assertThat(captor.getValue().get(0).getSchema()).doesNotContain("\"required\":[\"id\"");
     }
 
+    private static final String SPEC_GLOBAL_SECURITY_WITH_LOGIN = """
+            {"openapi":"3.0.1","info":{"title":"Shop","version":"1"},"security":[{"bearerAuth":[]}],
+             "paths":{
+              "/auth/login":{"post":{"summary":"Dang nhap","responses":{"200":{"description":"ok"}}}},
+              "/auth/register":{"post":{"summary":"Dang ky","responses":{"201":{"description":"ok"}}}},
+              "/api/products":{"get":{"summary":"Danh sach","responses":{"200":{"description":"ok"}}}},
+              "/auth/logout":{"post":{"summary":"Dang xuat","responses":{"204":{"description":"ok"}}}},
+              "/auth/refresh":{"post":{"summary":"Lam moi token","security":[{"bearerAuth":[]}],"responses":{"200":{"description":"ok"}}}}},
+             "components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}}}}
+            """;
+
+    @Test
+    void importFromFile_loginEndpointThatOnlyInheritsGlobalSecurity_isTreatedAsPublic_otherEndpointsKeepTheirRequirement() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "spec.json", "application/json", SPEC_GLOBAL_SECURITY_WITH_LOGIN.getBytes(StandardCharsets.UTF_8));
+
+        endpointImportService.importFromFile(projectId, file, null, null, null);
+
+        ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);
+        verify(endpointRepository).saveAll(captor.capture());
+        java.util.Map<String, Boolean> requiresAuth = new java.util.HashMap<>();
+        captor.getValue().forEach(e -> requiresAuth.put(e.getMethod() + " " + e.getPath(), e.isRequiresAuth()));
+        assertThat(requiresAuth.get("POST /auth/login")).as("đăng nhập không thể đòi token").isFalse();
+        assertThat(requiresAuth.get("POST /auth/register")).as("đăng ký giữ nguyên suy luận cũ (không phải đăng nhập)").isTrue();
+        assertThat(requiresAuth.get("GET /api/products")).isTrue();
+        assertThat(requiresAuth.get("POST /auth/logout")).as("đăng xuất cần token").isTrue();
+        assertThat(requiresAuth.get("POST /auth/refresh")).isTrue();
+    }
+
     @Test
     void importFromFile_wildcardMediaTypeIsTreatedAsJson_becauseSpringdocDefaultsToIt() {
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
@@ -254,7 +285,7 @@ class EndpointImportServiceTest {
         verify(testResultRepository).deleteAllByTestCaseEndpointProject(project);
         verify(testExecutionRepository).deleteAllByProject(project);
         verify(testCaseRepository).deleteAllByEndpointProject(project);
-        verify(testGenerationEventRepository).deleteAllByEndpointProject(project);
+        verify(testGenerationEventRepository).detachFromEndpointsOfProject(project);
         verify(endpointRepository).deleteAllByProject(project);
 
         ArgumentCaptor<List<Endpoint>> captor = ArgumentCaptor.forClass(List.class);

@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Pattern;
@@ -65,6 +66,9 @@ public class BaselineVerificationService {
     private final TestResultRepository testResultRepository;
     private final TestCaseService testCaseService;
     private final com.aiapitesting.backend.service.DependencySuggestionService dependencySuggestionService;
+    private final com.aiapitesting.backend.service.PathParamDiscoveryService pathParamDiscoveryService;
+    /** Tối đa số cấp tự tạo tài nguyên cha (POST tạo A, A cần B...): chặn vòng lặp và chi phí. */
+    static final int MAX_CREATOR_DEPTH = 2;
 
     private long executionTimeoutMs;
     private long pollIntervalMs;
@@ -74,6 +78,7 @@ public class BaselineVerificationService {
             CoverageGapFillService coverageGapFillService, TestExecutionService testExecutionService,
             TestExecutionRepository testExecutionRepository, TestResultRepository testResultRepository, TestCaseService testCaseService,
             com.aiapitesting.backend.service.DependencySuggestionService dependencySuggestionService,
+            com.aiapitesting.backend.service.PathParamDiscoveryService pathParamDiscoveryService,
             @Value("${baseline.execution-timeout-ms:600000}") long executionTimeoutMs,
             @Value("${baseline.poll-interval-ms:500}") long pollIntervalMs
     ) {
@@ -86,6 +91,7 @@ public class BaselineVerificationService {
         this.testResultRepository = testResultRepository;
         this.testCaseService = testCaseService;
         this.dependencySuggestionService = dependencySuggestionService;
+        this.pathParamDiscoveryService = pathParamDiscoveryService;
         this.executionTimeoutMs = executionTimeoutMs;
         this.pollIntervalMs = pollIntervalMs;
     }
@@ -109,6 +115,11 @@ public class BaselineVerificationService {
      * an toàn (đầu mỗi vòng, sau lần gọi AI, trước khi bổ sung checklist). Chạy thử (dry-run) chỉ ghi các bước 'sẽ làm gì' - không gọi AI/API đích.
      */
     BaselineResponse execute(UUID projectId, UUID endpointId, BaselineRequest request, JobProgress progress) {
+        return execute(projectId, endpointId, request, progress, 0);
+    }
+
+    /** depth: số cấp đệ quy tự tạo tài nguyên cha (0 = endpoint người dùng chọn). */
+    BaselineResponse execute(UUID projectId, UUID endpointId, BaselineRequest request, JobProgress progress, int depth) {
         JobProgress p = progress == null ? JobProgress.NOOP : progress;
         BaselineRequest req = request == null ? new BaselineRequest(false, null, null, null, false) : request;
         Project project = projectService.getOwnedProject(projectId);
@@ -139,18 +150,36 @@ public class BaselineVerificationService {
 
         // Tham số đường dẫn cần id thật: không có giá trị người dùng nhập và không có test POST để nối chuỗi thì AI chỉ đoán id (UUID mẫu) -> chắc chắn 404.
         // Hỏi ngay, KHÔNG tốn token.
-        Map<String, String> given = req.getPathParamValues() == null ? Map.of() : req.getPathParamValues();
+        Map<String, String> given = new java.util.HashMap<>(req.getPathParamValues() == null ? Map.of() : req.getPathParamValues());
         List<String> missingParams = new ArrayList<>();
+        List<String> triedNotes = new ArrayList<>();
         java.util.regex.Matcher pm = Pattern.compile("\\{(\\w+)}").matcher(endpoint.getPath() == null ? "" : endpoint.getPath());
         while (pm.find()) {
             String name = pm.group(1);
             boolean provided = given.get(name) != null && !given.get(name).isBlank();
             if (!provided && !dependencySuggestionService.hasCreatorSource(projectId, endpointId, name)) {
+                // Cách B (0 token): tự gọi GET danh sách cùng tài nguyên để lấy 1 id có thật. Chạy thử (dry run) không gọi API đích.
+                if (!p.isDryRun()) {
+                    com.aiapitesting.backend.service.PathParamDiscoveryService.Discovery found = pathParamDiscoveryService.discover(project, endpoint, name);
+                    if (found.value() != null) {
+                        given.put(name, found.value());
+                        p.start(endpointId, label, "DISCOVER_ID", "SYSTEM", "Tự lấy id thật cho {" + name + "}")
+                                .ok("Lấy id của phần tử đầu tiên từ " + found.note() + " (chỉ đọc, 0 token)");
+                        continue;
+                    }
+                    triedNotes.add("thử " + found.note());
+                    // Cách A: không có dữ liệu để lấy id -> tự cho AI sinh + chạy thật test gốc của endpoint POST tạo tài nguyên (ghi dữ liệu thật, tốn token).
+                    String created = tryCreateResource(projectId, project, endpoint, name, req, given, p, depth, triedNotes);
+                    if (created != null) {
+                        continue;
+                    }
+                }
                 missingParams.add(name);
             }
         }
         if (!missingParams.isEmpty()) {
-            String msg = "Cần giá trị thật cho tham số đường dẫn " + missingParams + " (chưa có test POST tạo tài nguyên để nối chuỗi). Chưa gọi AI nên chưa tốn token.";
+            String msg = "Cần giá trị thật cho tham số đường dẫn " + missingParams + " (chưa có test POST tạo tài nguyên để nối chuỗi"
+                    + (triedNotes.isEmpty() ? "" : "; đã " + String.join("; ", triedNotes)) + "). Chưa gọi AI nên chưa tốn token.";
             pre.fail(msg);
             return new BaselineResponse("NEEDS_HUMAN", "MISSING_PARAM_VALUE", msg, null, List.of(), 0, 0, null, null);
         }
@@ -165,7 +194,7 @@ public class BaselineVerificationService {
         }
 
         int maxRepair = Math.max(0, Math.min(req.getMaxRepairRounds() == null ? DEFAULT_REPAIR_ROUNDS : req.getMaxRepairRounds(), MAX_REPAIR_ROUNDS));
-        Map<String, String> userValues = req.getPathParamValues() == null ? Map.of() : req.getPathParamValues();
+        Map<String, String> userValues = given; // gồm cả id tự tìm được
         int cap = p.tokenCap() > 0 ? p.tokenCap() : TOKEN_BUDGET;
 
         List<BaselineResponse.Round> rounds = new ArrayList<>();
@@ -219,8 +248,10 @@ public class BaselineVerificationService {
 
             if (diagnosis.decision() == Decision.ADOPT_2XX) {
                 // API trả 2xx khác mã AI kỳ vọng (vd 201 thay vì 200): hệ thống tự sửa kỳ vọng, chạy lại, KHÔNG tốn AI.
-                p.start(endpointId, label, "ADJUST_EXPECTED", "SYSTEM", "Sửa kỳ vọng sang " + outcome.httpStatus()).ok(diagnosis.message());
-                generationService.setBaselineExpectedStatus(projectId, endpointId, testId, outcome.httpStatus());
+                JobProgress.Step adjust = p.start(endpointId, label, "ADJUST_EXPECTED", "SYSTEM", "Sửa kỳ vọng sang " + outcome.httpStatus());
+                // 17q G1 - ghi chú kèm kết luận đối chiếu spec (lệch spec không bị che, kết quả chạy báo riêng).
+                String note = generationService.setBaselineExpectedStatus(projectId, endpointId, testId, outcome.httpStatus());
+                adjust.ok(note == null ? diagnosis.message() : note);
                 RunOutcome second = runStep(p, endpointId, label, projectId, testId, "Chạy lại test gốc sau khi sửa kỳ vọng");
                 last = second;
                 outcome = second;
@@ -232,6 +263,10 @@ public class BaselineVerificationService {
             if (diagnosis.decision() == Decision.PASSED) {
                 p.start(endpointId, label, "LOCK", "SYSTEM", "Khoá test gốc làm nền").ok("Test gốc đã Pass sau " + (attempt + 1) + " lần thử");
                 testCaseService.setLocked(projectId, endpointId, testId, true);
+                int cleaned = generationService.removeStaleBaselineDrafts(projectId, endpointId, testId);
+                if (cleaned > 0) {
+                    p.start(endpointId, label, "CLEANUP", "SYSTEM", "Dọn test gốc nháp cũ").ok("Đã xoá " + cleaned + " test gốc nháp chưa được xác nhận (còn sót từ lần sinh trước)");
+                }
                 p.checkCancelled();
                 JobProgress.Step f = p.start(endpointId, label, "FILL", "SYSTEM", "Hệ thống bổ sung toàn bộ checklist từ test gốc (0 token)");
                 int filled = fill ? coverageGapFillService.fill(projectId, endpointId, new CoverageFillRequest(null)).createdCount() : 0;
@@ -279,6 +314,46 @@ public class BaselineVerificationService {
     record RunOutcome(TestResultStatus status, Integer httpStatus, String body, String errorMessage, boolean timedOut) {
     }
 
+    /**
+     * Cách A: sinh và chạy thật test gốc của endpoint POST tạo tài nguyên (đệ quy giới hạn {@value #MAX_CREATOR_DEPTH} cấp, không sinh checklist cho endpoint phụ).
+     * Chỉ khi người dùng đã xác nhận ghi thật (confirmWrite), body JSON (không phải tải tệp). Thành công khi test nguồn đã có (hasCreatorSource) để luồng cũ
+     * nối chuỗi {id}. @return "ok" khi đã có nguồn để nối chuỗi; null khi không được (lý do được thêm vào {@code notes}).
+     */
+    private String tryCreateResource(UUID projectId, Project project, Endpoint endpoint, String paramName, BaselineRequest req, Map<String, String> given,
+                                     JobProgress p, int depth, List<String> notes) {
+        Optional<Endpoint> creator = dependencySuggestionService.findCreatorEndpoint(project, endpoint, paramName);
+        if (creator.isEmpty()) {
+            notes.add("không có POST tạo tài nguyên trên đường dẫn cha");
+            return null;
+        }
+        String creatorLabel = "POST " + creator.get().getPath();
+        String contentType = creator.get().getRequestContentType() == null ? "" : creator.get().getRequestContentType().toLowerCase(Locale.ROOT);
+        if (!contentType.isEmpty() && !contentType.contains("json")) {
+            notes.add(creatorLabel + " nhận " + contentType + " (tải tệp/biểu mẫu) nên AI không tự tạo được dữ liệu");
+            return null;
+        }
+        if (!Boolean.TRUE.equals(req.getConfirmWrite())) {
+            notes.add("chưa được xác nhận ghi thật nên chưa tự tạo dữ liệu bằng " + creatorLabel);
+            return null;
+        }
+        if (depth >= MAX_CREATOR_DEPTH || creator.get().getId().equals(endpoint.getId())) {
+            notes.add("đã tới giới hạn " + MAX_CREATOR_DEPTH + " cấp tự tạo dữ liệu phụ thuộc");
+            return null;
+        }
+        JobProgress.Step step = p.start(endpoint.getId(), endpoint.getMethod() + " " + endpoint.getPath(), "CREATE_RESOURCE", "SYSTEM",
+                "Chưa có dữ liệu thật cho {" + paramName + "}: tự tạo bằng " + creatorLabel + " (AI sinh test gốc rồi chạy thật, có ghi dữ liệu và tốn token)");
+        BaselineResponse created = execute(projectId, creator.get().getId(), new BaselineRequest(true, 1, given, false, false), p, depth + 1); // dữ liệu phụ: tối đa 1 lần sửa để không đốt token
+        boolean ok = "CONFIRMED".equals(created.status()) || "ALREADY_HAS_BASELINE".equals(created.status());
+        if (ok && dependencySuggestionService.hasCreatorSource(projectId, endpoint.getId(), paramName)) {
+            step.ok("Đã tạo dữ liệu bằng " + creatorLabel + "; nối chuỗi lấy id từ phản hồi của nó");
+            return "ok";
+        }
+        String why = ok ? "đã tạo được nhưng không tìm thấy test nguồn để nối chuỗi" : (created.message() == null ? created.status() : created.message());
+        step.fail("Không tạo được dữ liệu bằng " + creatorLabel + ": " + why);
+        notes.add("đã thử tạo bằng " + creatorLabel + " nhưng: " + why);
+        return null;
+    }
+
     static Diagnosis diagnose(RunOutcome o, boolean hasPathParams) {
         return diagnose(o, hasPathParams, false);
     }
@@ -312,6 +387,9 @@ public class BaselineVerificationService {
             if (err.toLowerCase(Locale.ROOT).contains("thiếu giá trị")) {
                 return new Diagnosis(Decision.HUMAN, "MISSING_PARAM_VALUE", "Thiếu giá trị cho tham số đường dẫn - nhập giá trị thật (vd id).");
             }
+            if (err.contains("không PASSED")) {
+                return new Diagnosis(Decision.HUMAN, "SOURCE_NOT_PASSED", err + ". Test tạo tài nguyên phải Pass trước (sửa hoặc chạy lại test đó), rồi chạy lại - đây không phải lỗi kết nối.");
+            }
             return new Diagnosis(Decision.HUMAN, "EXECUTION_ERROR", "Không gọi được API đích: " + (err.isBlank() ? "không có phản hồi" : err));
         }
         if (credentialEndpoint && http == 401) {
@@ -327,10 +405,36 @@ public class BaselineVerificationService {
             return new Diagnosis(Decision.HUMAN, "RESOURCE_NOT_FOUND",
                     "API trả 404 với tham số đường dẫn: id này không tồn tại - nhập id thật hoặc tạo trước 1 test POST tạo tài nguyên (chuỗi dữ liệu).");
         }
+        String prerequisite = http == 404 ? notFoundPrerequisite(o.body()) : null;
+        if (prerequisite != null) {
+            // 404 với mã lỗi *_NOT_FOUND ở endpoint không có tham số đường dẫn: thiếu dữ liệu tiên quyết (vd HR chưa có công ty), AI sửa request cũng vô ích
+            // và mỗi lần sửa tốn hàng chục nghìn token -> dừng ngay, nói rõ cho người dùng.
+            return new Diagnosis(Decision.HUMAN, "PREREQUISITE_MISSING",
+                    "API trả 404: " + prerequisite + ". Thường là dữ liệu tiên quyết chưa có (vd tài khoản chưa tạo công ty) - AI không sửa được; hãy tạo dữ liệu đó trước rồi chạy lại.");
+        }
         if (http >= 500) {
             return new Diagnosis(Decision.HUMAN, "SERVER_ERROR", "API trả " + http + " với test hợp lệ - nghi lỗi phía API, AI không sửa được.");
         }
         return new Diagnosis(Decision.REPAIR, null, "API trả " + http + " - gửi thông báo lỗi thật cho AI sửa.");
+    }
+
+    /** "MA_LOI: thông điệp" nếu phản hồi JSON có mã lỗi kết thúc bằng _NOT_FOUND (vd COMPANY_NOT_FOUND); ngược lại null. */
+    static String notFoundPrerequisite(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            String code = json.path("error").asText(json.path("code").asText(""));
+            if (!code.toUpperCase(Locale.ROOT).endsWith("_NOT_FOUND")) {
+                return null;
+            }
+            String message = json.path("message").asText("");
+            String text = message.isBlank() ? code : code + " - " + message;
+            return text.length() > 200 ? text.substring(0, 200) : text;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ---- Chạy 1 test và chờ kết quả ----

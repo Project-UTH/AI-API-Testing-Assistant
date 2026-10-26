@@ -399,6 +399,137 @@ class TestExecutionRunnerTest {
         assertThat(captor.getAllValues()).allSatisfy(r -> assertThat(r.getSecurityFindingsJson()).isNull());
     }
 
+    // ---- 17q G1 - mã thành công lệch spec ----
+
+    private TestCase caseWithDeclaredCodes(String codesJson, int expected) {
+        Endpoint declared = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/jobs")
+                .schema("{\"responseStatusCodes\":" + codesJson + "}").build();
+        return TestCase.builder().id(UUID.randomUUID()).endpoint(declared)
+                .resolvedPath("/jobs").expectedStatus(expected).createdAt(Instant.now()).build();
+    }
+
+    @Test
+    void runInBackground_passWithSuccessCodeOutsideSpec_staysPassedButRecordsSpecDeviation() {
+        // Kỳ vọng đã bị đổi theo mã API trả (200) nên test Pass - nhưng spec khai 201: lỗi phải được báo, không bị che.
+        TestCase testCase = caseWithDeclaredCodes("[\"201\",\"400\"]", 200);
+        when(restAssuredTestRunner.run(any(), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"id\":1}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.PASSED);
+        assertThat(captor.getValue().getSpecDeviationsJson()).contains("[201]").contains("API trả 200");
+        assertThat(captor.getValue().getSchemaViolationsJson()).isNull();
+    }
+
+    @Test
+    void runInBackground_specDeviationIsIndependentOfStatusMatch() {
+        TestCase testCase = caseWithDeclaredCodes("[\"201\"]", 204);
+        when(restAssuredTestRunner.run(any(), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.FAILED);
+        assertThat(captor.getValue().getSpecDeviationsJson()).contains("API trả 200");
+    }
+
+    @Test
+    void runInBackground_noSpecDeviation_forSpringdocDefault200_negativeTest_orLegacyEndpoint() {
+        TestCase springdoc = caseWithDeclaredCodes("[\"200\"]", 201);
+        TestCase negative = caseWithDeclaredCodes("[\"201\",\"400\"]", 400);
+        TestCase legacy = simpleCase();
+        when(restAssuredTestRunner.run(any(), eq(springdoc), any())).thenReturn(new RestAssuredTestRunner.RunResult(201, "{}"));
+        when(restAssuredTestRunner.run(any(), eq(negative), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+        when(restAssuredTestRunner.run(any(), eq(legacy), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{}"));
+
+        runner.runInBackground(execution, List.of(springdoc, negative, legacy), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, times(3)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(r -> assertThat(r.getSpecDeviationsJson()).isNull());
+    }
+
+    // ---- 17q G2 - lưu lý do API từ chối (oracle mạnh cho test âm) ----
+
+    @Test
+    void runInBackground_4xxWithRejectionReason_storesExcerpt_but2xxDoesNot() {
+        TestCase negative = simpleCase();
+        negative.setExpectedStatus(400);
+        TestCase positive = simpleCase();
+        when(restAssuredTestRunner.run(any(), eq(negative), any()))
+                .thenReturn(new RestAssuredTestRunner.RunResult(400, "{\"message\":\"email is required\"}"));
+        when(restAssuredTestRunner.run(any(), eq(positive), any())).thenReturn(new RestAssuredTestRunner.RunResult(200, "{\"message\":\"invalid\"}"));
+
+        runner.runInBackground(execution, List.of(negative, positive), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues().get(0).getRejectionExcerpt()).contains("email is required");
+        assertThat(captor.getAllValues().get(1).getRejectionExcerpt()).isNull();
+    }
+
+    // ---- 17q G3 - test sinh từ luật nghiệp vụ ----
+
+    @Test
+    void runInBackground_rejectedClass_passesOn422AndFailsOn200_and401IsNotARuleRejection() {
+        TestCase rejected = simpleCase();
+        rejected.setExpectedStatus(400);
+        rejected.setExpectedStatusClass(ExpectedStatus.REJECTED);
+        TestCase acceptedWrongly = simpleCase();
+        acceptedWrongly.setExpectedStatus(400);
+        acceptedWrongly.setExpectedStatusClass(ExpectedStatus.REJECTED);
+        TestCase unauthorized = simpleCase();
+        unauthorized.setExpectedStatus(400);
+        unauthorized.setExpectedStatusClass(ExpectedStatus.REJECTED);
+        when(restAssuredTestRunner.run(any(), eq(rejected), any())).thenReturn(new RestAssuredTestRunner.RunResult(422, "{}"));
+        when(restAssuredTestRunner.run(any(), eq(acceptedWrongly), any())).thenReturn(new RestAssuredTestRunner.RunResult(201, "{}"));
+        when(restAssuredTestRunner.run(any(), eq(unauthorized), any())).thenReturn(new RestAssuredTestRunner.RunResult(401, "{}"));
+
+        runner.runInBackground(execution, List.of(rejected, acceptedWrongly, unauthorized), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, times(3)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(TestResult::getStatus)
+                .containsExactly(TestResultStatus.PASSED, TestResultStatus.FAILED, TestResultStatus.FAILED);
+    }
+
+    @Test
+    void runInBackground_sendTwice_secondResponseIsGraded_butFirstNon2xxBlocksTheTest() {
+        TestCase duplicate = simpleCase();
+        duplicate.setExpectedStatus(409);
+        duplicate.setSendTwice(true);
+        when(restAssuredTestRunner.run(any(), eq(duplicate), any(), any()))
+                .thenReturn(new RestAssuredTestRunner.RunResult(201, "{}"))
+                .thenReturn(new RestAssuredTestRunner.RunResult(409, "{}"));
+
+        runner.runInBackground(execution, List.of(duplicate), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.PASSED);
+        assertThat(captor.getValue().getResponseStatus()).isEqualTo(409);
+        org.mockito.Mockito.verify(restAssuredTestRunner, times(2)).run(any(), eq(duplicate), any(), any());
+    }
+
+    @Test
+    void runInBackground_sendTwice_firstFailureMeansBlocked_notAFalsePass() {
+        TestCase duplicate = simpleCase();
+        duplicate.setExpectedStatus(409);
+        duplicate.setSendTwice(true);
+        when(restAssuredTestRunner.run(any(), eq(duplicate), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(400, "{}"));
+
+        runner.runInBackground(execution, List.of(duplicate), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TestResultStatus.BLOCKED);
+        assertThat(captor.getValue().getErrorMessage()).contains("Lần gửi đầu");
+        org.mockito.Mockito.verify(restAssuredTestRunner, times(1)).run(any(), eq(duplicate), any(), any());
+    }
+
     // ---- Module 17 (17b-2) - probe mass-assignment ----
 
     private TestCase probeCase() {
@@ -437,6 +568,47 @@ class TestExecutionRunnerTest {
             assertThat(r.getStatus()).isEqualTo(TestResultStatus.PASSED);
             assertThat(r.getSecurityFindingsJson()).isNull();
         });
+    }
+
+    @Test
+    void runInBackground_robustnessProbe_500OnMalformedJsonFailsWithFinding_400Passes_401StaysAFailure() {
+        TestCase serverError = simpleCase();
+        TestCase rejected = simpleCase();
+        TestCase wrongCode = simpleCase();
+        for (TestCase tc : List.of(serverError, rejected, wrongCode)) {
+            tc.setProbeKind(HttpRobustnessProbe.KIND);
+            tc.setProbeFieldsJson(HttpRobustnessProbe.probeJson(HttpRobustnessProbe.Variant.MALFORMED_JSON));
+            tc.setExpectedStatus(400);
+        }
+        when(restAssuredTestRunner.run(any(), eq(serverError), any())).thenReturn(new RestAssuredTestRunner.RunResult(500, "{\"error\":\"x\"}"));
+        when(restAssuredTestRunner.run(any(), eq(rejected), any())).thenReturn(new RestAssuredTestRunner.RunResult(400, "{\"error\":\"bad json\"}"));
+        when(restAssuredTestRunner.run(any(), eq(wrongCode), any())).thenReturn(new RestAssuredTestRunner.RunResult(401, "{}"));
+
+        runner.runInBackground(execution, List.of(serverError, rejected, wrongCode), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository, org.mockito.Mockito.times(3)).save(captor.capture());
+        TestResult r500 = captor.getAllValues().stream().filter(r -> r.getTestCase() == serverError).findFirst().orElseThrow();
+        TestResult r400 = captor.getAllValues().stream().filter(r -> r.getTestCase() == rejected).findFirst().orElseThrow();
+        TestResult r401 = captor.getAllValues().stream().filter(r -> r.getTestCase() == wrongCode).findFirst().orElseThrow();
+        assertThat(r500.getStatus()).isEqualTo(TestResultStatus.FAILED);
+        assertThat(r500.getSecurityFindingsJson()).contains(HttpRobustnessProbe.RULE_SERVER_ERROR);
+        assertThat(r400.getStatus()).isEqualTo(TestResultStatus.PASSED);
+        assertThat(r401.getStatus()).isEqualTo(TestResultStatus.FAILED); // không sửa kỳ vọng cho khớp 401
+    }
+
+    @Test
+    void runInBackground_stackTraceInA500Response_isRecordedAsAnErrorLeakFinding_onAnyStatus() {
+        TestCase testCase = simpleCase();
+        testCase.setExpectedStatus(400);
+        when(restAssuredTestRunner.run(any(), any(), any())).thenReturn(new RestAssuredTestRunner.RunResult(500,
+                "{\"trace\":\"java.lang.NullPointerException\\n\\tat com.shop.A.b(A.java:10)\"}"));
+
+        runner.runInBackground(execution, List.of(testCase), project, Map.of(), Set.of(), Map.of());
+
+        ArgumentCaptor<TestResult> captor = ArgumentCaptor.forClass(TestResult.class);
+        verify(testResultRepository).save(captor.capture());
+        assertThat(captor.getValue().getSecurityFindingsJson()).contains("ERROR_LEAK_STACKTRACE");
     }
 
     @Test

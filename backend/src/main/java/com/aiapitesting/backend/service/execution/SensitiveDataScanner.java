@@ -62,6 +62,35 @@ public final class SensitiveDataScanner {
     private SensitiveDataScanner() {
     }
 
+    /** 17q G4 - dấu hiệu rò rỉ chi tiết lỗi nội bộ trong response (mọi định dạng, mọi mã trạng thái). */
+    private static final Pattern STACK_TRACE = Pattern.compile(
+            "at [\\w.$<>/]+\\([\\w$.]+\\.(java|kt|scala):\\d+\\)|Traceback \\(most recent call last\\)|\\bat .+ \\(.+\\.(js|ts):\\d+:\\d+\\)|Exception in thread \"");
+    private static final Pattern SQL_ERROR = Pattern.compile(
+            "(?i)you have an error in your sql syntax|SQLSyntaxErrorException|java\\.sql\\.SQL\\w*Exception|PSQLException|SQLSTATE\\[|\\bORA-\\d{5}\\b|sqlite3?\\.OperationalError|syntax error at or near|Unclosed quotation mark|MySQLSyntaxErrorException");
+    private static final Pattern INTERNAL_CLASS = Pattern.compile(
+            "\\b(org\\.springframework|org\\.hibernate|com\\.fasterxml\\.jackson|com\\.mysql|java\\.lang|java\\.sql|jakarta\\.persistence)\\.[A-Za-z0-9_.$]{3,}");
+
+    /**
+     * Phát hiện rò rỉ chi tiết lỗi nội bộ (stack trace, lỗi SQL, tên lớp framework). KHÔNG trả đoạn văn bản bắt được, chỉ mã quy tắc và mô tả.
+     * Chạy trên response thô, không cần là JSON.
+     */
+    public static List<Finding> scanErrorLeak(String responseBody) {
+        if (responseBody == null || responseBody.isBlank() || responseBody.length() > MAX_BODY_CHARS) {
+            return List.of();
+        }
+        List<Finding> found = new ArrayList<>();
+        if (STACK_TRACE.matcher(responseBody).find()) {
+            found.add(new Finding("(response)", "ERROR_LEAK_STACKTRACE", Severity.HIGH, "Response chứa stack trace của ứng dụng"));
+        }
+        if (SQL_ERROR.matcher(responseBody).find()) {
+            found.add(new Finding("(response)", "ERROR_LEAK_SQL", Severity.HIGH, "Response chứa thông báo lỗi SQL/cơ sở dữ liệu"));
+        }
+        if (INTERNAL_CLASS.matcher(responseBody).find()) {
+            found.add(new Finding("(response)", "ERROR_LEAK_CLASS", Severity.MEDIUM, "Response chứa tên lớp/gói nội bộ của framework"));
+        }
+        return found;
+    }
+
     /**
      * Kết quả quét + che.
      *
@@ -258,12 +287,5 @@ public final class SensitiveDataScanner {
         } else if (node.isContainerNode()) {
             node.forEach(child -> collect(child, out, depth + 1));
         }
-    }
-
-    /** Gom mọi finding thành danh sách chuỗi ổn định cho báo cáo/log (không chứa giá trị). */
-    static List<String> describeAll(List<Finding> findings) {
-        List<String> lines = new ArrayList<>();
-        findings.forEach(f -> lines.add(f.path() + " [" + f.rule() + "]"));
-        return lines;
     }
 }

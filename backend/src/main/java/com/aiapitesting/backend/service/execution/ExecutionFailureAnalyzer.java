@@ -8,6 +8,7 @@ import com.aiapitesting.backend.entity.StabilityState;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestExecution;
 import com.aiapitesting.backend.entity.TestResult;
+import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -80,11 +81,25 @@ public class ExecutionFailureAnalyzer {
         List<TestResult> changed = new ArrayList<>();
 
         for (TestResult result : failed) {
+            List<String> robustnessEvidence = probeEvidence(result, HttpRobustnessProbe.KIND);
+            if (!robustnessEvidence.isEmpty()) {
+                result.setFailureCause(FailureCause.HTTP_ROBUSTNESS);
+                result.setFailureEvidence(writeEvidence(robustnessEvidence));
+                changed.add(result);
+                continue;
+            }
             // Probe mass-assignment đã bị phát hiện (17b-2): đây là phát hiện bảo mật thật, bỏ qua luật phân loại theo mã trạng thái.
             List<String> probeEvidence = massAssignmentEvidence(result);
             if (!probeEvidence.isEmpty()) {
                 result.setFailureCause(FailureCause.MASS_ASSIGNMENT);
                 result.setFailureEvidence(writeEvidence(probeEvidence));
+                changed.add(result);
+                continue;
+            }
+            List<String> ruleEvidence = ruleViolationAcceptedEvidence(result);
+            if (!ruleEvidence.isEmpty()) {
+                result.setFailureCause(FailureCause.RULE_VIOLATION_ACCEPTED);
+                result.setFailureEvidence(writeEvidence(ruleEvidence));
                 changed.add(result);
                 continue;
             }
@@ -292,16 +307,39 @@ public class ExecutionFailureAnalyzer {
 
     /** Số test CÙNG profile vai trò trong lượt chạy nhận phản hồi không phải 401/403 - bằng chứng token của vai trò còn dùng được. */
     /** Bằng chứng từ securityFindingsJson của probe mass-assignment (chỉ tên field/mô tả, không giá trị); rỗng nếu không phải probe bị phát hiện. */
+    /**
+     * 17q G3 - test từ luật nghiệp vụ đã duyệt kỳ vọng "bị từ chối" (4xx) mà API trả 2xx/3xx: API nhận dữ liệu vi phạm luật. Chỉ áp cho test
+     * VI PHẠM luật (test biên hợp lệ kỳ vọng 2xx không bao giờ vào đây).
+     */
+    private List<String> ruleViolationAcceptedEvidence(TestResult result) {
+        TestCase testCase = result.getTestCase();
+        Integer actual = result.getResponseStatus();
+        if (testCase.getRuleId() == null || result.getStatus() != TestResultStatus.FAILED || actual == null || actual < 200 || actual >= 400
+                || testCase.getExpectedStatus() == null || testCase.getExpectedStatus() < 400 || testCase.getExpectedStatus() > 499) {
+            return List.of();
+        }
+        String rule = testCase.getChecklistItem() == null ? "luật nghiệp vụ đã duyệt" : testCase.getChecklistItem();
+        return List.of("API trả " + actual + " (thành công) cho request cố ý vi phạm 1 luật bạn đã duyệt: " + rule,
+                testCase.getExpectedStatusClass() != null
+                        ? "Kỳ vọng: bị từ chối (4xx). Nếu mục checklist sai, hãy Sửa hoặc Loại mục đó ở tab Checklist nghiệp vụ - không sửa kỳ vọng để test Pass."
+                        : "Kỳ vọng: " + testCase.getExpectedStatus() + ". Nếu mục checklist sai, hãy Sửa hoặc Loại mục đó ở tab Checklist nghiệp vụ.");
+    }
+
     private List<String> massAssignmentEvidence(TestResult result) {
+        return probeEvidence(result, MassAssignmentProbe.KIND);
+    }
+
+    /** Bằng chứng (mô tả, không có giá trị) của probe loại {@code kind} mà lần chạy này đã phát hiện; rỗng nếu không phải probe đó. */
+    private List<String> probeEvidence(TestResult result, String kind) {
         String json = result.getSecurityFindingsJson();
-        if (json == null || !MassAssignmentProbe.KIND.equals(result.getTestCase().getProbeKind()) || !json.contains(MassAssignmentProbe.KIND)) {
+        if (json == null || !kind.equals(result.getTestCase().getProbeKind()) || !json.contains(kind)) {
             return List.of();
         }
         try {
             List<Map<String, String>> findings = new com.fasterxml.jackson.databind.ObjectMapper().readValue(json,
                     new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {
                     });
-            return findings.stream().filter(f -> f.getOrDefault("rule", "").startsWith(MassAssignmentProbe.KIND))
+            return findings.stream().filter(f -> f.getOrDefault("rule", "").startsWith(kind))
                     .map(f -> f.get("detail")).toList();
         } catch (Exception e) {
             return List.of();

@@ -50,9 +50,14 @@ public class RestAssuredTestRunner {
     }
 
     public RunResult run(Project project, TestCase testCase, Map<String, String> resolvedValues) {
+        return run(project, testCase, resolvedValues, new DynamicPlaceholderResolver.RunScope());
+    }
+
+    /** Chạy với scope cho trước: {{uuid:a}} dùng lại cùng giá trị giữa các lần gọi cùng scope (test "gửi 2 lần" của luật UNIQUE). */
+    public RunResult run(Project project, TestCase testCase, Map<String, String> resolvedValues, DynamicPlaceholderResolver.RunScope scope) {
         AuthProfile loginProfile = loginProfileInUse(project, testCase);
         java.time.Instant tokenBefore = loginProfile == null ? null : authTokenService.fetchedAt(loginProfile.getId());
-        RunResult first = execute(project, testCase, resolvedValues, false);
+        RunResult first = execute(project, testCase, resolvedValues, false, scope);
         // Token tự lấy (profile chế độ Đăng nhập) có thể hết hạn giữa lượt: gặp 401 thì đăng nhập lại và thử ĐÚNG 1 lần.
         // Chỉ thử lại khi token đến từ cache (token vừa đăng nhập xong mà vẫn 401 thì không phải do hết hạn) và test không CHỦ ĐÍCH
         // kỳ vọng 401/403 - tránh gửi lại request không idempotent vô ích. Test Security NONE/INVALID không có loginProfile nên bỏ qua.
@@ -61,7 +66,7 @@ public class RestAssuredTestRunner {
         if (first.statusCode() == 401 && !expectsDenial && loginProfile != null
                 && java.util.Objects.equals(tokenBefore, authTokenService.fetchedAt(loginProfile.getId()))) {
             authTokenService.evict(loginProfile.getId());
-            return execute(project, testCase, resolvedValues, true);
+            return execute(project, testCase, resolvedValues, true, scope);
         }
         return first;
     }
@@ -75,8 +80,8 @@ public class RestAssuredTestRunner {
                 .filter(AuthProfile::isLoginMode).orElse(null);
     }
 
-    private RunResult execute(Project project, TestCase testCase, Map<String, String> resolvedValues, boolean refreshToken) {
-        DynamicPlaceholderResolver.RunScope scope = new DynamicPlaceholderResolver.RunScope();
+    private RunResult execute(Project project, TestCase testCase, Map<String, String> resolvedValues, boolean refreshToken,
+                              DynamicPlaceholderResolver.RunScope scope) {
         String path = testCasePathValidator.substitute(testCase.getResolvedPath(), resolvedValues, scope);
 
         RequestSpecification request = RestAssured.given()
@@ -126,8 +131,17 @@ public class RestAssuredTestRunner {
             request = request.contentType(headerContentType);
         }
 
-        Response response = request.request(Method.valueOf(testCase.getEndpoint().getMethod()), path);
+        Response response = request.request(Method.valueOf(methodOf(testCase)), path);
         return new RunResult(response.statusCode(), response.getBody().asString());
+    }
+
+    /** Method thật của request: method của endpoint, trừ probe WRONG_METHOD (17q G4) cố ý gửi phương thức không được khai báo. */
+    static String methodOf(TestCase testCase) {
+        if (HttpRobustnessProbe.KIND.equals(testCase.getProbeKind())
+                && HttpRobustnessProbe.variantOf(testCase.getProbeFieldsJson()) == HttpRobustnessProbe.Variant.WRONG_METHOD) {
+            return HttpRobustnessProbe.PROBE_HTTP_METHOD;
+        }
+        return testCase.getEndpoint().getMethod();
     }
 
     /**

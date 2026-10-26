@@ -17,6 +17,8 @@ import com.aiapitesting.backend.repository.GenerationJobStepRepository;
 import com.aiapitesting.backend.service.CoverageGapFillService;
 import com.aiapitesting.backend.service.ProjectService;
 import com.aiapitesting.backend.service.ai.BaselineVerificationService;
+import com.aiapitesting.backend.service.ai.RuleExtractionService;
+import com.aiapitesting.backend.service.rule.RequirementDocumentService;
 import com.aiapitesting.backend.service.ai.TestCaseGenerationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +52,8 @@ class GenerationJobServiceTest {
     private final BaselineVerificationService baseline = mock(BaselineVerificationService.class);
     private final CoverageGapFillService gapFill = mock(CoverageGapFillService.class);
     private final TestCaseGenerationService generation = mock(TestCaseGenerationService.class);
+    private final RuleExtractionService ruleExtraction = mock(RuleExtractionService.class);
+    private final RequirementDocumentService documents = mock(RequirementDocumentService.class);
     private final Executor executor = mock(Executor.class);
     private GenerationJobService service;
 
@@ -61,7 +65,7 @@ class GenerationJobServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GenerationJobService(jobs, steps, projectService, endpointRepository, recorder, baseline, gapFill, generation, executor);
+        service = new GenerationJobService(jobs, steps, projectService, endpointRepository, recorder, baseline, gapFill, generation, ruleExtraction, documents, executor);
         User owner = User.builder().id(ownerId).build();
         project = Project.builder().id(projectId).owner(owner).build();
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
@@ -101,6 +105,17 @@ class GenerationJobServiceTest {
     }
 
     @Test
+    void start_checklistOnly_needsTheBusinessChecklistOption() {
+        StartGenerationJobRequest r = request(e1.getId());
+        r.setChecklistOnly(true);
+        assertThatThrownBy(() -> service.start(projectId, r)).isInstanceOf(InvalidRequestException.class);
+        r.setBusinessChecklist(true);
+        r.setInstruction("Câu hỏi: hạn nộp? Trả lời: không quá khứ");
+        when(documents.activeDocuments(eq(project), any())).thenReturn(List.of());
+        assertThat(service.start(projectId, r).status()).isEqualTo(GenerationJob.QUEUED);
+    }
+
+    @Test
     void start_rejectsEmptySelection_foreignEndpointAndUnknownType() {
         assertThatThrownBy(() -> service.start(projectId, request())).isInstanceOf(InvalidRequestException.class);
         assertThatThrownBy(() -> service.start(projectId, null)).isInstanceOf(InvalidRequestException.class);
@@ -109,6 +124,61 @@ class GenerationJobServiceTest {
         bad.setType("HACK");
         assertThatThrownBy(() -> service.start(projectId, bad)).isInstanceOf(InvalidRequestException.class);
         verify(executor, never()).execute(any(Runnable.class));
+    }
+
+    @Test
+    void start_rulesJob_needsDocumentOrInstruction_defaultsToAllEndpoints_andClampsTheTokenBudget() {
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(e1, e2));
+        StartGenerationJobRequest req = new StartGenerationJobRequest();
+        req.setType("rules");
+        when(documents.activeDocuments(eq(project), any())).thenReturn(List.of());
+        // Không tài liệu, không chỉ dẫn: vẫn hợp lệ, làn "AI gợi ý thêm" tự bật (chỉ gợi ý từ spec).
+        assertThat(service.start(projectId, req).type()).isEqualTo(GenerationJob.TYPE_RULES);
+
+        req.setInstruction("Lương tối thiểu không được lớn hơn lương tối đa");
+        GenerationJobResponse job = service.start(projectId, req);
+        assertThat(job.type()).isEqualTo(GenerationJob.TYPE_RULES);
+        assertThat(job.tokenCap()).isEqualTo(RuleExtractionService.DEFAULT_BUDGET);
+
+        req.setTokenCap(10);
+        assertThat(service.start(projectId, req).tokenCap()).isEqualTo(RuleExtractionService.MIN_BUDGET);
+        req.setTokenCap(50_000_000);
+        assertThat(service.start(projectId, req).tokenCap()).isEqualTo(RuleExtractionService.MAX_BUDGET);
+
+        req.setInstruction("x".repeat(GenerationJobService.MAX_INSTRUCTION_CHARS + 1));
+        assertThatThrownBy(() -> service.start(projectId, req)).isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void start_rulesJob_rejectsEndpointOrDocumentOutsideTheProject() {
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(e1));
+        StartGenerationJobRequest req = new StartGenerationJobRequest();
+        req.setType("RULES");
+        req.setInstruction("Một chỉ dẫn hợp lệ cho AI");
+        req.setEndpointIds(List.of(UUID.randomUUID()));
+        assertThatThrownBy(() -> service.start(projectId, req)).isInstanceOf(InvalidRequestException.class);
+
+        req.setEndpointIds(null);
+        req.setDocumentIds(List.of(UUID.randomUUID()));
+        when(documents.activeDocuments(eq(project), any())).thenReturn(List.of());
+        assertThatThrownBy(() -> service.start(projectId, req)).isInstanceOf(InvalidRequestException.class);
+        verify(executor, never()).execute(any(Runnable.class));
+    }
+
+    @Test
+    void runJob_savesTheOwaspScopeOnTheEndpoint_fromTheIncludeOwaspFlag() {
+        for (boolean owasp : new boolean[]{true, false}) {
+            StartGenerationJobRequest req = request(e1.getId());
+            req.setType("SYSTEM");
+            req.setIncludeOwasp(owasp);
+            GenerationJob job = GenerationJob.builder().id(UUID.randomUUID()).projectId(projectId).ownerId(ownerId).type(GenerationJob.TYPE_SYSTEM)
+                    .status(GenerationJob.QUEUED).build();
+            when(jobs.findById(job.getId())).thenReturn(Optional.of(job));
+            when(endpointRepository.findById(e1.getId())).thenReturn(Optional.of(e1));
+            when(gapFill.fill(any(), any(), any())).thenReturn(new com.aiapitesting.backend.dto.response.CoverageFillResponse(0, List.of(), List.of(), null, 0));
+            service.runJob(job.getId(), projectId, List.of(e1.getId()), req);
+            assertThat(e1.getScopeOwasp()).isEqualTo(owasp);
+        }
     }
 
     @Test

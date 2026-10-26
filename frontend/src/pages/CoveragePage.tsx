@@ -5,17 +5,17 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
-import { getEndpointCoverage, getProjectCoveragePage } from "@/lib/coverage"
+import { getEndpointCoverage, getProjectCoveragePage, getTestStateDisplay, TEST_STATE_ORDER } from "@/lib/coverage"
 import { useListFilters } from "@/hooks/useListFilters"
 import { ListToolbar, type ListFilterSelect } from "@/components/shared/ListToolbar"
 import { Pagination } from "@/components/shared/Pagination"
 import { ListEmptyState } from "@/components/shared/ListEmptyState"
-import { CoverageSummary } from "@/components/shared/CoverageMatrixChart"
+import { CoverageOverviewCard } from "@/components/shared/CoverageMatrixChart"
 import { CoverageEndpointRow } from "@/components/coverage/CoverageEndpointRow"
 import { BulkAuthBar } from "@/components/coverage/BulkAuthBar"
 import { RoleMatrixPanel } from "@/components/coverage/RoleMatrixPanel"
 
-const FILTER_KEYS = ["method", "status"] as const
+const FILTER_KEYS = ["method", "status", "state"] as const
 const PAGE_SIZE = 25
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 
@@ -46,6 +46,7 @@ export function CoveragePage() {
         method: lf.filters.method,
         onlyGaps: lf.filters.status === "gaps",
         onlyFailing: lf.filters.status === "failing",
+        state: lf.filters.state || undefined,
       }),
     placeholderData: keepPreviousData,
   })
@@ -122,6 +123,14 @@ export function CoveragePage() {
         { value: "failing", label: "Có mục đang Fail" },
       ],
     },
+    {
+      key: "state",
+      label: "Lọc theo trạng thái kiểm thử",
+      allLabel: "Mọi trạng thái",
+      value: lf.filters.state,
+      className: "sm:w-44",
+      options: TEST_STATE_ORDER.map((state) => ({ value: state, label: getTestStateDisplay(state)!.label })),
+    },
   ]
 
   return (
@@ -147,7 +156,11 @@ export function CoveragePage() {
 
       {data && (
         <div className="mt-6 flex flex-col gap-4">
-          <CoverageSummary coveragePercent={data.overallCoveragePercent} executedPercent={data.overallExecutedPercent} />
+          <CoverageOverviewCard
+            overview={data.overview}
+            selectedState={lf.filters.state}
+            onSelectState={(state) => lf.setFilter("state", state ?? "")}
+          />
           <p className="-mt-2 text-xs text-muted-foreground">
             Số liệu trên tính cho toàn project ({data.overview.endpointCount} endpoint, {data.overview.endpointsWithGaps} endpoint còn thiếu mục
             cần kiểm), không đổi theo bộ lọc bên dưới.

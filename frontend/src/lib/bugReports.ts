@@ -105,6 +105,8 @@ export interface BugReportDraft {
   actualResult: string | null
   expectedResult: string | null
   defaultBuild: string
+  /** 17q G1 - true khi nguồn là lần chạy Pass có mã thành công lệch spec (bug mức thấp). */
+  specDeviation?: boolean
 }
 
 export interface CreateBugReportInput {

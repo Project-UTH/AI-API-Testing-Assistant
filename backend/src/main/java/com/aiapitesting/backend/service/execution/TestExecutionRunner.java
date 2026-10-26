@@ -13,6 +13,7 @@ import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.repository.TestExecutionRepository;
 import com.aiapitesting.backend.repository.TestResultRepository;
 import com.aiapitesting.backend.service.BugReportStatusService;
+import com.aiapitesting.backend.service.DynamicPlaceholderResolver;
 import com.aiapitesting.backend.service.TestCasePathValidator;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,9 +56,10 @@ public class TestExecutionRunner {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Module 16 - dữ liệu phụ thu được quanh 1 lần gọi target, truyền xuống finish() để lưu cùng TestResult. */
-    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint, String schemaViolationsJson, String securityFindingsJson) {
+    private record Meta(Long durationMs, ErrorKind errorKind, String fingerprint, String schemaViolationsJson, String securityFindingsJson,
+                        String specDeviationsJson, String rejectionExcerpt) {
         Meta(Long durationMs, ErrorKind errorKind, String fingerprint) {
-            this(durationMs, errorKind, fingerprint, null, null);
+            this(durationMs, errorKind, fingerprint, null, null, null, null);
         }
     }
 
@@ -276,18 +278,34 @@ public class TestExecutionRunner {
 
         long startedNanos = System.nanoTime();
         try {
-            RestAssuredTestRunner.RunResult result = restAssuredTestRunner.run(project, testCase, resolvedValues);
+            RestAssuredTestRunner.RunResult result;
+            if (testCase.isSendTwice()) {
+                // 17q G3 (luật UNIQUE): gửi 2 lần cùng giá trị {{uuid:x}}; lần 1 phải tạo được (2xx) thì lần 2 mới có nghĩa để chấm.
+                DynamicPlaceholderResolver.RunScope scope = new DynamicPlaceholderResolver.RunScope();
+                RestAssuredTestRunner.RunResult first = restAssuredTestRunner.run(project, testCase, resolvedValues, scope);
+                if (first.statusCode() < 200 || first.statusCode() > 299) {
+                    finish(execution, testCase, TestResultStatus.BLOCKED, first.statusCode(), null,
+                            "Lần gửi đầu trả " + first.statusCode() + " (không tạo được bản ghi gốc) nên không kiểm được việc tạo trùng",
+                            statusByTestCaseId, responseBodyByTestCaseId, null, autoIncluded, null, noCallMeta, savedResults);
+                    return;
+                }
+                result = restAssuredTestRunner.run(project, testCase, resolvedValues, scope);
+            } else {
+                result = restAssuredTestRunner.run(project, testCase, resolvedValues);
+            }
             // Test probe mass-assignment (17b-2) tự chấm theo phản hồi (400/422 = từ chối = đạt; phản chiếu field lạ = Fail); các mã khác
             // (401/403/404...) không kết luận được nên rơi về luật mã trạng thái thường.
             MassAssignmentProbe.Outcome probe = probeOutcomeOf(testCase, result);
             boolean statusMatches = probe != null && probe.verdict() != MassAssignmentProbe.Verdict.INCONCLUSIVE
                     ? probe.verdict() == MassAssignmentProbe.Verdict.PASS
-                    : Objects.equals(result.statusCode(), testCase.getExpectedStatus());
+                    : ExpectedStatus.matches(testCase, result.statusCode(), project.getUnauthenticatedStatus());
             // Quét 1 lần trên body THÔ; body lưu/hiển thị là bản đã che. Assertion + dependency vẫn dùng body thô (bên dưới).
             SensitiveDataScanner.Scan scan = scanSensitive(testCase, result.responseBody());
             Meta meta = new Meta(elapsedMillis(startedNanos), null, fingerprint,
                     statusMatches ? schemaViolationsJsonOf(testCase, result.statusCode(), result.responseBody()) : null,
-                    securityFindingsJsonOf(result.statusCode(), scan, probeFindingsOf(probe)));
+                    securityFindingsJsonOf(result.statusCode(), scan, probeFindingsOf(probe), SensitiveDataScanner.scanErrorLeak(result.responseBody())),
+                    specDeviationsJsonOf(testCase, result.statusCode()),
+                    rejectionExcerptOf(result.statusCode(), scan.maskedBody() != null ? scan.maskedBody() : result.responseBody()));
 
             // PASSED chỉ khi status code khớp VÀ mọi assertion đều đúng. Không chấm assertion nếu
             // status code đã sai.
@@ -337,9 +355,12 @@ public class TestExecutionRunner {
     }
 
     /** Cảnh báo quét dữ liệu nhạy cảm chỉ lấy từ response 2xx; phát hiện của probe (17b-2) luôn được ghi. CHỈ có đường dẫn/quy tắc/mô tả, không có giá trị. */
-    private String securityFindingsJsonOf(Integer statusCode, SensitiveDataScanner.Scan scan, List<SensitiveDataScanner.Finding> probeFindings) {
+    private String securityFindingsJsonOf(Integer statusCode, SensitiveDataScanner.Scan scan, List<SensitiveDataScanner.Finding> probeFindings,
+                                         List<SensitiveDataScanner.Finding> errorLeaks) {
         try {
+            // Rò rỉ chi tiết lỗi (stack trace/SQL/tên lớp) hay nằm ở response 4xx/5xx nên được ghi ở MỌI mã trạng thái.
             List<SensitiveDataScanner.Finding> all = new ArrayList<>(probeFindings);
+            all.addAll(errorLeaks);
             if (statusCode != null && statusCode >= 200 && statusCode <= 299) {
                 all.addAll(scan.findings());
             }
@@ -351,6 +372,10 @@ public class TestExecutionRunner {
 
     /** Chấm probe mass-assignment; null nếu test case không phải probe hoặc không đọc được danh sách field đã tiêm. */
     private MassAssignmentProbe.Outcome probeOutcomeOf(TestCase testCase, RestAssuredTestRunner.RunResult result) {
+        if (HttpRobustnessProbe.KIND.equals(testCase.getProbeKind())) {
+            HttpRobustnessProbe.Variant variant = HttpRobustnessProbe.variantOf(testCase.getProbeFieldsJson());
+            return variant == null ? null : HttpRobustnessProbe.evaluate(variant, result.statusCode());
+        }
         if (!MassAssignmentProbe.KIND.equals(testCase.getProbeKind()) || testCase.getProbeFieldsJson() == null) {
             return null;
         }
@@ -368,6 +393,9 @@ public class TestExecutionRunner {
     private List<SensitiveDataScanner.Finding> probeFindingsOf(MassAssignmentProbe.Outcome probe) {
         if (probe == null || probe.verdict() != MassAssignmentProbe.Verdict.FAIL) {
             return List.of();
+        }
+        if (probe.finding() != null) {
+            return List.of(probe.finding());
         }
         if (probe.reflected().isEmpty()) {
             return List.of(new SensitiveDataScanner.Finding("(request)", MassAssignmentProbe.RULE_SERVER_ERROR,
@@ -410,6 +438,46 @@ public class TestExecutionRunner {
         }
     }
 
+    /**
+     * 17q G1 - cảnh báo mã thành công lệch spec, tính ĐỘC LẬP với việc mã có khớp kỳ vọng hay không (kỳ vọng có thể đã bị đổi
+     * theo mã API trả nên "khớp" không có nghĩa là đúng spec). Lỗi ở bước này chỉ bỏ qua.
+     */
+    private String specDeviationsJsonOf(TestCase testCase, Integer statusCode) {
+        try {
+            if (testCase.getEndpoint() == null || testCase.getProbeKind() != null) {
+                return null;
+            }
+            return SpecStatusDeviation.check(SpecStatusDeviation.declaredStatusCodes(testCase.getEndpoint().getSchema()),
+                            testCase.getExpectedStatus(), statusCode)
+                    .map(warning -> {
+                        try {
+                            return objectMapper.writeValueAsString(List.of(warning));
+                        } catch (Exception e) {
+                            return null;
+                        }
+                    })
+                    .orElse(null);
+        } catch (Exception e) {
+            log.warn("Khong doi chieu duoc ma trang thai voi spec cho test case {}: {}", testCase.getId(), e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * 17q G2 - đoạn trích lý do API từ chối đầu vào (chỉ phản hồi 4xx, đọc trên body ĐÃ CHE dữ liệu nhạy cảm). Coverage dùng nó để
+     * biết 1 test âm Pass vì API từ chối ĐÚNG field đang kiểm (oracle mạnh) hay chỉ trùng hợp bị từ chối vì lý do khác.
+     */
+    private static String rejectionExcerptOf(Integer statusCode, String maskedBody) {
+        if (statusCode == null || statusCode < 400 || statusCode > 499) {
+            return null;
+        }
+        try {
+            return InputRejectionDetector.excerptIfRejected(maskedBody);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private long elapsedMillis(long startedNanos) {
         return (System.nanoTime() - startedNanos) / 1_000_000;
     }
@@ -439,6 +507,8 @@ public class TestExecutionRunner {
                 .testCaseFingerprint(meta.fingerprint())
                 .schemaViolationsJson(meta.schemaViolationsJson())
                 .securityFindingsJson(meta.securityFindingsJson())
+                .specDeviationsJson(meta.specDeviationsJson())
+                .rejectionExcerpt(meta.rejectionExcerpt())
                 .build();
         testResultRepository.save(result);
         savedResults.add(result);

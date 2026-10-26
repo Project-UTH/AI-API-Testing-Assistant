@@ -22,6 +22,7 @@ import {
   exportExecution,
   FAILURE_CAUSE_LABEL,
   getExecutionPage,
+  getVerdictTrustDisplay,
   type ExecutionReportFormat,
   type ExecutionStatus,
   type FailureCauseCode,
@@ -523,6 +524,7 @@ export function TestExecutionPage() {
                   className="flex min-w-0 flex-1 flex-col gap-2 text-left sm:flex-row sm:items-center"
                 >
                   <StatusBadge status={result.status} />
+                  <VerdictTrustChip trust={result.verdictTrust} />
                   <span className="min-w-0 flex-1 truncate text-sm">{result.testCaseName}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     Kỳ vọng {result.expectedStatus} → thực tế {result.responseStatus ?? "—"}
@@ -536,6 +538,14 @@ export function TestExecutionPage() {
                       title="Phản hồi lệch schema khai báo trong spec - kết quả Pass/Fail không đổi"
                     >
                       Lệch schema (cảnh báo)
+                    </span>
+                  )}
+                  {(result.specDeviations?.length ?? 0) > 0 && (
+                    <span
+                      className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+                      title={`${result.specDeviations?.join("; ")} - chỉ cảnh báo, kết quả không đổi`}
+                    >
+                      Lệch spec: mã {result.responseStatus}
                     </span>
                   )}
                   <SecurityBadge findings={result.securityFindings} />
@@ -564,6 +574,19 @@ export function TestExecutionPage() {
                 <div className="flex flex-col gap-3 border-t border-border p-3">
                   <StabilityNote result={result} projectId={projectId} />
                   <FailureCauseDetail result={result} />
+                  {(result.specDeviations?.length ?? 0) > 0 && (
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                      <p className="font-medium text-amber-700 dark:text-amber-400">Mã trạng thái lệch spec (chỉ cảnh báo)</p>
+                      <ul className="mt-1.5 list-disc pl-5 text-foreground">
+                        {result.specDeviations?.map((deviation) => (
+                          <li key={deviation}>{deviation}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-1.5 text-muted-foreground">
+                        API trả mã 2xx không có trong spec. Có thể API sai so với spec, hoặc spec khai thiếu.
+                      </p>
+                    </div>
+                  )}
                   {result.schemaViolations.length > 0 && (
                     <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
                       <p className="font-medium text-amber-700 dark:text-amber-400">
@@ -624,6 +647,17 @@ export function TestExecutionPage() {
                   {result.status === "FAILED" && !result.existingBugReportId && (
                     <Button size="xs" variant="outline" className="self-end" onClick={() => setCreateBugResultId(result.id)}>
                       Báo lỗi
+                    </Button>
+                  )}
+                  {result.status === "PASSED" && (result.specDeviations?.length ?? 0) > 0 && !result.existingBugReportId && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      className="self-end"
+                      title="Tạo Bug Report mức thấp cho chênh lệch mã trạng thái (mỗi endpoint 1 bug đang mở)"
+                      onClick={() => setCreateBugResultId(result.id)}
+                    >
+                      Báo lỗi lệch spec
                     </Button>
                   )}
                 </div>
@@ -777,5 +811,16 @@ function ExecutionSummaryDashboard({ total, countByStatus }: { total: number; co
         </div>
       </div>
     </div>
+  )
+}
+
+/** 17q G2 - độ tin kết luận cạnh badge Pass/Fail (khác FailureCauseChip: chip đó nói VÌ SAO Fail, chip này nói CÓ TIN ĐƯỢC không). */
+function VerdictTrustChip({ trust }: { trust: string | null | undefined }) {
+  const display = getVerdictTrustDisplay(trust)
+  if (!display) return null
+  return (
+    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", display.className)} title={display.title}>
+      {display.label}
+    </span>
   )
 }

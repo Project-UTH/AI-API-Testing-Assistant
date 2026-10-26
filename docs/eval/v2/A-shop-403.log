@@ -1,0 +1,66 @@
+Sổ token TRƯỚC: {'eventTokens': 1340214, 'jobTokens': 104291, 'eventRows': 137, 'jobRows': 17}
+
+--- Lượt 1/2 - cấu hình A (0 token), 15 mutant ---
+  project 25d6adaa-ff53-4d43-b2df-17e06c6313b5: 7 endpoint đã import
+  7 test gốc do người viết: tất cả Pass
+  sinh test (tầng hệ thống) xong: SUCCEEDED, 0 token, 2.1s
+  Bù coverage: 114 -> 114 test (+0 báo cáo)
+  [A] chạy 114 test trên bản chuẩn
+  [A] bản chuẩn: 101/114 Pass (tính bằng chứng), Fail giả 13 {'UNDETERMINED': 5, 'TEST_DATA_SUSPECT': 8}
+  [A] lượt đối chứng (không mutant): 0 test nhiễu bị loại khỏi bằng chứng
+    S01 validation       -> suspect (0 bắt, 2 nghi ngờ)
+    S02 validation       -> suspect (0 bắt, 2 nghi ngờ)
+    S03 validation       -> suspect (0 bắt, 2 nghi ngờ)
+    S04 validation       -> suspect (0 bắt, 2 nghi ngờ)
+    S05 status           -> suspect (0 bắt, 3 nghi ngờ)
+    S06 status           -> suspect (0 bắt, 3 nghi ngờ)
+    S07 state            -> missed  (0 bắt, 0 nghi ngờ)
+    S08 status           -> suspect (0 bắt, 5 nghi ngờ)
+    S09 business         -> missed  (0 bắt, 0 nghi ngờ)
+    S10 business         -> missed  (0 bắt, 0 nghi ngờ)
+    S11 business         -> missed  (0 bắt, 0 nghi ngờ)
+    S12 auth             -> suspect (0 bắt, 2 nghi ngờ)
+    S13 auth             -> suspect (0 bắt, 1 nghi ngờ)
+    S14 status           -> suspect (0 bắt, 3 nghi ngờ)
+    S15 robustness       -> caught  (3 bắt, 8 nghi ngờ)
+
+--- Lượt 2/2 - cấu hình A (0 token), 15 mutant ---
+  project beeb141c-88c7-4052-98ab-b180a6a3d438: 7 endpoint đã import
+  7 test gốc do người viết: tất cả Pass
+  sinh test (tầng hệ thống) xong: SUCCEEDED, 0 token, 2.1s
+  Bù coverage: 114 -> 114 test (+0 báo cáo)
+  [A] chạy 114 test trên bản chuẩn
+  [A] bản chuẩn: 101/114 Pass (tính bằng chứng), Fail giả 13 {'UNDETERMINED': 5, 'TEST_DATA_SUSPECT': 8}
+  [A] lượt đối chứng (không mutant): 0 test nhiễu bị loại khỏi bằng chứng
+    S01 validation       -> suspect (0 bắt, 2 nghi ngờ)
+    S02 validation       -> suspect (0 bắt, 2 nghi ngờ)
+    S03 validation       -> suspect (0 bắt, 2 nghi ngờ)
+    S04 validation       -> suspect (0 bắt, 2 nghi ngờ)
+    S05 status           -> suspect (0 bắt, 3 nghi ngờ)
+    S06 status           -> suspect (0 bắt, 3 nghi ngờ)
+    S07 state            -> missed  (0 bắt, 0 nghi ngờ)
+    S08 status           -> suspect (0 bắt, 5 nghi ngờ)
+    S09 business         -> missed  (0 bắt, 0 nghi ngờ)
+    S10 business         -> missed  (0 bắt, 0 nghi ngờ)
+    S11 business         -> missed  (0 bắt, 0 nghi ngờ)
+    S12 auth             -> suspect (0 bắt, 2 nghi ngờ)
+    S13 auth             -> suspect (0 bắt, 1 nghi ngờ)
+    S14 status           -> suspect (0 bắt, 3 nghi ngờ)
+    S15 robustness       -> caught  (3 bắt, 8 nghi ngờ)
+Sổ token SAU: {'eventTokens': 1340214, 'jobTokens': 104291, 'eventRows': 137, 'jobRows': 17}
+
+=== Cấu hình A (2 lượt, TB 114 test/lượt) ===
+Loại                gán đúng lỗi API   phát hiện   số lượt (gán đúng/tổng)
+ALL                           7% ± 0         73%        1/15 1/15
+auth                          0% ± 0        100%        0/2 0/2
+business                      0% ± 0          0%        0/3 0/3
+robustness                  100% ± 0        100%        1/1 1/1
+state                         0% ± 0          0%        0/1 0/1
+status                        0% ± 0        100%        0/4 0/4
+validation                    0% ± 0        100%        0/4 0/4
+Fail giả trên bản chuẩn: 11.4%
+Sinh test: 0 token, 2s (trung bình mỗi lượt)
+
+TOKEN ĐÃ DÙNG (chênh lệch sổ trước/sau): sinh test+AI = 0, token của job = 0
+
+Đã ghi kết quả: docs\eval\v2\results-A-shop-403.json

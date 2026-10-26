@@ -28,6 +28,13 @@ public final class TestCaseFingerprint {
         append(canonical, testCase.getRequestHeaders());
         append(canonical, testCase.getRequestBody());
         append(canonical, testCase.getExpectedStatus());
+        // 17q G3 - chỉ đưa vào khi có (dấu vân tay của test cũ không đổi).
+        if (testCase.getExpectedStatusClass() != null) {
+            append(canonical, "C:" + testCase.getExpectedStatusClass());
+        }
+        if (testCase.isSendTwice()) {
+            append(canonical, "SEND_TWICE");
+        }
         append(canonical, testCase.getAuthOverride());
         // Module 17 (3.1) - đổi vai trò (profile) là đổi điều test kiểm tra: lịch sử cũ ở vai trò khác không được trộn vào.
         append(canonical, testCase.getAuthProfileId());

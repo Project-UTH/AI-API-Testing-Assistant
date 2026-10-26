@@ -63,6 +63,14 @@ public class ProjectController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/{id}/api-conventions")
+    public ResponseEntity<ApiResponse<ProjectResponse>> updateApiConventions(
+            @PathVariable UUID id,
+            @RequestBody com.aiapitesting.backend.dto.request.ApiConventionsRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(projectService.updateApiConventions(id, request.unauthenticatedStatus())));
+    }
+
     @PutMapping("/{id}/target-auth")
     public ResponseEntity<ApiResponse<ProjectResponse>> updateTargetAuth(
             @PathVariable UUID id,

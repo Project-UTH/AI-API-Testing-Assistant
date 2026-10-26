@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, Coins, Sparkles } from "lucide-react"
 
@@ -14,8 +14,10 @@ import { ListEmptyState } from "@/components/shared/ListEmptyState"
 import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
 import { AuthHintBanner } from "@/components/projects/AuthHintBanner"
 import { GenerateWizardDialog } from "@/components/generation/GenerateWizardDialog"
+import { listBusinessRules } from "@/lib/rules"
 import { getDashboardSummary } from "@/lib/dashboard"
 import { coverageRowCounts, getCoverageSummary, type CoverageEndpointRow } from "@/lib/coverage"
+import { CoverageCountsText, TestStateChip } from "@/components/coverage/TestStateChip"
 
 interface EndpointListProps {
   projectId: string
@@ -34,10 +36,12 @@ interface EndpointRowProps {
   onToggleSelect: (endpointId: string, checked: boolean) => void
   onToggleExpanded: (endpointId: string) => void
   onGenerate: (endpointId: string) => void
+  /** Checklist nghiệp vụ của CHÍNH endpoint này (chờ duyệt / đã duyệt); undefined = chưa có mục nào. */
+  checklist?: { pending: number; approved: number }
 }
 
 /** 1 endpoint. memo: tick chọn / mở rộng 1 dòng hay gõ tìm kiếm không làm vẽ lại các dòng còn lại. */
-const EndpointRow = memo(function EndpointRow({ projectId, endpoint, row, selected, expanded, onToggleSelect, onToggleExpanded, onGenerate }: EndpointRowProps) {
+const EndpointRow = memo(function EndpointRow({ projectId, endpoint, row, selected, expanded, onToggleSelect, onToggleExpanded, onGenerate, checklist }: EndpointRowProps) {
   const counts = row ? coverageRowCounts(row) : null
   return (
     <li className="rounded-lg border border-border p-3">
@@ -78,25 +82,32 @@ const EndpointRow = memo(function EndpointRow({ projectId, endpoint, row, select
             Spec đổi {new Date(endpoint.schemaChangedAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
           </span>
         )}
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {endpoint.testCaseCount > 0 ? (
-            <>
-              <span className="font-medium text-foreground">{endpoint.testCaseCount}</span> test
-              {counts && (
-                <>
-                  {" · "}
-                  <span className="font-medium text-foreground">
-                    {counts.covered}/{counts.relevant}
-                  </span>{" "}
-                  mục
-                  {counts.missing > 0 && <span className="text-amber-700 dark:text-amber-400"> · thiếu {counts.missing}</span>}
-                </>
-              )}
-            </>
-          ) : (
-            "Chưa có test case"
-          )}
-        </span>
+        <TestStateChip state={row?.testState ?? (endpoint.testCaseCount === 0 ? "NOT_GENERATED" : null)} />
+        {endpoint.testCaseCount > 0 && (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{endpoint.testCaseCount}</span>{" "}
+            {row?.testState === "NOT_GENERATED" ? "test nghiệp vụ (không tính vào độ phủ EP/BVA)" : "test"}
+          </span>
+        )}
+        {endpoint.testCaseCount > 0 && counts && (
+          <CoverageCountsText
+            relevant={counts.relevant}
+            covered={counts.covered}
+            executed={counts.executed}
+            certain={counts.certain}
+            doubtful={counts.doubtful}
+            missing={counts.missing}
+            specGap={counts.specGap}
+            baselineVerified={row?.baselineVerified}
+          />
+        )}
+        <Link
+          to={`/projects/${projectId}/rules?endpointId=${endpoint.id}`}
+          className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/15"
+          title="Mở checklist (hệ thống + nghiệp vụ AI) của riêng endpoint này để duyệt và sinh test"
+        >
+          {checklist ? `Checklist: ${checklist.pending} chờ duyệt · ${checklist.approved} đã duyệt` : "Checklist"}
+        </Link>
         <Button
           type="button"
           size="sm"
@@ -153,6 +164,22 @@ export function EndpointList({ projectId }: EndpointListProps) {
     () => new Map((coverage?.endpoints ?? []).map((row) => [row.endpointId, row])),
     [coverage]
   )
+  // Checklist nghiệp vụ theo từng endpoint (khoá METHOD path): số mục chờ duyệt / đã duyệt, bỏ mục đã loại.
+  const { data: rulesPage } = useQuery({
+    queryKey: ["rules", projectId, "per-endpoint-counts"],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200 }),
+  })
+  const checklistByKey = useMemo(() => {
+    const map = new Map<string, { pending: number; approved: number }>()
+    for (const r of rulesPage?.data ?? []) {
+      if (r.status !== "PROPOSED" && r.status !== "APPROVED" && r.status !== "CONFLICT") continue
+      const c = map.get(r.endpointKey) ?? { pending: 0, approved: 0 }
+      if (r.status === "APPROVED") c.approved += 1
+      else c.pending += 1
+      map.set(r.endpointKey, c)
+    }
+    return map
+  }, [rulesPage])
   const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
   const listTopRef = useRef<HTMLDivElement>(null)
 
@@ -162,6 +189,9 @@ export function EndpointList({ projectId }: EndpointListProps) {
   // Mặc định cả 3 đều bật - giữ đúng hành vi cũ (luôn sinh đủ Positive/Negative/Boundary) cho tới
   // khi người dùng chủ động bỏ tích bớt.
   const [wizardIds, setWizardIds] = useState<string[] | null>(null)
+  // /projects/:id?generate=<endpointId>: mở sẵn hộp thoại Sinh test case cho endpoint đó (dùng từ trang lần sinh test khi cần nhập lại giá trị).
+  const [urlParams, setUrlParams] = useSearchParams()
+  const generateParam = urlParams.get("generate")
 
   const endpoints = useMemo(() => data?.data ?? [], [data])
 
@@ -220,6 +250,15 @@ export function EndpointList({ projectId }: EndpointListProps) {
     })
   }, [])
 
+  useEffect(() => {
+    if (!generateParam || !endpoints.some((e) => e.id === generateParam)) return
+    setWizardIds([generateParam])
+    setUrlParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete("generate")
+      return next
+    }, { replace: true })
+  }, [generateParam, endpoints, setUrlParams])
   const openWizardFor = useCallback((endpointId: string) => setWizardIds([endpointId]), [])
 
 
@@ -387,6 +426,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
               onToggleSelect={toggleSelect}
               onToggleExpanded={toggleExpanded}
               onGenerate={openWizardFor}
+              checklist={checklistByKey.get(`${endpoint.method.toUpperCase()} ${endpoint.path}`)}
             />
           )
         })}

@@ -51,7 +51,8 @@ public class UserController {
         body.put("email", user.email());
         body.put("fullName", user.fullName());
         body.put("role", user.role());
-        if (mutants.on(MutantFlag.M21)) {
+        // H14 (held-out): tra thang entity User (co passwordHash) thay vi UserResponse - cung hanh vi voi M21.
+        if (mutants.on(MutantFlag.M21) || mutants.on(MutantFlag.H14)) {
             body.put("passwordHash", user.passwordHash());
         }
         // M32: lo email cua cac tai khoan khac.

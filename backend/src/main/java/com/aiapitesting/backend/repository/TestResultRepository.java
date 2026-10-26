@@ -23,6 +23,8 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID>, J
 
     void deleteAllByTestCase(TestCase testCase);
 
+    boolean existsByTestCaseAndStatus(TestCase testCase, TestResultStatus status);
+
     /**
      * @Modifying bắt buộc (giống TestCaseDependencyRepository.deleteAllByTestCase) - derived delete
      * thường load entity rồi remove() từng dòng, kiểm tra đúng 1 dòng bị xoá lúc flush; 2 lượt
@@ -104,7 +106,10 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID>, J
     // cột (không kéo responseBody/assertionResultsJson TEXT lên). 1 query cho cả project, không N+1.
     // Module 16 - thêm failureCause: FAILED do môi trường/token không được tính là "đã kiểm và thấy API lệch".
     // Module 16 gđ2 - thêm unstable: lần chạy mới nhất của test không ổn định (kể cả Pass) không phải bằng chứng chắc chắn.
-    @Query("SELECT tr.testCase.id AS testCaseId, tr.status AS status, tr.failureCause AS failureCause, tr.unstable AS unstable "
+    // 17q G2 - thêm rejectionExcerpt (VARCHAR ngắn, không phải TEXT): xét oracle mạnh cho Pass của test âm.
+    @Query("SELECT tr.testCase.id AS testCaseId, tr.status AS status, tr.failureCause AS failureCause, tr.unstable AS unstable, "
+            + "tr.rejectionExcerpt AS rejectionExcerpt, "
+            + "CASE WHEN tr.specDeviationsJson IS NULL THEN false ELSE true END AS specDeviation "
             + "FROM TestResult tr "
             + "WHERE tr.testCase.endpoint.project = :project AND tr.createdAt = "
             + "(SELECT MAX(tr2.createdAt) FROM TestResult tr2 WHERE tr2.testCase = tr.testCase)")
@@ -115,6 +120,11 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID>, J
         TestResultStatus getStatus();
         FailureCause getFailureCause();
         Boolean getUnstable();
+
+        String getRejectionExcerpt();
+
+        /** 17q - lần chạy có cảnh báo mã thành công lệch spec (Pass như vậy chỉ là NGHI). */
+        Boolean getSpecDeviation();
     }
 
     // Module 16 - lịch sử các lần chạy của nhiều test case cho ExecutionFailureAnalyzer: chỉ vài cột nhẹ, KHÔNG

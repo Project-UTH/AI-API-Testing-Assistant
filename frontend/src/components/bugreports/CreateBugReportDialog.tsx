@@ -77,8 +77,9 @@ export function CreateBugReportDialog({ open, onOpenChange, projectId, sourceTes
         summary,
         testEnvironment: null,
         stepsToReproduce: description || null,
-        actualResult: null,
-        expectedResult: null,
+        // 17q G1 - bug lệch spec: giữ mốc "mã spec khai" và câu cảnh báo từ gợi ý; bug Fail giữ hành vi cũ (null).
+        actualResult: draft?.specDeviation ? draft.actualResult : null,
+        expectedResult: draft?.specDeviation ? draft.expectedResult : null,
         severity,
         frequency,
         priority,
@@ -104,7 +105,9 @@ export function CreateBugReportDialog({ open, onOpenChange, projectId, sourceTes
           <DialogHeader>
             <DialogTitle>Tạo Bug Report</DialogTitle>
             <DialogDescription>
-              Sinh từ lần chạy Fail - kiểm tra lại thông tin gợi ý bên dưới trước khi lưu.
+              {draft?.specDeviation
+                ? "Sinh từ lần chạy Pass có mã trạng thái lệch spec (mức thấp) - kiểm tra lại thông tin gợi ý bên dưới trước khi lưu."
+                : "Sinh từ lần chạy Fail - kiểm tra lại thông tin gợi ý bên dưới trước khi lưu."}
             </DialogDescription>
           </DialogHeader>
 

@@ -12,6 +12,8 @@ public record BugReportDraftResponse(
         String stepsToReproduce,
         String actualResult,
         String expectedResult,
-        String defaultBuild
+        String defaultBuild,
+        /** 17q G1 - true khi nguồn là lần chạy PASS có mã thành công lệch spec (bug mức thấp), false = lần chạy Fail. */
+        boolean specDeviation
 ) {
 }

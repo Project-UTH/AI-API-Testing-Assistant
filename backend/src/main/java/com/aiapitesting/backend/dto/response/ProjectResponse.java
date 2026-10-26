@@ -10,7 +10,9 @@ public record ProjectResponse(
         UUID id, String name, String description, Instant createdAt,
         String targetBaseUrl,
         /** Chỉ loại xác thực - không bao giờ trả giá trị thật (encrypted) ra ngoài. */
-        TargetAuthType targetAuthType
+        TargetAuthType targetAuthType,
+        /** Mã API đích trả khi thiếu/sai token (401 hoặc 403); null = 401. */
+        Integer unauthenticatedStatus
 ) {
     public static ProjectResponse from(Project project) {
         return new ProjectResponse(
@@ -19,7 +21,8 @@ public record ProjectResponse(
                 project.getDescription(),
                 project.getCreatedAt(),
                 project.getTargetBaseUrl(),
-                project.getTargetAuthType()
+                project.getTargetAuthType(),
+                project.getUnauthenticatedStatus()
         );
     }
 }

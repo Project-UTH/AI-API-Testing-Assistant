@@ -5,6 +5,7 @@ import com.aiapitesting.backend.dto.response.CoverageDimensionResponse;
 import com.aiapitesting.backend.dto.response.CoverageDimensionStatus;
 import com.aiapitesting.backend.dto.response.CoverageRunStatus;
 import com.aiapitesting.backend.dto.response.EndpointCoverageResponse;
+import com.aiapitesting.backend.dto.response.EndpointTestState;
 import com.aiapitesting.backend.dto.response.ProjectCoverageResponse;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.FailureCause;
@@ -12,7 +13,9 @@ import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestCaseDependency;
+import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
 import com.aiapitesting.backend.entity.TestCaseSource;
+import com.aiapitesting.backend.entity.VerdictTrust;
 import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -67,6 +70,9 @@ class EndpointCoverageServiceTest {
 
     @Mock
     private com.aiapitesting.backend.repository.EndpointRoleRepository endpointRoleRepository;
+
+    @Mock
+    private com.aiapitesting.backend.repository.BusinessRuleRepository businessRuleRepository;
 
     // Module 15j - bản thật (không mock): coverage chấm bằng CHÍNH checklist của planner, mock thì test vô nghĩa.
     @Spy
@@ -850,7 +856,7 @@ class EndpointCoverageServiceTest {
     // ---- Module 17 (G4) - coverage theo trang ----
 
     private CoverageListQuery pageQuery(Integer page, Integer size, String q, String method, Boolean gaps, Boolean failing, String sort) {
-        return new CoverageListQuery(page, size, q, method, gaps, failing, sort);
+        return new CoverageListQuery(page, size, q, method, gaps, failing, sort, null);
     }
 
     /** 3 endpoint: /a có test hợp lệ, /b không có test nào, /c có test và test mới nhất FAILED. */
@@ -990,6 +996,187 @@ class EndpointCoverageServiceTest {
         }
     }
 
+    // ---- 17q G2 - trạng thái endpoint + độ tin kết luận ----
+
+    @Test
+    void testState_coversAllStates_andBusinessOnlyOrEnvironmentFailIsNotATest() {
+        Endpoint none = endpoint("/a", "POST", false, emailRequiredSchema(List.of("201")));
+        Endpoint businessOnly = endpoint("/b", "POST", false, emailRequiredSchema(List.of("201")));
+        Endpoint notRun = endpoint("/c", "POST", false, emailRequiredSchema(List.of("201")));
+        Endpoint failing = endpoint("/d", "POST", false, emailRequiredSchema(List.of("201")));
+        Endpoint doubtful = endpoint("/d2", "POST", false, emailRequiredSchema(List.of("201")));
+        Endpoint ok = endpoint("/e", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase business = testCase(businessOnly, "Nghiệp vụ", 400, "{}");
+        business.setSource(TestCaseSource.BUSINESS);
+        TestCase envFail = testCase(notRun, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        TestCase realFail = testCase(failing, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        TestCase unsureFail = testCase(doubtful, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        TestCase pass = testCase(ok, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        stubProject(List.of(none, businessOnly, notRun, failing, doubtful, ok), List.of(business, envFail, realFail, unsureFail, pass), List.of());
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(business.getId(), TestResultStatus.FAILED, FailureCause.STABLE_FAILURE),
+                latest(envFail.getId(), TestResultStatus.FAILED, FailureCause.ENVIRONMENT),
+                latest(realFail.getId(), TestResultStatus.FAILED, FailureCause.STABLE_FAILURE),
+                latest(unsureFail.getId(), TestResultStatus.FAILED, FailureCause.STATE_CONFLICT),
+                latest(pass.getId(), TestResultStatus.PASSED)));
+
+        var summary = endpointCoverageService.getCoverageSummary(projectId);
+
+        assertThat(summary.endpoints()).extracting(r -> r.testState()).containsExactly(
+                EndpointTestState.NOT_GENERATED, EndpointTestState.NOT_GENERATED, EndpointTestState.NOT_RUN,
+                EndpointTestState.TESTED_FAILING, EndpointTestState.TESTED_DOUBTFUL, EndpointTestState.TESTED_OK);
+        assertThat(summary.overview().testedEndpoints()).isEqualTo(3);
+        assertThat(summary.overview().stateCounts()).containsEntry(EndpointTestState.NOT_GENERATED, 2)
+                .containsEntry(EndpointTestState.NOT_RUN, 1).containsEntry(EndpointTestState.TESTED_FAILING, 1)
+                .containsEntry(EndpointTestState.TESTED_DOUBTFUL, 1)
+                .containsEntry(EndpointTestState.TESTED_OK, 1);
+        // % chỉ trên endpoint đã sinh: 2 endpoint chưa sinh không góp mục nào vào mẫu số "đã sinh".
+        assertThat(summary.overview().generatedRelevantCount()).isLessThan(summary.overview().relevantCount());
+    }
+
+    @Test
+    void negativePass_isCertainOnlyWhenRejectionReasonNamesTheTestedField() {
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201", "400")));
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        TestCase missingEmail = testCase(endpoint, "Negative - thieu email", 400, "{}");
+        stubProject(List.of(endpoint), List.of(positive, missingEmail), List.of());
+
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.PASSED),
+                latest(missingEmail.getId(), TestResultStatus.PASSED, null, null, "{\"message\":\"email is required\"}")));
+        EndpointCoverageResponse named = coverageOf(endpoint);
+        assertThat(dimension(named, "NEGATIVE_MISSING_FIELD", "'email'").verdictTrust()).isEqualTo(VerdictTrust.CERTAIN);
+        assertThat(dimension(named, "POSITIVE_BASELINE", null).verdictTrust()).isEqualTo(VerdictTrust.CERTAIN);
+
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(missingEmail.getId(), TestResultStatus.PASSED, null, null, "{\"message\":\"phone must be valid\"}")));
+        assertThat(dimension(coverageOf(endpoint), "NEGATIVE_MISSING_FIELD", "'email'").verdictTrust()).isEqualTo(VerdictTrust.DOUBTFUL);
+    }
+
+    @Test
+    void failTrust_followsCause_andAiWrittenExpectationIsAtMostDoubtful() {
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        stubProject(List.of(endpoint), List.of(positive), List.of());
+
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.FAILED, FailureCause.STABLE_FAILURE)));
+        assertThat(dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null).verdictTrust()).isEqualTo(VerdictTrust.CERTAIN);
+
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.FAILED, FailureCause.UNDETERMINED)));
+        assertThat(dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null).verdictTrust()).isEqualTo(VerdictTrust.DOUBTFUL);
+
+        positive.setGenerationOrigin(TestCaseGenerationOrigin.AI_CHECKLIST);
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.FAILED, FailureCause.STABLE_FAILURE)));
+        assertThat(dimension(coverageOf(endpoint), "POSITIVE_BASELINE", null).verdictTrust()).isEqualTo(VerdictTrust.DOUBTFUL);
+    }
+
+    @Test
+    void implicitBoundaryFail_isFlaggedSpecUnderspecified_andAtMostDoubtful() {
+        Schema<?> bodySchema = new Schema<>().type("object").required(List.of("age"))
+                .properties(Map.of("age", new Schema<>().type("integer")));
+        Endpoint endpoint = endpoint("/people", "POST", false, buildSchemaJson(jsonBody(bodySchema), List.of("201")));
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"age\":5}");
+        TestCase zero = testCase(endpoint, "Boundary - age = 0", 201, "{\"age\":0}");
+        stubProject(List.of(endpoint), List.of(positive, zero), List.of());
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.PASSED),
+                latest(zero.getId(), TestResultStatus.FAILED, FailureCause.STABLE_FAILURE)));
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        CoverageDimensionResponse zeroRow = dimension(result, "BOUNDARY_ZERO", null);
+        assertThat(zeroRow.specUnderspecified()).isTrue();
+        assertThat(zeroRow.verdictTrust()).isEqualTo(VerdictTrust.DOUBTFUL);
+        assertThat(result.specGapCount()).isPositive();
+    }
+
+    @Test
+    void pathIdNotFoundItems_areNotSpecGaps_and404PassIsCertain() {
+        Parameter idParam = new Parameter().name("id").in("path").required(true).schema(new Schema<>().type("integer"));
+        Endpoint endpoint = endpoint("/jobs/{id}", "GET", false, buildSchemaJson(List.of(idParam), null, List.of("200", "404")));
+        TestCase ok = testCase(endpoint, "Positive", 200, null);
+        ok.setResolvedPath("/jobs/5");
+        TestCase zero = testCase(endpoint, "Boundary - id = 0", 404, null);
+        zero.setResolvedPath("/jobs/0");
+        stubProject(List.of(endpoint), List.of(ok, zero), List.of());
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(ok.getId(), TestResultStatus.PASSED),
+                latest(zero.getId(), TestResultStatus.PASSED)));
+
+        EndpointCoverageResponse result = coverageOf(endpoint);
+
+        CoverageDimensionResponse zeroRow = dimension(result, "BOUNDARY_ZERO", null);
+        assertThat(zeroRow.specUnderspecified()).isFalse();
+        assertThat(zeroRow.status()).isEqualTo(CoverageDimensionStatus.COVERED);
+        assertThat(zeroRow.verdictTrust()).isEqualTo(VerdictTrust.CERTAIN);
+        assertThat(result.specGapCount()).isZero();
+    }
+
+    @Test
+    void ruleCoverage_isASeparateLayer_approvedWithTests_proposedAndAssumed_andNullWhenNoRules() {
+        Endpoint withRules = endpoint("/jobs", "POST", false, emailRequiredSchema(List.of("201")));
+        Endpoint noRules = endpoint("/other", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase positive = testCase(withRules, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        TestCase ruleTest = testCase(withRules, "Nghiệp vụ", 400, "{}");
+        ruleTest.setSource(TestCaseSource.BUSINESS);
+        ruleTest.setGenerationOrigin(TestCaseGenerationOrigin.RULE_TEMPLATE);
+        var tested = com.aiapitesting.backend.entity.BusinessRule.builder().id(UUID.randomUUID()).endpointKey("POST /jobs")
+                .status(com.aiapitesting.backend.entity.RuleStatus.APPROVED).source(com.aiapitesting.backend.entity.RuleSource.USER).build();
+        ruleTest.setRuleId(tested.getId());
+        var untested = com.aiapitesting.backend.entity.BusinessRule.builder().id(UUID.randomUUID()).endpointKey("POST /jobs")
+                .status(com.aiapitesting.backend.entity.RuleStatus.APPROVED).source(com.aiapitesting.backend.entity.RuleSource.INFERRED).build();
+        var pending = com.aiapitesting.backend.entity.BusinessRule.builder().id(UUID.randomUUID()).endpointKey("POST /jobs")
+                .status(com.aiapitesting.backend.entity.RuleStatus.PROPOSED).source(com.aiapitesting.backend.entity.RuleSource.SYSTEM_DETECTED).build();
+        var rejected = com.aiapitesting.backend.entity.BusinessRule.builder().id(UUID.randomUUID()).endpointKey("POST /jobs")
+                .status(com.aiapitesting.backend.entity.RuleStatus.REJECTED).source(com.aiapitesting.backend.entity.RuleSource.USER).build();
+        stubProject(List.of(withRules, noRules), List.of(positive, ruleTest), List.of());
+        when(businessRuleRepository.findAllByProject(project)).thenReturn(List.of(tested, untested, pending, rejected));
+
+        var summary = endpointCoverageService.getCoverageSummary(projectId);
+
+        var rules = summary.endpoints().get(0).rules();
+        assertThat(rules.approved()).isEqualTo(2);
+        assertThat(rules.approvedWithTests()).isEqualTo(1);
+        assertThat(rules.proposed()).isEqualTo(1);
+        assertThat(rules.assumed()).isEqualTo(1);
+        assertThat(summary.endpoints().get(1).rules()).isNull();
+        assertThat(summary.overview().ruleApprovedCount()).isEqualTo(2);
+        // test từ luật KHÔNG tính vào % EP/BVA: số mục spec không đổi vì có thêm test nghiệp vụ
+        assertThat(summary.endpoints().get(0).testState()).isNotEqualTo(EndpointTestState.NOT_GENERATED);
+    }
+
+    @Test
+    void unknownStateFilter_isRejected() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> endpointCoverageService.getProjectCoveragePaged(projectId,
+                        new CoverageListQuery(0, 50, null, null, null, null, null, "foo")))
+                .isInstanceOf(com.aiapitesting.backend.exception.InvalidRequestException.class);
+    }
+
+    @Test
+    void nestedCounts_certainWithinExecutedWithinCovered_andStateFilterWorks() {
+        Endpoint endpoint = endpoint("/users", "POST", false, emailRequiredSchema(List.of("201", "400")));
+        Endpoint untouched = endpoint("/other", "POST", false, emailRequiredSchema(List.of("201")));
+        TestCase positive = testCase(endpoint, "Positive", 201, "{\"email\":\"a@b.com\"}");
+        TestCase missingEmail = testCase(endpoint, "Negative - thieu email", 400, "{}");
+        stubProject(List.of(endpoint, untouched), List.of(positive, missingEmail), List.of());
+        when(testResultRepository.findLatestResultsByProject(project)).thenReturn(List.of(
+                latest(positive.getId(), TestResultStatus.PASSED),
+                latest(missingEmail.getId(), TestResultStatus.PASSED)));
+
+        var row = endpointCoverageService.getCoverageSummary(projectId).endpoints().get(0);
+        assertThat(row.certainCount()).isLessThanOrEqualTo(row.executedCount());
+        assertThat(row.executedCount()).isLessThanOrEqualTo(row.coveredCount());
+        assertThat(row.certainCount() + row.doubtfulCount()).isEqualTo(row.executedCount());
+        assertThat(row.doubtfulCount()).isEqualTo(1); // test âm Pass không có lý do từ chối → nghi
+
+        var page = endpointCoverageService.getProjectCoveragePaged(projectId,
+                new CoverageListQuery(0, 50, null, null, null, null, null, "NOT_GENERATED"));
+        assertThat(page.endpoints()).extracting(EndpointCoverageResponse::path).containsExactly("/other");
+    }
+
     private TestResultRepository.TestCaseLatestResult latest(UUID testCaseId, TestResultStatus status) {
         return latest(testCaseId, status, null);
     }
@@ -999,10 +1186,25 @@ class EndpointCoverageServiceTest {
     }
 
     private TestResultRepository.TestCaseLatestResult latest(UUID testCaseId, TestResultStatus status, FailureCause cause, Boolean unstable) {
+        return latest(testCaseId, status, cause, unstable, null);
+    }
+
+    private TestResultRepository.TestCaseLatestResult latest(UUID testCaseId, TestResultStatus status, FailureCause cause, Boolean unstable,
+                                                             String rejectionExcerpt) {
         return new TestResultRepository.TestCaseLatestResult() {
             @Override
             public Boolean getUnstable() {
                 return unstable;
+            }
+
+            @Override
+            public Boolean getSpecDeviation() {
+                return null;
+            }
+
+            @Override
+            public String getRejectionExcerpt() {
+                return rejectionExcerpt;
             }
 
             @Override

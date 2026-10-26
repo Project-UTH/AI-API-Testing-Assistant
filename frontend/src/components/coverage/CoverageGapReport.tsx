@@ -483,21 +483,44 @@ function GapRow({ row, filling, onFill, fillDisabled }: GapRowProps) {
         />
         <span className="min-w-0 flex-1 text-sm">
           {row.label}
-          {implicit && (
+          {(row.specUnderspecified || implicit) && (
             <span
-              className="ml-1.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
-              title="Spec không khai ràng buộc nên giá trị này không bị cấm - kỳ vọng thành công. Nếu API trả 400 thì spec đang khai thiếu ràng buộc hoặc API có lỗi."
+              className="ml-1.5 rounded-full border border-dashed border-muted-foreground/50 px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
+              title="Biên ngầm: spec không khai ràng buộc nên kỳ vọng thành công chỉ là quy ước. Nếu API trả 400 thì nhiều khả năng spec khai thiếu ràng buộc - Fail ở đây không quy là lỗi API (kết luận tối đa là NGHI)."
             >
-              ⚠ biên ngầm
+              Spec thiếu ràng buộc
             </span>
           )}
         </span>
         {row.status === "COVERED" && row.runStatus && (
           <span
-            className={cn("shrink-0 rounded-full px-2 py-0.5 font-medium", RUN_STATUS_DISPLAY[row.runStatus].className)}
-            title={RUN_STATUS_DISPLAY[row.runStatus].title}
+            className={cn(
+              "shrink-0 rounded-full px-2 py-0.5 font-medium",
+              // Fail ở mục "spec thiếu ràng buộc" không phải lỗi API chắc chắn - không tô đỏ.
+              row.specUnderspecified && row.runStatus === "FAILED"
+                ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                : (RUN_STATUS_DISPLAY[row.runStatus]?.className ?? "bg-muted text-muted-foreground")
+            )}
+            title={RUN_STATUS_DISPLAY[row.runStatus]?.title ?? row.runStatus}
           >
-            {RUN_STATUS_DISPLAY[row.runStatus].label}
+            {RUN_STATUS_DISPLAY[row.runStatus]?.label ?? row.runStatus}
+          </span>
+        )}
+        {row.status === "COVERED" && row.verdictTrust && row.verdictTrust !== "NO_VERDICT" && (
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2 py-0.5 font-medium",
+              row.verdictTrust === "CERTAIN"
+                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+            )}
+            title={
+              row.verdictTrust === "CERTAIN"
+                ? "Kết luận chắc: Pass có oracle mạnh (đúng mã/ API từ chối đúng field đang kiểm) hoặc Fail có nhãn lỗi API rõ ràng"
+                : "Kết luận còn nghi: Fail chưa rõ nguyên nhân, kỳ vọng do AI viết/quy ước, hoặc test âm Pass nhưng lý do từ chối không nhắc đúng field (chạy lại để có bằng chứng)"
+            }
+          >
+            {row.verdictTrust === "CERTAIN" ? "chắc" : "nghi"}
           </span>
         )}
         {row.status === "MISSING" && (row.whyNeeded || row.detail || row.nearMisses.length > 0) && (

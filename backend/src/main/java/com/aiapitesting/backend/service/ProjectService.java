@@ -47,6 +47,9 @@ public class ProjectService {
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestCaseAssertionRepository testCaseAssertionRepository;
     private final TestGenerationEventRepository testGenerationEventRepository;
+    private final com.aiapitesting.backend.repository.BusinessRuleRepository businessRuleRepository;
+    private final com.aiapitesting.backend.repository.RequirementDocumentRepository requirementDocumentRepository;
+    private final com.aiapitesting.backend.repository.RequirementDocumentUsageRepository requirementDocumentUsageRepository;
     private final com.aiapitesting.backend.repository.GenerationJobRepository generationJobRepository;
     private final com.aiapitesting.backend.repository.GenerationJobStepRepository generationJobStepRepository;
     private final BugReportRepository bugReportRepository;
@@ -54,6 +57,7 @@ public class ProjectService {
     private final AuthProfileRepository authProfileRepository;
     private final ApiTokenRepository apiTokenRepository;
     private final EndpointRoleRepository endpointRoleRepository;
+    private final com.aiapitesting.backend.repository.RuleReviewTimingRepository ruleReviewTimingRepository;
     private final CurrentUserService currentUserService;
     private final AesEncryptionService aesEncryptionService;
 
@@ -107,6 +111,17 @@ public class ProjectService {
         return ProjectResponse.from(projectRepository.save(project));
     }
 
+    /** Quy ước của API đích (hiện: mã trả khi thiếu/sai token). Chỉ nhận 401 (chuẩn, lưu null) hoặc 403. */
+    @Transactional
+    public ProjectResponse updateApiConventions(UUID id, Integer unauthenticatedStatus) {
+        if (unauthenticatedStatus != null && unauthenticatedStatus != 401 && unauthenticatedStatus != 403) {
+            throw new InvalidRequestException("Mã khi thiếu/sai token chỉ có thể là 401 hoặc 403");
+        }
+        Project project = getOwnedProject(id);
+        project.setUnauthenticatedStatus(unauthenticatedStatus == null || unauthenticatedStatus == 401 ? null : unauthenticatedStatus);
+        return ProjectResponse.from(projectRepository.save(project));
+    }
+
     /** Dùng chung với EndpointImportService để tránh trùng logic validate cặp authType/authValue. */
     public void validateTargetAuthValue(TargetAuthType authType, String authValue) {
         if (authType != null && authType != TargetAuthType.NONE && (authValue == null || authValue.isBlank())) {
@@ -141,7 +156,11 @@ public class ProjectService {
         testCaseDependencyRepository.deleteAllByProject(project);
         testCaseAssertionRepository.deleteAllByTestCaseEndpointProject(project);
         testCaseRepository.deleteAllByEndpointProject(project);
-        testGenerationEventRepository.deleteAllByEndpointProject(project);
+        testGenerationEventRepository.detachFromEndpointsOfProject(project); // giữ sổ token: xoá project không được đặt lại quota ngày
+        businessRuleRepository.deleteAllByProject(project);
+        ruleReviewTimingRepository.deleteAllByProjectId(project.getId());
+        requirementDocumentUsageRepository.deleteAllByProjectId(project.getId());
+        requirementDocumentRepository.deleteAllByProject(project);
         endpointRoleRepository.deleteAllByEndpointProject(project);
         endpointRepository.deleteAllByProject(project);
         authProfileRepository.deleteAllByProject(project);

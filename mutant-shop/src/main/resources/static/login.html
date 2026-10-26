@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Đăng nhập - Shop API Target</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 480px; margin: 60px auto; padding: 0 20px; color: #222; }
+  h1 { font-size: 1.4rem; }
+  label { display: block; margin-top: 12px; font-size: 0.9rem; color: #444; }
+  input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+  button { margin-top: 16px; padding: 10px 18px; background: #1a1a1a; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+  #result { margin-top: 20px; }
+  textarea { width: 100%; height: 90px; margin-top: 8px; font-family: monospace; font-size: 0.8rem; padding: 8px; box-sizing: border-box; }
+  .error { color: #c0392b; margin-top: 12px; }
+  .hint { color: #777; font-size: 0.85rem; margin-top: 4px; }
+  a { color: #1a1a1a; }
+</style>
+</head>
+<body>
+  <h1>Đăng nhập</h1>
+  <p class="hint">Tài khoản mặc định: <code>admin</code> / <code>admin123</code></p>
+  <p class="hint">Trang này chỉ để kiểm tra tài khoản đăng nhập được. Để lấy token dùng cho AI API Testing
+     Assistant, gọi <code>POST /auth/login</code> bằng Postman với body JSON
+     <code>{"username": "...", "password": "..."}</code> rồi lấy field <code>token</code> trong response.</p>
+  <form id="login-form">
+    <label>Username <input type="text" id="username" value="admin" required></label>
+    <label>Password <input type="password" id="password" value="admin123" required></label>
+    <button type="submit">Đăng nhập</button>
+  </form>
+  <div id="result"></div>
+  <p><a href="/index.html">&larr; Quay lại</a></p>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+  const resultEl = document.getElementById('result');
+  resultEl.innerHTML = 'Đang đăng nhập...';
+  try {
+    const res = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      resultEl.innerHTML = '<p class="error">' + (data.message || 'Đăng nhập thất bại') + '</p>';
+      return;
+    }
+    localStorage.setItem('token', data.token);
+    resultEl.innerHTML =
+      '<p>Đăng nhập thành công. Hết hạn: ' + data.expiresAt + '</p>' +
+      '<p class="hint">Token đã được lưu cho trang demo này, không hiển thị ra màn hình. Dùng Postman gọi ' +
+      '<code>POST /auth/login</code> để lấy token khi cần cấu hình AI API Testing Assistant.</p>' +
+      '<p><a href="/products.html">Xem sản phẩm &rarr;</a></p>';
+  } catch (err) {
+    resultEl.innerHTML = '<p class="error">Lỗi kết nối: ' + err.message + '</p>';
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1487 @@
+{
+  "environment": {
+    "date": "2026-10-26T22:03:26",
+    "gitCommit": "fc2da5a6ba4a3cbff9b8d9dda8b4dd98285a267d",
+    "gitDirty": true,
+    "model": "(không dùng AI)",
+    "promptFiles": 15,
+    "promptHash": "2396232068aab668",
+    "args": {
+      "runs": 2,
+      "api": "http://localhost:8080/api/v1",
+      "target_local": "http://localhost:8084",
+      "target_url": "http://host.docker.internal:8084",
+      "email": "eval@aiapi.local",
+      "model": "(không dùng AI)",
+      "unauthenticated_status": 403,
+      "keep_projects": false,
+      "out": "docs/eval/v2/results-A-shop-403.json"
+    }
+  },
+  "mutantCatalog": [
+    {
+      "id": "S01",
+      "category": "validation",
+      "expectChecklist": true,
+      "description": "POST /api/products chấp nhận price âm"
+    },
+    {
+      "id": "S02",
+      "category": "validation",
+      "expectChecklist": true,
+      "description": "POST /api/products chấp nhận name rỗng"
+    },
+    {
+      "id": "S03",
+      "category": "validation",
+      "expectChecklist": true,
+      "description": "POST /api/products chấp nhận stock âm"
+    },
+    {
+      "id": "S04",
+      "category": "validation",
+      "expectChecklist": true,
+      "description": "PUT /api/products/{id} chấp nhận price âm"
+    },
+    {
+      "id": "S05",
+      "category": "status",
+      "expectChecklist": true,
+      "description": "GET /api/products/{id} với id không tồn tại trả 200 thay vì 404"
+    },
+    {
+      "id": "S06",
+      "category": "status",
+      "expectChecklist": true,
+      "description": "DELETE /api/products/{id} với id không tồn tại trả 204 thay vì 404"
+    },
+    {
+      "id": "S07",
+      "category": "state",
+      "expectChecklist": false,
+      "description": "DELETE trả 204 nhưng KHÔNG xoá (sản phẩm vẫn còn)"
+    },
+    {
+      "id": "S08",
+      "category": "status",
+      "expectChecklist": true,
+      "description": "POST /api/products trả 200 thay vì 201"
+    },
+    {
+      "id": "S09",
+      "category": "business",
+      "expectChecklist": false,
+      "description": "PATCH stock decrease cho phép tồn kho âm (thay vì chặn ở 0)"
+    },
+    {
+      "id": "S10",
+      "category": "business",
+      "expectChecklist": false,
+      "description": "GET /api/products bỏ qua tham số minPrice"
+    },
+    {
+      "id": "S11",
+      "category": "business",
+      "expectChecklist": false,
+      "description": "GET /api/products lọc name phân biệt hoa thường"
+    },
+    {
+      "id": "S12",
+      "category": "auth",
+      "expectChecklist": true,
+      "description": "GET /api/products/{id} không cần token"
+    },
+    {
+      "id": "S13",
+      "category": "auth",
+      "expectChecklist": true,
+      "description": "POST /auth/login chấp nhận mọi mật khẩu"
+    },
+    {
+      "id": "S14",
+      "category": "status",
+      "expectChecklist": true,
+      "description": "PUT /api/products/{id} với id không tồn tại tự tạo mới thay vì 404"
+    },
+    {
+      "id": "S15",
+      "category": "robustness",
+      "expectChecklist": true,
+      "description": "JSON hỏng cú pháp trả 500 thay vì 400"
+    }
+  ],
+  "tokenAccounting": {
+    "before": {
+      "eventTokens": 1340214,
+      "jobTokens": 104291,
+      "eventRows": 137,
+      "jobRows": 17
+    },
+    "after": {
+      "eventTokens": 1340214,
+      "jobTokens": 104291,
+      "eventRows": 137,
+      "jobRows": 17
+    },
+    "eventTokensUsed": 0,
+    "jobTokensUsed": 0,
+    "newEventRows": 0
+  },
+  "runs": [
+    {
+      "run": 1,
+      "projectId": "25d6adaa-ff53-4d43-b2df-17e06c6313b5",
+      "generation": {
+        "jobStatus": "SUCCEEDED",
+        "tokens": 0,
+        "seconds": 2.1,
+        "endpointResults": [
+          {
+            "label": "POST /auth/login",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "POST /api/products",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "GET /api/products/{id}",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "PUT /api/products/{id}",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "GET /api/products",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "PATCH /api/products/{id}/stock",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "DELETE /api/products/{id}",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          }
+        ]
+      },
+      "testsByOrigin": {
+        "SYSTEM_FILLED": 91,
+        "SYSTEM_FILLED/HTTP_ROBUSTNESS": 13,
+        "SYSTEM_FILLED/MASS_ASSIGNMENT": 3,
+        "MANUAL": 7
+      },
+      "configs": {
+        "A": {
+          "label": "A",
+          "tests": 114,
+          "contextTests": 0,
+          "cleanPass": 101,
+          "falseFailures": 13,
+          "falseFailureCauses": {
+            "UNDETERMINED": 5,
+            "TEST_DATA_SUSPECT": 8
+          },
+          "falseFailureDetails": [
+            {
+              "test": "Probe độ bền - Content-Type sai (text/plain)",
+              "cause": "UNDETERMINED",
+              "expected": 415,
+              "actual": 403
+            },
+            {
+              "test": "Boundary Value - 'name' = \"\" (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 201,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'price' = -1 (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 201,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'stock' = -2147483648 (nhỏ nhất int32)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 201,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'stock' = -1 (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 201,
+              "actual": 400
+            },
+            {
+              "test": "Probe độ bền - Content-Type sai (text/plain)",
+              "cause": "UNDETERMINED",
+              "expected": 415,
+              "actual": 403
+            },
+            {
+              "test": "Boundary Value - 'name' = \"\" (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 200,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'price' = -1 (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 200,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'stock' = -2147483648 (nhỏ nhất int32)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 200,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'stock' = -1 (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 200,
+              "actual": 400
+            },
+            {
+              "test": "Probe độ bền - Content-Type sai (text/plain)",
+              "cause": "UNDETERMINED",
+              "expected": 415,
+              "actual": 403
+            },
+            {
+              "test": "Negative - Thiếu tham số query bắt buộc 'quantity'",
+              "cause": "UNDETERMINED",
+              "expected": 400,
+              "actual": 403
+            },
+            {
+              "test": "Negative - Thiếu tham số query bắt buộc 'operation'",
+              "cause": "UNDETERMINED",
+              "expected": 400,
+              "actual": 403
+            }
+          ],
+          "noiseTests": [],
+          "mutants": [
+            {
+              "id": "S01",
+              "category": "validation",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'price'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                },
+                {
+                  "test": "Negative - 'price' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S02",
+              "category": "validation",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'name'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                },
+                {
+                  "test": "Negative - 'name' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S03",
+              "category": "validation",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'stock'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                },
+                {
+                  "test": "Negative - 'stock' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S04",
+              "category": "validation",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'price'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                },
+                {
+                  "test": "Negative - 'price' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S05",
+              "category": "status",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Boundary Value - 'id' = 9223372036854775807 (lớn nhất int64)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'id' = 0 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'id' = -1 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 3,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S06",
+              "category": "status",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Boundary Value - 'id' = 9223372036854775807 (lớn nhất int64)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 204
+                },
+                {
+                  "test": "Boundary Value - 'id' = 0 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 204
+                },
+                {
+                  "test": "Boundary Value - 'id' = -1 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 204
+                }
+              ],
+              "suspectCount": 3,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S07",
+              "category": "state",
+              "expectChecklist": false,
+              "heldout": false,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S08",
+              "category": "status",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "P1 Tạo sản phẩm hợp lệ",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'description' = \"\" (biên ngầm)",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'price' = 0 (biên ngầm)",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'stock' = 2147483647 (lớn nhất int32)",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'stock' = 0 (biên ngầm)",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 5,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S09",
+              "category": "business",
+              "expectChecklist": false,
+              "heldout": false,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S10",
+              "category": "business",
+              "expectChecklist": false,
+              "heldout": false,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S11",
+              "category": "business",
+              "expectChecklist": false,
+              "heldout": false,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S12",
+              "category": "auth",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Security - Thiếu token",
+                  "cause": "UNDETERMINED",
+                  "expected": 401,
+                  "actual": 200
+                },
+                {
+                  "test": "Security - Token sai",
+                  "cause": "UNDETERMINED",
+                  "expected": 401,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S13",
+              "category": "auth",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Security - Sai mật khẩu",
+                  "cause": "UNDETERMINED",
+                  "expected": 401,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 1,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S14",
+              "category": "status",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Boundary Value - 'id' = 9223372036854775807 (lớn nhất int64)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'id' = 0 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'id' = -1 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 3,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S15",
+              "category": "robustness",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "caught",
+              "caughtBy": [
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "cause": "HTTP_ROBUSTNESS",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "cause": "HTTP_ROBUSTNESS",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "cause": "HTTP_ROBUSTNESS",
+                  "expected": 400,
+                  "actual": 500
+                }
+              ],
+              "caughtCount": 3,
+              "suspectBy": [
+                {
+                  "test": "Negative - 'price' sai kiểu dữ liệu",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Negative - 'stock' sai kiểu dữ liệu",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Boundary Value - 'stock' = 2147483648 (vượt int32)",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Boundary Value - 'stock' = -2147483649 (dưới int32)",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Negative - 'price' sai kiểu dữ liệu",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                }
+              ],
+              "suspectCount": 8,
+              "securityFindings": [
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "status": "FAILED",
+                  "findings": "[{\"path\": \"(request)\", \"rule\": \"HTTP_ROBUSTNESS_SERVER_ERROR\", \"severity\": \"HIGH\", \"detail\": \"API trả lỗi máy chủ 500 khi nhận request JSON cú pháp hỏng (kỳ vọng 400)\"}]"
+                },
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "status": "FAILED",
+                  "findings": "[{\"path\": \"(request)\", \"rule\": \"HTTP_ROBUSTNESS_SERVER_ERROR\", \"severity\": \"HIGH\", \"detail\": \"API trả lỗi máy chủ 500 khi nhận request JSON cú pháp hỏng (kỳ vọng 400)\"}]"
+                },
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "status": "FAILED",
+                  "findings": "[{\"path\": \"(request)\", \"rule\": \"HTTP_ROBUSTNESS_SERVER_ERROR\", \"severity\": \"HIGH\", \"detail\": \"API trả lỗi máy chủ 500 khi nhận request JSON cú pháp hỏng (kỳ vọng 400)\"}]"
+                }
+              ],
+              "securityFindingsCount": 3,
+              "leakFindingsCount": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "run": 2,
+      "projectId": "beeb141c-88c7-4052-98ab-b180a6a3d438",
+      "generation": {
+        "jobStatus": "SUCCEEDED",
+        "tokens": 0,
+        "seconds": 2.1,
+        "endpointResults": [
+          {
+            "label": "POST /auth/login",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "POST /api/products",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "GET /api/products/{id}",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "PUT /api/products/{id}",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "GET /api/products",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "PATCH /api/products/{id}/stock",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          },
+          {
+            "label": "DELETE /api/products/{id}",
+            "status": "FILLED",
+            "reason": null,
+            "tokens": 0
+          }
+        ]
+      },
+      "testsByOrigin": {
+        "SYSTEM_FILLED": 91,
+        "MANUAL": 7,
+        "SYSTEM_FILLED/HTTP_ROBUSTNESS": 13,
+        "SYSTEM_FILLED/MASS_ASSIGNMENT": 3
+      },
+      "configs": {
+        "A": {
+          "label": "A",
+          "tests": 114,
+          "contextTests": 0,
+          "cleanPass": 101,
+          "falseFailures": 13,
+          "falseFailureCauses": {
+            "UNDETERMINED": 5,
+            "TEST_DATA_SUSPECT": 8
+          },
+          "falseFailureDetails": [
+            {
+              "test": "Probe độ bền - Content-Type sai (text/plain)",
+              "cause": "UNDETERMINED",
+              "expected": 415,
+              "actual": 403
+            },
+            {
+              "test": "Boundary Value - 'name' = \"\" (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 201,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'price' = -1 (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 201,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'stock' = -2147483648 (nhỏ nhất int32)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 201,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'stock' = -1 (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 201,
+              "actual": 400
+            },
+            {
+              "test": "Probe độ bền - Content-Type sai (text/plain)",
+              "cause": "UNDETERMINED",
+              "expected": 415,
+              "actual": 403
+            },
+            {
+              "test": "Boundary Value - 'name' = \"\" (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 200,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'price' = -1 (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 200,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'stock' = -2147483648 (nhỏ nhất int32)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 200,
+              "actual": 400
+            },
+            {
+              "test": "Boundary Value - 'stock' = -1 (biên ngầm)",
+              "cause": "TEST_DATA_SUSPECT",
+              "expected": 200,
+              "actual": 400
+            },
+            {
+              "test": "Probe độ bền - Content-Type sai (text/plain)",
+              "cause": "UNDETERMINED",
+              "expected": 415,
+              "actual": 403
+            },
+            {
+              "test": "Negative - Thiếu tham số query bắt buộc 'quantity'",
+              "cause": "UNDETERMINED",
+              "expected": 400,
+              "actual": 403
+            },
+            {
+              "test": "Negative - Thiếu tham số query bắt buộc 'operation'",
+              "cause": "UNDETERMINED",
+              "expected": 400,
+              "actual": 403
+            }
+          ],
+          "noiseTests": [],
+          "mutants": [
+            {
+              "id": "S01",
+              "category": "validation",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'price'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                },
+                {
+                  "test": "Negative - 'price' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S02",
+              "category": "validation",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'name'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                },
+                {
+                  "test": "Negative - 'name' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S03",
+              "category": "validation",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'stock'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                },
+                {
+                  "test": "Negative - 'stock' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S04",
+              "category": "validation",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Negative - Thiếu field bắt buộc 'price'",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                },
+                {
+                  "test": "Negative - 'price' = null",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 403
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S05",
+              "category": "status",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Boundary Value - 'id' = 9223372036854775807 (lớn nhất int64)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'id' = 0 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'id' = -1 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 3,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S06",
+              "category": "status",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Boundary Value - 'id' = 9223372036854775807 (lớn nhất int64)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 204
+                },
+                {
+                  "test": "Boundary Value - 'id' = 0 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 204
+                },
+                {
+                  "test": "Boundary Value - 'id' = -1 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 204
+                }
+              ],
+              "suspectCount": 3,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S07",
+              "category": "state",
+              "expectChecklist": false,
+              "heldout": false,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S08",
+              "category": "status",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "P1 Tạo sản phẩm hợp lệ",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'description' = \"\" (biên ngầm)",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'price' = 0 (biên ngầm)",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'stock' = 2147483647 (lớn nhất int32)",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'stock' = 0 (biên ngầm)",
+                  "cause": "EXPECTATION_MISMATCH",
+                  "expected": 201,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 5,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S09",
+              "category": "business",
+              "expectChecklist": false,
+              "heldout": false,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S10",
+              "category": "business",
+              "expectChecklist": false,
+              "heldout": false,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S11",
+              "category": "business",
+              "expectChecklist": false,
+              "heldout": false,
+              "outcome": "missed",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [],
+              "suspectCount": 0,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S12",
+              "category": "auth",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Security - Thiếu token",
+                  "cause": "UNDETERMINED",
+                  "expected": 401,
+                  "actual": 200
+                },
+                {
+                  "test": "Security - Token sai",
+                  "cause": "UNDETERMINED",
+                  "expected": 401,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 2,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S13",
+              "category": "auth",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Security - Sai mật khẩu",
+                  "cause": "UNDETERMINED",
+                  "expected": 401,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 1,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S14",
+              "category": "status",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "suspect",
+              "caughtBy": [],
+              "caughtCount": 0,
+              "suspectBy": [
+                {
+                  "test": "Boundary Value - 'id' = 9223372036854775807 (lớn nhất int64)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'id' = 0 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                },
+                {
+                  "test": "Boundary Value - 'id' = -1 (id không tồn tại)",
+                  "cause": "UNDETERMINED",
+                  "expected": 404,
+                  "actual": 200
+                }
+              ],
+              "suspectCount": 3,
+              "securityFindings": [],
+              "securityFindingsCount": 0,
+              "leakFindingsCount": 0
+            },
+            {
+              "id": "S15",
+              "category": "robustness",
+              "expectChecklist": true,
+              "heldout": false,
+              "outcome": "caught",
+              "caughtBy": [
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "cause": "HTTP_ROBUSTNESS",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "cause": "HTTP_ROBUSTNESS",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "cause": "HTTP_ROBUSTNESS",
+                  "expected": 400,
+                  "actual": 500
+                }
+              ],
+              "caughtCount": 3,
+              "suspectBy": [
+                {
+                  "test": "Negative - 'price' sai kiểu dữ liệu",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Negative - 'stock' sai kiểu dữ liệu",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Boundary Value - 'stock' = 2147483648 (vượt int32)",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Boundary Value - 'stock' = -2147483649 (dưới int32)",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                },
+                {
+                  "test": "Negative - 'price' sai kiểu dữ liệu",
+                  "cause": "UNDETERMINED",
+                  "expected": 400,
+                  "actual": 500
+                }
+              ],
+              "suspectCount": 8,
+              "securityFindings": [
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "status": "FAILED",
+                  "findings": "[{\"path\": \"(request)\", \"rule\": \"HTTP_ROBUSTNESS_SERVER_ERROR\", \"severity\": \"HIGH\", \"detail\": \"API trả lỗi máy chủ 500 khi nhận request JSON cú pháp hỏng (kỳ vọng 400)\"}]"
+                },
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "status": "FAILED",
+                  "findings": "[{\"path\": \"(request)\", \"rule\": \"HTTP_ROBUSTNESS_SERVER_ERROR\", \"severity\": \"HIGH\", \"detail\": \"API trả lỗi máy chủ 500 khi nhận request JSON cú pháp hỏng (kỳ vọng 400)\"}]"
+                },
+                {
+                  "test": "Probe độ bền - JSON cú pháp hỏng",
+                  "status": "FAILED",
+                  "findings": "[{\"path\": \"(request)\", \"rule\": \"HTTP_ROBUSTNESS_SERVER_ERROR\", \"severity\": \"HIGH\", \"detail\": \"API trả lỗi máy chủ 500 khi nhận request JSON cú pháp hỏng (kỳ vọng 400)\"}]"
+                }
+              ],
+              "securityFindingsCount": 3,
+              "leakFindingsCount": 0
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "summary": {
+    "A": {
+      "runs": 2,
+      "detection": {
+        "ALL": {
+          "caughtStrictMean": 0.06666666666666667,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 0.7333333333333333,
+          "perRun": [
+            [
+              1,
+              15
+            ],
+            [
+              1,
+              15
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0,
+            0
+          ],
+          "leakWarningPerRun": [
+            0,
+            0
+          ]
+        },
+        "auth": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 1.0,
+          "perRun": [
+            [
+              0,
+              2
+            ],
+            [
+              0,
+              2
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0,
+            0
+          ],
+          "leakWarningPerRun": [
+            0,
+            0
+          ]
+        },
+        "business": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 0.0,
+          "perRun": [
+            [
+              0,
+              3
+            ],
+            [
+              0,
+              3
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0,
+            0
+          ],
+          "leakWarningPerRun": [
+            0,
+            0
+          ]
+        },
+        "robustness": {
+          "caughtStrictMean": 1.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 1.0,
+          "perRun": [
+            [
+              1,
+              1
+            ],
+            [
+              1,
+              1
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0,
+            0
+          ],
+          "leakWarningPerRun": [
+            0,
+            0
+          ]
+        },
+        "state": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 0.0,
+          "perRun": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0,
+            0
+          ],
+          "leakWarningPerRun": [
+            0,
+            0
+          ]
+        },
+        "status": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 1.0,
+          "perRun": [
+            [
+              0,
+              4
+            ],
+            [
+              0,
+              4
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0,
+            0
+          ],
+          "leakWarningPerRun": [
+            0,
+            0
+          ]
+        },
+        "validation": {
+          "caughtStrictMean": 0.0,
+          "caughtStrictStdev": 0.0,
+          "caughtOrSuspectMean": 1.0,
+          "perRun": [
+            [
+              0,
+              4
+            ],
+            [
+              0,
+              4
+            ]
+          ],
+          "flaggedOnlyPerRun": [
+            0,
+            0
+          ],
+          "leakWarningPerRun": [
+            0,
+            0
+          ]
+        }
+      },
+      "falseFailureRate": {
+        "mean": 0.11403508771929824,
+        "stdev": 0.0
+      },
+      "avgTests": 114
+    }
+  }
+}

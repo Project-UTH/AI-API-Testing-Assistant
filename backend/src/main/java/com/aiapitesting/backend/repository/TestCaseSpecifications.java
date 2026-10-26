@@ -69,6 +69,11 @@ public final class TestCaseSpecifications {
             }
             if (f.reliability() != null) {
                 predicates.add(cb.equal(root.get("reliabilityStatus"), f.reliability()));
+                // 17q G2 - "Kỳ vọng cần xem" không áp dụng cho test hệ thống bù (sinh từ chính spec) - khớp với nhãn ở giao diện.
+                if (f.reliability() == com.aiapitesting.backend.entity.TestCaseReliability.NEEDS_REVIEW) {
+                    predicates.add(cb.or(cb.isNull(root.get("generationOrigin")),
+                            cb.notEqual(root.get("generationOrigin"), com.aiapitesting.backend.entity.TestCaseGenerationOrigin.SYSTEM_FILLED)));
+                }
             }
             if (f.q() != null) {
                 String pattern = "%" + PagingSupport.escapeLike(f.q().toLowerCase(java.util.Locale.ROOT)) + "%";

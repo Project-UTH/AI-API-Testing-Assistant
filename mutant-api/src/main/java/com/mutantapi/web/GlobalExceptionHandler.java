@@ -42,7 +42,12 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    ResponseEntity<Map<String, Object>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+    ResponseEntity<Map<String, Object>> handleTypeMismatch(MethodArgumentTypeMismatchException e, HttpServletRequest request) {
+        // H04 (held-out): o nhanh GET /api/jobs/{id}, loi sai kieu tham so duong dan khong duoc xu ly rieng -> roi vao 500.
+        if (mutants.on(MutantFlag.H04) && "GET".equals(request.getMethod())
+                && request.getRequestURI().matches("^/api/jobs/[^/]+$")) {
+            return ResponseEntity.status(500).body(body("INTERNAL_ERROR", "Loi he thong"));
+        }
         return ResponseEntity.badRequest().body(body("TYPE_MISMATCH", "Tham so '" + e.getName() + "' sai kieu du lieu"));
     }
 

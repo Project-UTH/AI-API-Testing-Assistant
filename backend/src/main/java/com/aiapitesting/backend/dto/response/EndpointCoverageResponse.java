@@ -28,6 +28,14 @@ public record EndpointCoverageResponse(
         CoverageScope scope,
         boolean requiresAuth,
         String requiresAuthSource,
-        List<CoverageDimensionResponse> dimensions
+        List<CoverageDimensionResponse> dimensions,
+        /** 17q G2 - trạng thái kiểm thử + số mục kết luận CHẮC/NGHI + số mục "spec thiếu ràng buộc" + test gốc đã xác nhận. */
+        EndpointTestState testState,
+        long certainCount,
+        long doubtfulCount,
+        long specGapCount,
+        boolean baselineVerified,
+        /** 17q G3 - lớp nghiệp vụ (luật đã duyệt có test); null = endpoint chưa có luật nào. */
+        RuleCoverage rules
 ) {
 }

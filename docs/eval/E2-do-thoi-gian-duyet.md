@@ -1,30 +1,97 @@
-# E2 — Đo thời gian duyệt test AI nghiệp vụ (cần người thật, CHƯA ĐO)
+# E2: đo người duyệt luật nghiệp vụ (cần người thật, CHƯA ĐO)
 
-Mục đích: roadmap 17o/E2 yêu cầu có số đo cho câu "người dùng duyệt test do AI nghiệp vụ đề xuất mất bao lâu và chấp nhận bao nhiêu". Không đo thì chỉ là
-khẳng định. **Mọi ô bên dưới đang để trống, không điền số ước đoán.**
+*Viết lại 2026-10-26 theo luồng hiện tại (AI trích luật có trích dẫn → người duyệt → test sinh tất định). Bản cũ đo "duyệt test AI nghiệp vụ đoán", luồng đó không còn là đường chính.*
 
-## Cách đo (mỗi người duyệt làm 1 lần, ~10 phút)
+**Trạng thái: chưa đo.** Mọi ô kết quả bên dưới để trống, không điền số ước đoán. Phép đo C ở `docs/DANH_GIA.md` mục 7B **giả định người duyệt cẩn thận** (duyệt đúng các luật đúng); E2 là phép đo thay cho giả định đó.
 
-1. Chạy hệ thống và `mutant-api` (xem `mutant-api/README.md`), tạo project mới, import OpenAPI của `mutant-api`.
-2. Ở trang Endpoint chọn **1 endpoint** (đề xuất `POST /api/jobs`), bấm **Sinh test case**, bật "AI bổ sung nghiệp vụ còn thiếu (GIẢ ĐỊNH)".
-3. Khi job xong, mở trang Test case, lọc test có nhãn **AI đề xuất thêm / nghiệp vụ**. Bấm đồng hồ.
-4. Với từng test, đọc tên + dữ liệu + kỳ vọng + lý do rồi chọn **một** hành động: *Chấp nhận nguyên văn* / *Sửa rồi giữ* / *Bỏ*.
-5. Dừng đồng hồ khi duyệt xong toàn bộ danh sách. Ghi vào bảng.
+## 1. Câu hỏi cần trả lời
 
-## Bảng kết quả
+1. **Thời gian:** người duyệt mất bao lâu cho mỗi luật?
+2. **Tác dụng của trích dẫn:** luật có đoạn trích nguyên văn (và nút "Xem trong tài liệu") được duyệt nhanh hơn và chính xác hơn luật không có trích dẫn?
+3. **Độ chính xác:** người duyệt có **loại được luật sai** không, và có **duyệt nhầm** luật sai hay **loại nhầm** luật đúng không?
 
-| Người duyệt | Vai trò (SV/GV/QA) | Endpoint | Số test AI đề xuất | Thời gian duyệt (phút) | Chấp nhận nguyên văn | Sửa rồi giữ | Bỏ | Ghi chú |
-|---|---|---|---|---|---|---|---|---|
-| | | | | | | | | |
-| | | | | | | | | |
-| | | | | | | | | |
+Câu 3 là điểm yếu lớn nhất của phép đo hiện tại: nếu người duyệt hay duyệt nhầm luật sai thì test sinh ra sẽ cho Fail giả, và con số "C: 0% Fail giả" không còn đúng với người dùng thật.
 
-## Chỉ số tính từ bảng (sau khi có ≥ 3 dòng)
+## 2. Thiết kế
 
-- Thời gian duyệt trung bình / test = tổng phút ÷ tổng số test.
-- Tỉ lệ chấp nhận nguyên văn = chấp nhận ÷ tổng; tỉ lệ có giá trị sau chỉnh = (chấp nhận + sửa) ÷ tổng.
-- Nếu tỉ lệ bỏ cao, ghi 2–3 ví dụ test bị bỏ và lý do (thường là luật nghiệp vụ AI đoán sai vì spec không nói).
+**Trong từng người (mỗi người làm cả 2 điều kiện), đổi thứ tự luân phiên** (người 1: CITED trước, người 2: PLAIN trước, người 3: CITED trước, ...) để giảm hiệu ứng học.
 
-## Giới hạn phải ghi khi báo cáo
+| Điều kiện | Project | Nội dung 9 luật |
+|---|---|---|
+| **CITED** | `python scripts/seed-demo-rules.py --with-ai --e2 --email e2@aiapi.local --password <mật khẩu> --name "E2-P<n>-CITED"` | 5 luật do AI trích thật, **có trích dẫn và nút "Xem trong tài liệu"** (cả 5 đúng) + 4 luật nhập tay không trích dẫn |
+| **PLAIN** | `python scripts/seed-demo-rules.py --e2 --email e2@aiapi.local --password <mật khẩu> --name "E2-P<n>-PLAIN"` | CÙNG 5 luật nhưng **không trích dẫn** (nhập tay) + cùng 4 luật nhập tay |
 
-Cỡ mẫu nhỏ (người duyệt biết dự án nên có thiên lệch), chưa có nhóm đối chứng (tự viết test tay cùng endpoint), chỉ đo 1 endpoint. Không suy rộng.
+4 luật nhập tay (đáp án do script in ra, **không đưa cho người tham gia**): **C1** "số phần tử criteria ≤ 20" (đúng), **C2** "số phần tử criteria ≥ 1" (đúng), **W1** "salaryMax trong khoảng [-, 5000]" (SAI: tài liệu không nêu trần lương), **W2** "deadline ≥ bây giờ + 30 ngày" (SAI: tài liệu nói hạn nộp "chọn đúng ngày hôm nay vẫn được chấp nhận"). Người tham gia phải đối chiếu với tài liệu `docs/eval/srs-mutant-api.md` (đưa tài liệu cho họ ở cả 2 điều kiện: ở CITED có thể dùng nút "Xem trong tài liệu", ở PLAIN phải tự mở tệp).
+
+**Người tham gia:** ít nhất 3, tốt nhất 5; nên trộn vai (sinh viên, giảng viên, người làm QA). Mỗi người khoảng 25 phút cho cả 2 điều kiện.
+
+## 3. Chi phí token (cần bạn duyệt trước khi chạy)
+
+Mỗi project CITED gọi AI thật 1 lần để trích luật: **≈ 14.200 token** (đo thật G5: 14.066 / 13.876 / 14.622), trần cứng 25.000. 3 người ≈ **42.600**, 5 người ≈ **71.000** token (trần cứng 75.000 và 125.000). Project PLAIN và mọi bước chấm: **0 token**. Sau khi chạy đối chiếu sổ token trước/sau như các đợt đo trước.
+
+## 4. Quy trình mỗi phiên
+
+**Trước phiên (người điều hành, không có mặt người tham gia):**
+1. Docker Desktop + `docker compose up -d`; `cd mutant-api && MUTANT_CONTROL=true ./mvnw spring-boot:run` (script seed cần mutant-api để dựng project).
+2. Dựng 2 project cho người đó (bảng mục 2), dùng tài khoản riêng cho cuộc đo (vd `e2@aiapi.local`), mã người tham gia **P1, P2, ...** (không ghi tên thật vào dữ liệu).
+3. Ghi lại đáp án in ra của script vào nơi riêng.
+
+**Hướng dẫn nói với người tham gia (đọc nguyên văn, giống nhau mọi người):**
+> "Hệ thống đề xuất một danh sách luật nghiệp vụ lấy từ tài liệu này. Việc của bạn là quyết định từng luật: **Duyệt** nếu luật đúng theo tài liệu, **Loại** nếu sai hoặc tài liệu không nói, **Sửa** nếu gần đúng. Không có đáp án nào cố ý dễ hơn đáp án khác. Làm theo tốc độ bình thường, không cần vội. Bạn dừng bất cứ lúc nào cũng được. Phần mềm chỉ đo thời gian bạn xem từng luật và quyết định của bạn, không ghi chuột hay bàn phím. Bạn có đồng ý được đo không?"
+
+**Trong phiên:**
+1. Người tham gia đọc và **bật công tắc "Đo thời gian duyệt luật"** ở màn Checklist của endpoint (mặc định tắt; khi bật có dòng thông báo công khai). Không bật thì không được đo.
+2. Mở project điều kiện thứ nhất, bấm chip "Checklist" trên dòng endpoint cần duyệt. Người tham gia duyệt/loại/sửa từng luật bằng các nút trên từng luật. **Không dùng "Duyệt hàng loạt"** (không được đo); nếu người tham gia dùng, ghi chú lại.
+3. Hết 9 luật thì báo; sang điều kiện thứ hai.
+4. Người điều hành **không gợi ý đáp án**, chỉ ghi chú vào phiếu (mục 6): chỗ do dự, câu hỏi họ hỏi, lúc họ mở tài liệu.
+
+**Sau phiên (chấm, 0 token):** với mỗi project:
+```bash
+python scripts/e2-score.py --project <id> --email e2@aiapi.local --password <mật khẩu> --out docs/eval/e2-P<n>-<CITED|PLAIN>.json
+```
+Script đọc quyết định cuối của từng luật, so với đáp án, và lấy số liệu thời gian từ công cụ đo trong giao diện. Chạy **trước khi** người tham gia sang điều kiện kia cũng được, miễn mỗi project được chấm đúng 1 lần.
+
+## 5. Chỉ số
+
+Mỗi phiên cho các số sau (đều từ `e2-score.py`):
+
+- **Quyết định đúng** (trên 9 luật), **duyệt nhầm luật sai** (W1/W2 bị duyệt; nghiêm trọng nhất), **loại nhầm luật đúng**, **chưa quyết định**.
+- **Thời gian**: số quyết định, tổng và **trung vị** giây mỗi quyết định; tách theo luật có/không có trích dẫn và theo loại quyết định. Lưu ý: công cụ đo gộp theo luật nhưng không có id luật (ẩn danh), nên không gán được thời gian cho từng luật riêng lẻ.
+
+Tổng hợp (sau khi có ít nhất 3 người): trung vị thời gian mỗi quyết định ở CITED và ở PLAIN; số luật sai bị duyệt nhầm ở mỗi điều kiện (trên tổng 2 × số người luật sai); số luật đúng bị loại nhầm. **Chỉ mô tả, không kiểm định thống kê**: cỡ mẫu quá nhỏ.
+
+## 6. Bảng kết quả (để trống đến khi đo)
+
+**Bảng theo người** (mỗi người 2 dòng):
+
+| Mã | Vai (SV/GV/QA) | Điều kiện (thứ tự) | Quyết định đúng /9 | Duyệt nhầm luật sai /2 | Loại nhầm luật đúng /7 | Chưa quyết định | Tổng giây | Trung vị giây/quyết định | Dùng duyệt hàng loạt? | Ghi chú |
+|---|---|---|---|---|---|---|---|---|---|---|
+| | | | | | | | | | | |
+| | | | | | | | | | | |
+| | | | | | | | | | | |
+| | | | | | | | | | | |
+| | | | | | | | | | | |
+| | | | | | | | | | | |
+
+**Bảng tổng hợp:**
+
+| Chỉ số | CITED | PLAIN |
+|---|---|---|
+| Số người | | |
+| Trung vị giây / quyết định | | |
+| Luật sai bị duyệt nhầm (tổng / tối đa) | | |
+| Luật đúng bị loại nhầm (tổng / tối đa) | | |
+
+## 7. Giới hạn phải ghi khi báo cáo
+
+- Cỡ mẫu nhỏ (3-5 người), không có kiểm định thống kê; người tham gia biết dự án nên có thiên lệch; người điều hành cũng là người phát triển, không mù.
+- Hiệu ứng học dù đã đổi thứ tự; cả hai điều kiện dùng cùng tài liệu và cùng luật.
+- **Cả 5 luật AI trích đều đúng** nên phép đo **không kiểm tra được trường hợp trích dẫn sai nhưng trông thuyết phục**; luật sai duy nhất là 2 luật nhập tay không có trích dẫn. Kết luận về "trích dẫn giúp phát hiện luật sai" vì vậy bị giới hạn.
+- Công cụ đo tính thời gian luật nằm trong khung nhìn khi tab đang mở và có focus, **không** đo thời gian đọc thực sự (người dùng có thể nhìn đi chỗ khác); không đo duyệt hàng loạt.
+- Tài liệu ngắn (khoảng 16.000 ký tự) và do AI viết, có thể dễ duyệt hơn tài liệu thật.
+- **Nguồn luật không bị lộ qua ghi chú:** script `--e2` để trống ghi chú (rationale) của mọi luật nhập tay, nên điều kiện PLAIN không có dòng "luật do AI trích" và 4 luật thử không mang mã/đáp án trên giao diện; chấm điểm nhận diện luật sai theo mẫu và tham số. Người tham gia vẫn có thể đoán nguồn từ cách diễn đạt; lời hướng dẫn nói luật "do hệ thống đề xuất" ở cả hai điều kiện.
+- Đây là phép đo người duyệt, không phải đo chất lượng test sinh ra (đã có ở `docs/DANH_GIA.md` mục 7B).
+
+## 8. Quyền riêng tư và đạo đức
+
+Công cụ đo mặc định **tắt**, chỉ bật khi người tham gia đồng ý; chỉ ghi thời gian có focus, quyết định, nguồn/mẫu luật và việc có trích dẫn; **không** ghi chuột, bàn phím, nội dung luật hay danh tính; xuất dữ liệu ẩn danh. Dùng mã P1, P2, ... trong mọi file; không lưu tên thật cùng dữ liệu. Người tham gia được dừng bất cứ lúc nào và dữ liệu của họ bị xoá nếu họ yêu cầu (xoá project của người đó).

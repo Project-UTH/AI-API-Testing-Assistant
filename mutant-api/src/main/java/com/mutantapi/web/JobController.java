@@ -67,7 +67,7 @@ public class JobController {
         if (!auth.isHr() && !m.on(MutantFlag.M14)) {
             throw ApiException.forbidden("Chi HR duoc tao tin tuyen dung");
         }
-        Parsed p = parse(body);
+        Parsed p = parse(body, true);
         Store.Job job = new Store.Job();
         job.ownerId = auth.id();
         // M19: nhan ownerId tu body - HR (hoac ung vien khi M14) gan chu so huu tuy y.
@@ -107,7 +107,7 @@ public class JobController {
         if (job.ownerId != auth.id() && !m.on(MutantFlag.M15)) {
             throw ApiException.forbidden("Chi HR chu so huu duoc sua tin nay");
         }
-        Parsed p = parse(body);
+        Parsed p = parse(body, false);
         apply(job, p);
         // M20: nhan status tu body (truong khong khai bao) - doi trang thai tin ngoai y muon.
         if (m.on(MutantFlag.M20) && body.has("status") && body.get("status").isTextual()) {
@@ -164,7 +164,9 @@ public class JobController {
                 }
                 String name = c.string("name", true, true, 1, 200);
                 // M08: weight = 0 van duoc nhan (bien duoi 0.01 thanh 0).
-                BigDecimal weight = c.decimal("weight", true, m.on(MutantFlag.M08) ? BigDecimal.ZERO : new BigDecimal("0.01"), new BigDecimal("100"));
+                // H02 (held-out): kiem tra viet "weight < 0" thay vi "< 0.01" -> weight = 0 lot qua validate.
+                BigDecimal weight = c.decimal("weight", true,
+                        m.on(MutantFlag.M08) || m.on(MutantFlag.H02) ? BigDecimal.ZERO : new BigDecimal("0.01"), new BigDecimal("100"));
                 // M09: maxScore = 0 van duoc nhan (bien duoi 1 thanh 0).
                 Integer maxScore = c.integer("maxScore", true, m.on(MutantFlag.M09) ? 0 : 1);
                 if (name != null && weight != null && maxScore != null) {
@@ -176,7 +178,9 @@ public class JobController {
         in.check(m.on(MutantFlag.M13) ? 401 : 400);
 
         BigDecimal total = parsed.stream().map(Store.Criterion::weight).reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (total.compareTo(new BigDecimal("100")) != 0 && !m.on(MutantFlag.M25)) {
+        // H10 (held-out): chi chan tong > 100 thay vi tong != 100.
+        boolean badTotal = m.on(MutantFlag.H10) ? total.compareTo(new BigDecimal("100")) > 0 : total.compareTo(new BigDecimal("100")) != 0;
+        if (badTotal && !m.on(MutantFlag.M25)) {
             throw new ApiException(400, "RUBRIC_WEIGHT_SUM_INVALID", "Tong weight phai bang 100, hien la " + total.toPlainString());
         }
         job.rubric = parsed;
@@ -188,11 +192,13 @@ public class JobController {
 
     // ---- ho tro ----
 
-    private Parsed parse(JsonNode body) {
+    /** create = true o POST /api/jobs, false o PUT /api/jobs/{id} (mutant held-out chi anh huong 1 trong 2). */
+    private Parsed parse(JsonNode body, boolean create) {
         Input in = Input.of(body);
         // M01 bo bat buoc; M02 cho phep rong/khoang trang; M03 bo gioi han toi da; M07 gioi han thanh 199 (tu choi nham dung bien 200).
         String title = in.string("title", !m.on(MutantFlag.M01), !m.on(MutantFlag.M02), m.on(MutantFlag.M02) ? 0 : 1,
-                m.on(MutantFlag.M03) ? NO_LIMIT : m.on(MutantFlag.M07) ? 199 : 200);
+                m.on(MutantFlag.M03) ? NO_LIMIT : m.on(MutantFlag.M07) ? 199
+                        : create && m.on(MutantFlag.H01) ? 201 : 200); // H01 (held-out, chi POST): "length > 201" thay vi "> 200"
         String description = in.string("description", true, true, 1, NO_LIMIT);
         // M06: salaryMin = -1 van duoc nhan.
         BigDecimal salaryMin = in.decimal("salaryMin", false, m.on(MutantFlag.M06) ? BigDecimal.valueOf(-1) : BigDecimal.ZERO, null);
@@ -209,7 +215,17 @@ public class JobController {
         }
         String deadlineText = in.string("deadline", true, true, 1, NO_LIMIT);
         LocalDate deadline = null;
-        if (deadlineText != null) {
+        if (deadlineText != null && create && m.on(MutantFlag.H05)) {
+            // H05 (held-out, chi POST): chi kiem tra mau regex, roi LocalDate.parse NGOAI try -> ngay khong ton tai (2027-02-30) nem
+            // DateTimeParseException khong bat -> 500.
+            if (!deadlineText.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+                if (!in.off("deadline", "format")) {
+                    in.addError("deadline phai dung dinh dang yyyy-MM-dd");
+                }
+            } else {
+                deadline = LocalDate.parse(deadlineText);
+            }
+        } else if (deadlineText != null) {
             try {
                 deadline = LocalDate.parse(deadlineText);
             } catch (DateTimeParseException e) {
@@ -222,10 +238,15 @@ public class JobController {
         in.check(m.on(MutantFlag.M11) ? 200 : 400);
 
         // Luat nghiep vu (chay sau validate dinh dang).
-        if (deadline != null && deadline.isBefore(LocalDate.now()) && !m.on(MutantFlag.M24)) {
+        // H09 (held-out, chi POST): "!deadline.isAfter(today)" thay vi "deadline.isBefore(today)" -> hom nay bi coi la qua khu.
+        boolean past = deadline != null && (create && m.on(MutantFlag.H09)
+                ? !deadline.isAfter(LocalDate.now()) : deadline.isBefore(LocalDate.now()));
+        if (past && !m.on(MutantFlag.M24)) {
             throw new ApiException(400, "INVALID_DEADLINE", "deadline khong duoc o qua khu");
         }
-        if (salaryMin != null && salaryMax != null && salaryMin.compareTo(salaryMax) > 0 && !m.on(MutantFlag.M23)) {
+        // H08 (held-out): kiem tra salaryMin <= salaryMax bi quen o update (PUT), POST van dung.
+        if (salaryMin != null && salaryMax != null && salaryMin.compareTo(salaryMax) > 0 && !m.on(MutantFlag.M23)
+                && !(!create && m.on(MutantFlag.H08))) {
             throw new ApiException(400, "INVALID_SALARY_RANGE", "salaryMin khong duoc lon hon salaryMax");
         }
         return new Parsed(title, description, salaryMin, salaryMax, currency, jobType, deadline);
