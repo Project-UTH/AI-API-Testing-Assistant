@@ -1,0 +1,358 @@
+{
+  "job": {
+    "id": "ea37ef1d-b907-4ee9-8246-8ba5df22f7cb",
+    "status": "SUCCEEDED",
+    "tokens": 46453,
+    "cap": 80000,
+    "seconds": 42.6,
+    "extraction": {
+      "endpointCount": 22,
+      "lotsPlanned": 2,
+      "lotsDone": 2,
+      "estimatedTokens": 47123,
+      "fromDocument": 5,
+      "fromInstruction": 0,
+      "inferred": 9,
+      "rejectedAsDuplicateOfSpec": 4,
+      "conflicts": 0,
+      "skippedExisting": 0,
+      "skippedOverCap": 0,
+      "skippedInferred": 0,
+      "dropped": {
+        "UNKNOWN_ENDPOINT": 1,
+        "INVALID_PARAMS": 1
+      },
+      "stoppedReason": null,
+      "tokenBudget": 80000,
+      "questions": [
+        "Spec file CV chỉ cho phép định dạng PDF hoặc DOCX (kiểm bằng magic bytes) - cần làm rõ cách API xác thực/báo lỗi định dạng không hợp lệ ở field 'file' của endpoint POST /api/candidates/resumes?",
+        "FR-H03 nêu tổng trọng số rubric phải bằng 100%, nhưng danh sách endpoint hiện tại không có endpoint quản lý rubric (criteria/weights) - endpoint này có thuộc phạm vi kiểm thử không?",
+        "FR-H12 quy định giấy mời phỏng vấn có 1–5 khung giờ nhưng endpoint tạo/gửi giấy mời (không phải confirm-slot) không có trong danh sách - có cần bổ sung ràng buộc số lượng khung giờ (1 đến 5) cho endpoint đó không?",
+        "FR-U02 nêu mỗi ứng viên chỉ được nộp một CV cho một vị trí trong một chu kỳ tuyển dụng - ràng buộc này có nên áp dụng kiểm tra trùng lặp ở endpoint POST /api/candidates/applications không, và tiêu chí xác định 'chu kỳ' là gì?",
+        "FR-H02 nêu tin tuyển dụng có hạn nộp (deadline) nhưng không nêu rõ deadline phải sau thời điểm hiện tại bao lâu - có ràng buộc DATE_RELATIVE nào cho job.deadline không?",
+        "Hạn nộp (deadline) của tin tuyển dụng có bắt buộc phải ở tương lai so với thời điểm tạo/cập nhật không?",
+        "Tổng trọng số các tiêu chí rubric của một Job có bắt buộc đúng bằng 100% khi tạo/cập nhật từng tiêu chí qua API không, hay chỉ kiểm tra khi hoàn tất thiết lập rubric?",
+        "Số lượng khung giờ tối đa 1-5 trong giấy mời phỏng vấn có được API kiểm tra chặt chẽ không, hay chỉ là quy ước nghiệp vụ ở tầng giao diện?"
+      ],
+      "suggested": 9,
+      "suggestStoppedReason": null
+    },
+    "steps": [
+      {
+        "phase": "DOC_READ",
+        "status": "OK",
+        "detail": "1 tài liệu (24332 ký tự); chuỗi giống bí mật được che trước khi gửi AI",
+        "tokens": null
+      },
+      {
+        "phase": "RULES_PLAN",
+        "status": "OK",
+        "detail": "22 endpoint chia 2 lô; đọc tài liệu/chỉ dẫn + AI gợi ý thêm (GIẢ ĐỊNH); ước tính tối đa ~47123 token, ngân sách 80000 token",
+        "tokens": null
+      },
+      {
+        "phase": "RULES_AI",
+        "status": "OK",
+        "detail": "Đã nhận trả lời",
+        "tokens": 18983
+      },
+      {
+        "phase": "RULES_VERIFY",
+        "status": "OK",
+        "detail": "AI đề xuất 3 luật: giữ 1 (1 có trích dẫn tài liệu, 0 từ chỉ dẫn, 0 GIẢ ĐỊNH); bỏ 1 luật sai endpoint/mẫu/field",
+        "tokens": null
+      },
+      {
+        "phase": "RULES_AI",
+        "status": "OK",
+        "detail": "Đã nhận trả lời",
+        "tokens": 19131
+      },
+      {
+        "phase": "RULES_VERIFY",
+        "status": "OK",
+        "detail": "AI đề xuất 6 luật: giữ 4 (4 có trích dẫn tài liệu, 0 từ chỉ dẫn, 0 GIẢ ĐỊNH); bỏ 1 luật sai endpoint/mẫu/field",
+        "tokens": null
+      },
+      {
+        "phase": "RULES_SUGGEST",
+        "status": "OK",
+        "detail": "Đã nhận trả lời",
+        "tokens": 3980
+      },
+      {
+        "phase": "RULES_VERIFY",
+        "status": "OK",
+        "detail": "AI gợi ý 5 mục: giữ 3 (GIẢ ĐỊNH, chờ bạn duyệt)",
+        "tokens": null
+      },
+      {
+        "phase": "RULES_SUGGEST",
+        "status": "OK",
+        "detail": "Đã nhận trả lời",
+        "tokens": 4359
+      },
+      {
+        "phase": "RULES_VERIFY",
+        "status": "OK",
+        "detail": "AI gợi ý 6 mục: giữ 6 (GIẢ ĐỊNH, chờ bạn duyệt)",
+        "tokens": null
+      }
+    ]
+  },
+  "tokenAccounting": {
+    "before": {
+      "eventTokens": 1046279,
+      "jobTokens": 277585,
+      "eventRows": 112,
+      "jobRows": 44
+    },
+    "after": {
+      "eventTokens": 1092732,
+      "jobTokens": 324038,
+      "eventRows": 116,
+      "jobRows": 45
+    },
+    "eventTokens": 46453,
+    "jobTokens": 46453
+  },
+  "rules": [
+    {
+      "id": "5f4da12f-fa8c-422a-9688-872c0b5322a3",
+      "endpoint": "POST /api/candidates/applications",
+      "template": "OR",
+      "params": {
+        "fields": [
+          "answers[0].answerText",
+          "answers[0].answerYesNo"
+        ]
+      },
+      "sentence": "Ít nhất 1 field trong nhóm [answers[0].answerText, answers[0].answerYesNo]",
+      "source": "INFERRED",
+      "expectedStatus": null,
+      "suggestedStatus": 400,
+      "quote": null,
+      "rationale": "GIẢ ĐỊNH: Mỗi câu trả lời sàng lọc cần có ít nhất một dạng nội dung trả lời, dạng text hoặc dạng có/không"
+    },
+    {
+      "id": "cba1d916-017e-418e-ab1e-a82ec16dff93",
+      "endpoint": "POST /api/hr/applications/{applicationId}/interview-invitation",
+      "template": "ARRAY_AGGREGATE",
+      "params": {
+        "op": "LTE",
+        "array": "slots",
+        "fn": "COUNT",
+        "value": 5
+      },
+      "sentence": "Số phần tử slots ≤ 5",
+      "source": "DOC",
+      "expectedStatus": null,
+      "suggestedStatus": null,
+      "quote": "HR điền ngày giờ cụ thể (FR-H12: 1–5 khung giờ, mỗi khung gồm thời điểm và địa điểm/link)",
+      "rationale": "Giấy mời phỏng vấn tối đa 5 khung giờ theo đặc tả."
+    },
+    {
+      "id": "ffe94aaa-8a40-437f-968c-97b3a7f62849",
+      "endpoint": "POST /api/hr/applications/{applicationId}/interview-invitation",
+      "template": "ARRAY_AGGREGATE",
+      "params": {
+        "op": "GTE",
+        "array": "slots",
+        "fn": "COUNT",
+        "value": 1
+      },
+      "sentence": "Số phần tử slots ≥ 1",
+      "source": "DOC",
+      "expectedStatus": null,
+      "suggestedStatus": null,
+      "quote": "HR điền ngày giờ cụ thể (FR-H12: 1–5 khung giờ, mỗi khung gồm thời điểm và địa điểm/link)",
+      "rationale": "Giấy mời phỏng vấn phải có ít nhất 1 khung giờ."
+    },
+    {
+      "id": "98af16a0-77be-462d-b027-d3ca83c94d37",
+      "endpoint": "POST /api/hr/applications/{applicationId}/interview-invitation",
+      "template": "REQUIRES",
+      "params": {
+        "field": "slots",
+        "fields": [
+          "slots[0].scheduledAt",
+          "slots[0].location"
+        ]
+      },
+      "sentence": "Có slots thì phải có slots[0].scheduledAt, slots[0].location",
+      "source": "DOC",
+      "expectedStatus": null,
+      "suggestedStatus": null,
+      "quote": "mỗi khung gồm thời điểm và địa điểm/link",
+      "rationale": "Mỗi khung giờ trong giấy mời phải có đủ thời điểm và địa điểm."
+    },
+    {
+      "id": "733903f0-5f20-4444-8f57-b75a63d2805d",
+      "endpoint": "POST /api/hr/applications/{applicationId}/interview-invitation",
+      "template": "DATE_RELATIVE",
+      "params": {
+        "op": "GTE",
+        "field": "slots[0].scheduledAt",
+        "offset": 0,
+        "unit": "HOUR"
+      },
+      "sentence": "slots[0].scheduledAt ≥ bây giờ",
+      "source": "INFERRED",
+      "expectedStatus": null,
+      "suggestedStatus": 400,
+      "quote": null,
+      "rationale": "GIẢ ĐỊNH: Thời gian phỏng vấn mời phải ở tương lai so với lúc gửi lời mời"
+    },
+    {
+      "id": "74dd5352-98f8-4239-9846-d5a02ee1ba78",
+      "endpoint": "POST /api/hr/jobs",
+      "template": "COMPARE_FIELDS",
+      "params": {
+        "left": "job.salaryMin",
+        "op": "LTE",
+        "right": "job.salaryMax"
+      },
+      "sentence": "job.salaryMin ≤ job.salaryMax",
+      "source": "DOC",
+      "expectedStatus": null,
+      "suggestedStatus": null,
+      "quote": "HR tạo mới bài đăng tuyển dụng (tiêu đề, mô tả công việc, mức lương, địa điểm, loại hình làm việc)",
+      "rationale": "Lương tối thiểu không được vượt quá lương tối đa khi tạo tin tuyển dụng."
+    },
+    {
+      "id": "451e6146-766e-4e5c-83ef-0c58fa6fb4bc",
+      "endpoint": "POST /api/hr/jobs",
+      "template": "DATE_RELATIVE",
+      "params": {
+        "op": "GTE",
+        "field": "job.deadline",
+        "offset": 0,
+        "unit": "DAY"
+      },
+      "sentence": "job.deadline ≥ bây giờ",
+      "source": "INFERRED",
+      "expectedStatus": null,
+      "suggestedStatus": 400,
+      "quote": null,
+      "rationale": "GIẢ ĐỊNH: Hạn nộp hồ sơ phải ở tương lai so với thời điểm tạo tin tuyển dụng"
+    },
+    {
+      "id": "6cfbf0d1-f2a5-49cd-b9bf-1c0052c23b51",
+      "endpoint": "POST /api/hr/jobs/{jobId}/rubric/criteria",
+      "template": "ARRAY_AGGREGATE",
+      "params": {
+        "array": "scaleDescription",
+        "item": "level",
+        "fn": "DISTINCT"
+      },
+      "sentence": "scaleDescription[].level không trùng nhau",
+      "source": "INFERRED",
+      "expectedStatus": null,
+      "suggestedStatus": 400,
+      "quote": null,
+      "rationale": "GIẢ ĐỊNH: Các mức điểm trong scaleDescription không nên trùng lặp để đảm bảo thang đánh giá rõ ràng"
+    },
+    {
+      "id": "2b389f00-2bbe-45b3-a75a-41bcc9438017",
+      "endpoint": "POST /api/hr/jobs/{jobId}/screening-questions",
+      "template": "REQUIRES",
+      "params": {
+        "field": "questionType",
+        "fieldValue": "SINGLE_CHOICE",
+        "fields": [
+          "options"
+        ]
+      },
+      "sentence": "Có questionType = SINGLE_CHOICE thì phải có options",
+      "source": "INFERRED",
+      "expectedStatus": null,
+      "suggestedStatus": 400,
+      "quote": null,
+      "rationale": "GIẢ ĐỊNH: Câu hỏi dạng chọn lựa cần có danh sách lựa chọn options đi kèm"
+    },
+    {
+      "id": "622c63f1-dd41-4b75-8fc1-fdb3b216eb0e",
+      "endpoint": "PUT /api/candidates/profile/me",
+      "template": "DATE_RELATIVE",
+      "params": {
+        "op": "LTE",
+        "field": "dateOfBirth",
+        "offset": 0,
+        "unit": "DAY"
+      },
+      "sentence": "dateOfBirth ≤ bây giờ",
+      "source": "INFERRED",
+      "expectedStatus": null,
+      "suggestedStatus": 400,
+      "quote": null,
+      "rationale": "GIẢ ĐỊNH: Ngày sinh không thể là ngày trong tương lai"
+    },
+    {
+      "id": "5f7baf6c-0764-42d4-bc2c-4506631a3f42",
+      "endpoint": "PUT /api/hr/jobs/{id}",
+      "template": "COMPARE_FIELDS",
+      "params": {
+        "left": "salaryMin",
+        "op": "LTE",
+        "right": "salaryMax"
+      },
+      "sentence": "salaryMin ≤ salaryMax",
+      "source": "DOC",
+      "expectedStatus": null,
+      "suggestedStatus": null,
+      "quote": "HR tạo mới bài đăng tuyển dụng (tiêu đề, mô tả công việc, mức lương, địa điểm, loại hình làm việc)",
+      "rationale": "Lương tối thiểu không được lớn hơn lương tối đa của tin tuyển dụng."
+    },
+    {
+      "id": "5274f604-980c-49e2-8e16-9abc0ca9dd7e",
+      "endpoint": "PUT /api/hr/jobs/{id}",
+      "template": "DATE_RELATIVE",
+      "params": {
+        "op": "GTE",
+        "field": "deadline",
+        "offset": 0,
+        "unit": "DAY"
+      },
+      "sentence": "deadline ≥ bây giờ",
+      "source": "INFERRED",
+      "expectedStatus": null,
+      "suggestedStatus": 400,
+      "quote": null,
+      "rationale": "GIẢ ĐỊNH: Hạn nộp hồ sơ nên ở tương lai so với thời điểm cập nhật job"
+    },
+    {
+      "id": "c07a8038-f9a9-432b-bf2e-2558a1d7d12a",
+      "endpoint": "PUT /api/hr/jobs/{jobId}/rubric/criteria/{criterionId}",
+      "template": "ARRAY_AGGREGATE",
+      "params": {
+        "array": "scaleDescription",
+        "item": "level",
+        "fn": "DISTINCT"
+      },
+      "sentence": "scaleDescription[].level không trùng nhau",
+      "source": "INFERRED",
+      "expectedStatus": null,
+      "suggestedStatus": 400,
+      "quote": null,
+      "rationale": "GIẢ ĐỊNH: Các mức điểm trong scaleDescription không nên trùng lặp để đảm bảo thang đánh giá rõ ràng"
+    },
+    {
+      "id": "42e38e1a-85b0-4e0d-85b8-63e6375619ac",
+      "endpoint": "PUT /api/hr/jobs/{jobId}/screening-questions/{questionId}",
+      "template": "REQUIRES",
+      "params": {
+        "field": "questionType",
+        "fieldValue": "SINGLE_CHOICE",
+        "fields": [
+          "options"
+        ]
+      },
+      "sentence": "Có questionType = SINGLE_CHOICE thì phải có options",
+      "source": "INFERRED",
+      "expectedStatus": null,
+      "suggestedStatus": 400,
+      "quote": null,
+      "rationale": "GIẢ ĐỊNH: Câu hỏi dạng chọn lựa cần có danh sách lựa chọn options đi kèm"
+    }
+  ]
+}
