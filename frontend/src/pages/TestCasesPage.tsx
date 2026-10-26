@@ -499,6 +499,7 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
                     {group.cases.map((testCase) => (
                       <TestCaseRow
                         key={testCase.id}
+                        projectId={projectId}
                         testCase={testCase}
                         selected={selectedIds.has(testCase.id)}
                         lockPending={lockPendingIds.has(testCase.id)}

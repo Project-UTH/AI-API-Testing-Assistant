@@ -80,6 +80,18 @@ public class DependencySuggestionService {
         return tc != null && (tc.isLocked() || testResultRepository.existsByTestCaseAndStatus(tc, TestResultStatus.PASSED));
     }
 
+    /** Mọi quan hệ phụ thuộc của project, theo chiều "nguồn -> test đang dùng nó": để giao diện hiện "test này đang được test nào phụ thuộc". */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public List<com.aiapitesting.backend.dto.response.TestCaseDependentResponse> listDependents(UUID projectId) {
+        Project project = projectService.getOwnedProject(projectId);
+        return testCaseDependencyRepository.findAllByTestCaseEndpointProject(project).stream()
+                .filter(d -> d.getDependsOnTestCase() != null && d.getTestCase() != null)
+                .map(d -> new com.aiapitesting.backend.dto.response.TestCaseDependentResponse(
+                        d.getDependsOnTestCase().getId(), d.getTestCase().getId(), d.getTestCase().getName(), d.getTestCase().getEndpoint().getId(),
+                        d.getTestCase().getEndpoint().getMethod() + " " + d.getTestCase().getEndpoint().getPath(), d.getPlaceholderName(), d.getJsonPath()))
+                .toList();
+    }
+
     /** Endpoint POST tạo tài nguyên cho tham số đường dẫn này (POST trên đường dẫn cha, vd /api/hr/jobs cho /api/hr/jobs/{id}); rỗng nếu spec không có. */
     public Optional<Endpoint> findCreatorEndpoint(Project project, Endpoint endpoint, String paramName) {
         String candidatePath = cutPathBeforeParam(endpoint.getPath(), paramName);

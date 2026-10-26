@@ -2,6 +2,7 @@ import { memo } from "react"
 import { Eye, Info, Lock, Pencil, ShieldAlert, Trash2, Unlock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { DependentsChip } from "@/components/testcases/DependentsChip"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/lib/testcases"
 
 interface TestCaseRowProps {
+  projectId: string
   testCase: TestCase
   selected: boolean
   lockPending: boolean
@@ -28,6 +30,7 @@ interface TestCaseRowProps {
 
 /** 1 dòng test case. memo: gõ ô tìm kiếm hay đổi chọn ở dòng khác không làm vẽ lại cả trang. */
 export const TestCaseRow = memo(function TestCaseRow({
+  projectId,
   testCase,
   selected,
   lockPending,
@@ -105,6 +108,7 @@ export const TestCaseRow = memo(function TestCaseRow({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate text-sm">{testCase.name}</span>
+      <DependentsChip projectId={projectId} testCaseId={testCase.id} testCaseName={testCase.name} />
       <span
         className="shrink-0 text-xs text-muted-foreground"
         title={expectationChanged(testCase) ? `Hệ thống đã đổi kỳ vọng sau khi chạy thật test gốc: ${testCase.expectationNote ?? ""}` : undefined}

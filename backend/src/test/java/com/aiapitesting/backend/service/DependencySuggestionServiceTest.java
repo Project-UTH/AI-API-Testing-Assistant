@@ -84,6 +84,27 @@ class DependencySuggestionServiceTest {
     }
 
     @Test
+    void listDependents_mapsEachDependencyToTheConsumerTestAndItsEndpoint() {
+        Endpoint post = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/jobs").build();
+        Endpoint put = Endpoint.builder().id(UUID.randomUUID()).project(project).method("PUT").path("/jobs/{jobId}").build();
+        TestCase source = TestCase.builder().id(UUID.randomUUID()).endpoint(post).name("tạo job").build();
+        TestCase consumer = TestCase.builder().id(UUID.randomUUID()).endpoint(put).name("sửa job").build();
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(testCaseDependencyRepository.findAllByTestCaseEndpointProject(project)).thenReturn(List.of(
+                com.aiapitesting.backend.entity.TestCaseDependency.builder().testCase(consumer).dependsOnTestCase(source).placeholderName("jobId").jsonPath("$.id").build()));
+
+        var result = dependencySuggestionService.listDependents(projectId);
+
+        assertThat(result).singleElement().satisfies(d -> {
+            assertThat(d.sourceTestCaseId()).isEqualTo(source.getId());
+            assertThat(d.dependentTestCaseId()).isEqualTo(consumer.getId());
+            assertThat(d.dependentEndpointLabel()).isEqualTo("PUT /jobs/{jobId}");
+            assertThat(d.placeholderName()).isEqualTo("jobId");
+            assertThat(d.jsonPath()).isEqualTo("$.id");
+        });
+    }
+
+    @Test
     void hasCreatorSource_ignoresDraftThatNeverPassed_andPrefersTheHealthySource() {
         Endpoint put = Endpoint.builder().id(UUID.randomUUID()).project(project).method("PUT").path("/jobs/{jobId}/x").build();
         Endpoint post = Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/jobs").build();

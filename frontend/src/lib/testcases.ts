@@ -127,6 +127,21 @@ export interface TestCaseAssertionInput {
   expectedValue: string | null
 }
 
+/** 1 quan hệ: test dependentTestCaseId đang lấy dữ liệu từ test sourceTestCaseId. */
+export interface TestCaseDependent {
+  sourceTestCaseId: string
+  dependentTestCaseId: string
+  dependentTestCaseName: string
+  dependentEndpointId: string
+  dependentEndpointLabel: string
+  placeholderName: string
+  jsonPath: string
+}
+
+export function listTestCaseDependents(projectId: string): Promise<TestCaseDependent[]> {
+  return apiFetch<TestCaseDependent[]>(`/projects/${projectId}/test-case-dependents`)
+}
+
 export interface TestCaseDependency {
   dependsOnTestCaseId: string
   dependsOnTestCaseName: string
