@@ -64,6 +64,11 @@ public final class RuleExtractionVerifier {
             return new Verdict(reason, detail, null, null, null, null, null, null, null, null, null, null, null);
         }
 
+        /** Bản sao với rationale mới (record bất biến). */
+        public Verdict withRationale(String newRationale) {
+            return new Verdict(dropped, dropDetail, endpointKey, template, params, source, documentId, quote, quoteOffset, expectedStatus, newRationale, note, suggestedStatus);
+        }
+
         public boolean hasQuote() {
             return quote != null;
         }

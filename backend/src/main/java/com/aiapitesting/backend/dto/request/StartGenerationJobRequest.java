@@ -50,6 +50,8 @@ public class StartGenerationJobRequest {
     private Boolean checklistOnly;
     /** Bật làn "AI gợi ý thêm" (ngoài tài liệu, GIẢ ĐỊNH). Tự bật khi không có tài liệu lẫn chỉ dẫn. */
     private Boolean suggest;
+    /** Gợi ý RỘNG (nhiều mục hơn, độ chắc thấp hơn, nhiều mục sai hơn) thay vì gợi ý thường (ít mà chắc). Chỉ có nghĩa khi làn gợi ý đang bật. */
+    private Boolean suggestBroad;
     /**
      * Phân công tài liệu RIÊNG cho từng endpoint (endpointId -> danh sách documentId). Endpoint có trong map dùng đúng danh sách của nó (rỗng = không dùng
      * tài liệu nào, chỉ chỉ dẫn/gợi ý); endpoint không có trong map dùng documentIds chung (hoặc tất cả tài liệu nếu cũng rỗng).

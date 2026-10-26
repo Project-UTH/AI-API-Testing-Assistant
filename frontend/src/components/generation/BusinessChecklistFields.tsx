@@ -19,6 +19,8 @@ export interface ChecklistInput {
   excluded: Set<string>
   instruction: string
   suggest: boolean
+  /** Gợi ý rộng (true) hay gợi ý thường (false) khi làn gợi ý đang bật. */
+  suggestBroad: boolean
   budget: string
   consent: boolean
   /**
@@ -34,6 +36,7 @@ export const EMPTY_CHECKLIST_INPUT: ChecklistInput = {
   excluded: new Set(),
   instruction: "",
   suggest: false,
+  suggestBroad: false,
   budget: String(DEFAULT_RULES_BUDGET),
   consent: false,
   assign: null,
@@ -318,7 +321,7 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
         </span>
       </div>
 
-      <Label className="items-start gap-2 font-normal" title="AI nêu thêm các mục nghiệp vụ nó nghĩ API nên có nhưng tài liệu không nói. Là GIẢ ĐỊNH: bạn quyết định giữ hay loại.">
+      <Label className="items-start gap-2 font-normal">
         <Checkbox
           checked={effectiveSuggest}
           disabled={!hasInput}
@@ -328,6 +331,7 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
         />
         <span className="text-xs">
           <strong>AI gợi ý thêm</strong> (ngoài tài liệu · nhãn GIẢ ĐỊNH, không có trích dẫn)
+          <HelpTip text="AI nêu thêm các mục nghiệp vụ nó nghĩ API nên có nhưng tài liệu không nói. Là GIẢ ĐỊNH: bạn quyết định giữ hay loại." />
           <span id="suggest-hint" className="block text-muted-foreground">
             {hasInput
               ? "Tắt thì AI chỉ lập mục dựa trên tài liệu và chỉ dẫn của bạn."
@@ -335,6 +339,25 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
           </span>
         </span>
       </Label>
+      {effectiveSuggest && (
+        <fieldset className="ml-6 flex flex-col gap-1.5 text-xs" aria-label="Mức độ gợi ý">
+          <legend className="sr-only">Mức độ gợi ý</legend>
+          <label className="flex items-start gap-2">
+            <input type="radio" name="suggest-level" checked={!value.suggestBroad} onChange={() => onChange({ ...value, suggestBroad: false })} className="mt-0.5" />
+            <span>
+              <strong>Gợi ý thường</strong>
+              <HelpTip text="AI chỉ nêu những luật nó khá chắc (ít mà chắc). Ít mục sai nhưng có thể không ra mục nào, nhất là với endpoint ít field. Đã đo: 5/5 mục đúng trên API tuyển dụng thử nghiệm." />
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input type="radio" name="suggest-level" checked={value.suggestBroad} onChange={() => onChange({ ...value, suggestBroad: true })} className="mt-0.5" />
+            <span>
+              <strong>Gợi ý rộng</strong>
+              <HelpTip text="AI nêu cả những luật có khả năng (độ chắc thấp hơn): nhiều mục hơn nhưng cũng nhiều mục sai hơn, bạn lọc khi duyệt. Mục có nhãn 'GIẢ ĐỊNH (gợi ý rộng)'. Chưa đo độ chính xác riêng của chế độ này." />
+            </span>
+          </label>
+        </fieldset>
+      )}
 
       <p className="text-xs text-muted-foreground">
         Không giới hạn số mục. Token của phần checklist nằm trong <strong>"Trần token AI của lần chạy"</strong> bên dưới (một trần tổng cho cả test gốc và checklist); chạm
@@ -352,6 +375,21 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
         </p>
       )}
     </div>
+  )
+}
+
+/** Dấu "?" giải thích ngắn: rê chuột hoặc focus bằng bàn phím để đọc (title + aria-label). */
+function HelpTip({ text }: { text: string }) {
+  return (
+    <span
+      role="img"
+      tabIndex={0}
+      aria-label={text}
+      title={text}
+      className="ml-1 inline-flex size-4 cursor-help items-center justify-center rounded-full border border-muted-foreground/40 align-middle text-[10px] font-semibold text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      ?
+    </span>
   )
 }
 

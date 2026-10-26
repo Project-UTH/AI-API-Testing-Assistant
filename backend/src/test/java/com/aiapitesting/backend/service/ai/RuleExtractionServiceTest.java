@@ -331,6 +331,30 @@ class RuleExtractionServiceTest {
     }
 
     @Test
+    void broadSuggestion_usesTheBroadPrompt_andLabelsTheRationaleSoTheReviewerCanTellItApart() {
+        aiReturns(suggestJson("400"), 1_500);
+
+        service.run(new RuleExtractionService.Request(project, ownerId, List.of(endpoint), List.of(), "", true, jobId, 60_000, true, 0, null, true), new Progress());
+
+        assertThat(suggestionsWritten()).singleElement().satisfies(v -> assertThat(v.rationale()).startsWith("GIẢ ĐỊNH (gợi ý rộng): "));
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(chatClient, org.mockito.Mockito.atLeastOnce()).prompt(prompt.capture());
+        assertThat(prompt.getAllValues().get(prompt.getAllValues().size() - 1)).contains("GỢI Ý RỘNG");
+    }
+
+    @Test
+    void normalSuggestion_keepsThePlainLabelAndTheConservativePrompt() {
+        aiReturns(suggestJson("400"), 1_500);
+
+        service.run(new RuleExtractionService.Request(project, ownerId, List.of(endpoint), List.of(), "", true, jobId, 60_000, true, 0, null, false), new Progress());
+
+        assertThat(suggestionsWritten()).singleElement().satisfies(v -> assertThat(v.rationale()).startsWith("GIẢ ĐỊNH: "));
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(chatClient, org.mockito.Mockito.atLeastOnce()).prompt(prompt.capture());
+        assertThat(prompt.getAllValues().get(prompt.getAllValues().size() - 1)).contains("ÍT mà CHẮC").doesNotContain("GỢI Ý RỘNG");
+    }
+
+    @Test
     void suggestedStatusOutsideTheNarrowSet_isDropped() {
         aiReturns(suggestJson("200"), 1_000);
         service.run(new RuleExtractionService.Request(project, ownerId, List.of(endpoint), List.of(), "", true, jobId, 60_000, true, 0), new Progress());

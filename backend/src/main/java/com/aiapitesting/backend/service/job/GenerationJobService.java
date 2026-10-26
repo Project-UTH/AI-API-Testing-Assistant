@@ -256,7 +256,7 @@ public class GenerationJobService {
         return new RuleExtractionService.Request(project, job.getOwnerId(), endpointRepository.findAllById(endpointIds),
                 documents.activeDocuments(project, req.getDocumentIds()), req.getInstruction(),
                 Boolean.TRUE.equals(req.getAllowInferred()) || suggest, job.getId(), tokenBudget, suggest, startTokens,
-                resolveDocsByEndpoint(project, req, endpointIds));
+                resolveDocsByEndpoint(project, req, endpointIds), suggest && Boolean.TRUE.equals(req.getSuggestBroad()));
     }
 
     /** Pha trích checklist trong job FULL/SYSTEM. Lỗi ở pha này (AI lỗi, hết quota) KHÔNG làm hỏng kết quả test đã sinh; huỷ thì lan ra như thường. */

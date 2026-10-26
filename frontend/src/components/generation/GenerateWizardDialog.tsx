@@ -127,6 +127,7 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
         documentIds: useChecklist ? selectedDocs.map((d) => d.id) : undefined,
         instruction: useChecklist ? checklistInput.instruction.trim() || undefined : undefined,
         suggest: useChecklist ? effectiveSuggest : undefined,
+        suggestBroad: useChecklist && effectiveSuggest ? checklistInput.suggestBroad : undefined,
         documentsByEndpoint,
         tokenCap,
       }),

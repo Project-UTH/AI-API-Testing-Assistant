@@ -100,6 +100,8 @@ export interface StartJobBody {
   checklistOnly?: boolean
   /** Bật làn "AI gợi ý thêm" (GIẢ ĐỊNH); backend tự bật khi không có tài liệu lẫn chỉ dẫn. */
   suggest?: boolean
+  /** Gợi ý RỘNG thay vì gợi ý thường (chỉ khi suggest bật). */
+  suggestBroad?: boolean
   rulesTokenBudget?: number
   /** endpointId -> id các tài liệu dùng RIÊNG cho endpoint đó (rỗng = không dùng tài liệu). Không gửi = mọi endpoint dùng chung documentIds. */
   documentsByEndpoint?: Record<string, string[]>

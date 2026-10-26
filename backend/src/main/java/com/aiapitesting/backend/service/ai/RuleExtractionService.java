@@ -99,16 +99,22 @@ public class RuleExtractionService {
      */
     public record Request(
             Project project, UUID ownerId, List<Endpoint> endpoints, List<RequirementDocument> documents, String instruction,
-            boolean allowInferred, UUID jobId, Integer tokenCap, boolean suggest, int startTokens, Map<UUID, List<UUID>> docsByEndpoint
+            boolean allowInferred, UUID jobId, Integer tokenCap, boolean suggest, int startTokens, Map<UUID, List<UUID>> docsByEndpoint,
+            boolean broad
     ) {
         public Request(Project project, UUID ownerId, List<Endpoint> endpoints, List<RequirementDocument> documents, String instruction,
+                       boolean allowInferred, UUID jobId, Integer tokenCap, boolean suggest, int startTokens, Map<UUID, List<UUID>> docsByEndpoint) {
+            this(project, ownerId, endpoints, documents, instruction, allowInferred, jobId, tokenCap, suggest, startTokens, docsByEndpoint, false);
+        }
+
+        public Request(Project project, UUID ownerId, List<Endpoint> endpoints, List<RequirementDocument> documents, String instruction,
                        boolean allowInferred, UUID jobId, Integer tokenCap, boolean suggest, int startTokens) {
-            this(project, ownerId, endpoints, documents, instruction, allowInferred, jobId, tokenCap, suggest, startTokens, null);
+            this(project, ownerId, endpoints, documents, instruction, allowInferred, jobId, tokenCap, suggest, startTokens, null, false);
         }
 
         public Request(Project project, UUID ownerId, List<Endpoint> endpoints, List<RequirementDocument> documents, String instruction,
                        boolean allowInferred, UUID jobId, Integer tokenCap) {
-            this(project, ownerId, endpoints, documents, instruction, allowInferred, jobId, tokenCap, false, 0, null);
+            this(project, ownerId, endpoints, documents, instruction, allowInferred, jobId, tokenCap, false, 0, null, false);
         }
     }
 
@@ -269,7 +275,7 @@ public class RuleExtractionService {
         long remainingQuota = quota.remainingToday(users.findById(req.ownerId()).orElseThrow());
         long allowed = Math.min(budget - usedByExtraction(req, ctx), remainingQuota);
         String reason = remainingQuota <= budget - usedByExtraction(req, ctx) ? DAILY_QUOTA : BUDGET_STOPPED;
-        String promptText = renderSuggestPrompt(nonce, templates, digest, existing);
+        String promptText = renderSuggestPrompt(nonce, templates, digest, existing, req.broad());
         int estimatedIn = estimateTokens(promptText.length());
         long maxOut = Math.min(MAX_OUTPUT_TOKENS, allowed - estimatedIn);
         if (maxOut < MIN_USEFUL_OUTPUT) {
@@ -309,7 +315,10 @@ public class RuleExtractionService {
             }
             List<Verdict> verdicts = new ArrayList<>();
             for (Proposed p : parsed.rules()) {
-                verdicts.add(RuleExtractionVerifier.verifySuggestion(p, infos));
+                Verdict v = RuleExtractionVerifier.verifySuggestion(p, infos);
+                // Gợi ý rộng: ghi rõ ở lý do để người duyệt phân biệt với gợi ý thường (độ chắc thấp hơn).
+                verdicts.add(req.broad() && v.dropped() == null && v.rationale() != null && v.rationale().startsWith("GIẢ ĐỊNH: ")
+                        ? v.withRationale("GIẢ ĐỊNH (gợi ý rộng): " + v.rationale().substring("GIẢ ĐỊNH: ".length())) : v);
             }
             RuleProposalWriter.Outcome outcome = writer.writeSuggestions(req.project(), byKey, verdicts, req.jobId());
             proposedCount = outcome.proposed();
@@ -645,14 +654,14 @@ public class RuleExtractionService {
                 .build().render(vars);
     }
 
-    private String renderSuggestPrompt(String nonce, String templates, String endpoints, String existing) {
+    private String renderSuggestPrompt(String nonce, String templates, String endpoints, String existing, boolean broad) {
         Map<String, Object> vars = new LinkedHashMap<>();
         vars.put("nonce", nonce);
         vars.put("templates", templates);
         vars.put("endpoints", endpoints);
         vars.put("existing", existing.isBlank() ? "(chưa có)" : existing);
         return PromptTemplate.builder()
-                .template(readResource("prompts/rules/suggest.st"))
+                .template(readResource(broad ? "prompts/rules/suggest_broad.st" : "prompts/rules/suggest.st"))
                 .renderer(StTemplateRenderer.builder().startDelimiterToken('<').endDelimiterToken('>').build())
                 .build().render(vars);
     }
