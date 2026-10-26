@@ -2,6 +2,7 @@ package com.aiapitesting.backend.service.rule;
 
 import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.ContentResponse;
 import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.DocumentResponse;
+import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.UsageEntry;
 import com.aiapitesting.backend.entity.BusinessRule;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.RequirementDocument;
@@ -9,6 +10,7 @@ import com.aiapitesting.backend.entity.RuleStatus;
 import com.aiapitesting.backend.exception.RequirementDocumentException;
 import com.aiapitesting.backend.repository.BusinessRuleRepository;
 import com.aiapitesting.backend.repository.RequirementDocumentRepository;
+import com.aiapitesting.backend.repository.RequirementDocumentUsageRepository;
 import com.aiapitesting.backend.service.CurrentUserService;
 import com.aiapitesting.backend.service.ProjectService;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,7 @@ public class RequirementDocumentService {
     private final CurrentUserService currentUserService;
     private final RequirementDocumentRepository documentRepository;
     private final BusinessRuleRepository ruleRepository;
+    private final RequirementDocumentUsageRepository usageRepository;
 
     @Transactional
     public DocumentResponse upload(UUID projectId, String originalFileName, byte[] bytes) {
@@ -90,6 +93,22 @@ public class RequirementDocumentService {
     public List<DocumentResponse> list(UUID projectId) {
         Project project = projectService.getOwnedProject(projectId);
         return documentRepository.findAllByProjectAndActiveTrueOrderByCreatedAtAsc(project).stream().map(this::toResponse).toList();
+    }
+
+    /**
+     * Mỗi cặp (tài liệu, endpoint) đã được dùng cho AI: lần gần nhất và số lần. Tên tài liệu lấy từ tài liệu hiện có hoặc từ bản chụp lúc dùng
+     * (tài liệu đã xoá/thay bản vẫn hiện, documentActive=false).
+     */
+    @Transactional(readOnly = true)
+    public List<UsageEntry> usage(UUID projectId) {
+        Project project = projectService.getOwnedProject(projectId);
+        java.util.Map<UUID, RequirementDocument> docs = new java.util.HashMap<>();
+        documentRepository.findAllByProjectOrderByCreatedAtAsc(project).forEach(d -> docs.put(d.getId(), d));
+        return usageRepository.summarize(project.getId()).stream().map(row -> {
+            RequirementDocument doc = docs.get(row.getDocumentId());
+            String name = doc != null ? doc.getFileName() : "(tài liệu đã bị xoá)";
+            return new UsageEntry(row.getDocumentId(), name, doc != null && doc.isActive(), row.getEndpointKey(), row.getLastUsedAt(), row.getTimesUsed());
+        }).sorted(java.util.Comparator.comparing(UsageEntry::lastUsedAt).reversed()).toList();
     }
 
     /** Nội dung đã chuẩn hoá - giao diện dùng để tô sáng đoạn trích theo quoteOffset (không tự tìm chuỗi con). */

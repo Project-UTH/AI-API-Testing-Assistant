@@ -15,6 +15,8 @@ public interface RequirementDocumentRepository extends JpaRepository<Requirement
 
     List<RequirementDocument> findAllByProjectAndActiveTrueOrderByCreatedAtAsc(Project project);
 
+    List<RequirementDocument> findAllByProjectOrderByCreatedAtAsc(Project project);
+
     long countByProjectAndActiveTrue(Project project);
 
     Optional<RequirementDocument> findByIdAndProject(UUID id, Project project);

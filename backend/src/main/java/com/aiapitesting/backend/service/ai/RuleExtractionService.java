@@ -6,7 +6,9 @@ import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.RequirementDocument;
 import com.aiapitesting.backend.entity.RuleSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
+import com.aiapitesting.backend.entity.RequirementDocumentUsage;
 import com.aiapitesting.backend.repository.BusinessRuleRepository;
+import com.aiapitesting.backend.repository.RequirementDocumentUsageRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.UserRepository;
 import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
@@ -87,6 +89,7 @@ public class RuleExtractionService {
     private final TestCaseChecklistPlanner planner;
     private final RuleProposalWriter writer;
     private final BusinessRuleRepository ruleRepository;
+    private final RequirementDocumentUsageRepository usageRepository;
     private final ObjectMapper mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     /**
@@ -96,12 +99,24 @@ public class RuleExtractionService {
      */
     public record Request(
             Project project, UUID ownerId, List<Endpoint> endpoints, List<RequirementDocument> documents, String instruction,
-            boolean allowInferred, UUID jobId, Integer tokenCap, boolean suggest, int startTokens
+            boolean allowInferred, UUID jobId, Integer tokenCap, boolean suggest, int startTokens, Map<UUID, List<UUID>> docsByEndpoint
     ) {
         public Request(Project project, UUID ownerId, List<Endpoint> endpoints, List<RequirementDocument> documents, String instruction,
-                       boolean allowInferred, UUID jobId, Integer tokenCap) {
-            this(project, ownerId, endpoints, documents, instruction, allowInferred, jobId, tokenCap, false, 0);
+                       boolean allowInferred, UUID jobId, Integer tokenCap, boolean suggest, int startTokens) {
+            this(project, ownerId, endpoints, documents, instruction, allowInferred, jobId, tokenCap, suggest, startTokens, null);
         }
+
+        public Request(Project project, UUID ownerId, List<Endpoint> endpoints, List<RequirementDocument> documents, String instruction,
+                       boolean allowInferred, UUID jobId, Integer tokenCap) {
+            this(project, ownerId, endpoints, documents, instruction, allowInferred, jobId, tokenCap, false, 0, null);
+        }
+    }
+
+    /**
+     * 1 lô gửi AI: các endpoint, đúng các tài liệu được phân công cho nhóm endpoint đó và nguồn kiểm chứng tương ứng (tài liệu của nhóm + chỉ dẫn).
+     * Quote lấy từ tài liệu NGOÀI nhóm không nằm trong nguồn nên bị loại ở bộ kiểm chứng.
+     */
+    record LotPlan(List<Endpoint> endpoints, List<Doc> docs, List<Source> sources) {
     }
 
     public static int budgetOf(Integer tokenCap) {
@@ -118,7 +133,7 @@ public class RuleExtractionService {
         int budget = budgetOf(req.tokenCap());
         String instruction = req.instruction() == null ? "" : req.instruction().trim();
         List<Doc> docs = req.documents().stream()
-                .map(d -> new Doc(d.getId(), d.getFileName(), d.getContent(), TextSecretScanner.mask(d.getContent()))).toList();
+                .map(d -> new Doc(d.getId(), d.getFileName(), d.getContent(), TextSecretScanner.mask(d.getContent()), d.getSha256())).toList();
         String maskedInstruction = TextSecretScanner.mask(instruction);
 
         JobProgress.Step read = ctx.start(null, "Tài liệu", "DOC_READ", "SYSTEM", "Đọc tài liệu và chỉ dẫn");
@@ -126,17 +141,20 @@ public class RuleExtractionService {
         read.ok(docs.size() + " tài liệu (" + docChars + " ký tự)" + (instruction.isEmpty() ? "" : ", có chỉ dẫn")
                 + "; chuỗi giống bí mật được che trước khi gửi AI");
 
-        List<List<Endpoint>> lots = planLots(req.endpoints());
+        List<List<Endpoint>> lots = planLots(req.endpoints()); // làn gợi ý: không dùng tài liệu nên chia lô theo mọi endpoint
+        List<LotPlan> plans = planDocumentLots(req, docs, instruction);
         String templates = readResource("prompts/rules/templates.st");
         int fixedChars = readResource("prompts/rules/extract.st").length() + templates.length() + maskedInstruction.length();
         int estimated = 0;
-        for (List<Endpoint> lot : lots) {
-            estimated += estimateTokens(fixedChars + digestOf(lot).length() + Math.min(DOC_CHAR_LIMIT, docChars)) + MAX_OUTPUT_TOKENS;
+        for (LotPlan plan : plans) {
+            int planChars = plan.docs().stream().mapToInt(d -> d.masked().length()).sum();
+            estimated += estimateTokens(fixedChars + digestOf(plan.endpoints()).length() + Math.min(DOC_CHAR_LIMIT, planChars)) + MAX_OUTPUT_TOKENS;
         }
-        boolean hasInput = !docs.isEmpty() || !instruction.isEmpty();
+        boolean hasInput = !plans.isEmpty();
         if (!hasInput) {
-            estimated = 0; // không có tài liệu/chỉ dẫn: không có làn 1
+            estimated = 0; // không có tài liệu/chỉ dẫn cho endpoint nào: không có làn 1
         }
+        int lotsReported = hasInput ? plans.size() : lots.size();
         String suggestTemplates = req.suggest() ? templates : "";
         int suggestEstimated = 0;
         if (req.suggest()) {
@@ -147,27 +165,20 @@ public class RuleExtractionService {
         }
         estimated += suggestEstimated;
         JobProgress.Step plan = ctx.start(null, "Kế hoạch", "RULES_PLAN", "SYSTEM", "Chia lô và ước tính token");
-        plan.ok(req.endpoints().size() + " endpoint chia " + lots.size() + " lô; " + (hasInput ? "đọc tài liệu/chỉ dẫn" : "không có tài liệu/chỉ dẫn")
+        plan.ok(req.endpoints().size() + " endpoint chia " + lotsReported + " lô" + (req.docsByEndpoint() != null ? " (tài liệu phân công riêng theo endpoint)" : "") + "; " + (hasInput ? "đọc tài liệu/chỉ dẫn" : "không có tài liệu/chỉ dẫn")
                 + (req.suggest() ? " + AI gợi ý thêm (GIẢ ĐỊNH)" : "") + "; ước tính tối đa ~" + estimated + " token, ngân sách " + budget + " token");
         if (ctx.isDryRun()) {
-            return new RulesJobResult(req.endpoints().size(), lots.size(), 0, estimated, 0, 0, 0, 0, 0, 0, 0, 0, Map.of(), null, budget, List.of(), 0, null);
-        }
-
-        List<Source> sources = new ArrayList<>();
-        for (Doc d : docs) {
-            sources.add(new Source(d.id(), d.name(), d.original(), RuleSource.DOC));
-        }
-        if (!instruction.isEmpty()) {
-            sources.add(new Source(null, "chỉ dẫn", instruction, RuleSource.INSTRUCTION));
+            return new RulesJobResult(req.endpoints().size(), lotsReported, 0, estimated, 0, 0, 0, 0, 0, 0, 0, 0, Map.of(), null, budget, List.of(), 0, null);
         }
 
         Totals totals = new Totals();
         int done = 0;
         String stopped = hasInput || req.suggest() ? null : NO_INPUT;
-        for (int i = 0; hasInput && i < lots.size() && stopped == null; i++) {
+        for (int i = 0; hasInput && i < plans.size() && stopped == null; i++) {
             ctx.checkCancelled();
-            String label = "Lô " + (i + 1) + "/" + lots.size();
-            stopped = runLot(req, ctx, lots.get(i), label, docs, maskedInstruction, templates, sources, budget, totals);
+            String label = "Lô " + (i + 1) + "/" + plans.size();
+            LotPlan lotPlan = plans.get(i);
+            stopped = runLot(req, ctx, lotPlan.endpoints(), label, lotPlan.docs(), maskedInstruction, templates, lotPlan.sources(), budget, totals);
             if (stopped == null) {
                 done++;
             }
@@ -182,7 +193,64 @@ public class RuleExtractionService {
                 suggestStopped = runSuggestLot(req, ctx, lots.get(i), "Gợi ý lô " + (i + 1) + "/" + lots.size(), suggestTemplates, budget, totals);
             }
         }
-        return totals.result(req.endpoints().size(), lots.size(), done, estimated, stopped, budget, suggestStopped);
+        return totals.result(req.endpoints().size(), lotsReported, done, estimated, stopped, budget, suggestStopped);
+    }
+
+    /**
+     * Chia lô cho làn tài liệu. Không có phân công riêng: 1 nhóm (mọi endpoint, mọi tài liệu) như trước. Có phân công: gom endpoint theo CÙNG bộ tài liệu
+     * (thứ tự khác nhau vẫn cùng nhóm), mỗi nhóm chia lô riêng. Nhóm không có tài liệu lẫn chỉ dẫn bị bỏ (chỉ còn làn gợi ý).
+     */
+    static List<LotPlan> planDocumentLots(Request req, List<Doc> docs, String instruction) {
+        Map<String, List<Endpoint>> groups = new java.util.LinkedHashMap<>();
+        Map<String, List<Doc>> docsOfGroup = new HashMap<>();
+        for (Endpoint e : req.endpoints()) {
+            List<Doc> chosen;
+            if (req.docsByEndpoint() == null || !req.docsByEndpoint().containsKey(e.getId())) {
+                chosen = docs;
+            } else {
+                java.util.Set<UUID> wanted = new java.util.HashSet<>(req.docsByEndpoint().get(e.getId()));
+                chosen = docs.stream().filter(d -> wanted.contains(d.id())).toList();
+            }
+            String key = chosen.stream().map(d -> d.id().toString()).sorted().collect(java.util.stream.Collectors.joining(","));
+            groups.computeIfAbsent(key, k -> new ArrayList<>()).add(e);
+            docsOfGroup.putIfAbsent(key, chosen);
+        }
+        List<LotPlan> plans = new ArrayList<>();
+        for (Map.Entry<String, List<Endpoint>> group : groups.entrySet()) {
+            List<Doc> groupDocs = docsOfGroup.get(group.getKey());
+            if (groupDocs.isEmpty() && instruction.isEmpty()) {
+                continue;
+            }
+            List<Source> sources = new ArrayList<>();
+            for (Doc d : groupDocs) {
+                sources.add(new Source(d.id(), d.name(), d.original(), RuleSource.DOC));
+            }
+            if (!instruction.isEmpty()) {
+                sources.add(new Source(null, "chỉ dẫn", instruction, RuleSource.INSTRUCTION));
+            }
+            for (List<Endpoint> lot : planLots(group.getValue())) {
+                plans.add(new LotPlan(lot, groupDocs, sources));
+            }
+        }
+        return plans;
+    }
+
+    /** Ghi nhật ký tài liệu đã dùng cho endpoint nào (chỉ id/tên/sha/khoá endpoint, KHÔNG nội dung). Lỗi ghi không làm hỏng job. */
+    private void recordUsage(Request req, List<Endpoint> lot, List<Doc> docs) {
+        try {
+            List<RequirementDocumentUsage> rows = new ArrayList<>();
+            for (Doc d : docs) {
+                for (Endpoint e : lot) {
+                    rows.add(RequirementDocumentUsage.builder().projectId(req.project().getId()).documentId(d.id())
+                            .endpointKey(BusinessRuleService.keyOf(e)).jobId(req.jobId()).docFileName(d.name()).docSha256(d.sha()).build());
+                }
+            }
+            if (!rows.isEmpty()) {
+                usageRepository.saveAll(rows);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Khong ghi duoc nhat ky tai lieu da dung: {}", e.getClass().getSimpleName());
+        }
     }
 
     /** Token pha trích đã dùng (không tính token test gốc job đã dùng trước đó). */
@@ -322,6 +390,7 @@ public class RuleExtractionService {
             return AI_ERROR;
         }
         ctx.addTokens(tokens);
+        recordUsage(req, lot, docs);
         boolean trimmed = charLimit < Math.min(totalChars, DOC_CHAR_LIMIT) || documentsText.length() < totalChars;
         ai.finish("OK", "Đã nhận trả lời" + (trimmed ? " (tài liệu được rút gọn theo ngân sách)" : ""), null, tokens);
 
@@ -464,7 +533,7 @@ public class RuleExtractionService {
         return s.length() > MAX_SUMMARY_CHARS ? s.substring(0, MAX_SUMMARY_CHARS) : s;
     }
 
-    private record Doc(UUID id, String name, String original, String masked) {
+    record Doc(UUID id, String name, String original, String masked, String sha) {
     }
 
     private record Para(int docIndex, int index, String text, int score) {

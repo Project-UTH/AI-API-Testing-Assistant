@@ -3,6 +3,7 @@ package com.aiapitesting.backend.controller;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.ContentResponse;
 import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.DocumentResponse;
+import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.UsageEntry;
 import com.aiapitesting.backend.exception.RequirementDocumentException;
 import com.aiapitesting.backend.service.rule.RequirementDocumentService;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +49,12 @@ public class RequirementDocumentController {
     @GetMapping
     public ResponseEntity<ApiResponse<List<DocumentResponse>>> list(@PathVariable UUID projectId) {
         return ResponseEntity.ok(ApiResponse.of(documentService.list(projectId)));
+    }
+
+    /** Lịch sử: mỗi tài liệu đã được dùng cho những endpoint nào (đọc theo cả hai chiều ở giao diện). */
+    @GetMapping("/usage")
+    public ResponseEntity<ApiResponse<List<UsageEntry>>> usage(@PathVariable UUID projectId) {
+        return ResponseEntity.ok(ApiResponse.of(documentService.usage(projectId)));
     }
 
     @GetMapping("/{documentId}/content")

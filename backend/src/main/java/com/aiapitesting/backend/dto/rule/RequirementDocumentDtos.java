@@ -16,6 +16,10 @@ public final class RequirementDocumentDtos {
         }
     }
 
+    /** 1 dòng lịch sử: tài liệu đã được gửi cho AI để lập checklist của endpoint này (lần gần nhất, số lần). */
+    public record UsageEntry(UUID documentId, String fileName, boolean documentActive, String endpointKey, Instant lastUsedAt, long timesUsed) {
+    }
+
     public record ContentResponse(UUID id, String fileName, String content) {
     }
 }

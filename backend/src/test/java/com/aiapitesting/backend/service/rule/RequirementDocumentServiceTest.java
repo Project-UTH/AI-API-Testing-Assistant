@@ -43,13 +43,15 @@ class RequirementDocumentServiceTest {
     private RequirementDocumentRepository documentRepository;
     @Mock
     private BusinessRuleRepository ruleRepository;
+    @Mock
+    private com.aiapitesting.backend.repository.RequirementDocumentUsageRepository usageRepository;
 
     private RequirementDocumentService service;
     private Project project;
 
     @BeforeEach
     void setUp() {
-        service = new RequirementDocumentService(projectService, currentUserService, documentRepository, ruleRepository);
+        service = new RequirementDocumentService(projectService, currentUserService, documentRepository, ruleRepository, usageRepository);
         project = Project.builder().id(UUID.randomUUID()).build();
         lenient().when(projectService.getOwnedProject(project.getId())).thenReturn(project);
         lenient().when(currentUserService.getCurrentUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());
@@ -141,6 +143,44 @@ class RequirementDocumentServiceTest {
         assertThat(doc.getContent()).isNull();
         assertThat(codeOf(() -> service.content(project.getId(), doc.getId()))).isEqualTo("DOCUMENT_NOT_FOUND");
         assertThat(codeOf(() -> service.content(project.getId(), UUID.randomUUID()))).isEqualTo("DOCUMENT_NOT_FOUND");
+    }
+
+    @Test
+    void usage_namesActiveAndDeletedDocuments_newestFirst() {
+        RequirementDocument alive = RequirementDocument.builder().id(UUID.randomUUID()).project(project).fileName("a.md").content("x").build();
+        RequirementDocument gone = RequirementDocument.builder().id(UUID.randomUUID()).project(project).fileName("b.md").active(false).build();
+        when(documentRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(java.util.List.of(alive, gone));
+        java.time.Instant older = java.time.Instant.parse("2026-10-20T00:00:00Z");
+        java.time.Instant newer = java.time.Instant.parse("2026-10-26T00:00:00Z");
+        when(usageRepository.summarize(project.getId())).thenReturn(java.util.List.of(row(gone.getId(), "POST /x", older, 1), row(alive.getId(), "PUT /y", newer, 3)));
+
+        var entries = service.usage(project.getId());
+
+        assertThat(entries).extracting("endpointKey").containsExactly("PUT /y", "POST /x");
+        assertThat(entries.get(0).documentActive()).isTrue();
+        assertThat(entries.get(0).fileName()).isEqualTo("a.md");
+        assertThat(entries.get(0).timesUsed()).isEqualTo(3);
+        assertThat(entries.get(1).documentActive()).isFalse();
+    }
+
+    private static com.aiapitesting.backend.repository.RequirementDocumentUsageRepository.UsageRow row(UUID doc, String key, java.time.Instant at, long times) {
+        return new com.aiapitesting.backend.repository.RequirementDocumentUsageRepository.UsageRow() {
+            public UUID getDocumentId() {
+                return doc;
+            }
+
+            public String getEndpointKey() {
+                return key;
+            }
+
+            public java.time.Instant getLastUsedAt() {
+                return at;
+            }
+
+            public long getTimesUsed() {
+                return times;
+            }
+        };
     }
 
     @Test

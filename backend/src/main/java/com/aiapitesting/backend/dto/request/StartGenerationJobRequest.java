@@ -45,6 +45,11 @@ public class StartGenerationJobRequest {
     private Boolean businessChecklist;
     /** Bật làn "AI gợi ý thêm" (ngoài tài liệu, GIẢ ĐỊNH). Tự bật khi không có tài liệu lẫn chỉ dẫn. */
     private Boolean suggest;
+    /**
+     * Phân công tài liệu RIÊNG cho từng endpoint (endpointId -> danh sách documentId). Endpoint có trong map dùng đúng danh sách của nó (rỗng = không dùng
+     * tài liệu nào, chỉ chỉ dẫn/gợi ý); endpoint không có trong map dùng documentIds chung (hoặc tất cả tài liệu nếu cũng rỗng).
+     */
+    private Map<UUID, List<UUID>> documentsByEndpoint;
     /** Ngân sách token CỨNG riêng của pha trích checklist (mặc định 60.000, kẹp 5.000..1.000.000). */
     private Integer rulesTokenBudget;
 }

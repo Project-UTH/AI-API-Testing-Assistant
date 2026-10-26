@@ -195,7 +195,48 @@ public class GenerationJobService {
                 && docs.size() != request.getDocumentIds().stream().distinct().count()) {
             throw new InvalidRequestException("Có tài liệu không thuộc project này hoặc đã bị xoá");
         }
+        validateDocumentAssignments(project, request, docs);
         // Không có tài liệu lẫn chỉ dẫn thì AI chỉ có thể GỢI Ý từ spec: bật làn gợi ý tự động (xem effectiveSuggest), nên vẫn hợp lệ.
+    }
+
+    private static final int MAX_ASSIGNMENT_ENTRIES = 500;
+
+    /** Phân công tài liệu theo endpoint: không tin client, chỉ nhận endpoint của job và tài liệu còn dùng của project. */
+    private void validateDocumentAssignments(Project project, StartGenerationJobRequest request, List<RequirementDocument> activeDocs) {
+        java.util.Map<UUID, List<UUID>> byEndpoint = request.getDocumentsByEndpoint();
+        if (byEndpoint == null) {
+            return;
+        }
+        if (byEndpoint.size() > MAX_ASSIGNMENT_ENTRIES) {
+            throw new InvalidRequestException("Phân công tài liệu theo endpoint tối đa " + MAX_ASSIGNMENT_ENTRIES + " endpoint");
+        }
+        java.util.Set<UUID> activeIds = documents.activeDocuments(project, null).stream().map(RequirementDocument::getId).collect(java.util.stream.Collectors.toSet());
+        java.util.Set<UUID> allowedEndpoints = request.getEndpointIds() == null || request.getEndpointIds().isEmpty()
+                ? endpointRepository.findAllByProjectOrderByCreatedAtAsc(project).stream().map(Endpoint::getId).collect(java.util.stream.Collectors.toSet())
+                : new java.util.HashSet<>(request.getEndpointIds());
+        for (java.util.Map.Entry<UUID, List<UUID>> entry : byEndpoint.entrySet()) {
+            if (!allowedEndpoints.contains(entry.getKey())) {
+                throw new InvalidRequestException("Phân công tài liệu cho endpoint không thuộc job này");
+            }
+            List<UUID> ids = entry.getValue() == null ? List.of() : entry.getValue();
+            if (ids.size() > RequirementDocumentService.MAX_ACTIVE_DOCUMENTS || !activeIds.containsAll(ids)) {
+                throw new InvalidRequestException("Có tài liệu được phân công không thuộc project này hoặc đã bị xoá");
+            }
+        }
+    }
+
+    /** endpointId -> tài liệu dùng cho endpoint đó; null khi không có phân công riêng (mọi endpoint dùng chung documentIds như cũ). */
+    private java.util.Map<UUID, List<UUID>> resolveDocsByEndpoint(Project project, StartGenerationJobRequest req, List<UUID> endpointIds) {
+        if (req.getDocumentsByEndpoint() == null) {
+            return null;
+        }
+        List<UUID> shared = documents.activeDocuments(project, req.getDocumentIds()).stream().map(RequirementDocument::getId).toList();
+        java.util.Map<UUID, List<UUID>> resolved = new java.util.HashMap<>();
+        for (UUID endpointId : endpointIds) {
+            List<UUID> own = req.getDocumentsByEndpoint().get(endpointId);
+            resolved.put(endpointId, own != null ? own : shared);
+        }
+        return resolved;
     }
 
     /** Không có tài liệu/chỉ dẫn thì làn "AI gợi ý thêm" luôn bật; có thì theo lựa chọn của người dùng. */
@@ -211,7 +252,8 @@ public class GenerationJobService {
         boolean suggest = effectiveSuggest(project, req);
         return new RuleExtractionService.Request(project, job.getOwnerId(), endpointRepository.findAllById(endpointIds),
                 documents.activeDocuments(project, req.getDocumentIds()), req.getInstruction(),
-                Boolean.TRUE.equals(req.getAllowInferred()) || suggest, job.getId(), tokenBudget, suggest, startTokens);
+                Boolean.TRUE.equals(req.getAllowInferred()) || suggest, job.getId(), tokenBudget, suggest, startTokens,
+                resolveDocsByEndpoint(project, req, endpointIds));
     }
 
     /** Pha trích checklist trong job FULL/SYSTEM. Lỗi ở pha này (AI lỗi, hết quota) KHÔNG làm hỏng kết quả test đã sinh; huỷ thì lan ra như thường. */

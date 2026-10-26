@@ -8,6 +8,7 @@ import com.aiapitesting.backend.entity.RuleSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.entity.User;
 import com.aiapitesting.backend.repository.BusinessRuleRepository;
+import com.aiapitesting.backend.repository.RequirementDocumentUsageRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.UserRepository;
 import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
@@ -56,6 +57,7 @@ class RuleExtractionServiceTest {
     private final TestCaseChecklistPlanner planner = mock(TestCaseChecklistPlanner.class);
     private final RuleProposalWriter writer = mock(RuleProposalWriter.class);
     private final BusinessRuleRepository ruleRepository = mock(BusinessRuleRepository.class);
+    private final RequirementDocumentUsageRepository usageRepository = mock(RequirementDocumentUsageRepository.class);
     private RuleExtractionService service;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -66,7 +68,7 @@ class RuleExtractionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RuleExtractionService(chatClient, events, quota, users, planner, writer, ruleRepository);
+        service = new RuleExtractionService(chatClient, events, quota, users, planner, writer, ruleRepository, usageRepository);
         User owner = User.builder().id(ownerId).build();
         project = Project.builder().id(UUID.randomUUID()).owner(owner).build();
         endpoint = endpoint("POST", "/api/jobs");
@@ -370,6 +372,67 @@ class RuleExtractionServiceTest {
     @Test
     void cleanSummary_stripsControlCharsAndCuts() {
         assertThat(RuleExtractionService.cleanSummary("a" + (char) 10 + "b" + (char) 7 + " c" + "x".repeat(300))).startsWith("a b c").hasSizeLessThanOrEqualTo(120);
+    }
+
+    private RequirementDocument docNamed(String name, String content) {
+        return RequirementDocument.builder().id(UUID.randomUUID()).project(project).fileName(name).sha256("sha-" + name).content(content).build();
+    }
+
+    @Test
+    void perEndpointAssignment_groupsEndpointsBySameDocumentSet_andEmptySetMeansNoDocument() {
+        RequirementDocument a = docNamed("a.md", "Tài liệu A nói về việc tạo tin tuyển dụng.");
+        RequirementDocument b = docNamed("b.md", "Tài liệu B nói về ứng tuyển.");
+        Endpoint e1 = endpoint("POST", "/api/jobs");
+        Endpoint e2 = endpoint("PUT", "/api/jobs/{id}");
+        Endpoint e3 = endpoint("POST", "/api/applications");
+        Endpoint e4 = endpoint("GET", "/api/ping");
+        java.util.Map<UUID, List<UUID>> assign = new java.util.HashMap<>();
+        assign.put(e1.getId(), List.of(a.getId(), b.getId()));
+        assign.put(e2.getId(), List.of(b.getId(), a.getId())); // thứ tự khác nhau vẫn cùng nhóm với e1
+        assign.put(e3.getId(), List.of(b.getId()));
+        assign.put(e4.getId(), List.of());                      // không dùng tài liệu nào
+        RuleExtractionService.Request req = new RuleExtractionService.Request(project, ownerId, List.of(e1, e2, e3, e4), List.of(a, b), "", true, jobId,
+                60_000, false, 0, assign);
+        List<RuleExtractionService.Doc> docs = req.documents().stream()
+                .map(d -> new RuleExtractionService.Doc(d.getId(), d.getFileName(), d.getContent(), d.getContent(), d.getSha256())).toList();
+
+        List<RuleExtractionService.LotPlan> plans = RuleExtractionService.planDocumentLots(req, docs, "");
+
+        assertThat(plans).hasSize(2); // {a,b} cho e1+e2 và {b} cho e3; e4 không tài liệu, không chỉ dẫn nên bị bỏ
+        assertThat(plans.get(0).endpoints()).containsExactlyInAnyOrder(e1, e2);
+        assertThat(plans.get(0).docs()).hasSize(2);
+        assertThat(plans.get(1).endpoints()).containsExactly(e3);
+        assertThat(plans.get(1).docs()).singleElement().satisfies(d -> assertThat(d.name()).isEqualTo("b.md"));
+        // nguồn kiểm chứng của nhóm chỉ có tài liệu của nhóm: quote từ tài liệu A không hợp lệ ở nhóm e3
+        assertThat(plans.get(1).sources()).extracting(com.aiapitesting.backend.service.rule.RuleExtractionVerifier.Source::name).containsExactly("b.md");
+
+        // có chỉ dẫn thì endpoint không tài liệu vẫn chạy làn 1 chỉ với chỉ dẫn
+        assertThat(RuleExtractionService.planDocumentLots(req, docs, "Chỉ dẫn")).hasSize(3);
+        // không có phân công: 1 nhóm như cũ
+        RuleExtractionService.Request old = new RuleExtractionService.Request(project, ownerId, List.of(e1, e2, e3, e4), List.of(a, b), "", true, jobId, 60_000);
+        assertThat(RuleExtractionService.planDocumentLots(old, docs, "")).singleElement().satisfies(p2 -> assertThat(p2.docs()).hasSize(2));
+    }
+
+    @Test
+    void usageIsRecordedPerDocumentAndEndpoint_withoutContent_andDryRunWritesNothing() {
+        aiReturns("{\"rules\":[]}", 800);
+        service.run(request(List.of(endpoint), true, 60_000), new Progress());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<com.aiapitesting.backend.entity.RequirementDocumentUsage>> rows = ArgumentCaptor.forClass(List.class);
+        verify(usageRepository).saveAll(rows.capture());
+        assertThat(rows.getValue()).singleElement().satisfies(u -> {
+            assertThat(u.getDocumentId()).isEqualTo(document.getId());
+            assertThat(u.getEndpointKey()).isEqualTo("POST /api/jobs");
+            assertThat(u.getDocFileName()).isEqualTo("yeu-cau.md");
+            assertThat(u.getJobId()).isEqualTo(jobId);
+        });
+
+        org.mockito.Mockito.clearInvocations(usageRepository);
+        Progress dry = new Progress();
+        dry.dryRun = true;
+        service.run(request(List.of(endpoint), true, 60_000), dry);
+        verifyNoInteractions(usageRepository);
     }
 
     @Test

@@ -87,6 +87,9 @@ class ProjectServiceTest {
     private com.aiapitesting.backend.repository.RequirementDocumentRepository requirementDocumentRepository;
 
     @Mock
+    private com.aiapitesting.backend.repository.RequirementDocumentUsageRepository requirementDocumentUsageRepository;
+
+    @Mock
     private BugReportRepository bugReportRepository;
 
     @Mock
