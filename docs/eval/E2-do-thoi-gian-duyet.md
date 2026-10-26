@@ -40,8 +40,8 @@ Mỗi project CITED gọi AI thật 1 lần để trích luật: **≈ 14.200 to
 > "Hệ thống đề xuất một danh sách luật nghiệp vụ lấy từ tài liệu này. Việc của bạn là quyết định từng luật: **Duyệt** nếu luật đúng theo tài liệu, **Loại** nếu sai hoặc tài liệu không nói, **Sửa** nếu gần đúng. Không có đáp án nào cố ý dễ hơn đáp án khác. Làm theo tốc độ bình thường, không cần vội. Bạn dừng bất cứ lúc nào cũng được. Phần mềm chỉ đo thời gian bạn xem từng luật và quyết định của bạn, không ghi chuột hay bàn phím. Bạn có đồng ý được đo không?"
 
 **Trong phiên:**
-1. Người tham gia đọc và **bật công tắc "Đo thời gian duyệt luật"** ở tab Nghiệp vụ (mặc định tắt; khi bật có dòng thông báo công khai). Không bật thì không được đo.
-2. Mở project điều kiện thứ nhất, tab Nghiệp vụ. Người tham gia duyệt/loại/sửa từng luật bằng các nút trên từng luật. **Không dùng "Duyệt hàng loạt"** (không được đo); nếu người tham gia dùng, ghi chú lại.
+1. Người tham gia đọc và **bật công tắc "Đo thời gian duyệt luật"** ở tab Checklist nghiệp vụ (mặc định tắt; khi bật có dòng thông báo công khai). Không bật thì không được đo.
+2. Mở project điều kiện thứ nhất, tab Checklist nghiệp vụ. Người tham gia duyệt/loại/sửa từng luật bằng các nút trên từng luật. **Không dùng "Duyệt hàng loạt"** (không được đo); nếu người tham gia dùng, ghi chú lại.
 3. Hết 9 luật thì báo; sang điều kiện thứ hai.
 4. Người điều hành **không gợi ý đáp án**, chỉ ghi chú vào phiếu (mục 6): chỗ do dự, câu hỏi họ hỏi, lúc họ mở tài liệu.
 

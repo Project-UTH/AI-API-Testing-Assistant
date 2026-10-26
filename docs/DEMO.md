@@ -29,8 +29,8 @@
 
 | # | Màn hình | Làm gì | Nói gì |
 |---|---|---|---|
-| 7 | Tab Nghiệp vụ, panel "Để AI trích luật" | Chỉ danh sách tài liệu (`srs-mutant-api.md`), ô chỉ dẫn, ô ngân sách token. Bấm **"Chạy thử (0 token)"** → khung giám sát hiện số lô và ước tính | "Spec không nói 'lương tối thiểu ≤ lương tối đa'. Luật đó nằm trong tài liệu nghiệp vụ. AI đọc tài liệu và **chỉ đề xuất luật**, không viết test. Ngân sách do người dùng đặt, là **trần cứng**: hết thì dừng. Trích thật tốn khoảng 14.000 token; chạy thử là 0." |
-| 8 | Danh sách luật (đã trích sẵn bằng `--with-ai`) | Mở 1 luật có trích dẫn, bấm **"Xem trong tài liệu"** | "Mỗi luật phải kèm đoạn trích **nguyên văn**, hệ thống kiểm từng chữ và từng con số. Không trích dẫn được thì thành GIẢ ĐỊNH, người duyệt phải tự chọn mã lỗi." |
+| 7 | Trang Endpoint → hộp thoại "Sinh test case", tick **"+ AI bổ sung checklist nghiệp vụ"** | Chỉ nút tải tài liệu, ô chỉ dẫn, nút **"AI gợi ý thêm"** (nhãn GIẢ ĐỊNH; tự bật và khoá khi chưa có tài liệu/chỉ dẫn) và ô ngân sách token. Tick "Chạy thử" rồi bấm → khung giám sát hiện số lô và ước tính | "Spec không nói 'lương tối thiểu ≤ lương tối đa'. Luật đó nằm trong tài liệu nghiệp vụ. AI đọc tài liệu và **chỉ lập checklist để bạn duyệt**, không viết test; nút 'AI gợi ý thêm' cho AI nêu thêm điều tài liệu không nói, nhưng gắn nhãn GIẢ ĐỊNH, không trích dẫn. Chỗ tài liệu thiếu AI hỏi lại chứ không đoán. Ngân sách do người dùng đặt, là **trần cứng**: hết thì dừng. Trích thật tốn khoảng 14.000 token; chạy thử là 0." |
+| 8 | Tab **Checklist nghiệp vụ** (đã trích sẵn bằng `--with-ai`) | Mở 1 luật có trích dẫn, bấm **"Xem trong tài liệu"** | "Mỗi luật phải kèm đoạn trích **nguyên văn**, hệ thống kiểm từng chữ và từng con số. Không trích dẫn được thì thành GIẢ ĐỊNH; mục GIẢ ĐỊNH kèm mã lỗi AI gợi ý, người duyệt bấm 'Xác nhận 422' hoặc đổi mã. Mã gợi ý chỉ có hiệu lực khi người duyệt xác nhận." |
 | 9 | Luật vừa mở | Bấm **Duyệt** (hoặc "Duyệt N luật có trích dẫn" rồi tick từng luật) | "AI đề xuất, **người quyết định**. Chưa duyệt thì chưa sinh test nào." |
 | 10 | Nút "Sinh test từ N luật đã duyệt" | Bấm; mở 1 test vừa sinh | "Test sinh **tất định, 0 token** từ luật đã duyệt: cố ý vi phạm đúng luật, kỳ vọng API từ chối." |
 | 11 | Tab Test case → chạy các test từ luật | Chạy; tất cả **Pass** | "Trên bản API chuẩn, 10/10 Pass, 0 Fail giả." |
@@ -43,7 +43,7 @@
 
 - **Phụ thuộc môi trường:** Docker Desktop tắt sau khi khởi động lại máy; mutant-api phải chạy với `MUTANT_CONTROL=true`; Docker đôi khi báo "Network unreachable" tới `host.docker.internal` (đã gặp 1 lần khi đo, làm treo lượt chạy hơn 15 phút). Kiểm tra bằng 1 lượt chạy thử trước giờ demo.
 - **Không bấm "Import OpenAPI" ở bước thật** (xoá hết dữ liệu; seed lại mất vài phút). Nếu bị hỏi, mở hộp thoại rồi bấm Hủy: nó báo số lượng sẽ mất và bắt xác nhận.
-- **Không bấm "AI trích luật" thật trên sân khấu:** tốn token, cần mạng và API key. Chỉ dùng "Chạy thử (0 token)". Nếu muốn cho xem trực tiếp, đặt ngân sách thấp và nói rõ chi phí.
+- **Không chạy "AI bổ sung checklist nghiệp vụ" thật trên sân khấu:** tốn token, cần mạng và API key. Chỉ dùng "Chạy thử" (0 token). Nếu muốn cho xem trực tiếp, đặt ngân sách thấp và nói rõ chi phí.
 - **Dọn lỗi cài sẵn** sau bước 12 (`/__reset`), nếu không các lần chạy sau sẽ Fail.
 - Chỉ chạy lại một ít test để chứng minh chạy thật; đừng chạy cả project nhiều lần (đổi lịch sử/ổn định).
 - Bật "Dọn dữ liệu đã tạo" khi chạy test trên API demo.

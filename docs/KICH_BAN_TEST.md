@@ -137,7 +137,7 @@
 
 ## 16. Luật nghiệp vụ, độ bao phủ theo endpoint, probe tất định (17q, thêm 2026-10-26)
 
-*Cần: hệ thống đang chạy, `mutant-api` cổng 8083 với `MUTANT_CONTROL=true`, project dựng bằng `python scripts/seed-demo-rules.py` (0 token). Bước **[TỐN TOKEN AI THẬT]** chỉ khi chạy `--with-ai` hoặc nút "AI trích luật" (khoảng 14.000 token).*
+*Cần: hệ thống đang chạy, `mutant-api` cổng 8083 với `MUTANT_CONTROL=true`, project dựng bằng `python scripts/seed-demo-rules.py` (0 token). Bước **[TỐN TOKEN AI THẬT]** chỉ khi chạy `--with-ai` hoặc hộp thoại "Sinh test case" có tick "+ AI bổ sung checklist nghiệp vụ" (khoảng 14.000 token làn tài liệu; làn "AI gợi ý thêm" ước tính thêm 10.000-15.000, CHƯA đo).*
 
 **Test tự động (backend, không cần môi trường):** `cd backend && ./mvnw test` → 944 test pass, 0 fail (gồm 6 test phân quyền tích hợp thật cần MySQL đang chạy: `RuleAndDocumentOwnershipTest`).
 
@@ -146,7 +146,7 @@
 - [ ] Tải tệp có dòng `api_key = ...` → cảnh báo dòng số mấy, KHÔNG hiện giá trị; kiểm prompt gửi AI không chứa giá trị (che trước khi gửi).
 - [ ] Tải lại tệp trùng tên → bản cũ bị thay, luật từ bản cũ chuyển "Lỗi thời".
 - [ ] "Chạy thử (0 token)" → khung giám sát hiện số lô, ước tính token; sổ token không đổi.
-- [ ] **[TỐN TOKEN AI THẬT]** "AI trích luật" với ngân sách 20.000 → job xong, luật ở "Chờ duyệt", mỗi luật có đoạn trích; "Xem trong tài liệu" tô sáng đúng đoạn.
+- [ ] **[TỐN TOKEN AI THẬT]** Hộp thoại "Sinh test case" → tick "+ AI bổ sung checklist nghiệp vụ" (có tài liệu, "AI gợi ý thêm" tắt) với ngân sách 20.000 → job xong, luật ở "Chờ duyệt", mỗi luật có đoạn trích; "Xem trong tài liệu" tô sáng đúng đoạn.
 - [ ] Ngân sách quá nhỏ (5.000) → dừng ngay, lý do "chạm ngân sách", không gọi AI.
 - [ ] Hai job cùng project → job thứ hai bị từ chối (409); bấm "Sinh test từ luật" khi có job đang chạy → 409.
 
