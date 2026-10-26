@@ -15,6 +15,7 @@ import { ApproveGuessDialog } from "@/components/rules/ApproveGuessDialog"
 import { BatchApproveDialog } from "@/components/rules/BatchApproveDialog"
 import { DocViewerDialog } from "@/components/rules/DocViewerDialog"
 import { ReviewTimingBanner } from "@/components/rules/ReviewTimingBanner"
+import { GeneratedResultCard } from "@/components/rules/GeneratedResultCard"
 import { SystemChecklistReview } from "@/components/rules/SystemChecklistReview"
 import { fillCoverageGaps } from "@/lib/coverage"
 import { AiQuestionsCard } from "@/components/rules/AiQuestionsCard"
@@ -95,6 +96,7 @@ export function EndpointChecklistView({ endpointIdProp, embedded = false }: { en
   // Mục checklist HỆ THỐNG (EP/BVA/bảo mật) bạn tick ở màn duyệt của 1 endpoint; chỉ các mục này được sinh test.
   const [systemKeys, setSystemKeys] = useState<Set<string>>(new Set())
   const [systemCreated, setSystemCreated] = useState(0)
+  const [generatedIds, setGeneratedIds] = useState<string[]>([])
   const [detectedMessage, setDetectedMessage] = useState<string | null>(null)
   const [guessRule, setGuessRule] = useState<BusinessRule | null>(null)
   const [viewing, setViewing] = useState<{ documentId: string; quote: string; offset: number | null } | null>(null)
@@ -204,15 +206,19 @@ export function EndpointChecklistView({ endpointIdProp, embedded = false }: { en
     // Đang xem checklist của 1 endpoint: sinh test cho đúng các mục hệ thống đã tick VÀ các mục AI đã duyệt của endpoint đó (bước cuối của luồng duyệt).
     mutationFn: async () => {
       let created = 0
+      let ids: string[] = []
       if (endpointId && systemKeys.size > 0) {
-        created = (await fillCoverageGaps(projectId, endpointId, [...systemKeys])).createdCount
+        const filled = await fillCoverageGaps(projectId, endpointId, [...systemKeys])
+        created = filled.createdCount
+        ids = filled.created.map((t) => t.id)
       }
       const rules = await generateRuleTests(projectId, endpointId ? { endpointIds: [endpointId] } : {})
-      return { rules, created }
+      return { rules, created, ids: [...ids, ...rules.createdTestCaseIds] }
     },
-    onSuccess: ({ rules, created }) => {
+    onSuccess: ({ rules, created, ids }) => {
       setGenerated(rules)
       setSystemCreated(created)
+      setGeneratedIds(ids)
       setSystemKeys(new Set())
       queryClient.invalidateQueries({ queryKey: ["endpoint-coverage", projectId] })
       invalidate()
@@ -355,20 +361,15 @@ export function EndpointChecklistView({ endpointIdProp, embedded = false }: { en
         </p>
       )}
       {generated && (
-        <div role="status" className="mt-3 rounded-md border border-border p-3 text-sm">
-          <p className="font-medium">
-            Đã sinh {generated.createdCount + systemCreated} test{systemCreated > 0 ? ` (${systemCreated} từ checklist hệ thống, ${generated.createdCount} từ checklist nghiệp vụ AI)` : " từ checklist nghiệp vụ"}.
-          </p>
-          {generated.notGenerated.length > 0 && (
-            <ul className="mt-1.5 list-disc pl-5 text-xs text-muted-foreground">
-              {generated.notGenerated.map((n) => (
-                <li key={n.ruleId}>
-                  <span className="text-foreground">{n.sentence}</span>: {n.reason}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <GeneratedResultCard
+          key={generatedIds.join(",")}
+          projectId={projectId}
+          endpointId={endpointId}
+          testCaseIds={generatedIds}
+          systemCount={systemCreated}
+          aiCount={generated.createdCount}
+          notGenerated={generated.notGenerated}
+        />
       )}
 
       <div role="tablist" aria-label="Lọc theo trạng thái" className="mt-4 flex flex-wrap gap-1.5">
