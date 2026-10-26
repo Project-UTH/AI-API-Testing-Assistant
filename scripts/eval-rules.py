@@ -112,7 +112,9 @@ def evaluate_runs(args, log):
         cited = [i for i, r in rules.items() if r["quote"] and r["source"] in ("DOC", "INSTRUCTION") and r["status"] == "PROPOSED"]
         verified = [i for i in cited if labels.get(i, {}).get("correct") is True]
         rest = [i for i in cited if i not in verified]
-        out = {"run": run["run"], "projectId": pid, "citedRules": len(cited), "verifiedRules": len(verified), "configs": {}}
+        # "generation" cần cho evalm.print_summary (cột token/giây); trích luật đã tính riêng ở pha extract nên ở đây là 0
+        out = {"run": run["run"], "projectId": pid, "citedRules": len(cited), "verifiedRules": len(verified), "configs": {},
+               "generation": {"tokens": 0, "seconds": 0.0}}
         # 1) duyệt luật đúng -> sinh test (tập C-VERIFIED); 2) duyệt phần còn lại -> sinh thêm (C-ALL = hợp của hai tập)
         if verified:
             system.api.call("POST", f"/projects/{pid}/business-rules/approve-batch", {"ruleIds": verified})
@@ -139,6 +141,8 @@ def evaluate_runs(args, log):
             system.delete_project(pid)
     summary = {}
     for cfg in ("C_VERIFIED", "C_ALL"):
+        if cfg == "C_ALL" and all(r["configs"].get("C_ALL") is r["configs"].get("C_VERIFIED") for r in results):
+            continue  # trùng hệt C_VERIFIED
         s = evalm.summarize(results, cfg)
         if s:
             summary[cfg] = s
