@@ -18,7 +18,7 @@ interface RejectRuleDialogProps {
   onClose: () => void
 }
 
-/** Loại luật BẮT BUỘC chọn lý do; luật bị loại không xoá (giữ để đo độ chính xác trích luật) và chỉ ẩn sau bộ lọc. */
+/** Loại mục BẮT BUỘC chọn lý do; mục bị loại không xoá (giữ để đo độ chính xác trích mục) và chỉ ẩn sau bộ lọc. */
 export function RejectRuleDialog({ projectId, rule, onClose }: RejectRuleDialogProps) {
   const queryClient = useQueryClient()
   const [reason, setReason] = useState<RuleRejectReason | "">("")
@@ -45,7 +45,7 @@ export function RejectRuleDialog({ projectId, rule, onClose }: RejectRuleDialogP
     <Dialog open={rule !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Loại luật</DialogTitle>
+          <DialogTitle>Loại mục</DialogTitle>
           <DialogDescription>{rule?.sentence}</DialogDescription>
         </DialogHeader>
         <fieldset className="flex flex-col gap-1.5">
@@ -73,7 +73,7 @@ export function RejectRuleDialog({ projectId, rule, onClose }: RejectRuleDialogP
             Huỷ
           </Button>
           <Button type="button" disabled={!reason || mutation.isPending} onClick={() => mutation.mutate()}>
-            Loại luật
+            Loại mục
           </Button>
         </DialogFooter>
       </DialogContent>

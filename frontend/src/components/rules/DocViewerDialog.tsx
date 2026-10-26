@@ -42,12 +42,12 @@ export function DocViewerDialog({ projectId, target, onClose }: Props) {
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{data?.fileName ?? "Tài liệu nghiệp vụ"}</DialogTitle>
-          <DialogDescription>Đoạn được tô sáng là trích dẫn mà luật dựa vào. Hãy đọc cả ngữ cảnh xung quanh trước khi duyệt.</DialogDescription>
+          <DialogDescription>Đoạn được tô sáng là trích dẫn mà mục dựa vào. Hãy đọc cả ngữ cảnh xung quanh trước khi duyệt.</DialogDescription>
         </DialogHeader>
         {isLoading && <p className="text-sm text-muted-foreground">Đang tải tài liệu...</p>}
         {error && (
           <p role="alert" className="text-sm text-destructive">
-            {notFound ? "Tài liệu đã bị xoá hoặc đã được thay bản mới. Đoạn trích của luật vẫn được giữ nguyên bên dưới." : "Không tải được tài liệu."}
+            {notFound ? "Tài liệu đã bị xoá hoặc đã được thay bản mới. Đoạn trích của mục vẫn được giữ nguyên bên dưới." : "Không tải được tài liệu."}
           </p>
         )}
         {(error || parts?.stale) && target && (
@@ -57,7 +57,7 @@ export function DocViewerDialog({ projectId, target, onClose }: Props) {
         {parts && !parts.stale && (
           <pre className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted/30 p-3 font-sans text-sm leading-relaxed whitespace-pre-wrap">
             {parts.before}
-            <mark ref={markRef} aria-label="Đoạn trích của luật" className="rounded bg-yellow-300/60 px-0.5 text-foreground dark:bg-yellow-500/40">
+            <mark ref={markRef} aria-label="Đoạn trích của mục" className="rounded bg-yellow-300/60 px-0.5 text-foreground dark:bg-yellow-500/40">
               {parts.mark}
             </mark>
             {parts.after}

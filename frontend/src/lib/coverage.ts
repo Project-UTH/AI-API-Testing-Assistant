@@ -111,13 +111,13 @@ export interface EndpointCoverage {
   rules?: RuleCoverage | null
 }
 
-/** 17q G3 - lớp nghiệp vụ của endpoint, TÁCH khỏi lớp spec: "x/y luật đã duyệt có test". Thiếu = endpoint chưa có luật nào. */
+/** 17q G3 - lớp nghiệp vụ của endpoint, TÁCH khỏi lớp spec: "x/y mục đã duyệt có test". Thiếu = endpoint chưa có mục nào. */
 export interface RuleCoverage {
   approved: number
   approvedWithTests: number
-  /** Luật chờ duyệt (đề xuất + mâu thuẫn spec). */
+  /** Mục chờ duyệt (đề xuất + mâu thuẫn spec). */
   proposed: number
-  /** Trong số luật đã duyệt: số luật GIẢ ĐỊNH (AI suy đoán, không có trích dẫn hợp lệ). */
+  /** Trong số mục đã duyệt: số mục GIẢ ĐỊNH (AI suy đoán, không có trích dẫn hợp lệ). */
   assumed: number
 }
 

@@ -24,7 +24,7 @@ interface RuleItemProps {
   onConfirmSuggested: (rule: BusinessRule, status: number) => void
 }
 
-/** 1 luật nghiệp vụ: câu luật + chip mẫu/nguồn/trạng thái + kỳ vọng + thao tác. memo: duyệt 1 luật không vẽ lại cả danh sách. */
+/** 1 checklist nghiệp vụ: câu mục + chip mẫu/nguồn/trạng thái + kỳ vọng + thao tác. memo: duyệt 1 mục không vẽ lại cả danh sách. */
 export const RuleItem = memo(function RuleItem({ rule, busy, onApprove, onEdit, onReject, onDelete, onViewQuote, onConfirmSuggested }: RuleItemProps) {
   const itemRef = useRef<HTMLLIElement | null>(null)
   useRuleTimer(itemRef, rule.id)

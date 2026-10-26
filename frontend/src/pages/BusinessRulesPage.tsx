@@ -29,11 +29,9 @@ import {
   generateRuleTests,
   listBusinessRules,
   RULE_SOURCE_DISPLAY,
-  RULE_STATUS_DISPLAY,
   type BusinessRule,
   type GenerateRuleTestsResult,
   type RuleSource,
-  type RuleStatus,
 } from "@/lib/rules"
 
 function errorMessage(error: unknown): string {
@@ -44,8 +42,8 @@ const FILTER_KEYS = ["status", "source", "endpointId"] as const
 const PAGE_SIZE = 50
 
 /**
- * Tab "Nghiệp vụ" (17q G3): luật nghiệp vụ theo endpoint - hệ thống đề xuất (cặp min/max), bạn tự nhập hoặc duyệt/loại; luật ĐÃ DUYỆT mới
- * được sinh test (tất định, 0 token). Danh sách nhóm theo endpoint; luật bị loại giữ lại (ẩn khi lọc) để đo độ chính xác.
+ * Tab "Nghiệp vụ" (17q G3): checklist nghiệp vụ theo endpoint - hệ thống đề xuất (cặp min/max), bạn tự nhập hoặc duyệt/loại; mục ĐÃ DUYỆT mới
+ * được sinh test (tất định, 0 token). Danh sách nhóm theo endpoint; mục bị loại giữ lại (ẩn khi lọc) để đo độ chính xác.
  */
 export function BusinessRulesPage() {
   const { id } = useParams<{ id: string }>()
@@ -81,6 +79,11 @@ export function BusinessRulesPage() {
     queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "APPROVED" }),
   })
   const approvedCount = approvedPage?.totalElements ?? 0
+  const { data: pendingPage } = useQuery({
+    queryKey: ["rules", projectId, "pending-count"],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "PROPOSED" }),
+  })
+  const pendingCount = pendingPage?.totalElements ?? 0
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["rules", projectId] })
@@ -105,12 +108,12 @@ export function BusinessRulesPage() {
     onSuccess: (result) => {
       setBatchOpen(false)
       setBatchMessage(
-        `Đã duyệt ${result.approvedIds.length} luật.` + (result.notApproved.length > 0 ? ` ${result.notApproved.length} luật không đủ điều kiện duyệt hàng loạt.` : "")
+        `Đã duyệt ${result.approvedIds.length} mục.` + (result.notApproved.length > 0 ? ` ${result.notApproved.length} mục không đủ điều kiện duyệt hàng loạt.` : "")
       )
       invalidate()
     },
   })
-  // Luật có trích dẫn = nguồn tài liệu hoặc chỉ dẫn: lọc ở backend để không bị 200 luật GIẢ ĐỊNH/hệ thống đứng trước che mất.
+  // Mục có trích dẫn = nguồn tài liệu hoặc chỉ dẫn: lọc ở backend để không bị 200 mục GIẢ ĐỊNH/hệ thống đứng trước che mất.
   const { data: docPage } = useQuery({
     queryKey: ["rules", projectId, "cited-proposed", "DOC"],
     queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "DOC" }),
@@ -129,8 +132,8 @@ export function BusinessRulesPage() {
     onSuccess: (result) => {
       setDetectedMessage(
         result.proposedCount > 0
-          ? `Hệ thống đề xuất ${result.proposedCount} luật mới (chờ duyệt).`
-          : "Không có luật mới để đề xuất (các cặp field đã có luật hoặc đã bị loại)."
+          ? `Hệ thống đề xuất ${result.proposedCount} mục mới (chờ duyệt).`
+          : "Không có mục mới để đề xuất (các cặp field đã có mục hoặc đã bị loại)."
       )
       invalidate()
     },
@@ -179,23 +182,15 @@ export function BusinessRulesPage() {
   }, [])
   const onDelete = useCallback(
     (rule: BusinessRule) => {
-      if (window.confirm(`Xoá luật "${rule.sentence}"?`)) remove.mutate(rule)
+      if (window.confirm(`Xoá mục "${rule.sentence}"?`)) remove.mutate(rule)
     },
     [remove]
   )
 
   const selects: ListFilterSelect[] = [
     {
-      key: "status",
-      label: "Lọc theo trạng thái luật",
-      allLabel: "Mọi trạng thái",
-      value: lf.filters.status,
-      className: "sm:w-44",
-      options: (Object.keys(RULE_STATUS_DISPLAY) as RuleStatus[]).map((value) => ({ value, label: RULE_STATUS_DISPLAY[value].label })),
-    },
-    {
       key: "source",
-      label: "Lọc theo nguồn luật",
+      label: "Lọc theo nguồn mục",
       allLabel: "Mọi nguồn",
       value: lf.filters.source,
       className: "sm:w-48",
@@ -236,7 +231,7 @@ export function BusinessRulesPage() {
           size="sm"
           variant="outline"
           disabled={citedProposed.length === 0}
-          title={citedProposed.length === 0 ? "Không có luật có trích dẫn nào đang chờ duyệt" : "Đối chiếu từng luật với đoạn trích rồi duyệt một lượt"}
+          title={citedProposed.length === 0 ? "Không có mục có trích dẫn nào đang chờ duyệt" : "Đối chiếu từng mục với đoạn trích rồi duyệt một lượt"}
           onClick={() => setBatchOpen(true)}
         >
           Duyệt {citedProposed.length} mục có trích dẫn…
@@ -247,7 +242,7 @@ export function BusinessRulesPage() {
           variant="outline"
           className="ml-auto"
           disabled={approvedCount === 0 || generate.isPending}
-          title={approvedCount === 0 ? "Chưa có luật nào được duyệt" : "Sinh tất định, 0 token; cần test gốc đã Pass"}
+          title={approvedCount === 0 ? "Chưa có mục nào được duyệt" : "Sinh tất định, 0 token; cần test gốc đã Pass"}
           onClick={() => generate.mutate()}
         >
           {generate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
@@ -272,7 +267,7 @@ export function BusinessRulesPage() {
       )}
       {generated && (
         <div role="status" className="mt-3 rounded-md border border-border p-3 text-sm">
-          <p className="font-medium">Đã sinh {generated.createdCount} test từ luật nghiệp vụ.</p>
+          <p className="font-medium">Đã sinh {generated.createdCount} test từ checklist nghiệp vụ.</p>
           {generated.notGenerated.length > 0 && (
             <ul className="mt-1.5 list-disc pl-5 text-xs text-muted-foreground">
               {generated.notGenerated.map((n) => (
@@ -285,7 +280,28 @@ export function BusinessRulesPage() {
         </div>
       )}
 
-      <div className="mt-4">
+      <div role="tablist" aria-label="Lọc theo trạng thái" className="mt-4 flex flex-wrap gap-1.5">
+        {[
+          { value: "PROPOSED", label: `Cần duyệt (${pendingCount})` },
+          { value: "APPROVED", label: `Đã duyệt (${approvedCount})` },
+          { value: "REJECTED", label: "Đã loại" },
+          { value: "", label: "Tất cả" },
+        ].map((t) => (
+          <Button
+            key={t.value || "all"}
+            type="button"
+            role="tab"
+            size="sm"
+            variant={lf.filters.status === t.value ? "default" : "outline"}
+            aria-selected={lf.filters.status === t.value}
+            onClick={() => lf.setFilter("status", t.value)}
+          >
+            {t.label}
+          </Button>
+        ))}
+      </div>
+
+      <div className="mt-2">
         <ListToolbar
           hideSearch
           searchValue=""
@@ -299,14 +315,14 @@ export function BusinessRulesPage() {
         />
       </div>
 
-      {isLoading && <p className="mt-6 text-muted-foreground">Đang tải luật...</p>}
-      {isError && <p className="mt-6 text-destructive">Không tải được danh sách luật, vui lòng thử lại.</p>}
+      {isLoading && <p className="mt-6 text-muted-foreground">Đang tải mục...</p>}
+      {isError && <p className="mt-6 text-destructive">Không tải được danh sách mục, vui lòng thử lại.</p>}
 
       {data && rules.length === 0 && (
         <ListEmptyState
           filtered={lf.activeCount > 0}
-          emptyText='Chưa có luật nghiệp vụ nào. Bấm "Hệ thống phát hiện luật" để lấy đề xuất từ spec, hoặc "Thêm luật" để tự nhập.'
-          filteredText="Không có luật nào khớp bộ lọc."
+          emptyText='Chưa có checklist nghiệp vụ nào. Bấm "Hệ thống phát hiện mục" để lấy đề xuất từ spec, hoặc "Thêm mục" để tự nhập.'
+          filteredText="Không có mục nào khớp bộ lọc."
           onReset={lf.reset}
         />
       )}
@@ -379,7 +395,7 @@ export function BusinessRulesPage() {
       <Dialog open={conflictRule !== null} onOpenChange={(open) => !open && setConflictRule(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Duyệt luật mâu thuẫn spec</DialogTitle>
+            <DialogTitle>Duyệt mục mâu thuẫn spec</DialogTitle>
             <DialogDescription>{conflictRule?.statusNote}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1">

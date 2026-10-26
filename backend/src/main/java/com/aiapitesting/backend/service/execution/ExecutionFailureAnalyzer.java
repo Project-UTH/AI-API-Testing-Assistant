@@ -321,8 +321,8 @@ public class ExecutionFailureAnalyzer {
         String rule = testCase.getChecklistItem() == null ? "luật nghiệp vụ đã duyệt" : testCase.getChecklistItem();
         return List.of("API trả " + actual + " (thành công) cho request cố ý vi phạm 1 luật bạn đã duyệt: " + rule,
                 testCase.getExpectedStatusClass() != null
-                        ? "Kỳ vọng: bị từ chối (4xx). Nếu luật sai, hãy Sửa hoặc Loại luật ở tab Nghiệp vụ - không sửa kỳ vọng để test Pass."
-                        : "Kỳ vọng: " + testCase.getExpectedStatus() + ". Nếu luật sai, hãy Sửa hoặc Loại luật ở tab Nghiệp vụ.");
+                        ? "Kỳ vọng: bị từ chối (4xx). Nếu mục checklist sai, hãy Sửa hoặc Loại mục đó ở tab Checklist nghiệp vụ - không sửa kỳ vọng để test Pass."
+                        : "Kỳ vọng: " + testCase.getExpectedStatus() + ". Nếu mục checklist sai, hãy Sửa hoặc Loại mục đó ở tab Checklist nghiệp vụ.");
     }
 
     private List<String> massAssignmentEvidence(TestResult result) {

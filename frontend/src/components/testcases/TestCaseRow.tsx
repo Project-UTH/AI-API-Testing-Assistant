@@ -59,7 +59,7 @@ export const TestCaseRow = memo(function TestCaseRow({
               : TEST_CASE_SOURCE_STYLES[testCase.source]
         )}
       >
-        {/* 17q G3 - test từ luật nghiệp vụ lưu source=BUSINESS (để bộ lọc "!= BUSINESS" loại khỏi % EP/BVA) nhưng KHÔNG phải AI đoán: luật do người duyệt. */}
+        {/* 17q G3 - test từ checklist nghiệp vụ lưu source=BUSINESS (để bộ lọc "!= BUSINESS" loại khỏi % EP/BVA) nhưng KHÔNG phải AI đoán: mục do người duyệt. */}
         {testCase.generationOrigin === "SYSTEM_FILLED"
           ? "Hệ thống"
           : testCase.generationOrigin === "RULE_TEMPLATE"

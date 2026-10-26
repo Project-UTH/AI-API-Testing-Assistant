@@ -26,14 +26,14 @@ interface BusinessRuleFormDialogProps {
   projectId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Có = sửa luật này (không đổi endpoint/mẫu); sửa xong luật quay về "Chờ duyệt". */
+  /** Có = sửa mục này (không đổi endpoint/mẫu); sửa xong mục quay về "Chờ duyệt". */
   rule?: BusinessRule | null
   defaultEndpointId?: string
 }
 
 const SELECT_CLASS = "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
 
-/** Thêm/sửa luật nghiệp vụ: chọn endpoint → mẫu → tham số (field chọn từ spec) → kỳ vọng; có câu luật xem trước. */
+/** Thêm/sửa checklist nghiệp vụ: chọn endpoint → mẫu → tham số (field chọn từ spec) → kỳ vọng; có câu mục xem trước. */
 export function BusinessRuleFormDialog({ projectId, open, onOpenChange, rule, defaultEndpointId }: BusinessRuleFormDialogProps) {
   const queryClient = useQueryClient()
   const editing = Boolean(rule)
@@ -83,7 +83,7 @@ export function BusinessRuleFormDialog({ projectId, open, onOpenChange, rule, de
       return createBusinessRule(projectId, { endpointId, template, params, expectedStatus: expected, rationale: rationale || undefined, approve })
     },
     onSuccess: () => {
-      if (rule) reportReviewTiming(projectId, rule.id, "EDITED") // chỉ khi SỬA luật có sẵn (tạo mới không phải một lần duyệt)
+      if (rule) reportReviewTiming(projectId, rule.id, "EDITED") // chỉ khi SỬA mục có sẵn (tạo mới không phải một lần duyệt)
       queryClient.invalidateQueries({ queryKey: ["rules", projectId] })
       queryClient.invalidateQueries({ queryKey: ["project-coverage", projectId] })
       onOpenChange(false)
@@ -97,9 +97,9 @@ export function BusinessRuleFormDialog({ projectId, open, onOpenChange, rule, de
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{editing ? "Sửa luật nghiệp vụ" : "Thêm luật nghiệp vụ"}</DialogTitle>
+          <DialogTitle>{editing ? "Sửa checklist nghiệp vụ" : "Thêm checklist nghiệp vụ"}</DialogTitle>
           <DialogDescription>
-            Bạn chịu trách nhiệm kỳ vọng của luật; hệ thống sinh test từ luật đã duyệt (không dùng AI). Sửa luật sẽ đưa nó về "Chờ duyệt".
+            Bạn chịu trách nhiệm kỳ vọng của mục; hệ thống sinh test từ mục đã duyệt (không dùng AI). Sửa mục sẽ đưa nó về "Chờ duyệt".
           </DialogDescription>
         </DialogHeader>
 
@@ -128,7 +128,7 @@ export function BusinessRuleFormDialog({ projectId, open, onOpenChange, rule, de
           </div>
 
           <fieldset className="flex flex-col gap-1.5" disabled={editing}>
-            <legend className="text-xs font-medium">Mẫu luật</legend>
+            <legend className="text-xs font-medium">Mẫu mục</legend>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {RULE_TEMPLATE_ORDER.map((t) => (
                 <label
@@ -156,11 +156,11 @@ export function BusinessRuleFormDialog({ projectId, open, onOpenChange, rule, de
           {endpointId ? (
             <RuleParamsFields template={template} params={params} fields={fields} onChange={setParams} />
           ) : (
-            <p className="text-sm text-muted-foreground">Chọn endpoint để chọn field của luật.</p>
+            <p className="text-sm text-muted-foreground">Chọn endpoint để chọn field của mục.</p>
           )}
 
           <fieldset className="flex flex-col gap-1.5">
-            <legend className="text-xs font-medium">Khi vi phạm luật, API phải trả</legend>
+            <legend className="text-xs font-medium">Khi vi phạm mục, API phải trả</legend>
             <label className="flex items-center gap-2 text-sm">
               <input type="radio" name="rule-expected" checked={rejectedAny} onChange={() => setRejectedAny(true)} />
               Bị từ chối (mã 4xx bất kỳ, trừ 401/403/404/405/415/429)
@@ -181,7 +181,7 @@ export function BusinessRuleFormDialog({ projectId, open, onOpenChange, rule, de
 
           <div className="flex flex-col gap-1">
             <Label htmlFor="rule-rationale" className="text-xs">
-              Ghi chú / nguồn của luật (tuỳ chọn)
+              Ghi chú / nguồn của mục (tuỳ chọn)
             </Label>
             <Textarea id="rule-rationale" rows={2} value={rationale} onChange={(e) => setRationale(e.target.value)} />
           </div>

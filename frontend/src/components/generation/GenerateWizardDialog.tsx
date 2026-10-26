@@ -141,7 +141,7 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
 
   return (
     <AlertDialog open={open} onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
-      <AlertDialogContent className="max-h-[90vh] overflow-y-auto data-[size=default]:sm:max-w-2xl">
+      <AlertDialogContent className="data-[size=default]:sm:max-w-2xl">
         <AlertDialogHeader>
           <AlertDialogTitle>
             {many ? `Sinh test case cho ${endpoints.length} endpoint` : `Sinh test case: ${endpoints[0].method} ${endpoints[0].path}`}
@@ -152,7 +152,7 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        <div className="flex flex-col gap-3 text-sm">
+        <div className="flex max-h-[58vh] flex-col gap-3 overflow-y-auto pr-1 text-sm">
           <p>
             Đích: <code className="font-mono text-xs">{targetUrl ?? "(chưa cấu hình Target URL)"}</code>
           </p>

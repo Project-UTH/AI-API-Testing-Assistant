@@ -80,7 +80,7 @@ interface RuleParamsFieldsProps {
   onChange: (next: RuleParams) => void
 }
 
-/** Form tham số THAY ĐỔI theo mẫu luật; ô chọn field lọc theo kiểu (số / chuỗi ngày / mảng) để người dùng khó nhập sai. */
+/** Form tham số THAY ĐỔI theo mẫu mục; ô chọn field lọc theo kiểu (số / chuỗi ngày / mảng) để người dùng khó nhập sai. */
 export function RuleParamsFields({ template, params, fields, onChange }: RuleParamsFieldsProps) {
   const set = (patch: Partial<RuleParams>) => onChange({ ...params, ...patch })
   const numeric = fields.filter((f) => f.numeric)

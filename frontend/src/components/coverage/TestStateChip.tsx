@@ -64,12 +64,12 @@ export function CoverageCountsText({ relevant, covered, executed, certain, doubt
 }
 
 /**
- * 17q G3 - lớp NGHIỆP VỤ, dòng riêng tách khỏi lớp spec (không gộp thành 1 số): "Nghiệp vụ: x/y luật đã duyệt có test (z GIẢ ĐỊNH)".
- * Chưa có luật thì ghi "Chưa có luật" (không ghi 0%); luật chờ duyệt có badge bấm được dẫn tới tab Nghiệp vụ.
+ * 17q G3 - lớp NGHIỆP VỤ, dòng riêng tách khỏi lớp spec (không gộp thành 1 số): "Nghiệp vụ: x/y mục đã duyệt có test (z GIẢ ĐỊNH)".
+ * Chưa có mục thì ghi "Chưa có mục" (không ghi 0%); mục chờ duyệt có badge bấm được dẫn tới tab Nghiệp vụ.
  */
 export function RuleCoverageText({ rules, projectId, endpointId }: { rules: RuleCoverage | null | undefined; projectId: string; endpointId: string }) {
   if (!rules) {
-    return <span className="text-xs text-muted-foreground">Nghiệp vụ: chưa có luật</span>
+    return <span className="text-xs text-muted-foreground">Nghiệp vụ: chưa có mục</span>
   }
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
@@ -78,10 +78,10 @@ export function RuleCoverageText({ rules, projectId, endpointId }: { rules: Rule
         <span className="font-medium text-foreground">
           {rules.approvedWithTests}/{rules.approved}
         </span>{" "}
-        luật đã duyệt có test
+        mục đã duyệt có test
       </span>
       {rules.assumed > 0 && (
-        <span className="rounded-full bg-amber-500/10 px-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400" title="Luật do AI suy đoán, không có trích dẫn hợp lệ">
+        <span className="rounded-full bg-amber-500/10 px-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400" title="Mục do AI suy đoán, không có trích dẫn hợp lệ">
           {rules.assumed} GIẢ ĐỊNH
         </span>
       )}
@@ -89,7 +89,7 @@ export function RuleCoverageText({ rules, projectId, endpointId }: { rules: Rule
         <Link
           to={`/projects/${projectId}/rules?endpointId=${endpointId}`}
           className="rounded-full bg-sky-500/10 px-1.5 text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400"
-          title="Có luật đang chờ bạn duyệt"
+          title="Có mục đang chờ bạn duyệt"
         >
           Chờ duyệt {rules.proposed}
         </Link>

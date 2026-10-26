@@ -32,7 +32,7 @@ export interface JobEndpointResult {
   filled: number
 }
 
-/** Kết quả cuối của job trích luật (type RULES); luật vẫn ở trạng thái chờ duyệt. */
+/** Kết quả cuối của job trích mục (type RULES); mục vẫn ở trạng thái chờ duyệt. */
 export interface RulesJobResult {
   endpointCount: number
   lotsPlanned: number

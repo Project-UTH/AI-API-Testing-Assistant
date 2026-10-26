@@ -44,7 +44,7 @@ export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label
   AI_BUSINESS: {
     label: "AI đoán nghiệp vụ",
     className: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-    title: "Luật nghiệp vụ do AI đoán, không có trong spec. Là GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả, không tính vào độ bao phủ",
+    title: "Checklist nghiệp vụ do AI đoán, không có trong spec. Là GIẢ ĐỊNH: cần bạn duyệt trước khi tin kết quả, không tính vào độ bao phủ",
   },
   AI_BASELINE: {
     label: "Test gốc",
@@ -52,9 +52,9 @@ export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label
     title: "Test gốc hợp lệ do AI sinh và đã được chạy thật xác nhận Pass, dùng làm nền để hệ thống bổ sung checklist",
   },
   RULE_TEMPLATE: {
-    label: "Từ luật nghiệp vụ",
+    label: "Từ checklist nghiệp vụ",
     className: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
-    title: "Sinh tất định từ luật nghiệp vụ bạn đã duyệt (kỳ vọng do bạn chịu trách nhiệm); không tính vào % EP/BVA",
+    title: "Sinh tất định từ checklist nghiệp vụ bạn đã duyệt (kỳ vọng do bạn chịu trách nhiệm); không tính vào % EP/BVA",
   },
 }
 
@@ -185,7 +185,7 @@ export interface TestCase {
   /** 17q G1 - kỳ vọng ban đầu trước khi hệ thống tự đổi sau lần chạy thật test gốc (null = chưa đổi) + lý do. */
   originalExpectedStatus?: number | null
   expectationNote?: string | null
-  /** 17q G3 - "REJECTED" = kỳ vọng "bị từ chối (4xx)"; ruleId = luật nghiệp vụ đã sinh test; sendTwice = gửi 2 lần. */
+  /** 17q G3 - "REJECTED" = kỳ vọng "bị từ chối (4xx)"; ruleId = checklist nghiệp vụ đã sinh test; sendTwice = gửi 2 lần. */
   expectedStatusClass?: string | null
   ruleId?: string | null
   sendTwice?: boolean
@@ -238,7 +238,7 @@ export interface GenerateTestCasesOptions {
   includePositive?: boolean
   includeNegative?: boolean
   includeBoundary?: boolean
-  /** Nhóm nghiệp vụ: AI đoán luật không có trong spec (mọi lý do đều là GIẢ ĐỊNH). */
+  /** Nhóm nghiệp vụ: AI đoán mục không có trong spec (mọi lý do đều là GIẢ ĐỊNH). */
   includeBusiness?: boolean
 }
 

@@ -52,7 +52,7 @@ const CAUSE_HINT: Record<FailureCauseCode, string> = {
   API_WRONG_STATUS:
     "API trả 401 cho request đầu vào sai (kỳ vọng 400/422) dù token đã được API chấp nhận ở test khác. Nhiều khả năng đây là lỗi của API đích (xử lý lỗi đầu vào sai mã): nên tạo Bug Report. Không sửa kỳ vọng cho khớp 401.",
   RULE_VIOLATION_ACCEPTED:
-    "Test sinh từ 1 luật nghiệp vụ BẠN ĐÃ DUYỆT: request cố ý vi phạm luật nhưng API vẫn nhận (trả 2xx). Nhiều khả năng là lỗi của API đích: nên tạo Bug Report. Nếu luật sai, Sửa hoặc Loại luật ở tab Nghiệp vụ - không sửa kỳ vọng cho khớp hành vi của API.",
+    "Test sinh từ 1 checklist nghiệp vụ BẠN ĐÃ DUYỆT: request cố ý vi phạm mục nhưng API vẫn nhận (trả 2xx). Nhiều khả năng là lỗi của API đích: nên tạo Bug Report. Nếu mục sai, Sửa hoặc Loại mục ở tab Nghiệp vụ - không sửa kỳ vọng cho khớp hành vi của API.",
   TOKEN_FORBIDDEN:
     "API trả 403 (đã xác thực nhưng không đủ quyền) trong khi token mặc định dùng được ở test khác. Mở Sửa test case và chọn profile vai trò đúng cho endpoint này (nút Vai trò của project). Chỉ coi là lỗi API nếu chắc vai trò mặc định phải được phép.",
 }

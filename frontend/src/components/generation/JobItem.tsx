@@ -292,10 +292,10 @@ function StepRow({ step, now }: { step: GenerationStep; now: number }) {
 }
 
 const STOP_TEXT: Record<string, string> = {
-  BUDGET_STOPPED: "Dừng vì chạm ngân sách token - phần đã trích được giữ lại. Tăng ngân sách rồi chạy lại để trích tiếp (luật trùng được bỏ qua).",
+  BUDGET_STOPPED: "Dừng vì chạm ngân sách token - phần đã trích được giữ lại. Tăng ngân sách rồi chạy lại để trích tiếp (mục trùng được bỏ qua).",
   DAILY_QUOTA: "Dừng vì hết quota token AI trong ngày - phần đã trích được giữ lại.",
   AI_ERROR: "Dừng vì gọi AI lỗi - phần đã trích được giữ lại.",
-  WRITE_ERROR: "Dừng vì lỗi hệ thống khi lưu luật - phần đã lưu ở các lô trước được giữ.",
+  WRITE_ERROR: "Dừng vì lỗi hệ thống khi lưu mục - phần đã lưu ở các lô trước được giữ.",
   NO_INPUT: "Không có tài liệu hay chỉ dẫn để trích (hãy bật AI gợi ý thêm hoặc thêm tài liệu). Tài liệu có thể vừa bị xoá.",
 }
 

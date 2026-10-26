@@ -14,7 +14,7 @@ interface Props {
 }
 
 /**
- * Luật GIẢ ĐỊNH (AI đoán, không có trích dẫn) không thể duyệt "cho qua": không có nguồn nào nêu mã lỗi, nên người duyệt phải tự chọn mã lỗi
+ * Mục GIẢ ĐỊNH (AI đoán, không có trích dẫn) không thể duyệt "cho qua": không có nguồn nào nêu mã lỗi, nên người duyệt phải tự chọn mã lỗi
  * kỳ vọng. Backend cũng từ chối duyệt nếu thiếu mã này.
  */
 export function ApproveGuessDialog({ rule, pending, error, onCancel, onConfirm }: Props) {

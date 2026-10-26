@@ -3,8 +3,8 @@ import { useEffect, useSyncExternalStore, type RefObject } from "react"
 import { apiFetch } from "@/lib/api"
 
 /**
- * 17q G3.5 - đo thời gian duyệt luật cho thực nghiệm E2. MẶC ĐỊNH TẮT: chỉ đo khi người dùng chủ động bật (công tắc hiện công khai ở tab Nghiệp vụ).
- * Chỉ đo thời gian luật nằm trong khung nhìn khi tab đang hiện và cửa sổ đang có focus; KHÔNG ghi chuột/bàn phím/nội dung. Gửi 1 lần khi có
+ * 17q G3.5 - đo thời gian duyệt mục cho thực nghiệm E2. MẶC ĐỊNH TẮT: chỉ đo khi người dùng chủ động bật (công tắc hiện công khai ở tab Nghiệp vụ).
+ * Chỉ đo thời gian mục nằm trong khung nhìn khi tab đang hiện và cửa sổ đang có focus; KHÔNG ghi chuột/bàn phím/nội dung. Gửi 1 lần khi có
  * quyết định (duyệt, loại, sửa). Dữ liệu chỉ nằm ở máy chủ của chính project này và xuất ra ẩn danh.
  */
 const STORAGE_KEY = "review-timing-enabled-v1"
@@ -79,7 +79,7 @@ function setRuleInView(ruleId: string, inView: boolean): void {
   entries.set(ruleId, entry)
 }
 
-// Tab ẩn hoặc cửa sổ mất focus: dừng đồng hồ của mọi luật đang chạy (và chạy lại khi quay về).
+// Tab ẩn hoặc cửa sổ mất focus: dừng đồng hồ của mọi mục đang chạy (và chạy lại khi quay về).
 function refreshAll(): void {
   const now = performance.now()
   entries.forEach((entry) => refresh(entry, now))
@@ -90,7 +90,7 @@ if (typeof document !== "undefined") {
   window.addEventListener("blur", refreshAll)
 }
 
-/** Lấy (và xoá) thời gian có focus đã tích luỹ của luật; null nếu không đo. */
+/** Lấy (và xoá) thời gian có focus đã tích luỹ của mục; null nếu không đo. */
 function takeFocusedMs(ruleId: string): number | null {
   if (!isTimingEnabled()) return null
   const entry = entries.get(ruleId)
@@ -120,7 +120,7 @@ export function fetchReviewTiming(projectId: string): Promise<ReviewTimingRow[]>
   return apiFetch<ReviewTimingRow[]>(`/projects/${projectId}/business-rules/review-timing`)
 }
 
-/** Đặt vào phần tử của 1 luật: đồng hồ chạy khi luật hiện ≥ 50% trong khung nhìn. */
+/** Đặt vào phần tử của 1 mục: đồng hồ chạy khi mục hiện ≥ 50% trong khung nhìn. */
 export function useRuleTimer(ref: RefObject<Element | null>, ruleId: string): void {
   const enabled = useTimingEnabled()
   useEffect(() => {

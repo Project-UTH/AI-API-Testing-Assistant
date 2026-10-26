@@ -1,6 +1,6 @@
 import { apiFetch, apiFetchPaged, type PagedResult } from "@/lib/api"
 
-/** 17q G3 - luật nghiệp vụ "luật trước, test sau". Backend tính trạng thái/câu luật; frontend chỉ hiển thị + nhập tham số. */
+/** 17q G3 - checklist nghiệp vụ "mục trước, test sau". Backend tính trạng thái/câu mục; frontend chỉ hiển thị + nhập tham số. */
 
 export type RuleTemplate =
   | "COMPARE_FIELDS"
@@ -42,7 +42,7 @@ export interface BusinessRule {
   endpointId: string | null
   template: RuleTemplate
   params: RuleParams
-  /** Câu luật tiếng Việt do backend dựng - luôn dùng bản này để hiển thị. */
+  /** Câu mục tiếng Việt do backend dựng - luôn dùng bản này để hiển thị. */
   sentence: string
   expectedStatus: number | null
   /** Mã lỗi AI GỢI Ý cho mục GIẢ ĐỊNH (chỉ điền sẵn khi duyệt; không có hiệu lực cho tới khi người duyệt xác nhận). */
@@ -58,7 +58,7 @@ export interface BusinessRule {
   rejectReason: RuleRejectReason | null
   statusNote: string | null
   reviewedAt: string | null
-  /** Số test hệ thống đã sinh từ luật này. */
+  /** Số test hệ thống đã sinh từ mục này. */
   testCount: number
   createdAt: string
   version: number
@@ -98,14 +98,14 @@ export const RULE_TEMPLATE_DISPLAY: Record<RuleTemplate, { label: string; exampl
 
 export const RULE_STATUS_DISPLAY: Record<RuleStatus, Display> = {
   PROPOSED: { label: "Chờ duyệt", className: "bg-sky-500/10 text-sky-700 dark:text-sky-400", title: "Đề xuất - chưa sinh test cho tới khi bạn duyệt" },
-  APPROVED: { label: "Đã duyệt", className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400", title: "Bạn đã duyệt - hệ thống sinh test từ luật này" },
+  APPROVED: { label: "Đã duyệt", className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400", title: "Bạn đã duyệt - hệ thống sinh test từ mục này" },
   REJECTED: { label: "Đã loại", className: "bg-muted text-muted-foreground line-through", title: "Đã loại (giữ lại để đo độ chính xác, không sinh test)" },
-  STALE: { label: "Lỗi thời", className: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-400", title: "Field hoặc endpoint của luật không còn trong spec" },
-  CONFLICT: { label: "Mâu thuẫn spec", className: "bg-destructive/10 text-destructive", title: "Luật mâu thuẫn ràng buộc spec - duyệt phải ghi chú vì sao" },
+  STALE: { label: "Lỗi thời", className: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-400", title: "Field hoặc endpoint của mục không còn trong spec" },
+  CONFLICT: { label: "Mâu thuẫn spec", className: "bg-destructive/10 text-destructive", title: "Mục mâu thuẫn ràng buộc spec - duyệt phải ghi chú vì sao" },
 }
 
 export const RULE_SOURCE_DISPLAY: Record<RuleSource, Display> = {
-  USER: { label: "Bạn nhập", className: "bg-slate-500/10 text-slate-700 dark:text-slate-300", title: "Luật do bạn tự nhập" },
+  USER: { label: "Bạn nhập", className: "bg-slate-500/10 text-slate-700 dark:text-slate-300", title: "Mục do bạn tự nhập" },
   SYSTEM_DETECTED: { label: "Hệ thống phát hiện", className: "bg-teal-500/10 text-teal-700 dark:text-teal-400", title: "Hệ thống tự phát hiện từ spec (0 token)" },
   DOC: { label: "Có trích dẫn", className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400", title: "AI trích từ tài liệu nghiệp vụ, có đoạn trích nguyên văn" },
   INSTRUCTION: { label: "Từ chỉ dẫn", className: "bg-sky-500/10 text-sky-700 dark:text-sky-400", title: "AI trích từ ô chỉ dẫn của bạn" },
@@ -114,7 +114,7 @@ export const RULE_SOURCE_DISPLAY: Record<RuleSource, Display> = {
 
 export const RULE_REJECT_REASON_LABEL: Record<RuleRejectReason, string> = {
   WRONG_MEANING: "Sai nghĩa",
-  DUPLICATE: "Trùng luật khác",
+  DUPLICATE: "Trùng mục khác",
   NOT_APPLICABLE: "Không áp dụng",
   DUPLICATE_OF_SPEC: "Trùng ràng buộc spec (tự loại)",
 }
@@ -148,7 +148,7 @@ function op(value: string | undefined): string {
   return RULE_OP_SYMBOL[value as RuleOp] ?? "?"
 }
 
-/** Câu luật xem trước khi nhập (cùng ý với RuleSentence của backend; sau khi lưu luôn hiện `sentence` do backend trả). */
+/** Câu mục xem trước khi nhập (cùng ý với RuleSentence của backend; sau khi lưu luôn hiện `sentence` do backend trả). */
 export function ruleSentence(template: RuleTemplate, p: RuleParams): string {
   const group = (p.fields ?? []).filter(Boolean).join(", ")
   switch (template) {
@@ -256,7 +256,7 @@ export function generateRuleTests(projectId: string, input: { ruleIds?: string[]
   return apiFetch<GenerateRuleTestsResult>(`/projects/${projectId}/business-rules/generate-tests`, { method: "POST", body: JSON.stringify(input) })
 }
 
-/** Field của endpoint (từ spec, cùng nguồn với checklist) để chọn khi nhập luật; `ref` là chuỗi dùng trong tham số luật (body: tên, khác: "query:x"). */
+/** Field của endpoint (từ spec, cùng nguồn với checklist) để chọn khi nhập mục; `ref` là chuỗi dùng trong tham số mục (body: tên, khác: "query:x"). */
 export interface EndpointField {
   ref: string
   name: string
@@ -274,7 +274,7 @@ export function getEndpointFields(projectId: string, endpointId: string): Promis
   return apiFetch<EndpointField[]>(`/projects/${projectId}/business-rules/endpoint-fields?endpointId=${endpointId}`)
 }
 
-/** "REJECTED" = kỳ vọng "bị từ chối (4xx)" của test sinh từ luật. */
+/** "REJECTED" = kỳ vọng "bị từ chối (4xx)" của test sinh từ mục. */
 export function expectedLabel(expectedStatus: number | null): string {
   return expectedStatus == null ? "Bị từ chối (4xx)" : `Mã ${expectedStatus}`
 }
@@ -284,10 +284,10 @@ export interface ApproveBatchResult {
   notApproved: { ruleId: string; reason: string }[]
 }
 
-/** Duyệt hàng loạt: backend chỉ nhận luật CÓ TRÍCH DẪN đang chờ duyệt, luật khác được trả lại kèm lý do. */
+/** Duyệt hàng loạt: backend chỉ nhận mục CÓ TRÍCH DẪN đang chờ duyệt, mục khác được trả lại kèm lý do. */
 export function approveBusinessRulesBatch(projectId: string, ruleIds: string[]): Promise<ApproveBatchResult> {
   return apiFetch<ApproveBatchResult>(`/projects/${projectId}/business-rules/approve-batch`, { method: "POST", body: JSON.stringify({ ruleIds }) })
 }
 
-/** Mã lỗi hay gặp để người duyệt chọn cho luật GIẢ ĐỊNH (backend nhận mọi mã 4xx). */
+/** Mã lỗi hay gặp để người duyệt chọn cho mục GIẢ ĐỊNH (backend nhận mọi mã 4xx). */
 export const COMMON_REJECT_STATUSES = [400, 401, 403, 404, 409, 422] as const

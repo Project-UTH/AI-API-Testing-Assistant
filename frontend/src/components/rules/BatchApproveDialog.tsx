@@ -8,7 +8,7 @@ import { expectedLabel, type BusinessRule } from "@/lib/rules"
 
 interface Props {
   open: boolean
-  /** Luật có trích dẫn, đang chờ duyệt (đã lọc ở trang). */
+  /** Mục có trích dẫn, đang chờ duyệt (đã lọc ở trang). */
   rules: BusinessRule[]
   pending: boolean
   error?: string | null
@@ -17,7 +17,7 @@ interface Props {
 }
 
 /**
- * Duyệt hàng loạt CHỈ luật có trích dẫn: mỗi luật hiện đủ câu luật + đoạn trích để bạn đối chiếu, và mặc định KHÔNG tick sẵn - duyệt phải là hành
+ * Duyệt hàng loạt CHỈ mục có trích dẫn: mỗi mục hiện đủ câu mục + đoạn trích để bạn đối chiếu, và mặc định KHÔNG tick sẵn - duyệt phải là hành
  * động có chủ đích, không phải bấm một nút cho xong.
  */
 export function BatchApproveDialog({ open, rules, pending, error, onClose, onConfirm }: Props) {
@@ -26,7 +26,7 @@ export function BatchApproveDialog({ open, rules, pending, error, onClose, onCon
     if (open) setTicked(new Set())
   }, [open])
 
-  // Chỉ tính các luật còn trong danh sách (danh sách có thể đổi khi hộp thoại đang mở).
+  // Chỉ tính các mục còn trong danh sách (danh sách có thể đổi khi hộp thoại đang mở).
   const valid = rules.filter((r) => ticked.has(r.id))
   const all = rules.length > 0 && valid.length === rules.length
   const toggle = (id: string, on: boolean) =>
@@ -41,9 +41,9 @@ export function BatchApproveDialog({ open, rules, pending, error, onClose, onCon
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Duyệt hàng loạt luật có trích dẫn</DialogTitle>
+          <DialogTitle>Duyệt hàng loạt mục có trích dẫn</DialogTitle>
           <DialogDescription>
-            Đối chiếu từng luật với đoạn trích rồi tick những luật đúng. Luật GIẢ ĐỊNH và luật mâu thuẫn spec không nằm ở đây vì phải duyệt riêng từng luật.
+            Đối chiếu từng mục với đoạn trích rồi tick những mục đúng. Mục GIẢ ĐỊNH và mục mâu thuẫn spec không nằm ở đây vì phải duyệt riêng từng mục.
           </DialogDescription>
         </DialogHeader>
         <Label className="items-center gap-2 text-sm font-normal">
@@ -75,7 +75,7 @@ export function BatchApproveDialog({ open, rules, pending, error, onClose, onCon
             Đóng
           </Button>
           <Button type="button" disabled={valid.length === 0 || pending} onClick={() => onConfirm(valid.map((r) => r.id))}>
-            Duyệt {valid.length} luật
+            Duyệt {valid.length} mục
           </Button>
         </DialogFooter>
       </DialogContent>

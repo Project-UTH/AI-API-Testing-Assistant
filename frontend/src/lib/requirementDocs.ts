@@ -1,6 +1,6 @@
 import { apiFetch } from "@/lib/api"
 
-/** 17q G3.3 - tài liệu nghiệp vụ (.md/.txt) làm nguồn cho AI trích luật. */
+/** 17q G3.3 - tài liệu nghiệp vụ (.md/.txt) làm nguồn cho AI trích mục. */
 export interface RequirementDocument {
   id: string
   fileName: string
@@ -39,7 +39,7 @@ export function getRequirementDocContent(projectId: string, documentId: string):
   return apiFetch<RequirementDocumentContent>(`/projects/${projectId}/requirement-documents/${documentId}/content`)
 }
 
-/** Ước tính token một lần trích luật (khớp công thức backend: ký tự / 2,8 cộng 10%), chỉ để người dùng đặt ngân sách. */
+/** Ước tính token một lần trích mục (khớp công thức backend: ký tự / 2,8 cộng 10%), chỉ để người dùng đặt ngân sách. */
 export function estimateTokens(chars: number): number {
   return Math.ceil((chars * 1.1) / 2.8)
 }
