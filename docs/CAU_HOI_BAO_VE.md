@@ -69,6 +69,22 @@
 **16. Chạy test có làm bẩn dữ liệu của hệ thống đích không?**
 - Có, test gốc và test bù chạy GHI THẬT (có hộp xác nhận, nên dùng môi trường test). Mỗi test con tạo thêm 1 bản ghi cha; tuỳ chọn "Dọn dữ liệu đã tạo" xoá đúng các bản ghi do lần chạy tạo (đo: +36 bản ghi nếu không dọn, +0 nếu dọn). Chưa có chặn production/allowlist host.
 
+## F. Câu trả lời mẫu theo 3 trục (cập nhật 2026-10-26, số liệu G5)
+
+**F1. Sinh bao nhiêu test là đủ, và dựa vào đâu để nói là đủ?**
+Không có một con số "đủ", nên trả lời bằng 3 trục độc lập, không gộp:
+- **(a) Thoả tiêu chí:** % mục checklist của từng endpoint đã có test (trang Độ bao phủ, tính theo từng endpoint chứ không gộp cả project) và % luật nghiệp vụ đã duyệt có test. "Đủ" ở trục này nghĩa là mọi mục spec đã có test và mọi luật bạn duyệt đã có test.
+- **(b) Chất lượng kết luận:** mỗi kết quả Fail có độ tin CHẮC / NGHI NGỜ (nhãn nguyên nhân); Pass trên endpoint có lệch spec được cảnh báo. Trên bản chuẩn, checklist tất định có 1,5% Fail giả trên API tuyển dụng nhưng 11-24% trên API cửa hàng vì khác quy ước (xem DANH_GIA 7A): nên "đủ" chỉ có nghĩa khi Fail giả thấp.
+- **(c) Khả năng bắt lỗi:** đo bằng lỗi cài sẵn. Checklist A bắt (phát hiện) 21/42 lỗi dev và 3/15 held-out, không bắt lỗi nghiệp vụ; thêm luật có người duyệt bắt thêm đúng nhãn 4 lỗi nghiệp vụ. Đây là con số duy nhất cho biết "đủ để bắt lỗi" và nó mới đo trên một hệ thống có lỗi cài sẵn (thêm hệ thống thứ hai 15 lỗi, chỉ cấu hình A).
+
+**F2. AI nghiệp vụ dựa vào đâu để sinh test, và còn đoán không?**
+- Cách cũ (AI đoán thẳng test nghiệp vụ từ spec): đã đo, 66 test/lượt, ≈ 99 nghìn token/lượt, 19,8% Fail giả, các lỗi phát hiện chỉ ở mức nghi ngờ. **Đó là đoán** và hệ thống gắn nhãn GIẢ ĐỊNH.
+- Cách mới (G3): AI **không viết test**, chỉ đề xuất *luật* theo 9 mẫu có sẵn, và mỗi luật phải kèm **đoạn trích nguyên văn** từ tài liệu của người dùng (hệ thống kiểm lại từng chữ, con số và mã lỗi). Không có trích dẫn thì bị hạ thành GIẢ ĐỊNH và người duyệt phải tự chọn mã lỗi. Người dùng duyệt luật, rồi test được sinh **tất định, 0 token**.
+- Đo: 3 lượt, 42.564 token tổng, mỗi lượt 5 luật có trích dẫn, 15/15 đúng, recall 5/7, 0 GIẢ ĐỊNH. **Giới hạn nói thẳng:** chỉ trên một tài liệu do AI viết, người chấm là người phát triển, và luật nằm ngoài 9 mẫu thì không trích được.
+
+**F3. Hệ thống có chuẩn trên các hệ thống khác nhau không?**
+Phương pháp không gắn với hệ thống nào và đã chạy trên 2 API đo được; nhưng số đo cho thấy **không chuẩn tuyệt đối**: API cửa hàng (quy ước 403) lúc đầu Fail giả 24,1%, sau khi khai quy ước và sửa nhận diện đăng nhập còn 11,4% (DANH_GIA 7A). Khả năng bắt lỗi mới đo trên 1 hệ thống đầy đủ (mutant-api) và 1 hệ thống ở cấu hình A.
+
 ## E. Câu hỏi thật của giảng viên (dán vào đây)
 
 <!-- Dán nguyên văn từng câu, rồi bổ sung câu trả lời + bằng chứng bên dưới -->

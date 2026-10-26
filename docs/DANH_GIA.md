@@ -288,6 +288,52 @@ Ghi lại vì đây là bằng chứng phép đo đã được kiểm tra chứ 
 
 Kết quả gốc: `docs/eval/results-shop-A-403-login-2026-10-25.json`, `docs/eval/results-A-login-2026-10-25.json`. Trong 13 Fail còn lại của shop, 8 là bất đồng spec-API có thật (mục biên ngầm), 5 do quy ước "403 cho lỗi framework" chưa có cấu hình.
 
+## 7B. Đo G5 (2026-10-26): trích luật bằng AI, cấu hình C và bộ held-out
+
+**Ba cấu hình so sánh, cùng API tuyển dụng (10 endpoint), cùng 10 test gốc do người viết:**
+- **A** = checklist tất định (0 token).
+- **B** = A + AI nghiệp vụ đoán thêm test (66 test/lượt, 3 lượt).
+- **C-luật** = A + test sinh tất định từ luật mà AI trích từ tài liệu SRS và người duyệt (9 test/lượt, 3 lượt). Bằng chứng chỉ tính test sinh từ luật, test gốc chỉ là bối cảnh.
+
+**Số token chính xác** (đối chiếu sổ CSDL `test_generation_events` trước/sau từng bước, trùng với tổng token các job):
+
+| Bước | Token | Dự đoán trước | Ghi chú |
+|---|---|---|---|
+| AI trích luật, 3 lượt | **42.564** (14.066 + 13.876 + 14.622) | 41.355 | +2,9%; trần cứng 25.000/lượt, không lượt nào chạm |
+| Cấu hình B, 3 lượt | **296.568** (98.593 + 98.850 + 99.125) | 278.751 | +6,4%; trần cứng 120.000/lượt |
+| **Tổng AI của G5** | **339.132** | 320.106 | +5,9%; trần cứng cộng lại 435.000 |
+| A trên dev + held-out, C, các phép đo hệ thống thứ hai | **0** | 0 | sổ không đổi |
+
+**Kết quả khả năng bắt lỗi** (số lỗi bị bắt; "đúng" = test Fail được gán đúng nhãn lỗi API, "phát hiện" = có test Pass→Fail kể cả nhãn chưa chắc; kết quả giống hệt giữa các lượt):
+
+| | A (0 token) | B (+296.568 token) | C-luật (+42.564 token) |
+|---|---|---|---|
+| Bộ phát triển M01-M42 (in-sample) | 5 đúng / 21 phát hiện | 5 / 25 | 3 / 3 |
+| Held-out chồng bộ M (H02, H06, H10, H13, H14) | 1 / 1 | 1 / 2 | 0 / 0 |
+| **Held-out MỚI** (10 lỗi) | 0 / 2 | 0 / 4 | **1 / 2** |
+| Held-out tất cả (15) | 1 / 3 | 1 / 6 | 1 / 2 |
+| Fail giả trên bản chuẩn | 1,5% | 19,8% | **0%** |
+| Test thêm mỗi lượt | 0 | 66 | 9 |
+
+**Hợp A + luật** (cùng bằng chứng, không tính B): dev 8 đúng / 24 phát hiện trên 42; held-out 2 / 5 trên 15. Chi phí thêm so với A: ≈ 14.188 token/lượt trích luật (trung bình), bằng khoảng **1/7** chi phí của B (98.856 token/lượt).
+
+**Trích luật bằng AI (3 lượt):** mỗi lượt giữ **5 luật có trích dẫn nguyên văn**, 0 luật GIẢ ĐỊNH. Cả 15 luật đều đúng so với đáp án (**precision 15/15 = 100%** sau kiểm chứng). Trên bộ đáp án 7 luật mà 9 mẫu luật biểu diễn được (R24, R28, R43, R47, R59, R60, R66) tìm được 5, thiếu R59 và R60 (số phần tử của mảng tiêu chí): **recall 5/7 = 71%**, giống nhau ở cả 3 lượt. R73 (không nộp đơn trùng) không tính vì mẫu UNIQUE chưa được đưa vào prompt. Mỗi lượt AI đề xuất thêm 3-6 luật bị bộ kiểm chứng tất định loại vì sai tham số (tổng đề xuất 8, 8 và 11); **chưa biết lý do cụ thể từng luật bị loại** vì hệ thống chỉ ghi số lượng, và chưa rõ R59/R60 có nằm trong số đó không. Nên nói chính xác: "luật người dùng nhìn thấy đều đúng", chứ không phải "AI đề xuất đúng 100%": tỉ lệ đề xuất qua được kiểm chứng là 15/27 = 56%.
+
+**Đọc kết quả:**
+1. **AI nghiệp vụ cũ (B) đắt và nhiễu**: ≈ 99 nghìn token/lượt cho 66 test, 19,8% Fail giả (đúng như kết quả cũ 23%), và các lỗi nghiệp vụ nó phát hiện chỉ ở mức "nghi ngờ" (nhãn nguyên nhân mơ hồ), chưa lần nào được gán đúng.
+2. **Luật có người duyệt (C) gọn và chắc hơn**: 9 test, 0 Fail giả, bắt **đúng nhãn** M23, M24, M25 (dev) và H08 (held-out mới, lỗi "quên kiểm tra salaryMin ≤ salaryMax ở PUT"), cộng H09 mức nghi ngờ. Đây là lỗi mà checklist A bỏ lọt hoàn toàn.
+3. **Nhưng C chỉ bắt được lỗi vi phạm một luật có trong tài liệu và có trong mẫu**: chỉ 3/15 held-out (H08, H09, H10) vi phạm một trong 5 luật đã trích; H11 (không nộp đơn trùng, mẫu UNIQUE chưa đưa vào prompt) và H12 (máy trạng thái) nằm ngoài khả năng. H10 (tổng trọng số dùng `> 100` thay vì `!= 100`) bị **lọt** dù luật R66 đã được trích đúng, nghi do test sinh ra chỉ thử tổng lớn hơn 100; chưa điều tra (không sửa hệ thống sau khi thấy held-out).
+4. **Ba cấu hình bổ sung cho nhau chứ không thay nhau**: B không thêm lỗi nào được gán đúng so với A; C thêm đúng nhãn 4 lỗi nghiệp vụ mà A không bắt được.
+
+**Hạn chế riêng của đợt đo này (thêm vào mục 7):**
+- **Người gán nhãn luật là người phát triển hệ thống** và biết đáp án; 15 luật đều trùng đáp án nên khó thiên lệch nhưng không loại bỏ được. Không có người duyệt thứ hai.
+- **Mô phỏng người duyệt**: coi như người duyệt cẩn thận (duyệt đúng các luật đúng). Người thật có thể duyệt sai; E2 chưa đo.
+- **Held-out không hoàn toàn độc lập**: do AI cùng họ viết, rút từ cùng 86 luật chuẩn với tài liệu SRS, và 5/15 chồng bộ M. Phép đo trích luật chỉ trên một tài liệu và một hệ thống (API tuyển dụng); tài liệu do AI viết nên có thể dễ trích hơn tài liệu thật.
+- **Cỡ mẫu nhỏ** (15 lỗi held-out, 3 lượt giống hệt nhau), không có kiểm định thống kê.
+- **Cấu hình B đo lại cho kết quả gần như cũ** (Fail giả 19,8% so với 23,2%) nên số liệu B cũ vẫn đúng; thay đổi nhỏ: M09 từ bỏ lọt thành nghi ngờ, M11 từ nghi ngờ thành đúng.
+
+Dữ liệu gốc: `docs/eval/results-A-heldout-2026-10-26.json`, `results-B-heldout-2026-10-26.json`, `rules-extract-2026-10-26.json` (luật AI đề xuất), `rules-labels-2026-10-26.json` (nhãn), `results-C-rules-2026-10-26.log` (log gốc phép đo C; file JSON không ghi được do lỗi script, đã sửa).
+
 ## 8. Chạy lại
 
 ```bash
