@@ -141,7 +141,7 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
 
   return (
     <AlertDialog open={open} onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
-      <AlertDialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <AlertDialogContent className="max-h-[90vh] overflow-y-auto data-[size=default]:sm:max-w-2xl">
         <AlertDialogHeader>
           <AlertDialogTitle>
             {many ? `Sinh test case cho ${endpoints.length} endpoint` : `Sinh test case: ${endpoints[0].method} ${endpoints[0].path}`}
