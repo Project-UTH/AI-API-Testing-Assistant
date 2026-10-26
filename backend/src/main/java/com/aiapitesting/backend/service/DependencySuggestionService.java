@@ -69,6 +69,15 @@ public class DependencySuggestionService {
         return findSuggestion(project, endpoint, paramName).isPresent();
     }
 
+    /** Endpoint POST tạo tài nguyên cho tham số đường dẫn này (POST trên đường dẫn cha, vd /api/hr/jobs cho /api/hr/jobs/{id}); rỗng nếu spec không có. */
+    public Optional<Endpoint> findCreatorEndpoint(Project project, Endpoint endpoint, String paramName) {
+        String candidatePath = cutPathBeforeParam(endpoint.getPath(), paramName);
+        if (candidatePath == null || candidatePath.isBlank()) {
+            return Optional.empty();
+        }
+        return endpointRepository.findByProjectAndPathAndMethod(project, candidatePath, "POST");
+    }
+
     private Optional<DependencySuggestionResponse> findSuggestion(Project project, Endpoint endpoint, String paramName) {
         String candidatePath = cutPathBeforeParam(endpoint.getPath(), paramName);
         if (candidatePath == null) {

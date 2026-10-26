@@ -55,6 +55,7 @@ class BaselineVerificationServiceTest {
     private final TestResultRepository resultRepository = mock(TestResultRepository.class);
     private final TestCaseService testCaseService = mock(TestCaseService.class);
     private final com.aiapitesting.backend.service.DependencySuggestionService dependencySuggestion = mock(com.aiapitesting.backend.service.DependencySuggestionService.class);
+    private final com.aiapitesting.backend.service.PathParamDiscoveryService discovery = mock(com.aiapitesting.backend.service.PathParamDiscoveryService.class);
     private BaselineVerificationService service;
 
     private final UUID projectId = UUID.randomUUID();
@@ -71,8 +72,9 @@ class BaselineVerificationServiceTest {
     @BeforeEach
     void setUp() {
         service = new BaselineVerificationService(projectService, endpointRepository, generation, gapFill, executionService,
-                executionRepository, resultRepository, testCaseService, dependencySuggestion, 1000, 1);
+                executionRepository, resultRepository, testCaseService, dependencySuggestion, discovery, 1000, 1);
         Project project = Project.builder().id(projectId).build();
+        when(discovery.discover(any(), any(), any())).thenReturn(new com.aiapitesting.backend.service.PathParamDiscoveryService.Discovery(null, "GET /companies không có phần tử nào"));
         endpoint = Endpoint.builder().id(endpointId).method("POST").path("/jobs").build();
         when(projectService.getOwnedProject(projectId)).thenReturn(project);
         when(endpointRepository.findByIdAndProject(endpointId, project)).thenReturn(Optional.of(endpoint));
@@ -265,6 +267,64 @@ class BaselineVerificationServiceTest {
         when(dependencySuggestion.hasCreatorSource(projectId, endpointId, "id")).thenReturn(false);
         BaselineRequest withValue = new BaselineRequest(true, 2, Map.of("id", "REAL"), true, false);
         assertThat(service.execute(projectId, endpointId, withValue).status()).isEqualTo("CONFIRMED");
+    }
+
+    @Test
+    void missingId_isDiscoveredFromTheListEndpoint_forFree_thenAiProceeds() {
+        endpoint.setPath("/companies/{id}");
+        results(TestResultStatus.PASSED, 200, "{}");
+        when(dependencySuggestion.hasCreatorSource(projectId, endpointId, "id")).thenReturn(false);
+        when(discovery.discover(any(), any(), any())).thenReturn(new com.aiapitesting.backend.service.PathParamDiscoveryService.Discovery("abc-123", "GET /companies"));
+
+        BaselineResponse response = service.execute(projectId, endpointId, confirmed(2));
+
+        assertThat(response.status()).isEqualTo("CONFIRMED");
+        assertThat(askCount).isEqualTo(1); // chỉ 1 lần AI cho chính endpoint, không tạo dữ liệu phụ
+    }
+
+    @Test
+    void whenNothingToDiscoverAndCreatorIsAFileUpload_asksTheHuman_andExplainsWhatWasTried() {
+        endpoint.setPath("/resumes/{id}/reparse");
+        when(dependencySuggestion.hasCreatorSource(projectId, endpointId, "id")).thenReturn(false);
+        Endpoint upload = Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/resumes").requestContentType("multipart/form-data").build();
+        when(dependencySuggestion.findCreatorEndpoint(any(), eq(endpoint), eq("id"))).thenReturn(Optional.of(upload));
+
+        BaselineResponse response = service.execute(projectId, endpointId, confirmed(2));
+
+        assertThat(response.status()).isEqualTo("NEEDS_HUMAN");
+        assertThat(response.reason()).isEqualTo("MISSING_PARAM_VALUE");
+        assertThat(response.message()).contains("GET /companies không có phần tử nào").contains("tải tệp");
+        assertThat(askCount).isZero();
+    }
+
+    @Test
+    void whenNothingToDiscover_aJsonCreatorIsGeneratedAndRunFirst_thenTheEndpointProceeds() {
+        endpoint.setPath("/companies/{id}");
+        results(TestResultStatus.PASSED, 201, "{\"id\":1}");
+        Endpoint creator = Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/companies").requestContentType("application/json").build();
+        when(endpointRepository.findByIdAndProject(eq(creator.getId()), any())).thenReturn(Optional.of(creator));
+        when(dependencySuggestion.findCreatorEndpoint(any(), eq(endpoint), eq("id"))).thenReturn(Optional.of(creator));
+        when(dependencySuggestion.hasCreatorSource(projectId, endpointId, "id")).thenReturn(false, true);
+
+        BaselineResponse response = service.execute(projectId, endpointId, new BaselineRequest(true, 2, null, true, false));
+
+        assertThat(response.status()).isEqualTo("CONFIRMED");
+        assertThat(askCount).isEqualTo(2); // 1 lần AI cho POST tạo dữ liệu + 1 lần cho chính endpoint
+    }
+
+    @Test
+    void creatorIsNotCreated_withoutWriteConfirmation() {
+        endpoint.setMethod("GET");
+        endpoint.setPath("/companies/{id}");
+        Endpoint creator = Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/companies").requestContentType("application/json").build();
+        when(dependencySuggestion.findCreatorEndpoint(any(), eq(endpoint), eq("id"))).thenReturn(Optional.of(creator));
+        when(dependencySuggestion.hasCreatorSource(projectId, endpointId, "id")).thenReturn(false);
+
+        BaselineResponse response = service.execute(projectId, endpointId, new BaselineRequest(false, 2, null, true, false));
+
+        assertThat(response.status()).isEqualTo("NEEDS_HUMAN");
+        assertThat(response.message()).contains("xác nhận ghi thật");
+        assertThat(askCount).isZero();
     }
 
     // ---- Giám sát từng bước, chạy thử, huỷ và trần token ----
