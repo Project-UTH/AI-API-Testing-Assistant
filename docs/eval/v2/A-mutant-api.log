@@ -1,0 +1,153 @@
+
+--- Lượt 1/2 - cấu hình A ---
+  project 7726a2b8-5a7f-4aa9-b999-4cdabd6f8597: 10 endpoint đã import
+  10 test gốc do người viết: tất cả Pass
+    ... job RUNNING 0 token
+  sinh test xong: SUCCEEDED, 0 token, 2.2s
+  ma trận quyền 18 luật + Bù coverage: 154 -> 198 test
+  gán profile ứng viên cho 0 test dẫn xuất (0 lỗi)
+  [A] chạy 198 test trên bản chuẩn
+  [A] bản chuẩn: 195/198 Pass (tính bằng chứng), Fail giả 3 {'STATE_CONFLICT': 3}
+  [A] lượt đối chứng (không mutant): 0 test nhiễu bị loại khỏi bằng chứng
+    M01 VALIDATION       -> suspect (0 bắt, 4 nghi ngờ)
+    M02 VALIDATION       -> suspect (0 bắt, 2 nghi ngờ)
+    M03 VALIDATION       -> suspect (0 bắt, 2 nghi ngờ)
+    M04 VALIDATION       -> suspect (0 bắt, 2 nghi ngờ)
+    M05 VALIDATION       -> suspect (0 bắt, 2 nghi ngờ)
+    M06 BOUNDARY         -> suspect (0 bắt, 2 nghi ngờ)
+    M07 BOUNDARY         -> suspect (0 bắt, 2 nghi ngờ)
+    M08 BOUNDARY         -> missed  (0 bắt, 0 nghi ngờ)
+    M09 BOUNDARY         -> suspect (0 bắt, 1 nghi ngờ)
+    M10 BOUNDARY         -> suspect (0 bắt, 2 nghi ngờ)
+    M11 STATUS_CODE      -> caught  (1 bắt, 35 nghi ngờ)
+    M12 STATUS_CODE      -> suspect (0 bắt, 3 nghi ngờ)
+    M13 STATUS_CODE      -> caught  (16 bắt, 0 nghi ngờ)
+    M14 AUTHORIZATION    -> caught  (1 bắt, 0 nghi ngờ)
+    M15 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M16 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M17 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M18 AUTHORIZATION    -> suspect (0 bắt, 2 nghi ngờ)
+    M19 MASS_ASSIGNMENT  -> missed  (0 bắt, 0 nghi ngờ)
+    M20 MASS_ASSIGNMENT  -> caught  (1 bắt, 0 nghi ngờ)
+    M21 DATA_EXPOSURE    -> flagged (0 bắt, 0 nghi ngờ)
+    M22 DATA_EXPOSURE    -> missed  (0 bắt, 0 nghi ngờ)
+    M23 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M24 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M25 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M26 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M27 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M28 AUTHORIZATION    -> suspect (0 bắt, 1 nghi ngờ)
+    M29 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    M30 DATA_EXPOSURE    -> flagged (0 bắt, 0 nghi ngờ)
+    M31 AUTHORIZATION    -> suspect (0 bắt, 2 nghi ngờ)
+    M32 DATA_EXPOSURE    -> missed  (0 bắt, 0 nghi ngờ)
+    M33 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    M34 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    M35 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M36 STATUS_CODE      -> suspect (0 bắt, 2 nghi ngờ)
+    M37 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    M38 AUTHORIZATION    -> caught  (1 bắt, 0 nghi ngờ)
+    M39 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M40 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M41 STATUS_CODE      -> suspect (0 bắt, 3 nghi ngờ)
+    M42 VALIDATION       -> suspect (0 bắt, 1 nghi ngờ)
+    H01 BOUNDARY         -> suspect (0 bắt, 1 nghi ngờ)
+    H02 BOUNDARY         -> missed  (0 bắt, 0 nghi ngờ)
+    H03 BOUNDARY         -> missed  (0 bắt, 0 nghi ngờ)
+    H04 STATUS_CODE      -> suspect (0 bắt, 3 nghi ngờ)
+    H05 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    H06 AUTHORIZATION    -> caught  (1 bắt, 0 nghi ngờ)
+    H07 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    H08 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H09 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H10 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H11 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H12 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H13 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    H14 DATA_EXPOSURE    -> flagged (0 bắt, 0 nghi ngờ)
+    H15 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+
+--- Lượt 2/2 - cấu hình A ---
+  project 9406c5f1-7896-4a45-9291-32f67848ac5e: 10 endpoint đã import
+  10 test gốc do người viết: tất cả Pass
+    ... job QUEUED 0 token
+  sinh test xong: SUCCEEDED, 0 token, 2.1s
+  ma trận quyền 18 luật + Bù coverage: 154 -> 198 test
+  gán profile ứng viên cho 0 test dẫn xuất (0 lỗi)
+  [A] chạy 198 test trên bản chuẩn
+  [A] bản chuẩn: 195/198 Pass (tính bằng chứng), Fail giả 3 {'STATE_CONFLICT': 3}
+  [A] lượt đối chứng (không mutant): 0 test nhiễu bị loại khỏi bằng chứng
+    M01 VALIDATION       -> suspect (0 bắt, 4 nghi ngờ)
+    M02 VALIDATION       -> suspect (0 bắt, 2 nghi ngờ)
+    M03 VALIDATION       -> suspect (0 bắt, 2 nghi ngờ)
+    M04 VALIDATION       -> suspect (0 bắt, 2 nghi ngờ)
+    M05 VALIDATION       -> suspect (0 bắt, 2 nghi ngờ)
+    M06 BOUNDARY         -> suspect (0 bắt, 2 nghi ngờ)
+    M07 BOUNDARY         -> suspect (0 bắt, 2 nghi ngờ)
+    M08 BOUNDARY         -> missed  (0 bắt, 0 nghi ngờ)
+    M09 BOUNDARY         -> suspect (0 bắt, 1 nghi ngờ)
+    M10 BOUNDARY         -> suspect (0 bắt, 2 nghi ngờ)
+    M11 STATUS_CODE      -> caught  (1 bắt, 35 nghi ngờ)
+    M12 STATUS_CODE      -> suspect (0 bắt, 3 nghi ngờ)
+    M13 STATUS_CODE      -> caught  (16 bắt, 0 nghi ngờ)
+    M14 AUTHORIZATION    -> caught  (1 bắt, 0 nghi ngờ)
+    M15 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M16 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M17 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M18 AUTHORIZATION    -> suspect (0 bắt, 2 nghi ngờ)
+    M19 MASS_ASSIGNMENT  -> missed  (0 bắt, 0 nghi ngờ)
+    M20 MASS_ASSIGNMENT  -> caught  (1 bắt, 0 nghi ngờ)
+    M21 DATA_EXPOSURE    -> flagged (0 bắt, 0 nghi ngờ)
+    M22 DATA_EXPOSURE    -> missed  (0 bắt, 0 nghi ngờ)
+    M23 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M24 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M25 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M26 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M27 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M28 AUTHORIZATION    -> suspect (0 bắt, 1 nghi ngờ)
+    M29 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    M30 DATA_EXPOSURE    -> flagged (0 bắt, 0 nghi ngờ)
+    M31 AUTHORIZATION    -> suspect (0 bắt, 2 nghi ngờ)
+    M32 DATA_EXPOSURE    -> missed  (0 bắt, 0 nghi ngờ)
+    M33 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    M34 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    M35 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M36 STATUS_CODE      -> suspect (0 bắt, 2 nghi ngờ)
+    M37 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    M38 AUTHORIZATION    -> caught  (1 bắt, 0 nghi ngờ)
+    M39 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    M40 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    M41 STATUS_CODE      -> suspect (0 bắt, 3 nghi ngờ)
+    M42 VALIDATION       -> suspect (0 bắt, 1 nghi ngờ)
+    H01 BOUNDARY         -> suspect (0 bắt, 1 nghi ngờ)
+    H02 BOUNDARY         -> missed  (0 bắt, 0 nghi ngờ)
+    H03 BOUNDARY         -> missed  (0 bắt, 0 nghi ngờ)
+    H04 STATUS_CODE      -> suspect (0 bắt, 3 nghi ngờ)
+    H05 STATUS_CODE      -> missed  (0 bắt, 0 nghi ngờ)
+    H06 AUTHORIZATION    -> caught  (1 bắt, 0 nghi ngờ)
+    H07 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    H08 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H09 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H10 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H11 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H12 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+    H13 AUTHORIZATION    -> missed  (0 bắt, 0 nghi ngờ)
+    H14 DATA_EXPOSURE    -> flagged (0 bắt, 0 nghi ngờ)
+    H15 BUSINESS_RULE    -> missed  (0 bắt, 0 nghi ngờ)
+
+=== Cấu hình A (2 lượt, TB 198 test/lượt) ===
+Loại                gán đúng lỗi API   phát hiện   số lượt (gán đúng/tổng)
+ALL                          11% ± 0         42%        6/57 6/57  (+3 chỉ có cảnh báo bảo mật)  [rò rỉ dữ liệu: 3 mutant có cảnh báo]
+DEV                          12% ± 0         50%        5/42 5/42  (+2 chỉ có cảnh báo bảo mật)  [rò rỉ dữ liệu: 2 mutant có cảnh báo]
+HELDOUT                       7% ± 0         20%        1/15 1/15  (+1 chỉ có cảnh báo bảo mật)  [rò rỉ dữ liệu: 1 mutant có cảnh báo]
+AUTHORIZATION                23% ± 0         46%        3/13 3/13
+BOUNDARY                      0% ± 0         62%        0/8 0/8
+BUSINESS_RULE                 0% ± 0          0%        0/12 0/12
+DATA_EXPOSURE                 0% ± 0          0%        0/5 0/5  (+3 chỉ có cảnh báo bảo mật)  [rò rỉ dữ liệu: 3 mutant có cảnh báo]
+MASS_ASSIGNMENT              50% ± 0         50%        1/2 1/2
+STATUS_CODE                  18% ± 0         55%        2/11 2/11
+VALIDATION                    0% ± 0        100%        0/6 0/6
+Fail giả trên bản chuẩn: 1.5%
+Sinh test: 0 token, 2s (trung bình mỗi lượt)
+
+Đã ghi kết quả: docs\eval\v2\results-A-mutant-api.json

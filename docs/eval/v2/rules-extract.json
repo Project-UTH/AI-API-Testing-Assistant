@@ -1,0 +1,531 @@
+{
+  "environment": {
+    "date": "2026-10-26T23:24:29",
+    "gitCommit": "fc2da5a6ba4a3cbff9b8d9dda8b4dd98285a267d",
+    "gitDirty": true,
+    "model": "claude-sonnet-5",
+    "promptFiles": 15,
+    "promptHash": "2396232068aab668",
+    "args": {
+      "phase": "extract",
+      "runs": 3,
+      "token_cap": 25000,
+      "api": "http://localhost:8080/api/v1",
+      "target_local": "http://localhost:8083",
+      "target_url": "http://host.docker.internal:8083",
+      "email": "eval@aiapi.local",
+      "model": "claude-sonnet-5",
+      "extract": "",
+      "labels": "",
+      "include_heldout": false,
+      "keep_projects": false,
+      "out": "docs/eval/v2/rules-extract.json"
+    }
+  },
+  "tokenAccounting": {
+    "before": {
+      "eventTokens": 1629239,
+      "jobTokens": 104291,
+      "eventRows": 166,
+      "jobRows": 16
+    },
+    "after": {
+      "eventTokens": 1673451,
+      "jobTokens": 148503,
+      "eventRows": 169,
+      "jobRows": 19
+    },
+    "eventTokens": 44212,
+    "jobTokens": 44212,
+    "newEventRows": 3
+  },
+  "runs": [
+    {
+      "run": 1,
+      "projectId": "62c2abdf-6904-4e68-989a-3fe6fc84fb33",
+      "jobId": "d44e1093-7c25-49b8-81d3-f34007290712",
+      "jobStatus": "SUCCEEDED",
+      "tokens": 14031,
+      "seconds": 12.1,
+      "extraction": {
+        "endpointCount": 10,
+        "lotsPlanned": 1,
+        "lotsDone": 1,
+        "estimatedTokens": 12597,
+        "fromDocument": 6,
+        "fromInstruction": 0,
+        "inferred": 0,
+        "rejectedAsDuplicateOfSpec": 0,
+        "conflicts": 0,
+        "skippedExisting": 0,
+        "skippedOverCap": 0,
+        "skippedInferred": 0,
+        "dropped": {
+          "INVALID_PARAMS": 1
+        },
+        "stoppedReason": null,
+        "tokenBudget": 25000,
+        "questions": [
+          "Có cần chặn nộp hồ sơ vào tin đã quá hạn nộp hay không, vì tài liệu ghi đây là vấn đề mở chưa thống nhất?"
+        ],
+        "suggested": 0,
+        "suggestStoppedReason": null
+      },
+      "steps": [
+        {
+          "phase": "DOC_READ",
+          "status": "OK",
+          "detail": "1 tài liệu (16142 ký tự); chuỗi giống bí mật được che trước khi gửi AI",
+          "tokens": null
+        },
+        {
+          "phase": "RULES_PLAN",
+          "status": "OK",
+          "detail": "10 endpoint chia 1 lô; đọc tài liệu/chỉ dẫn; ước tính tối đa ~12597 token, ngân sách 25000 token",
+          "tokens": null
+        },
+        {
+          "phase": "RULES_AI",
+          "status": "OK",
+          "detail": "Đã nhận trả lời",
+          "tokens": 14031
+        },
+        {
+          "phase": "RULES_VERIFY",
+          "status": "OK",
+          "detail": "AI đề xuất 7 luật: giữ 6 (6 có trích dẫn tài liệu, 0 từ chỉ dẫn, 0 GIẢ ĐỊNH); bỏ 1 luật sai endpoint/mẫu/field",
+          "tokens": null
+        }
+      ],
+      "rules": [
+        {
+          "id": "70de9ffb-59c1-4d5a-a1d0-d8cdb015cf36",
+          "endpoint": "POST /api/jobs",
+          "template": "COMPARE_FIELDS",
+          "params": {
+            "left": "salaryMin",
+            "op": "LTE",
+            "right": "salaryMax"
+          },
+          "sentence": "salaryMin ≤ salaryMax",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Khi nhập cả lương tối thiểu và lương tối đa thì lương tối thiểu không được lớn hơn lương tối đa; hai giá trị bằng nhau vẫn hợp lệ.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "3a4289cb-a342-4675-899f-1caca835a064",
+          "endpoint": "POST /api/jobs",
+          "template": "ALL_OR_NONE",
+          "params": {
+            "fields": [
+              "salaryMin",
+              "salaryMax"
+            ]
+          },
+          "sentence": "Có đủ cả nhóm [salaryMin, salaryMax] hoặc không có field nào",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Mức lương là thông tin tuỳ chọn; nếu nhập thì lương tối thiểu và lương tối đa đều phải là số không âm",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "072d67af-fb3e-4158-8e4e-aef8af864eb1",
+          "endpoint": "POST /api/jobs",
+          "template": "DATE_RELATIVE",
+          "params": {
+            "op": "GTE",
+            "field": "deadline",
+            "offset": 0,
+            "unit": "DAY"
+          },
+          "sentence": "deadline ≥ bây giờ",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Hạn nộp hồ sơ không được là ngày trong quá khứ; chọn đúng ngày hôm nay vẫn được chấp nhận.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "38a29b61-5867-4811-b777-d2e7c459c1b1",
+          "endpoint": "PUT /api/jobs/{id}",
+          "template": "COMPARE_FIELDS",
+          "params": {
+            "left": "salaryMin",
+            "op": "LTE",
+            "right": "salaryMax"
+          },
+          "sentence": "salaryMin ≤ salaryMax",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Khi sửa tin, lương tối thiểu vẫn không được vượt quá lương tối đa.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "63f57202-00c7-4238-ad80-436aa30c12e2",
+          "endpoint": "PUT /api/jobs/{id}",
+          "template": "DATE_RELATIVE",
+          "params": {
+            "op": "GTE",
+            "field": "deadline",
+            "offset": 0,
+            "unit": "DAY"
+          },
+          "sentence": "deadline ≥ bây giờ",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Hạn nộp sau khi sửa cũng không được lùi về một ngày trong quá khứ.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "7171207a-5287-4e07-a921-783027dd85f2",
+          "endpoint": "PUT /api/jobs/{id}/rubric",
+          "template": "ARRAY_AGGREGATE",
+          "params": {
+            "op": "EQ",
+            "array": "criteria",
+            "item": "weight",
+            "fn": "SUM",
+            "value": 100
+          },
+          "sentence": "Tổng criteria[].weight = 100",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Tổng trọng số của tất cả tiêu chí phải bằng đúng 100, không làm tròn (ví dụ ba tiêu chí 33,33 cộng lại được 99,99 là không hợp lệ).",
+          "hasQuote": true,
+          "statusNote": null
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "projectId": "07f8976f-8c98-44be-bc03-bb582f0f24bf",
+      "jobId": "40cd3153-0044-4f66-b53b-e0ce5c5b2283",
+      "jobStatus": "SUCCEEDED",
+      "tokens": 15936,
+      "seconds": 28.3,
+      "extraction": {
+        "endpointCount": 10,
+        "lotsPlanned": 1,
+        "lotsDone": 1,
+        "estimatedTokens": 12597,
+        "fromDocument": 6,
+        "fromInstruction": 0,
+        "inferred": 0,
+        "rejectedAsDuplicateOfSpec": 0,
+        "conflicts": 0,
+        "skippedExisting": 0,
+        "skippedOverCap": 0,
+        "skippedInferred": 0,
+        "dropped": {
+          "INVALID_PARAMS": 2
+        },
+        "stoppedReason": null,
+        "tokenBudget": 25000,
+        "questions": [
+          "Có cần chặn nộp hồ sơ vào tin đã quá hạn nộp hay không, do tài liệu ghi đây là vấn đề mở chưa thống nhất?",
+          "API có cần trả về mã lỗi riêng CONSENT_REQUIRED thay vì mã HTTP chuẩn khi ứng viên không đồng ý phân tích hồ sơ không?",
+          "Bước chuyển trạng thái hồ sơ không hợp lệ (ví dụ PENDING->HIRED) có mẫu luật ARRAY/COMPARE phù hợp hay cần một mẫu luật riêng cho máy trạng thái (state machine) không được liệt kê trong danh sách mẫu?"
+        ],
+        "suggested": 0,
+        "suggestStoppedReason": null
+      },
+      "steps": [
+        {
+          "phase": "DOC_READ",
+          "status": "OK",
+          "detail": "1 tài liệu (16142 ký tự); chuỗi giống bí mật được che trước khi gửi AI",
+          "tokens": null
+        },
+        {
+          "phase": "RULES_PLAN",
+          "status": "OK",
+          "detail": "10 endpoint chia 1 lô; đọc tài liệu/chỉ dẫn; ước tính tối đa ~12597 token, ngân sách 25000 token",
+          "tokens": null
+        },
+        {
+          "phase": "RULES_AI",
+          "status": "OK",
+          "detail": "Đã nhận trả lời",
+          "tokens": 15936
+        },
+        {
+          "phase": "RULES_VERIFY",
+          "status": "OK",
+          "detail": "AI đề xuất 8 luật: giữ 6 (6 có trích dẫn tài liệu, 0 từ chỉ dẫn, 0 GIẢ ĐỊNH); bỏ 2 luật sai endpoint/mẫu/field",
+          "tokens": null
+        }
+      ],
+      "rules": [
+        {
+          "id": "2b3901df-bb10-4819-865c-8bded2f40582",
+          "endpoint": "POST /api/jobs",
+          "template": "COMPARE_FIELDS",
+          "params": {
+            "left": "salaryMin",
+            "op": "LTE",
+            "right": "salaryMax"
+          },
+          "sentence": "salaryMin ≤ salaryMax",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Khi nhập cả lương tối thiểu và lương tối đa thì lương tối thiểu không được lớn hơn lương tối đa; hai giá trị bằng nhau vẫn hợp lệ.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "ce4e27c8-8e81-4717-83e6-ae251d329a23",
+          "endpoint": "POST /api/jobs",
+          "template": "DATE_RELATIVE",
+          "params": {
+            "op": "GTE",
+            "field": "deadline",
+            "offset": 0,
+            "unit": "DAY"
+          },
+          "sentence": "deadline ≥ bây giờ",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Hạn nộp hồ sơ không được là ngày trong quá khứ; chọn đúng ngày hôm nay vẫn được chấp nhận.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "a3861b62-a917-4f4a-84de-61445f2d0188",
+          "endpoint": "POST /api/jobs/{jobId}/applications",
+          "template": "REQUIRES",
+          "params": {
+            "field": "consent",
+            "fieldValue": "true",
+            "fields": [
+              "coverLetter"
+            ]
+          },
+          "sentence": "Có consent = true thì phải có coverLetter",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Ứng viên phải đồng ý cho phép hệ thống phân tích hồ sơ; nếu không đồng ý, hồ sơ không được tiếp nhận (mã lỗi CONSENT_REQUIRED).",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "3e02acd0-091a-4c1e-9376-3fc91794ab01",
+          "endpoint": "PUT /api/jobs/{id}",
+          "template": "COMPARE_FIELDS",
+          "params": {
+            "left": "salaryMin",
+            "op": "LTE",
+            "right": "salaryMax"
+          },
+          "sentence": "salaryMin ≤ salaryMax",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Khi sửa tin, lương tối thiểu vẫn không được vượt quá lương tối đa.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "dab933fc-987e-410c-bafc-37ca1c5191ce",
+          "endpoint": "PUT /api/jobs/{id}",
+          "template": "DATE_RELATIVE",
+          "params": {
+            "op": "GTE",
+            "field": "deadline",
+            "offset": 0,
+            "unit": "DAY"
+          },
+          "sentence": "deadline ≥ bây giờ",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Hạn nộp sau khi sửa cũng không được lùi về một ngày trong quá khứ.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "ef2261e7-1be2-4074-9178-b6095e5b5fee",
+          "endpoint": "PUT /api/jobs/{id}/rubric",
+          "template": "ARRAY_AGGREGATE",
+          "params": {
+            "op": "EQ",
+            "array": "criteria",
+            "item": "weight",
+            "fn": "SUM",
+            "value": 100
+          },
+          "sentence": "Tổng criteria[].weight = 100",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Tổng trọng số của tất cả tiêu chí phải bằng đúng 100, không làm tròn (ví dụ ba tiêu chí 33,33 cộng lại được 99,99 là không hợp lệ).",
+          "hasQuote": true,
+          "statusNote": null
+        }
+      ]
+    },
+    {
+      "run": 3,
+      "projectId": "778e263e-9fe6-4c02-b9da-171294427df9",
+      "jobId": "536fdb30-c3af-4698-9789-84c3520f34fe",
+      "jobStatus": "SUCCEEDED",
+      "tokens": 14245,
+      "seconds": 14.2,
+      "extraction": {
+        "endpointCount": 10,
+        "lotsPlanned": 1,
+        "lotsDone": 1,
+        "estimatedTokens": 12597,
+        "fromDocument": 5,
+        "fromInstruction": 0,
+        "inferred": 0,
+        "rejectedAsDuplicateOfSpec": 0,
+        "conflicts": 0,
+        "skippedExisting": 0,
+        "skippedOverCap": 0,
+        "skippedInferred": 0,
+        "dropped": {
+          "INVALID_PARAMS": 2
+        },
+        "stoppedReason": null,
+        "tokenBudget": 25000,
+        "questions": [
+          "Có cần chặn nộp hồ sơ vào tin đã quá hạn nộp hay không — tài liệu nêu đây là vấn đề mở chưa thống nhất?",
+          "Giới hạn tối đa cho khoảng giá trị salaryMin/salaryMax cụ thể là bao nhiêu (tài liệu chỉ nêu không âm, chưa nêu giới hạn trên)?"
+        ],
+        "suggested": 0,
+        "suggestStoppedReason": null
+      },
+      "steps": [
+        {
+          "phase": "DOC_READ",
+          "status": "OK",
+          "detail": "1 tài liệu (16142 ký tự); chuỗi giống bí mật được che trước khi gửi AI",
+          "tokens": null
+        },
+        {
+          "phase": "RULES_PLAN",
+          "status": "OK",
+          "detail": "10 endpoint chia 1 lô; đọc tài liệu/chỉ dẫn; ước tính tối đa ~12597 token, ngân sách 25000 token",
+          "tokens": null
+        },
+        {
+          "phase": "RULES_AI",
+          "status": "OK",
+          "detail": "Đã nhận trả lời",
+          "tokens": 14245
+        },
+        {
+          "phase": "RULES_VERIFY",
+          "status": "OK",
+          "detail": "AI đề xuất 7 luật: giữ 5 (5 có trích dẫn tài liệu, 0 từ chỉ dẫn, 0 GIẢ ĐỊNH); bỏ 2 luật sai endpoint/mẫu/field",
+          "tokens": null
+        }
+      ],
+      "rules": [
+        {
+          "id": "127a52c5-d915-4641-9577-e97b4ed68d41",
+          "endpoint": "POST /api/jobs",
+          "template": "COMPARE_FIELDS",
+          "params": {
+            "left": "salaryMin",
+            "op": "LTE",
+            "right": "salaryMax"
+          },
+          "sentence": "salaryMin ≤ salaryMax",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Khi nhập cả lương tối thiểu và lương tối đa thì lương tối thiểu không được lớn hơn lương tối đa; hai giá trị bằng nhau vẫn hợp lệ.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "f79c4421-c427-4d41-b626-f4174c1807b4",
+          "endpoint": "POST /api/jobs",
+          "template": "DATE_RELATIVE",
+          "params": {
+            "op": "GTE",
+            "field": "deadline",
+            "offset": 0,
+            "unit": "DAY"
+          },
+          "sentence": "deadline ≥ bây giờ",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Hạn nộp hồ sơ không được là ngày trong quá khứ; chọn đúng ngày hôm nay vẫn được chấp nhận.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "667e91a9-2cb1-4f23-8462-9b6e9abae418",
+          "endpoint": "PUT /api/jobs/{id}",
+          "template": "COMPARE_FIELDS",
+          "params": {
+            "left": "salaryMin",
+            "op": "LTE",
+            "right": "salaryMax"
+          },
+          "sentence": "salaryMin ≤ salaryMax",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Khi sửa tin, lương tối thiểu vẫn không được vượt quá lương tối đa.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "e532e68e-8151-47e5-8318-711541fbfa3e",
+          "endpoint": "PUT /api/jobs/{id}",
+          "template": "DATE_RELATIVE",
+          "params": {
+            "op": "GTE",
+            "field": "deadline",
+            "offset": 0,
+            "unit": "DAY"
+          },
+          "sentence": "deadline ≥ bây giờ",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Hạn nộp sau khi sửa cũng không được lùi về một ngày trong quá khứ.",
+          "hasQuote": true,
+          "statusNote": null
+        },
+        {
+          "id": "98965c4a-841a-4c5b-b5ce-8ea1a82dc1ae",
+          "endpoint": "PUT /api/jobs/{id}/rubric",
+          "template": "ARRAY_AGGREGATE",
+          "params": {
+            "op": "EQ",
+            "array": "criteria",
+            "item": "weight",
+            "fn": "SUM",
+            "value": 100
+          },
+          "sentence": "Tổng criteria[].weight = 100",
+          "source": "DOC",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "quote": "Tổng trọng số của tất cả tiêu chí phải bằng đúng 100, không làm tròn (ví dụ ba tiêu chí 33,33 cộng lại được 99,99 là không hợp lệ).",
+          "hasQuote": true,
+          "statusNote": null
+        }
+      ]
+    }
+  ]
+}
