@@ -85,6 +85,12 @@ public class BusinessRuleController {
         return ResponseEntity.ok(ApiResponse.of(businessRuleService.approve(projectId, ruleId, request)));
     }
 
+    /** Hoàn tác duyệt (chỉ khi chưa sinh test từ luật). */
+    @PostMapping("/{ruleId}/revert")
+    public ResponseEntity<ApiResponse<RuleResponse>> revert(@PathVariable UUID projectId, @PathVariable UUID ruleId) {
+        return ResponseEntity.ok(ApiResponse.of(businessRuleService.revertApproval(projectId, ruleId)));
+    }
+
     /** Thực nghiệm E2: giao diện chỉ gọi khi người dùng đã bật đo thời gian duyệt. */
     @PostMapping("/{ruleId}/review-timing")
     public ResponseEntity<Void> recordReviewTiming(

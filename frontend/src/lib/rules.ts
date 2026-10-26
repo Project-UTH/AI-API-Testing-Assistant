@@ -284,9 +284,21 @@ export interface ApproveBatchResult {
   notApproved: { ruleId: string; reason: string }[]
 }
 
-/** Duyệt hàng loạt: backend chỉ nhận mục CÓ TRÍCH DẪN đang chờ duyệt, mục khác được trả lại kèm lý do. */
-export function approveBusinessRulesBatch(projectId: string, ruleIds: string[]): Promise<ApproveBatchResult> {
-  return apiFetch<ApproveBatchResult>(`/projects/${projectId}/business-rules/approve-batch`, { method: "POST", body: JSON.stringify({ ruleIds }) })
+/** Duyệt hàng loạt: mục có trích dẫn; mục GIẢ ĐỊNH chỉ khi kèm mã lỗi bạn xác nhận riêng cho mục đó (expectedStatuses). Mục khác được trả lại kèm lý do. */
+export function approveBusinessRulesBatch(
+  projectId: string,
+  ruleIds: string[],
+  expectedStatuses?: Record<string, number>
+): Promise<ApproveBatchResult> {
+  return apiFetch<ApproveBatchResult>(`/projects/${projectId}/business-rules/approve-batch`, {
+    method: "POST",
+    body: JSON.stringify({ ruleIds, expectedStatuses }),
+  })
+}
+
+/** Hoàn tác duyệt: chỉ khi chưa sinh test từ mục này. */
+export function revertBusinessRule(projectId: string, ruleId: string): Promise<BusinessRule> {
+  return apiFetch<BusinessRule>(`/projects/${projectId}/business-rules/${ruleId}/revert`, { method: "POST" })
 }
 
 /** Mã lỗi hay gặp để người duyệt chọn cho mục GIẢ ĐỊNH (backend nhận mọi mã 4xx). */

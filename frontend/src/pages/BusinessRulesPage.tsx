@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Plus, Sparkles, Wand2 } from "lucide-react"
@@ -28,6 +28,7 @@ import {
   detectBusinessRules,
   generateRuleTests,
   listBusinessRules,
+  revertBusinessRule,
   RULE_SOURCE_DISPLAY,
   type BusinessRule,
   type GenerateRuleTestsResult,
@@ -61,6 +62,13 @@ export function BusinessRulesPage() {
   const [viewing, setViewing] = useState<{ documentId: string; quote: string; offset: number | null } | null>(null)
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchMessage, setBatchMessage] = useState<string | null>(null)
+  // Hoàn tác duyệt: hiện 10 giây sau mỗi lần duyệt 1 mục hoặc cả lô (chỉ hoàn tác được khi chưa sinh test).
+  const [undo, setUndo] = useState<{ ids: string[]; label: string } | null>(null)
+  useEffect(() => {
+    if (!undo) return
+    const timer = window.setTimeout(() => setUndo(null), 10_000)
+    return () => window.clearTimeout(timer)
+  }, [undo])
 
   const { data, isLoading, isError, isFetching, isPlaceholderData } = useQuery({
     queryKey: ["rules", projectId, "page", lf.params],
@@ -96,6 +104,7 @@ export function BusinessRulesPage() {
       approveBusinessRule(projectId, input.rule.id, { conflictNote: input.conflictNote, expectedStatus: input.expectedStatus }),
     onSuccess: (_result, variables) => {
       reportReviewTiming(projectId, variables.rule.id, "APPROVED")
+      setUndo({ ids: [variables.rule.id], label: `Đã duyệt: ${variables.rule.sentence}` })
       queryClient.invalidateQueries({ queryKey: ["rules", projectId, "review-timing"] })
       setGuessRule(null)
       setConflictRule(null)
@@ -104,9 +113,10 @@ export function BusinessRulesPage() {
     },
   })
   const batchApprove = useMutation({
-    mutationFn: (ids: string[]) => approveBusinessRulesBatch(projectId, ids),
+    mutationFn: (input: { ids: string[]; statuses: Record<string, number> }) => approveBusinessRulesBatch(projectId, input.ids, input.statuses),
     onSuccess: (result) => {
       setBatchOpen(false)
+      if (result.approvedIds.length > 0) setUndo({ ids: result.approvedIds, label: `Đã duyệt ${result.approvedIds.length} mục` })
       setBatchMessage(
         `Đã duyệt ${result.approvedIds.length} mục.` + (result.notApproved.length > 0 ? ` ${result.notApproved.length} mục không đủ điều kiện duyệt hàng loạt.` : "")
       )
@@ -126,6 +136,20 @@ export function BusinessRulesPage() {
     () => [...(docPage?.data ?? []), ...(instructionPage?.data ?? [])].filter((r) => r.quote !== null),
     [docPage, instructionPage]
   )
+  const { data: guessPage } = useQuery({
+    queryKey: ["rules", projectId, "guess-proposed"],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INFERRED" }),
+  })
+  const guessProposed = useMemo(() => (guessPage?.data ?? []).filter((r) => r.quote === null), [guessPage])
+  const revert = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(ids.map((id) => revertBusinessRule(projectId, id)))
+      const failed = results.filter((r) => r.status === "rejected").length
+      if (failed > 0) throw new Error(`${failed}/${ids.length} mục không hoàn tác được (đã sinh test từ mục đó?)`)
+    },
+    onSuccess: () => setUndo(null),
+    onSettled: invalidate,
+  })
   const remove = useMutation({ mutationFn: (rule: BusinessRule) => deleteBusinessRule(projectId, rule.id), onSuccess: invalidate })
   const detect = useMutation({
     mutationFn: () => detectBusinessRules(projectId),
@@ -197,7 +221,7 @@ export function BusinessRulesPage() {
       options: (Object.keys(RULE_SOURCE_DISPLAY) as RuleSource[]).map((value) => ({ value, label: RULE_SOURCE_DISPLAY[value].label })),
     },
   ]
-  const error = [approve, batchApprove, remove, detect, generate].map((m) => m.error).find(Boolean)
+  const error = [approve, batchApprove, remove, detect, generate, revert].map((m) => m.error).find(Boolean)
 
   return (
     <div>
@@ -230,11 +254,15 @@ export function BusinessRulesPage() {
           type="button"
           size="sm"
           variant="outline"
-          disabled={citedProposed.length === 0}
-          title={citedProposed.length === 0 ? "Không có mục có trích dẫn nào đang chờ duyệt" : "Đối chiếu từng mục với đoạn trích rồi duyệt một lượt"}
+          disabled={citedProposed.length + guessProposed.length === 0}
+          title={
+            citedProposed.length + guessProposed.length === 0
+              ? "Không có mục nào đang chờ duyệt hàng loạt"
+              : "Đối chiếu từng mục rồi duyệt một lượt (mục GIẢ ĐỊNH cần bạn xác nhận mã lỗi riêng)"
+          }
           onClick={() => setBatchOpen(true)}
         >
-          Duyệt {citedProposed.length} mục có trích dẫn…
+          Duyệt hàng loạt ({citedProposed.length} có trích dẫn, {guessProposed.length} GIẢ ĐỊNH)…
         </Button>
         <Button
           type="button"
@@ -250,6 +278,14 @@ export function BusinessRulesPage() {
         </Button>
       </div>
 
+      {undo && (
+        <p role="status" className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 p-2 text-sm">
+          <span className="min-w-0 flex-1 truncate">{undo.label}</span>
+          <Button type="button" size="xs" variant="outline" disabled={revert.isPending} onClick={() => revert.mutate(undo.ids)}>
+            Hoàn tác
+          </Button>
+        </p>
+      )}
       {batchMessage && (
         <p role="status" className="mt-3 rounded-md bg-muted p-2 text-sm">
           {batchMessage}
@@ -385,10 +421,11 @@ export function BusinessRulesPage() {
       <BatchApproveDialog
         open={batchOpen}
         rules={citedProposed}
+        guessRules={guessProposed}
         error={batchApprove.error ? errorMessage(batchApprove.error) : null}
         pending={batchApprove.isPending}
         onClose={() => setBatchOpen(false)}
-        onConfirm={(ids) => batchApprove.mutate(ids)}
+        onConfirm={(ids, statuses) => batchApprove.mutate({ ids, statuses })}
       />
       <DocViewerDialog projectId={projectId} target={viewing} onClose={() => setViewing(null)} />
 

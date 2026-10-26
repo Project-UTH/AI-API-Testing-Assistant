@@ -171,6 +171,45 @@ class BusinessRuleServiceTest {
     }
 
     @Test
+    void approveBatch_guessRuleNeedsItsOwn4xxStatusFromTheReviewer() {
+        BusinessRule ok = stored(RuleStatus.PROPOSED, RuleSource.INFERRED);
+        ok.setSuggestedStatus(400);
+        BusinessRule badCode = stored(RuleStatus.PROPOSED, RuleSource.INFERRED);
+        BusinessRule noCode = stored(RuleStatus.PROPOSED, RuleSource.INFERRED);
+        noCode.setSuggestedStatus(400); // gợi ý của AI KHÔNG tự có hiệu lực
+
+        var response = service.approveBatch(project.getId(), new com.aiapitesting.backend.dto.rule.BusinessRuleDtos.ApproveBatchRequest(
+                List.of(ok.getId(), badCode.getId(), noCode.getId()), java.util.Map.of(ok.getId(), 400, badCode.getId(), 200)));
+
+        assertThat(response.approvedIds()).containsExactly(ok.getId());
+        assertThat(ok.getExpectedStatus()).isEqualTo(400);
+        assertThat(badCode.getStatus()).isEqualTo(RuleStatus.PROPOSED);
+        assertThat(noCode.getStatus()).isEqualTo(RuleStatus.PROPOSED);
+        assertThat(noCode.getExpectedStatus()).isNull();
+    }
+
+    @Test
+    void revertApproval_returnsToProposed_clearsTheConfirmedGuessStatus_butNotOnceTestsExist() {
+        BusinessRule guess = stored(RuleStatus.APPROVED, RuleSource.INFERRED);
+        guess.setExpectedStatus(400);
+        guess.setSuggestedStatus(400);
+        guess.setReviewedAt(java.time.Instant.now());
+
+        service.revertApproval(project.getId(), guess.getId());
+
+        assertThat(guess.getStatus()).isEqualTo(RuleStatus.PROPOSED);
+        assertThat(guess.getExpectedStatus()).isNull();
+        assertThat(guess.getSuggestedStatus()).isEqualTo(400);
+        assertThat(guess.getReviewedAt()).isNull();
+
+        BusinessRule withTests = stored(RuleStatus.APPROVED, RuleSource.DOC);
+        when(testCaseRepository.countByRuleId(withTests.getId())).thenReturn(3L);
+        assertThatThrownBy(() -> service.revertApproval(project.getId(), withTests.getId())).isInstanceOf(com.aiapitesting.backend.exception.BusinessRuleException.class);
+        BusinessRule proposed = stored(RuleStatus.PROPOSED, RuleSource.DOC);
+        assertThatThrownBy(() -> service.revertApproval(project.getId(), proposed.getId())).isInstanceOf(com.aiapitesting.backend.exception.BusinessRuleException.class);
+    }
+
+    @Test
     void approve_conflictRuleNeedsNote_andOnlyProposedOrConflictCanBeApproved() {
         BusinessRule conflict = stored(RuleStatus.CONFLICT, RuleSource.INFERRED);
         assertThatThrownBy(() -> service.approve(project.getId(), conflict.getId(), new ApproveRequest(null, " ")))

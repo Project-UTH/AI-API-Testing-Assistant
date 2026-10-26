@@ -284,7 +284,19 @@ public class BusinessRuleService {
                 skipped.add(new NotApproved(id, "Không tìm thấy luật"));
             } else if (rule.getStatus() != RuleStatus.PROPOSED) {
                 skipped.add(new NotApproved(id, "Chỉ duyệt hàng loạt luật đang chờ duyệt (hiện: " + rule.getStatus() + ")"));
-            } else if (rule.getSource() == RuleSource.INFERRED || rule.getQuote() == null) {
+            } else if (rule.getSource() == RuleSource.INFERRED) {
+                Integer chosen = request.expectedStatuses() == null ? null : request.expectedStatuses().get(id);
+                if (chosen == null) {
+                    skipped.add(new NotApproved(id, "Luật GIẢ ĐỊNH - cần mã lỗi kỳ vọng do bạn xác nhận cho đúng luật này"));
+                } else if (chosen < 400 || chosen > 499) {
+                    skipped.add(new NotApproved(id, "Mã kỳ vọng phải là mã 4xx"));
+                } else {
+                    rule.setExpectedStatus(chosen);
+                    markApproved(rule);
+                    ruleRepository.save(rule);
+                    approved.add(id);
+                }
+            } else if (rule.getQuote() == null) {
                 skipped.add(new NotApproved(id, "Luật không có trích dẫn - phải duyệt từng luật"));
             } else {
                 markApproved(rule);
@@ -293,6 +305,29 @@ public class BusinessRuleService {
             }
         }
         return new ApproveBatchResponse(approved, skipped);
+    }
+
+    /**
+     * Hoàn tác duyệt: đưa luật đã duyệt về "chờ duyệt". Chỉ khi chưa sinh test từ luật này (đã sinh thì phải loại luật, test sinh ra mới bị dọn theo
+     * quy trình hiện có). Luật GIẢ ĐỊNH mất mã kỳ vọng đã xác nhận (mã AI gợi ý vẫn còn để xác nhận lại).
+     */
+    @Transactional
+    public RuleResponse revertApproval(UUID projectId, UUID ruleId) {
+        Project project = projectService.getOwnedProject(projectId);
+        BusinessRule rule = owned(project, ruleId);
+        if (rule.getStatus() != RuleStatus.APPROVED) {
+            throw BusinessRuleException.stateInvalid("Chỉ hoàn tác được luật đang ở trạng thái đã duyệt (hiện: " + rule.getStatus() + ")");
+        }
+        if (testCaseRepository.countByRuleId(rule.getId()) > 0) {
+            throw BusinessRuleException.stateInvalid("Đã sinh test từ luật này nên không hoàn tác được; hãy Loại luật nếu không còn đúng");
+        }
+        rule.setStatus(RuleStatus.PROPOSED);
+        rule.setReviewedBy(null);
+        rule.setReviewedAt(null);
+        if (rule.getSource() == RuleSource.INFERRED) {
+            rule.setExpectedStatus(null);
+        }
+        return toResponse(ruleRepository.save(rule));
     }
 
     @Transactional

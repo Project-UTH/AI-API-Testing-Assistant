@@ -31,8 +31,14 @@ public final class BusinessRuleDtos {
     public record ApproveRequest(Integer expectedStatus, String conflictNote) {
     }
 
-    /** Duyệt hàng loạt: CHỈ luật có trích dẫn (nguồn tài liệu/chỉ dẫn) đang chờ duyệt; luật GIẢ ĐỊNH, mâu thuẫn spec luôn phải duyệt từng cái. */
-    public record ApproveBatchRequest(List<UUID> ruleIds) {
+    /**
+     * Duyệt hàng loạt: luật có trích dẫn (nguồn tài liệu/chỉ dẫn) đang chờ duyệt; luật GIẢ ĐỊNH chỉ được duyệt khi người duyệt gửi kèm mã lỗi
+     * kỳ vọng RIÊNG cho từng luật (expectedStatuses) - mã AI gợi ý không tự có hiệu lực. Luật mâu thuẫn spec luôn phải duyệt từng cái.
+     */
+    public record ApproveBatchRequest(List<UUID> ruleIds, java.util.Map<UUID, Integer> expectedStatuses) {
+        public ApproveBatchRequest(List<UUID> ruleIds) {
+            this(ruleIds, null);
+        }
     }
 
     public record ApproveBatchResponse(List<UUID> approvedIds, List<NotApproved> notApproved) {
