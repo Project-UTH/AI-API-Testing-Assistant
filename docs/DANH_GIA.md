@@ -332,6 +332,9 @@ Kết quả gốc: `docs/eval/results-shop-A-403-login-2026-10-25.json`, `docs/e
 - **Cỡ mẫu nhỏ** (15 lỗi held-out, 3 lượt giống hệt nhau), không có kiểm định thống kê.
 - **Cấu hình B đo lại cho kết quả gần như cũ** (Fail giả 19,8% so với 23,2%) nên số liệu B cũ vẫn đúng; thay đổi nhỏ: M09 từ bỏ lọt thành nghi ngờ, M11 từ nghi ngờ thành đúng.
 
+**Điều tra H10 (2026-10-26): vì sao test sinh từ luật R66 bỏ lọt lỗi.** Luật "tổng trọng số = 100" được trích đúng và cho đúng 1 test: đổi tổng thành 101 (`RuleTestGenerator.arrayAggregate`, nhánh `EQ`/`LTE` chỉ tạo `giá trị + 1`). Mutant H10 viết `total > 100` thay vì `total != 100`: tổng 101 vẫn bị từ chối nên test Pass, còn tổng nhỏ hơn 100 lại lọt. Tái hiện trực tiếp trên API (0 token): bản chuẩn trả 200 / 400 / 400 và H10 trả 200 / 400 / **200** cho tổng 100 / 101 / 99. Kết luận: **lỗi nằm ở bộ sinh test, không phải ở AI hay ở luật**: với luật "bằng" chỉ thử một phía vi phạm. Cùng kiểu thiếu sót có thể có ở `COUNT` (số phần tử) và ở biên "đúng bằng giá trị giới hạn" của các phép ≤ / ≥. Cách sửa dự kiến: với `EQ` sinh cả hai phía (giá trị − 1 và + 1), với `LTE`/`GTE` thêm test "đúng bằng giới hạn phải được chấp nhận".
+**Chưa sửa**, để số đo trên bộ held-out ở trên còn đúng nguyên trạng. Nếu sửa sau này thì phải ghi rõ đó là cải tiến SAU KHI thấy kết quả held-out (H10 không còn là mẫu ngoài tập), và đo lại trên bộ dev (M25 cũng thuộc nhóm tổng hợp mảng) chứ không dùng H10 làm bằng chứng.
+
 Dữ liệu gốc: `docs/eval/results-A-heldout-2026-10-26.json`, `results-B-heldout-2026-10-26.json`, `rules-extract-2026-10-26.json` (luật AI đề xuất), `rules-labels-2026-10-26.json` (nhãn), `results-C-rules-2026-10-26.log` (log gốc phép đo C; file JSON không ghi được do lỗi script, đã sửa).
 
 ## 8. Chạy lại
