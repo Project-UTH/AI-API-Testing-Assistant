@@ -45,13 +45,15 @@ class RequirementDocumentServiceTest {
     private BusinessRuleRepository ruleRepository;
     @Mock
     private com.aiapitesting.backend.repository.RequirementDocumentUsageRepository usageRepository;
+    @Mock
+    private com.aiapitesting.backend.repository.EndpointRepository endpointRepository;
 
     private RequirementDocumentService service;
     private Project project;
 
     @BeforeEach
     void setUp() {
-        service = new RequirementDocumentService(projectService, currentUserService, documentRepository, ruleRepository, usageRepository);
+        service = new RequirementDocumentService(projectService, currentUserService, documentRepository, ruleRepository, usageRepository, endpointRepository);
         project = Project.builder().id(UUID.randomUUID()).build();
         lenient().when(projectService.getOwnedProject(project.getId())).thenReturn(project);
         lenient().when(currentUserService.getCurrentUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());
@@ -110,9 +112,9 @@ class RequirementDocumentServiceTest {
     }
 
     @Test
-    void upload_sixthDistinctFile_isRejected_butSameNameReplacesTheOldOne() {
+    void upload_overTheLimit_isRejected_butSameNameReplacesTheOldOne() {
         when(documentRepository.findFirstByProjectAndFileNameAndActiveTrue(project, "new.md")).thenReturn(Optional.empty());
-        when(documentRepository.countByProjectAndActiveTrue(project)).thenReturn(5L);
+        when(documentRepository.countByProjectAndActiveTrue(project)).thenReturn((long) RequirementDocumentService.MAX_ACTIVE_DOCUMENTS);
         assertThat(codeOf(() -> service.upload(project.getId(), "new.md", utf8("x")))).isEqualTo("DOCUMENT_LIMIT_REACHED");
 
         RequirementDocument old = RequirementDocument.builder().id(UUID.randomUUID()).project(project).fileName("a.md").content("cu").build();
@@ -143,6 +145,26 @@ class RequirementDocumentServiceTest {
         assertThat(doc.getContent()).isNull();
         assertThat(codeOf(() -> service.content(project.getId(), doc.getId()))).isEqualTo("DOCUMENT_NOT_FOUND");
         assertThat(codeOf(() -> service.content(project.getId(), UUID.randomUUID()))).isEqualTo("DOCUMENT_NOT_FOUND");
+    }
+
+    @Test
+    void setEndpoints_acceptsOnlyKnownEndpointKeys_andReplaceCarriesThemOver() {
+        RequirementDocument doc = RequirementDocument.builder().id(UUID.randomUUID()).project(project).fileName("a.md").content("x").build();
+        when(documentRepository.findByIdAndProject(doc.getId(), project)).thenReturn(Optional.of(doc));
+        com.aiapitesting.backend.entity.Endpoint known = com.aiapitesting.backend.entity.Endpoint.builder().id(UUID.randomUUID()).method("POST").path("/jobs").build();
+        when(endpointRepository.findAllByProjectOrderByCreatedAtAsc(project)).thenReturn(List.of(known));
+
+        var response = service.setEndpoints(project.getId(), doc.getId(), List.of("POST /jobs", "POST /jobs", " "));
+        assertThat(response.forEndpoints()).containsExactly("POST /jobs");
+
+        assertThat(codeOf(() -> service.setEndpoints(project.getId(), doc.getId(), List.of("GET /khong-co")))).isEqualTo("DOCUMENT_ENDPOINTS_INVALID");
+        assertThat(service.setEndpoints(project.getId(), doc.getId(), List.of()).forEndpoints()).isEmpty();
+
+        // thay bản (tải trùng tên) giữ khai báo "viết cho endpoint nào"
+        doc.setForEndpointsJson("[\"POST /jobs\"]");
+        when(documentRepository.findFirstByProjectAndFileNameAndActiveTrue(project, "a.md")).thenReturn(Optional.of(doc));
+        when(ruleRepository.findAllByProject(project)).thenReturn(List.of());
+        assertThat(service.upload(project.getId(), "a.md", utf8("moi")).forEndpoints()).containsExactly("POST /jobs");
     }
 
     @Test

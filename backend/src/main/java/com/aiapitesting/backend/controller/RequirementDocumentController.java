@@ -3,6 +3,7 @@ package com.aiapitesting.backend.controller;
 import com.aiapitesting.backend.dto.response.ApiResponse;
 import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.ContentResponse;
 import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.DocumentResponse;
+import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.SetEndpointsRequest;
 import com.aiapitesting.backend.dto.rule.RequirementDocumentDtos.UsageEntry;
 import com.aiapitesting.backend.exception.RequirementDocumentException;
 import com.aiapitesting.backend.service.rule.RequirementDocumentService;
@@ -14,6 +15,8 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -55,6 +58,13 @@ public class RequirementDocumentController {
     @GetMapping("/usage")
     public ResponseEntity<ApiResponse<List<UsageEntry>>> usage(@PathVariable UUID projectId) {
         return ResponseEntity.ok(ApiResponse.of(documentService.usage(projectId)));
+    }
+
+    /** Khai báo tài liệu này viết cho những endpoint nào (để tick sẵn khi sinh test cho endpoint đó). */
+    @PutMapping("/{documentId}/endpoints")
+    public ResponseEntity<ApiResponse<DocumentResponse>> setEndpoints(@PathVariable UUID projectId, @PathVariable UUID documentId,
+                                                                      @RequestBody SetEndpointsRequest request) {
+        return ResponseEntity.ok(ApiResponse.of(documentService.setEndpoints(projectId, documentId, request.endpointKeys())));
     }
 
     @GetMapping("/{documentId}/content")

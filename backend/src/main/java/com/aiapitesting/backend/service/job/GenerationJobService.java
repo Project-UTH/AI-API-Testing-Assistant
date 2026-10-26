@@ -219,7 +219,7 @@ public class GenerationJobService {
                 throw new InvalidRequestException("Phân công tài liệu cho endpoint không thuộc job này");
             }
             List<UUID> ids = entry.getValue() == null ? List.of() : entry.getValue();
-            if (ids.size() > RequirementDocumentService.MAX_ACTIVE_DOCUMENTS || !activeIds.containsAll(ids)) {
+            if (ids.size() > RequirementDocumentService.MAX_DOCUMENTS_PER_ENDPOINT || !activeIds.containsAll(ids)) {
                 throw new InvalidRequestException("Có tài liệu được phân công không thuộc project này hoặc đã bị xoá");
             }
         }

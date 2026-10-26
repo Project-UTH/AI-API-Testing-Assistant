@@ -9,7 +9,9 @@ import com.aiapitesting.backend.entity.RequirementDocument;
 import com.aiapitesting.backend.entity.RuleStatus;
 import com.aiapitesting.backend.exception.RequirementDocumentException;
 import com.aiapitesting.backend.repository.BusinessRuleRepository;
+import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.RequirementDocumentRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiapitesting.backend.repository.RequirementDocumentUsageRepository;
 import com.aiapitesting.backend.service.CurrentUserService;
 import com.aiapitesting.backend.service.ProjectService;
@@ -39,13 +41,19 @@ import java.util.UUID;
 public class RequirementDocumentService {
 
     public static final int MAX_BYTES = 200_000;
-    public static final int MAX_ACTIVE_DOCUMENTS = 5;
+    /** Số tài liệu đang dùng tối đa mỗi project. */
+    public static final int MAX_ACTIVE_DOCUMENTS = 30;
+    /** Số tài liệu tối đa gán cho MỘT endpoint (mỗi tài liệu đều được gửi AI ở lượt của endpoint đó, nên giới hạn để không đội token). */
+    public static final int MAX_DOCUMENTS_PER_ENDPOINT = 8;
+    private static final int MAX_ENDPOINTS_PER_DOCUMENT = 300;
 
     private final ProjectService projectService;
     private final CurrentUserService currentUserService;
     private final RequirementDocumentRepository documentRepository;
     private final BusinessRuleRepository ruleRepository;
     private final RequirementDocumentUsageRepository usageRepository;
+    private final EndpointRepository endpointRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
     public DocumentResponse upload(UUID projectId, String originalFileName, byte[] bytes) {
@@ -78,6 +86,7 @@ public class RequirementDocumentService {
             documentRepository.save(previous);
             markRulesStale(project, previous.getId());
         }
+        String carriedEndpoints = previous == null ? null : previous.getForEndpointsJson(); // thay bản: giữ khai báo "viết cho endpoint nào"
         RequirementDocument saved = documentRepository.save(RequirementDocument.builder()
                 .project(project)
                 .fileName(fileName)
@@ -85,8 +94,46 @@ public class RequirementDocumentService {
                 .sha256(sha256(content))
                 .content(content)
                 .uploadedBy(currentUserService.getCurrentUser().getId())
+                .forEndpointsJson(carriedEndpoints)
                 .build());
         return toResponse(saved);
+    }
+
+    /** Khai báo tài liệu viết cho endpoint nào. Chỉ nhận khoá endpoint có trong project (METHOD path); thay toàn bộ danh sách. */
+    @Transactional
+    public DocumentResponse setEndpoints(UUID projectId, UUID documentId, List<String> endpointKeys) {
+        Project project = projectService.getOwnedProject(projectId);
+        RequirementDocument doc = documentRepository.findByIdAndProject(documentId, project).orElseThrow(RequirementDocumentService::notFound);
+        if (!doc.isActive()) {
+            throw notFound();
+        }
+        List<String> keys = endpointKeys == null ? List.of() : endpointKeys.stream().filter(k -> k != null && !k.isBlank()).map(String::trim).distinct().toList();
+        if (keys.size() > MAX_ENDPOINTS_PER_DOCUMENT) {
+            throw new RequirementDocumentException("DOCUMENT_ENDPOINTS_INVALID", HttpStatus.BAD_REQUEST, "Tối đa " + MAX_ENDPOINTS_PER_DOCUMENT + " endpoint cho mỗi tài liệu");
+        }
+        java.util.Set<String> known = endpointRepository.findAllByProjectOrderByCreatedAtAsc(project).stream().map(BusinessRuleService::keyOf)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!known.containsAll(keys)) {
+            throw new RequirementDocumentException("DOCUMENT_ENDPOINTS_INVALID", HttpStatus.BAD_REQUEST, "Có endpoint không thuộc project này");
+        }
+        try {
+            doc.setForEndpointsJson(keys.isEmpty() ? null : objectMapper.writeValueAsString(keys));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+        return toResponse(documentRepository.save(doc));
+    }
+
+    private List<String> readEndpoints(RequirementDocument doc) {
+        if (doc.getForEndpointsJson() == null || doc.getForEndpointsJson().isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(doc.getForEndpointsJson(), new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {
+            });
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     @Transactional(readOnly = true)
@@ -189,7 +236,7 @@ public class RequirementDocumentService {
         List<DocumentResponse.Warning> warnings = doc.getContent() == null ? List.of()
                 : TextSecretScanner.scan(doc.getContent()).stream().map(f -> new DocumentResponse.Warning(f.line(), f.rule())).toList();
         int lines = doc.getContent() == null ? 0 : (int) doc.getContent().lines().count();
-        return new DocumentResponse(doc.getId(), doc.getFileName(), doc.getSizeBytes(), lines, doc.isActive(), doc.getCreatedAt(), warnings);
+        return new DocumentResponse(doc.getId(), doc.getFileName(), doc.getSizeBytes(), lines, doc.isActive(), doc.getCreatedAt(), warnings, readEndpoints(doc));
     }
 
     private static RequirementDocumentException notFound() {

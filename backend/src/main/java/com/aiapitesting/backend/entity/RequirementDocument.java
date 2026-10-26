@@ -48,6 +48,10 @@ public class RequirementDocument {
 
     private UUID uploadedBy;
 
+    /** JSON mảng khoá endpoint ("METHOD path") mà tài liệu này được VIẾT CHO; rỗng/null = tài liệu chung. Chỉ để tick sẵn khi sinh test, không ép buộc. */
+    @Column(columnDefinition = "TEXT")
+    private String forEndpointsJson;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean active = true;
