@@ -119,17 +119,56 @@ class RuleTestGeneratorTest {
     }
 
     @Test
-    void arrayAggregate_sumCountDistinct() {
+    void arrayAggregate_sumEqualsTriesBothSidesOfTheLimit_soAnOneSidedCheckLikeGreaterThanIsCaught() {
         Spec spec = spec(array("criteria"), num("criteria[0].weight", false, null, null));
         String body = "{\"criteria\":[{\"weight\":60},{\"weight\":40}]}";
 
         var sum = run(RuleTemplate.ARRAY_AGGREGATE, p(null, "EQ", null, null, null, null, null, null, null, "criteria", "weight", "SUM", new BigDecimal(100)),
                 spec, body);
-        assertThat(sum.drafts()).singleElement().satisfies(d -> assertThat(d.testCase().requestBody()).contains("\"weight\":61"));
 
+        // tổng 101 và tổng 99 đều phải bị từ chối (lỗi H10 'total > 100' chỉ bị lộ ở tổng 99); tổng 100 chính là test gốc nên không lặp lại
+        assertThat(sum.drafts()).hasSize(2).allSatisfy(d -> assertThat(d.violation()).isTrue());
+        assertThat(sum.drafts()).anySatisfy(d -> assertThat(d.testCase().requestBody()).contains("\"weight\":61"));
+        assertThat(sum.drafts()).anySatisfy(d -> assertThat(d.testCase().requestBody()).contains("\"weight\":59"));
+    }
+
+    @Test
+    void arrayAggregate_atMostAndAtLeast_haveAViolationAndAnAcceptedEdge() {
+        Spec spec = spec(array("criteria"), num("criteria[0].weight", false, null, null));
+        String body = "{\"criteria\":[{\"weight\":10},{\"weight\":20}]}";
+
+        var lte = run(RuleTemplate.ARRAY_AGGREGATE, p(null, "LTE", null, null, null, null, null, null, null, "criteria", "weight", "SUM", new BigDecimal(50)),
+                spec, body);
+        var overLimit = lte.drafts().stream().filter(RuleTestGenerator.Draft::violation).findFirst().orElseThrow();
+        assertThat(overLimit.testCase().requestBody()).contains("\"weight\":31");
+        assertThat(overLimit.testCase().expectedStatus()).isEqualTo(400);
+        var atLimit = lte.drafts().stream().filter(d -> !d.violation()).findFirst().orElseThrow();
+        assertThat(atLimit.testCase().requestBody()).contains("\"weight\":30"); // tổng 50 đúng bằng giới hạn phải được chấp nhận
+        assertThat(atLimit.testCase().expectedStatus()).isEqualTo(201);
+
+        var gte = run(RuleTemplate.ARRAY_AGGREGATE, p(null, "GTE", null, null, null, null, null, null, null, "criteria", "weight", "SUM", new BigDecimal(30)),
+                spec, "{\"criteria\":[{\"weight\":10},{\"weight\":25}]}");
+        assertThat(gte.drafts().stream().filter(RuleTestGenerator.Draft::violation)).singleElement()
+                .satisfies(d -> assertThat(d.testCase().requestBody()).contains("\"weight\":4")); // tổng 29
+        assertThat(gte.drafts().stream().filter(d -> !d.violation())).singleElement()
+                .satisfies(d -> assertThat(d.testCase().requestBody()).contains("\"weight\":5")); // tổng 30
+    }
+
+    @Test
+    void arrayAggregate_count_sumCountDistinct() {
+        Spec spec = spec(array("criteria"), num("criteria[0].weight", false, null, null));
+        String body = "{\"criteria\":[{\"weight\":60},{\"weight\":40}]}";
+
+        // đếm <= 2 trên mảng đang có đúng 2 phần tử: test gốc đã ở giới hạn nên chỉ còn phía vi phạm (3 phần tử)
         var count = run(RuleTemplate.ARRAY_AGGREGATE, p(null, "LTE", null, null, null, null, null, null, null, "criteria", null, "COUNT", new BigDecimal(2)),
                 spec, body);
         assertThat(count.drafts()).singleElement().satisfies(d -> assertThat(d.testCase().requestBody()).contains("\"weight\":60").contains("\"weight\":40"));
+
+        // đếm >= 1: vi phạm là 0 phần tử (không thao tác được nên có thể bị bỏ), biên hợp lệ là đúng 1 phần tử
+        var atLeast = run(RuleTemplate.ARRAY_AGGREGATE, p(null, "GTE", null, null, null, null, null, null, null, "criteria", null, "COUNT", new BigDecimal(1)),
+                spec, body);
+        assertThat(atLeast.drafts().stream().filter(d -> !d.violation())).singleElement()
+                .satisfies(d -> assertThat(d.testCase().requestBody()).contains("\"weight\":60").doesNotContain("\"weight\":40"));
 
         var distinct = run(RuleTemplate.ARRAY_AGGREGATE, p(null, null, null, null, null, null, null, null, null, "criteria", "weight", "DISTINCT", null),
                 spec, body);

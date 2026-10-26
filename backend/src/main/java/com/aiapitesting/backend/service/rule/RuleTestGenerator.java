@@ -297,14 +297,41 @@ public class RuleTestGenerator {
         if (!holds(p.op(), current, p.value())) {
             throw new Skip("Test gốc đã vi phạm luật tổng hợp trên '" + p.array() + "' (hiện " + plain(current) + ") - luật hoặc test gốc sai");
         }
-        BigDecimal target = switch (p.op()) {
-            case "EQ", "LTE" -> p.value().add(BigDecimal.ONE);
-            case "GTE" -> p.value().subtract(BigDecimal.ONE);
-            default -> p.value(); // LT, GT
+        // Hai phía của giới hạn (BVA): các giá trị VI PHẠM phải bị từ chối, các giá trị SÁT giới hạn phía hợp lệ phải được chấp nhận.
+        // Chỉ thử 1 phía vi phạm (như trước) bỏ lọt lỗi dạng 'total > 100' thay vì 'total != 100' (H10) và lỗi lệch biên 1 đơn vị.
+        BigDecimal value = p.value();
+        List<BigDecimal> violations = switch (p.op()) {
+            case "EQ" -> List.of(value.add(BigDecimal.ONE), value.subtract(BigDecimal.ONE));
+            case "LTE" -> List.of(value.add(BigDecimal.ONE));
+            case "GTE" -> List.of(value.subtract(BigDecimal.ONE));
+            default -> List.of(value); // LT, GT: đúng bằng giá trị là vi phạm
         };
+        List<BigDecimal> validEdges = switch (p.op()) {
+            case "LTE", "GTE" -> List.of(value);
+            case "LT" -> List.of(value.subtract(BigDecimal.ONE));
+            case "GT" -> List.of(value.add(BigDecimal.ONE));
+            default -> List.of(); // EQ: test gốc đã đúng bằng giá trị
+        };
+        List<Mutation> out = new ArrayList<>();
+        for (BigDecimal target : violations) {
+            if (!"COUNT".equals(fn) || target.signum() >= 0) {
+                out.add(aggregateMutation(p, fn, current, target, true));
+            }
+        }
+        for (BigDecimal target : validEdges) {
+            // đúng vị trí của test gốc thì không cần thử lại; đếm phần tử thì giữ tối thiểu 1 phần tử để thao tác tiếp
+            if (target.compareTo(current) != 0 && (!"COUNT".equals(fn) || target.signum() > 0)) {
+                out.add(aggregateMutation(p, fn, current, target, false));
+            }
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Mutation aggregateMutation(RuleParams p, String fn, BigDecimal current, BigDecimal target, boolean violation) {
         BigDecimal delta = target.subtract(current);
-        String label = fn + (p.item() == null ? "" : "(" + p.item() + ")") + " = " + plain(target);
-        return List.of(new Mutation(label, true, false, root -> {
+        String label = fn + (p.item() == null ? "" : "(" + p.item() + ")") + " = " + plain(target) + (violation ? "" : " (sát giới hạn, hợp lệ)");
+        return new Mutation(label, violation, false, root -> {
             Object arr = BodyPath.get(root, p.array());
             if (!(arr instanceof List<?> l) || l.isEmpty()) {
                 return false;
@@ -331,7 +358,7 @@ public class RuleTestGenerator {
             BigDecimal updated = old.add(delta);
             first.put(p.item(), isInteger(old) && isInteger(updated) ? (Object) updated.longValueExact() : (Object) updated.doubleValue());
             return true;
-        }));
+        });
     }
 
     private List<Mutation> unique(Map<String, Object> body) {

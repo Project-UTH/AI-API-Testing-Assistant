@@ -153,9 +153,51 @@ def evaluate_runs(args, log):
     log(f"Đã ghi {path}")
 
 
+def replay(args, log):
+    """Đo lại cấu hình C sau khi SỬA bộ sinh test, KHÔNG tốn token: dựng lại đúng các luật đã được AI trích (từ file extract) dưới dạng luật
+    người dùng nhập, duyệt, sinh test bằng bộ sinh hiện tại và đo. Test sinh ra giống hệt luật AI vì bộ sinh chỉ phụ thuộc mẫu + tham số."""
+    extract_data = json.loads(pathlib.Path(args.extract).read_text(encoding="utf-8"))
+    run = extract_data["runs"][0]  # 3 lượt trích cho đúng cùng 5 luật
+    target = evalm.Target(args.target_local)
+    catalog = target.catalog()
+    mutants = catalog if args.include_heldout else [m for m in catalog if not m.get("heldout")]
+    system = evalm.System(args.api, args.email, args.password)
+    target.reset()
+    hr, cand = target.login("hr1@demo.local"), target.login("cand1@demo.local")
+    pid = system.create_project(f"EVAL-RULES-REPLAY-{datetime.datetime.now():%m%d-%H%M%S}", "Đo lại C sau khi sửa bộ sinh test")
+    system.import_spec(pid, target.spec(), args.target_url)
+    system.set_target_auth(pid, hr)
+    cand_profile = system.create_profile(pid, "CANDIDATE", cand)
+    system.create_profile(pid, "HR", hr)
+    eps = system.endpoints(pid)
+    endpoint_id = {(e["method"], e["path"]): e["id"] for e in eps}
+    ids = evalm.create_baselines(system, pid, endpoint_id, cand_profile)
+    system.run(pid, list(ids.values()))
+    for r in run["rules"]:
+        method, path = r["endpoint"].split(" ", 1)
+        system.api.call("POST", f"/projects/{pid}/business-rules",
+                        {"endpointId": endpoint_id[(method, path)], "template": r["template"], "params": r["params"],
+                         "expectedStatus": r["expectedStatus"], "rationale": "dựng lại luật AI đã trích", "approve": True})
+    system.api.call("POST", f"/projects/{pid}/business-rules/generate-tests", {})
+    all_tests = system.tests(pid)
+    rule_tests = [t for t in all_tests if t.get("ruleId")]
+    context = [t for t in all_tests if t.get("source") == "MANUAL" and not t.get("ruleId") and not t.get("probeKind")]
+    log(f"  {len(run['rules'])} luật dựng lại -> {len(rule_tests)} test từ luật")
+    res = {"run": 1, "projectId": pid, "ruleTests": len(rule_tests), "generation": {"tokens": 0, "seconds": 0.0}, "configs": {
+        "C_VERIFIED": evalm.evaluate(system, target, pid, rule_tests + context, mutants, "C_VERIFIED", log, evidence_ids={t["id"] for t in rule_tests})}}
+    if not args.keep_projects:
+        system.delete_project(pid)
+    s = evalm.summarize([res], "C_VERIFIED")
+    evalm.print_summary("C_VERIFIED", s, [res])
+    path = pathlib.Path(args.out) if args.out else REPO / "docs" / "eval" / f"results-C-replay-{datetime.date.today()}.json"
+    path.write_text(json.dumps({"environment": evalm.environment_info(args), "mutantCatalog": [m for m in catalog if m in mutants],
+                                "runs": [res], "summary": {"C_VERIFIED": s}}, ensure_ascii=False, indent=2), encoding="utf-8")
+    log(f"Đã ghi {path}")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Đo trích luật bằng AI và cấu hình C")
-    ap.add_argument("phase", choices=["extract", "evaluate"])
+    ap.add_argument("phase", choices=["extract", "evaluate", "replay"])
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--token-cap", type=int, default=25000, help="trần token cứng MỖI lượt trích")
     ap.add_argument("--api", default="http://localhost:8080/api/v1")
@@ -173,6 +215,10 @@ def main():
     log = lambda msg: print(msg, flush=True)
     if args.phase == "extract":
         extract(args, log)
+    elif args.phase == "replay":
+        if not args.extract:
+            ap.error("pha replay cần --extract")
+        replay(args, log)
     else:
         if not args.extract or not args.labels:
             ap.error("pha evaluate cần --extract và --labels")
