@@ -27,7 +27,7 @@ Biến môi trường (đặt trong tệp `.env` cạnh `docker-compose.yml`): *
 ## Kiểm thử
 
 ```bash
-cd backend && ./mvnw test           # 971 test; 6 test phân quyền cần MySQL đang chạy
+cd backend && ./mvnw test           # 943 test; 6 test phân quyền cần MySQL đang chạy
 cd frontend && npx tsc -b --noEmit  # kiểm kiểu
 ```
 

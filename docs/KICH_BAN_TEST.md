@@ -139,7 +139,7 @@
 
 *Cần: hệ thống đang chạy, `mutant-api` cổng 8083 với `MUTANT_CONTROL=true`, project dựng bằng `python scripts/seed-demo-rules.py` (0 token). Bước **[TỐN TOKEN AI THẬT]** chỉ khi chạy `--with-ai` hoặc hộp thoại "Sinh test case" có tick "+ AI bổ sung checklist nghiệp vụ" (khoảng 14.000 token làn tài liệu; làn "AI gợi ý thêm" ước tính thêm 10.000-15.000, CHƯA đo).*
 
-**Test tự động (backend, không cần môi trường):** `cd backend && ./mvnw test` → 971 test pass, 0 fail (gồm 6 test phân quyền tích hợp thật cần MySQL đang chạy: `RuleAndDocumentOwnershipTest`).
+**Test tự động (backend, không cần môi trường):** `cd backend && ./mvnw test` → 943 test pass, 0 fail (gồm 6 test phân quyền tích hợp thật cần MySQL đang chạy: `RuleAndDocumentOwnershipTest`).
 
 **Tài liệu và trích luật**
 - [ ] Tải tệp `.pdf` → bị từ chối "Chỉ nhận tệp .md hoặc .txt"; tải tệp không phải UTF-8 → `DOCUMENT_ENCODING_INVALID`; tệp > 200 KB → `DOCUMENT_TOO_LARGE`; tải tệp thứ 31 → `DOCUMENT_LIMIT_REACHED` (giới hạn 30 tài liệu mỗi project).
