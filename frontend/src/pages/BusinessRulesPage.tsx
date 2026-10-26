@@ -83,13 +83,13 @@ export function BusinessRulesPage() {
     placeholderData: keepPreviousData,
   })
   const { data: approvedPage } = useQuery({
-    queryKey: ["rules", projectId, "approved-count"],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "APPROVED" }),
+    queryKey: ["rules", projectId, "approved-count", lf.filters.endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "APPROVED", endpointId: lf.filters.endpointId || undefined }),
   })
   const approvedCount = approvedPage?.totalElements ?? 0
   const { data: pendingPage } = useQuery({
-    queryKey: ["rules", projectId, "pending-count"],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "PROPOSED" }),
+    queryKey: ["rules", projectId, "pending-count", lf.filters.endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 1, status: "PROPOSED", endpointId: lf.filters.endpointId || undefined }),
   })
   const pendingCount = pendingPage?.totalElements ?? 0
 
@@ -163,7 +163,8 @@ export function BusinessRulesPage() {
     },
   })
   const generate = useMutation({
-    mutationFn: () => generateRuleTests(projectId),
+    // Đang xem checklist của 1 endpoint thì chỉ sinh test cho endpoint đó.
+    mutationFn: () => generateRuleTests(projectId, lf.filters.endpointId ? { endpointIds: [lf.filters.endpointId] } : {}),
     onSuccess: (result) => {
       setGenerated(result)
       invalidate()
@@ -231,6 +232,14 @@ export function BusinessRulesPage() {
         dùng AI, không tốn token. Để AI lập checklist: bấm "Sinh test case" ở trang Endpoint và tick "AI bổ sung checklist nghiệp vụ".
       </p>
 
+      {lf.filters.endpointId && (
+        <p role="status" className="mt-3 flex flex-wrap items-center gap-2 rounded-md bg-muted p-2 text-sm">
+          <span className="min-w-0 flex-1">Đang xem checklist của <strong>một endpoint</strong>; nút "Sinh test" chỉ sinh cho endpoint này.</span>
+          <Button type="button" size="xs" variant="outline" onClick={() => lf.setFilter("endpointId", "")}>
+            Xem checklist của cả project
+          </Button>
+        </p>
+      )}
       <AiQuestionsCard projectId={projectId} />
       <ReviewTimingBanner projectId={projectId} />
 

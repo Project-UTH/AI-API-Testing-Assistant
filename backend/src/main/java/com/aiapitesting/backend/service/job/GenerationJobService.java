@@ -257,6 +257,9 @@ public class GenerationJobService {
     }
 
     /** Pha trích checklist trong job FULL/SYSTEM. Lỗi ở pha này (AI lỗi, hết quota) KHÔNG làm hỏng kết quả test đã sinh; huỷ thì lan ra như thường. */
+    /** Trạng thái kết quả endpoint nghĩa là endpoint đã có test gốc hợp lệ (hoặc chạy thử): đủ điều kiện lập checklist nghiệp vụ. */
+    private static final java.util.Set<String> BASELINE_OK = java.util.Set.of("CONFIRMED", "ALREADY_HAS_BASELINE", "FILLED", "DRY_RUN");
+
     private RulesJobResult runRulesPhase(GenerationJob job, UUID projectId, List<UUID> endpointIds, StartGenerationJobRequest req, JobContext ctx) {
         try {
             return ruleExtraction.run(rulesRequest(job, projectId, endpointIds, req, RuleExtractionService.budgetOf(req.getRulesTokenBudget()),
@@ -336,7 +339,18 @@ public class GenerationJobService {
             }
             if (Boolean.TRUE.equals(req.getBusinessChecklist())) {
                 ctx.checkCancelled();
-                rulesResult = runRulesPhase(job, projectId, endpointIds, req, ctx);
+                // Checklist nghiệp vụ đi theo từng endpoint: chỉ lập cho endpoint đã có 1 test gốc hợp lệ Pass (vừa xác nhận hoặc có sẵn). Endpoint chưa có
+                // test gốc thì không có dữ liệu nền để sinh test từ checklist, nên bỏ qua (nói rõ ở bước giám sát) thay vì để người dùng duyệt mục không sinh được test.
+                List<UUID> eligible = results.stream().filter(r -> BASELINE_OK.contains(r.status())).map(GenerationJobResponse.EndpointResult::endpointId).toList();
+                int skipped = endpointIds.size() - eligible.size();
+                if (skipped > 0) {
+                    ctx.start(null, "Checklist nghiệp vụ", "RULES_PLAN", "SYSTEM", "Chọn endpoint để lập checklist").ok(
+                            skipped + " endpoint chưa có test gốc hợp lệ Pass nên chưa lập checklist (sinh test gốc cho chúng rồi lập checklist sau); "
+                                    + eligible.size() + " endpoint đủ điều kiện");
+                }
+                if (!eligible.isEmpty()) {
+                    rulesResult = runRulesPhase(job, projectId, eligible, req, ctx);
+                }
             }
             boolean anyHuman = results.stream().anyMatch(r -> "NEEDS_HUMAN".equals(r.status()) || "FAILED".equals(r.status()));
             boolean allFailed = !results.isEmpty() && results.stream().allMatch(r -> "FAILED".equals(r.status()));

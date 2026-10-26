@@ -14,6 +14,7 @@ import { ListEmptyState } from "@/components/shared/ListEmptyState"
 import { GenerationPlanReport } from "@/components/projects/GenerationPlanReport"
 import { AuthHintBanner } from "@/components/projects/AuthHintBanner"
 import { GenerateWizardDialog } from "@/components/generation/GenerateWizardDialog"
+import { listBusinessRules } from "@/lib/rules"
 import { getDashboardSummary } from "@/lib/dashboard"
 import { coverageRowCounts, getCoverageSummary, type CoverageEndpointRow } from "@/lib/coverage"
 import { CoverageCountsText, TestStateChip } from "@/components/coverage/TestStateChip"
@@ -35,10 +36,12 @@ interface EndpointRowProps {
   onToggleSelect: (endpointId: string, checked: boolean) => void
   onToggleExpanded: (endpointId: string) => void
   onGenerate: (endpointId: string) => void
+  /** Checklist nghiệp vụ của CHÍNH endpoint này (chờ duyệt / đã duyệt); undefined = chưa có mục nào. */
+  checklist?: { pending: number; approved: number }
 }
 
 /** 1 endpoint. memo: tick chọn / mở rộng 1 dòng hay gõ tìm kiếm không làm vẽ lại các dòng còn lại. */
-const EndpointRow = memo(function EndpointRow({ projectId, endpoint, row, selected, expanded, onToggleSelect, onToggleExpanded, onGenerate }: EndpointRowProps) {
+const EndpointRow = memo(function EndpointRow({ projectId, endpoint, row, selected, expanded, onToggleSelect, onToggleExpanded, onGenerate, checklist }: EndpointRowProps) {
   const counts = row ? coverageRowCounts(row) : null
   return (
     <li className="rounded-lg border border-border p-3">
@@ -98,6 +101,15 @@ const EndpointRow = memo(function EndpointRow({ projectId, endpoint, row, select
             baselineVerified={row?.baselineVerified}
           />
         )}
+        {checklist && (
+          <Link
+            to={`/projects/${projectId}/rules?endpointId=${endpoint.id}`}
+            className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/15"
+            title="Mở checklist nghiệp vụ của riêng endpoint này"
+          >
+            Checklist: {checklist.pending} chờ duyệt · {checklist.approved} đã duyệt
+          </Link>
+        )}
         <Button
           type="button"
           size="sm"
@@ -154,6 +166,22 @@ export function EndpointList({ projectId }: EndpointListProps) {
     () => new Map((coverage?.endpoints ?? []).map((row) => [row.endpointId, row])),
     [coverage]
   )
+  // Checklist nghiệp vụ theo từng endpoint (khoá METHOD path): số mục chờ duyệt / đã duyệt, bỏ mục đã loại.
+  const { data: rulesPage } = useQuery({
+    queryKey: ["rules", projectId, "per-endpoint-counts"],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200 }),
+  })
+  const checklistByKey = useMemo(() => {
+    const map = new Map<string, { pending: number; approved: number }>()
+    for (const r of rulesPage?.data ?? []) {
+      if (r.status !== "PROPOSED" && r.status !== "APPROVED" && r.status !== "CONFLICT") continue
+      const c = map.get(r.endpointKey) ?? { pending: 0, approved: 0 }
+      if (r.status === "APPROVED") c.approved += 1
+      else c.pending += 1
+      map.set(r.endpointKey, c)
+    }
+    return map
+  }, [rulesPage])
   const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
   const listTopRef = useRef<HTMLDivElement>(null)
 
@@ -388,6 +416,7 @@ export function EndpointList({ projectId }: EndpointListProps) {
               onToggleSelect={toggleSelect}
               onToggleExpanded={toggleExpanded}
               onGenerate={openWizardFor}
+              checklist={checklistByKey.get(`${endpoint.method.toUpperCase()} ${endpoint.path}`)}
             />
           )
         })}
