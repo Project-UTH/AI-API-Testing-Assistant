@@ -1,0 +1,62 @@
+{
+ "801a249b-31d7-41e8-aaeb-ab65b3ce3531": {
+  "correct": true,
+  "gold": "R24"
+ },
+ "494d8ca4-2f0a-46ff-8ac9-ddaef39ef2cd": {
+  "correct": true,
+  "gold": "R28"
+ },
+ "ccbc7f17-589d-424a-849b-394354e82d0a": {
+  "correct": true,
+  "gold": "R43"
+ },
+ "8ad857e6-c4f4-41e1-88fe-40c5146cbfb6": {
+  "correct": true,
+  "gold": "R47"
+ },
+ "15f8674b-8a7b-457d-a67b-33455a18097c": {
+  "correct": true,
+  "gold": "R66"
+ },
+ "6c468751-f640-40b0-97ed-df21f991741f": {
+  "correct": true,
+  "gold": "R24"
+ },
+ "95031774-55de-417f-a3ab-fd9964ecc5d3": {
+  "correct": true,
+  "gold": "R28"
+ },
+ "fd32135d-5ede-461b-85c9-111c1892c83a": {
+  "correct": true,
+  "gold": "R43"
+ },
+ "01540522-d4f0-48bd-ac99-351f10445292": {
+  "correct": true,
+  "gold": "R47"
+ },
+ "e74df1f8-20b6-44e9-9105-6f6c69547909": {
+  "correct": true,
+  "gold": "R66"
+ },
+ "c7e2e366-ad02-49d1-b76e-27fc716e8be9": {
+  "correct": true,
+  "gold": "R24"
+ },
+ "d47d3cea-52d2-4ccc-9f02-80031b6e7333": {
+  "correct": true,
+  "gold": "R28"
+ },
+ "14b27372-347c-4a58-a314-b35205ce0de8": {
+  "correct": true,
+  "gold": "R43"
+ },
+ "f54f63ab-c639-4842-bcf4-03a49fa843bf": {
+  "correct": true,
+  "gold": "R47"
+ },
+ "5759e299-12bc-4d96-8d02-3a3c966ec80e": {
+  "correct": true,
+  "gold": "R66"
+ }
+}

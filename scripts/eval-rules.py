@@ -129,7 +129,9 @@ def evaluate_runs(args, log):
         if tests_verified:
             out["configs"]["C_VERIFIED"] = evalm.evaluate(system, target, pid, tests_verified + context, mutants, "C_VERIFIED", log,
                                                           evidence_ids={t["id"] for t in tests_verified})
-        if tests_all:
+        if tests_all and not rest:
+            out["configs"]["C_ALL"] = out["configs"]["C_VERIFIED"]  # mọi luật có trích dẫn đều đúng: hai biến thể trùng nhau, khỏi đo lại
+        elif tests_all:
             out["configs"]["C_ALL"] = evalm.evaluate(system, target, pid, tests_all + context, mutants, "C_ALL", log,
                                                      evidence_ids={t["id"] for t in tests_all})
         results.append(out)
