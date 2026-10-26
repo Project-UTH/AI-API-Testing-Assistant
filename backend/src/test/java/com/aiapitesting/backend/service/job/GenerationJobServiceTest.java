@@ -105,6 +105,17 @@ class GenerationJobServiceTest {
     }
 
     @Test
+    void start_checklistOnly_needsTheBusinessChecklistOption() {
+        StartGenerationJobRequest r = request(e1.getId());
+        r.setChecklistOnly(true);
+        assertThatThrownBy(() -> service.start(projectId, r)).isInstanceOf(InvalidRequestException.class);
+        r.setBusinessChecklist(true);
+        r.setInstruction("Câu hỏi: hạn nộp? Trả lời: không quá khứ");
+        when(documents.activeDocuments(eq(project), any())).thenReturn(List.of());
+        assertThat(service.start(projectId, r).status()).isEqualTo(GenerationJob.QUEUED);
+    }
+
+    @Test
     void start_rejectsEmptySelection_foreignEndpointAndUnknownType() {
         assertThatThrownBy(() -> service.start(projectId, request())).isInstanceOf(InvalidRequestException.class);
         assertThatThrownBy(() -> service.start(projectId, null)).isInstanceOf(InvalidRequestException.class);

@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useGenerationJobs } from "@/components/generation/GenerationJobsProvider"
 import { ApiError } from "@/lib/api"
 import { pathParamNames, WRITE_METHODS } from "@/lib/baseline"
 import type { Endpoint } from "@/lib/endpoints"
@@ -78,7 +77,6 @@ function saveGroups(projectId: string, groups: Record<GroupKey, boolean>) {
  * Test gốc được chạy trên API đích nên với method ghi bắt buộc người dùng xác nhận.
  */
 export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange }: Props) {
-  const { track } = useGenerationJobs()
   const navigate = useNavigate()
   const isWrite = endpoints.some((e) => WRITE_METHODS.includes(e.method.toUpperCase()))
   const params = Array.from(new Set(endpoints.flatMap((e) => pathParamNames(e.path))))
@@ -134,7 +132,6 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
       }),
     onSuccess: (job) => {
       saveGroups(projectId, groups)
-      track(job)
       onOpenChange(false)
       // Trang chính của lần sinh test: xem tiến trình, rồi duyệt checklist và sinh test ngay tại đó.
       navigate(`/projects/${projectId}/jobs/${job.id}`)

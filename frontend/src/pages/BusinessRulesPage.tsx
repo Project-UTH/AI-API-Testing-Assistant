@@ -288,7 +288,7 @@ export function EndpointChecklistView({ endpointIdProp, embedded = false }: { en
       </p>
 
       <SystemChecklistReview projectId={projectId} endpointId={endpointId} selected={systemKeys} onChange={setSystemKeys} />
-      <AiQuestionsCard projectId={projectId} />
+      {!embedded && <AiQuestionsCard projectId={projectId} endpointId={endpointId} />}
       <ReviewTimingBanner projectId={projectId} />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">

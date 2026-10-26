@@ -43,6 +43,11 @@ public class StartGenerationJobRequest {
     private Boolean allowInferred;
     /** FULL/SYSTEM: sau khi sinh test gốc, AI lập checklist nghiệp vụ (documentIds/instruction/suggest/rulesTokenBudget áp dụng cho pha này). */
     private Boolean businessChecklist;
+    /**
+     * Chỉ lập lại checklist nghiệp vụ cho endpoint đã có test gốc Pass (dùng khi người dùng trả lời câu hỏi của AI): KHÔNG sinh/chạy lại test gốc, KHÔNG đổi
+     * phạm vi nhóm test của endpoint, không cần xác nhận ghi thật. Cần businessChecklist=true.
+     */
+    private Boolean checklistOnly;
     /** Bật làn "AI gợi ý thêm" (ngoài tài liệu, GIẢ ĐỊNH). Tự bật khi không có tài liệu lẫn chỉ dẫn. */
     private Boolean suggest;
     /**

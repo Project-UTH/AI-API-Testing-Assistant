@@ -4,10 +4,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { CheckCircle2, Loader2, XCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { CancelButton, formatElapsed, StepRow, useJobPolling } from "@/components/generation/JobItem"
+import { CancelButton, formatElapsed, StepRow, useJobPolling } from "@/components/generation/JobParts"
 import { ApiError } from "@/lib/api"
 import { cancelJob, isTerminal, JOB_STATUS_LABEL, REASON_HELP, type GenerationJob, type GenerationStep } from "@/lib/generationJobs"
 import { cn } from "@/lib/utils"
+import { QuestionsAnswerCard } from "@/components/rules/AiQuestionsCard"
 import { EndpointChecklistView } from "@/pages/BusinessRulesPage"
 
 /** Trạng thái kết quả endpoint nghĩa là đã có test gốc hợp lệ (khớp backend): đủ điều kiện duyệt checklist và sinh test. */
@@ -111,6 +112,11 @@ export function GenerationJobPage() {
         </div>
       ))}
 
+      {!active && job.rules && <ChecklistResult job={job} />}
+      {!active && job.rules && (job.rules.questions?.length ?? 0) > 0 && eligible.length > 0 && (
+        <QuestionsAnswerCard projectId={projectId} endpointIds={eligible.map((r) => r.endpointId)} questions={job.rules.questions ?? []} />
+      )}
+
       <details className="mt-4 rounded-md border border-border" open={active}>
         <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Tiến trình chi tiết ({job.steps.length} bước)</summary>
         <div className="border-t border-border px-3 py-3">
@@ -146,6 +152,53 @@ export function GenerationJobPage() {
         </section>
       )}
     </div>
+  )
+}
+
+const STOP_TEXT: Record<string, string> = {
+  BUDGET_STOPPED: "Dừng vì chạm trần token - phần đã lập được giữ lại. Tăng trần token rồi chạy lại để lập tiếp.",
+  DAILY_QUOTA: "Dừng vì hết quota token AI trong ngày - phần đã lập được giữ lại.",
+  AI_ERROR: "Dừng vì gọi AI lỗi - phần đã lập được giữ lại.",
+  WRITE_ERROR: "Dừng vì lỗi hệ thống khi lưu - phần đã lưu ở các lô trước được giữ.",
+  NO_INPUT: "Không có tài liệu hay chỉ dẫn để trích (hãy bật AI gợi ý thêm hoặc thêm tài liệu).",
+}
+
+/** Kết quả pha AI lập checklist: số mục mới, và nếu không có mục nào thì NÓI RÕ VÌ SAO (để không tưởng là hệ thống lỗi). */
+function ChecklistResult({ job }: { job: GenerationJob }) {
+  const r = job.rules
+  if (!r) return null
+  const created = r.fromDocument + r.fromInstruction + r.inferred + r.conflicts
+  const reasons: string[] = []
+  if (r.rejectedAsDuplicateOfSpec > 0) reasons.push(`${r.rejectedAsDuplicateOfSpec} mục AI đề xuất trùng ràng buộc spec đã có nên bị loại tự động (xem ở tab "Đã loại" của màn duyệt bên dưới)`)
+  if (r.skippedExisting > 0) reasons.push(`${r.skippedExisting} mục đã có từ trước`)
+  const dropped = Object.values(r.dropped ?? {}).reduce((a, b) => a + b, 0)
+  if (dropped > 0) reasons.push(`${dropped} mục bị bộ kiểm chứng loại (sai endpoint/mẫu/field)`)
+  if ((r.questions?.length ?? 0) > 0) reasons.push(`AI có ${r.questions?.length} câu hỏi về chỗ tài liệu chưa nói rõ (xem bên dưới, trả lời để AI lập thêm)`)
+  return (
+    <section aria-label="Kết quả AI lập checklist" className="mt-4 rounded-md border border-border p-3 text-sm">
+      <h3 className="font-semibold">AI lập checklist nghiệp vụ</h3>
+      <p className="mt-1">
+        {created > 0
+          ? `Đã đề xuất ${created} mục mới: ${r.fromDocument} có trích dẫn tài liệu, ${r.fromInstruction} từ chỉ dẫn, ${r.inferred} GIẢ ĐỊNH${r.conflicts > 0 ? `, ${r.conflicts} mâu thuẫn spec` : ""}. Tất cả đang chờ bạn duyệt.`
+          : "AI không đề xuất được mục mới nào cho lần này."}
+      </p>
+      {created === 0 && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Điều này không có nghĩa hệ thống lỗi: tài liệu/spec có thể chưa nêu ràng buộc nghiệp vụ nào ngoài những gì spec đã khai cho endpoint này.
+        </p>
+      )}
+      {reasons.length > 0 && (
+        <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
+          {reasons.map((t) => (
+            <li key={t}>{t}</li>
+          ))}
+        </ul>
+      )}
+      {r.stoppedReason && <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">{STOP_TEXT[r.stoppedReason] ?? r.stoppedReason}</p>}
+      {r.suggestStoppedReason && (
+        <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">AI gợi ý thêm: {STOP_TEXT[r.suggestStoppedReason] ?? r.suggestStoppedReason}</p>
+      )}
+    </section>
   )
 }
 

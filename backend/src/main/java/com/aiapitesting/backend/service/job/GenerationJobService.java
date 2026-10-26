@@ -135,6 +135,9 @@ public class GenerationJobService {
             if (!hasAnyGroup(request)) {
                 throw new InvalidRequestException("Phải chọn ít nhất 1 nhóm test để sinh (Positive/Negative/Boundary/Security)");
             }
+            if (Boolean.TRUE.equals(request.getChecklistOnly()) && !Boolean.TRUE.equals(request.getBusinessChecklist())) {
+                throw new InvalidRequestException("Chế độ chỉ lập lại checklist cần bật checklist nghiệp vụ");
+            }
             if (Boolean.TRUE.equals(request.getBusinessChecklist())) {
                 validateRulesInput(project, request);
             }
@@ -343,9 +346,23 @@ public class GenerationJobService {
         String error = null;
         RulesJobResult rulesResult = null;
         try {
-            for (UUID endpointId : orderForChaining(endpointIds)) {
-                ctx.checkCancelled();
-                results.add(runEndpoint(job, projectId, endpointId, req, ctx));
+            if (Boolean.TRUE.equals(req.getChecklistOnly())) {
+                // Chỉ lập lại checklist: dùng test gốc Pass có sẵn của từng endpoint, không sinh/chạy lại gì khác.
+                for (UUID endpointId : endpointIds) {
+                    ctx.checkCancelled();
+                    Endpoint endpoint = endpointRepository.findById(endpointId).orElseThrow();
+                    String label = endpoint.getMethod() + " " + endpoint.getPath();
+                    boolean hasBaseline = gapFill.hasConfirmedBaseline(projectId, endpointId);
+                    ctx.start(endpointId, label, "PRECHECK", "SYSTEM", "Kiểm tra test gốc có sẵn").ok(
+                            hasBaseline ? "Đã có test gốc Pass: giữ nguyên, chỉ lập lại checklist nghiệp vụ" : "Chưa có test gốc Pass nên chưa lập checklist");
+                    results.add(new GenerationJobResponse.EndpointResult(endpointId, label, hasBaseline ? "ALREADY_HAS_BASELINE" : "NEEDS_HUMAN",
+                            hasBaseline ? null : "NO_BASELINE", hasBaseline ? "Dùng test gốc có sẵn" : "Chưa có test gốc Pass", 0, 0));
+                }
+            } else {
+                for (UUID endpointId : orderForChaining(endpointIds)) {
+                    ctx.checkCancelled();
+                    results.add(runEndpoint(job, projectId, endpointId, req, ctx));
+                }
             }
             if (Boolean.TRUE.equals(req.getBusinessChecklist())) {
                 ctx.checkCancelled();

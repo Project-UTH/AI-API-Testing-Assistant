@@ -96,6 +96,8 @@ export interface StartJobBody {
   includeBusiness?: boolean
   /** FULL/SYSTEM: sau khi sinh test gốc, AI lập checklist nghiệp vụ để bạn duyệt. */
   businessChecklist?: boolean
+  /** Chỉ lập lại checklist cho endpoint đã có test gốc Pass (dùng khi trả lời câu hỏi của AI): không sinh/chạy lại test gốc. */
+  checklistOnly?: boolean
   /** Bật làn "AI gợi ý thêm" (GIẢ ĐỊNH); backend tự bật khi không có tài liệu lẫn chỉ dẫn. */
   suggest?: boolean
   rulesTokenBudget?: number
