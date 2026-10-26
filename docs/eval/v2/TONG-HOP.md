@@ -14,9 +14,10 @@ Nhóm lỗi nghiệp vụ (BUSINESS_RULE) bằng 0/12 ở cấu hình A: checkli
 
 ## 2. Cấu hình B (AI viết test nghiệp vụ, đường cũ vẫn giữ trong backend)
 
-- 3 lượt, mutant-api: gán đúng **1/57 (2%)** ở cả 3 lượt (held-out 0/15), phát hiện 24%, **Fail giả 46,4%**.
+- 3 lượt, mutant-api: gán đúng **6/57 (11%)** (dev 5/42, held-out 1/15) ở cả 3 lượt, phát hiện **54%** (31/57), Fail giả trên bản chuẩn **18,8%** (A: 1,5%).
+- Biến thể "C xấp xỉ" (chỉ phần test do AI nghiệp vụ viết, 64 test/lượt): gán đúng 1/57, phát hiện 24%, Fail giả 46,4%.
 - Tốn **289.025 token** cho 3 lượt (TB 96.342 token/lượt, 215 giây/lượt).
-- Kết luận như bản cũ: AI viết test trực tiếp tốn token, tăng Fail giả và không hơn cấu hình A về lỗi nghiệp vụ.
+- Kết luận như bản cũ: B phát hiện nhiều hơn A (54% so với 42%) nhưng **không gán đúng thêm lỗi nào** (6/57 như A), nhóm lỗi nghiệp vụ vẫn 0/12, Fail giả tăng từ 1,5% lên 18,8%, và tốn ~96.000 token mỗi lượt.
 
 ## 3. Cấu hình C (luật nghiệp vụ trích từ tài liệu, người duyệt)
 

@@ -13,6 +13,8 @@ Tài liệu này được viết nhiều đợt, nên có 3 bộ số cùng tồ
 | **Mục 7B (chuẩn)** | 42 lỗi dev M01-M42 | 2026-10-26 | 5 / 21 | 5 / 25 | 1,5% |
 | **Mục 7B (chuẩn)** | 15 lỗi held-out H01-H15 | 2026-10-26 | 1 / 3 | 1 / 6 | (cùng bản chuẩn) |
 
+**Đo lại ngày 2026-10-26 trên hệ thống mới (57 lỗi) cho đúng các số của dòng "Mục 7B" ở trên:** dev A 5/21 và B 5/25, held-out A 1/3 và B 1/6, Fail giả A 1,5%; B tốn 96.342 token mỗi lượt (289.025 cho 3 lượt), Fail giả B 18,8%.
+
 Thay đổi từ 14 lên 15 và từ 4,3% xuống 1,5% nhiều khả năng do các cải tiến G1-G4 (luật lệch spec 2xx, nhãn độ tin, probe độ bền) và sửa nhận diện đăng nhập; chưa tách riêng đóng góp từng thay đổi.
 
 **Hai thuật ngữ, không được lẫn:** **"phát hiện"** = có ít nhất 1 test Pass trên bản chuẩn chuyển Fail khi bật đúng 1 lỗi (kể cả khi nhãn nguyên nhân chưa chắc); **"đúng nhãn"** = test Fail đó được gán nhãn nguyên nhân là lỗi của API. Độ lệch chuẩn bằng 0 ở cấu hình A vì A tất định (cùng đầu vào cho cùng kết quả), **không phải bằng chứng thống kê**.
@@ -346,7 +348,7 @@ Trong 13 Fail còn lại của shop, 8 là bất đồng spec-API có thật (m�
 - **Mô phỏng người duyệt**: coi như người duyệt cẩn thận (duyệt đúng các luật đúng). Người thật có thể duyệt sai; E2 chưa đo.
 - **Held-out không hoàn toàn độc lập**: do AI cùng họ viết, rút từ cùng 86 luật chuẩn với tài liệu SRS, và 5/15 chồng bộ M. Phép đo trích luật chỉ trên một tài liệu và một hệ thống (API tuyển dụng); tài liệu do AI viết nên có thể dễ trích hơn tài liệu thật.
 - **Cỡ mẫu nhỏ** (15 lỗi held-out, 3 lượt giống hệt nhau), không có kiểm định thống kê.
-- **Cấu hình B đo lại cho kết quả gần như cũ** (Fail giả 19,8% so với 23,2%) nên số liệu B cũ vẫn đúng; thay đổi nhỏ: M09 từ bỏ lọt thành nghi ngờ, M11 từ nghi ngờ thành đúng.
+- **Cấu hình B đo lại cho kết quả gần như cũ** (Fail giả 19,8% rồi 18,8% khi đo lại trên hệ thống mới, so với 23,2%) nên số liệu B cũ vẫn đúng; thay đổi nhỏ: M09 từ bỏ lọt thành nghi ngờ, M11 từ nghi ngờ thành đúng.
 
 **Điều tra H10 (2026-10-26): vì sao test sinh từ luật R66 bỏ lọt lỗi.** Luật "tổng trọng số = 100" được trích đúng và cho đúng 1 test: đổi tổng thành 101 (`RuleTestGenerator.arrayAggregate`, nhánh `EQ`/`LTE` chỉ tạo `giá trị + 1`). Mutant H10 viết `total > 100` thay vì `total != 100`: tổng 101 vẫn bị từ chối nên test Pass, còn tổng nhỏ hơn 100 lại lọt. Tái hiện trực tiếp trên API (0 token): bản chuẩn trả 200 / 400 / 400 và H10 trả 200 / 400 / **200** cho tổng 100 / 101 / 99. Kết luận: **lỗi nằm ở bộ sinh test, không phải ở AI hay ở luật**: với luật "bằng" chỉ thử một phía vi phạm. Cùng kiểu thiếu sót có thể có ở `COUNT` (số phần tử) và ở biên "đúng bằng giá trị giới hạn" của các phép ≤ / ≥. Cách sửa dự kiến: với `EQ` sinh cả hai phía (giá trị − 1 và + 1), với `LTE`/`GTE` thêm test "đúng bằng giới hạn phải được chấp nhận".
 **Đã sửa sau đó (cùng ngày), ghi rõ là cải tiến SAU KHI thấy kết quả held-out.** `RuleTestGenerator.arrayAggregate` nay thử cả hai phía của giới hạn: luật "bằng" sinh cả tổng − 1 và + 1; luật ≤ / ≥ / < / > thêm test "sát giới hạn phía hợp lệ phải được chấp nhận" (tổng và số phần tử). Có 3 test đơn vị mới (944 test backend pass). Đo lại cấu hình C bằng đúng 5 luật AI đã trích (dựng lại dưới dạng luật nhập tay, vì bộ sinh chỉ phụ thuộc mẫu + tham số), 0 token, `docs/eval/results-C-replay-2026-10-26.json`:
@@ -360,7 +362,7 @@ Trong 13 Fail còn lại của shop, 8 là bất đồng spec-API có thật (m�
 
 **Cách đọc cho đúng:** (1) bộ dev không có lỗi nào mới được bắt, nên cải tiến này chưa có bằng chứng ngoài tập; chỉ có bằng chứng là không làm hỏng và chặt hơn ở M25. (2) H10 giờ được bắt, nhưng H10 là lỗi đã dùng để phát hiện thiếu sót nên **không còn là mẫu độc lập**: không đưa vào số "held-out mới" ở bảng 7B (các bảng đó giữ nguyên số đo TRƯỚC khi sửa). (3) Chỉ 1 trong 15 lỗi held-out chịu ảnh hưởng.
 
-Đo lại ngày 2026-10-26 trên hệ thống mới: cấu hình A vẫn 6/57 (held-out 1/15); cấu hình B 1/57, Fail giả 46,4%, 289.025 token cho 3 lượt; cấu hình C held-out 2/15, trích luật 44.212 token cho 3 lượt. Gợi ý thường (3 lượt, chỉ từ spec): đúng 15/17 mục (88%), 11.771 token. Gợi ý rộng: đúng 15/31 mục (48%), 17.050 token.
+Đo lại ngày 2026-10-26 trên hệ thống mới: cấu hình A vẫn 6/57 (held-out 1/15); cấu hình B 6/57 đúng nhãn (như A), phát hiện 54% so với 42% của A, Fail giả 18,8%, 289.025 token cho 3 lượt (biến thể chỉ AI nghiệp vụ: 1/57, Fail giả 46,4%); cấu hình C held-out 2/15, trích luật 44.212 token cho 3 lượt. Gợi ý thường (3 lượt, chỉ từ spec): đúng 15/17 mục (88%), 11.771 token. Gợi ý rộng: đúng 15/31 mục (48%), 17.050 token.
 
 ## 7C. Luồng "AI lập checklist theo từng endpoint" (2026-10-26, G3.6-G3.12): số đo và giới hạn
 
@@ -370,13 +372,15 @@ Trên API tuyển dụng thật: 47.396 token, 1 lỗi thật (401 thay vì 400)
 |---|---|---|
 | Làn "AI gợi ý thêm", chỉ spec (mutant-api), lượt đầu | 3.782 | 5/6 mục đúng, mã gợi ý 422 trong khi API trả 400 |
 | Như trên sau khi đổi prompt (mặc định 400), 3 lượt | 4.053 / 3.803 / 3.924 | 5/5 mục đúng ở cả 3 lượt, mã 400; mục sai 2, 0, 0 |
+| **Đo lại trên hệ thống mới: gợi ý thường, 3 lượt** | 3.942 / 3.938 / 3.891 | 15/17 mục đúng (88%); sai: consent → coverLetter |
+| **Đo lại: gợi ý rộng, 3 lượt** | 4.800 / 6.397 / 5.853 | 15/31 mục đúng (48%): cùng 5 luật đúng, thêm các mục sai về salaryCurrency, nhóm lương, tên tiêu chí |
 | SRS + gợi ý thêm (mutant-api) | 18.408 | 5/5 mục có trích dẫn đúng; 1 câu hỏi trùng "vấn đề mở" của SRS |
 | Trọn luồng qua giao diện (10 endpoint, SRS) | 18.209 | 5 mục duyệt → 10 test; chuẩn 11/11 Pass; M23, M24, M25 đều bị bắt |
 | **API tuyển dụng của nhóm khác, SRS thật, 22 endpoint** | 47.396 | 4 mục có trích dẫn (3 sai nghĩa), các mục GIẢ ĐỊNH và câu hỏi còn lại; **1 lỗi thật** (401 thay vì 400); không có đáp án |
 
 Ba phát hiện về sai sót của hệ thống trong lúc đo (đã sửa): (1) mã gợi ý 422 lệch với API 400 → prompt mặc định 400, mã chỉ điền sẵn; (2) một lần chạy tốn 51.892 token vì AI sửa 3 lần một lỗi nó không sửa được (API trả 404 `COMPANY_NOT_FOUND`) → dừng sớm khi 404 mã `*_NOT_FOUND` ở endpoint không có tham số, test phụ chỉ sửa tối đa 1 lần; (3) nối chuỗi vào test POST nháp chưa bao giờ Pass làm test sau bị chặn → chỉ nối vào test đã khoá hoặc đã Pass, tự dọn test nháp cũ.
 
-Giới hạn: bộ kiểm chứng trích dẫn không bắt được đoạn trích đúng chữ nhưng sai nghĩa (2/5 trên SRS thật); chỉ 10 mẫu luật; chưa đo người duyệt thật (E2); prompt mã gợi ý được chỉnh sau khi thấy kết quả.
+Giới hạn: bộ kiểm chứng trích dẫn không bắt được đoạn trích đúng chữ nhưng sai nghĩa (3/4 trên SRS thật ở lần đo lại; 2/5 ở lần đo đầu); chỉ 10 mẫu luật; chưa đo người duyệt thật (E2); prompt mã gợi ý được chỉnh sau khi thấy kết quả.
 
 ## 8. Chạy lại
 
