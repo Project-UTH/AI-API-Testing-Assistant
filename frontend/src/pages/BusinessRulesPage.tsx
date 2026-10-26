@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { useParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Plus, Sparkles, Wand2 } from "lucide-react"
+import { Loader2, Plus, Sparkles } from "lucide-react"
 
+import { listEndpoints } from "@/lib/endpoints"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -48,11 +49,38 @@ const PAGE_SIZE = 50
  * Tab "Nghiệp vụ" (17q G3): checklist nghiệp vụ theo endpoint - hệ thống đề xuất (cặp min/max), bạn tự nhập hoặc duyệt/loại; mục ĐÃ DUYỆT mới
  * được sinh test (tất định, 0 token). Danh sách nhóm theo endpoint; mục bị loại giữ lại (ẩn khi lọc) để đo độ chính xác.
  */
+/**
+ * Checklist nghiệp vụ là của TỪNG ENDPOINT (chỉ lập khi bạn bấm "Sinh test case" cho endpoint đó), không có danh sách chung cho cả hệ thống.
+ * Trang này chỉ mở được từ 1 endpoint (/projects/:id/rules?endpointId=...): không có endpointId thì hướng người dùng về danh sách endpoint.
+ */
 export function BusinessRulesPage() {
+  const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
+  if (!searchParams.get("endpointId")) {
+    return (
+      <div className="max-w-2xl">
+        <h2 className="text-lg font-semibold">Checklist nghiệp vụ</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Checklist nghiệp vụ thuộc về <strong>từng endpoint</strong>: AI chỉ lập checklist cho endpoint bạn bấm "Sinh test case" (tick "AI bổ sung checklist nghiệp vụ"), không
+          có danh sách chung cho cả hệ thống. Hãy mở checklist từ dòng endpoint.
+        </p>
+        <Link to={`/projects/${id}`} className="mt-3 inline-block text-sm text-primary underline underline-offset-4">
+          Về danh sách endpoint
+        </Link>
+      </div>
+    )
+  }
+  return <EndpointChecklistView />
+}
+
+function EndpointChecklistView() {
   const { id } = useParams<{ id: string }>()
   const projectId = id!
   const queryClient = useQueryClient()
   const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
+  const { data: endpointsPage } = useQuery({ queryKey: ["endpoints", projectId], queryFn: () => listEndpoints(projectId) })
+  const thisEndpoint = (endpointsPage?.data ?? []).find((e) => e.id === lf.filters.endpointId)
+  const endpointLabel = thisEndpoint ? `${thisEndpoint.method} ${thisEndpoint.path}` : "endpoint"
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<BusinessRule | null>(null)
   const [rejecting, setRejecting] = useState<BusinessRule | null>(null)
@@ -130,20 +158,20 @@ export function BusinessRulesPage() {
   })
   // Mục có trích dẫn = nguồn tài liệu hoặc chỉ dẫn: lọc ở backend để không bị 200 mục GIẢ ĐỊNH/hệ thống đứng trước che mất.
   const { data: docPage } = useQuery({
-    queryKey: ["rules", projectId, "cited-proposed", "DOC"],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "DOC" }),
+    queryKey: ["rules", projectId, "cited-proposed", "DOC", lf.filters.endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "DOC", endpointId: lf.filters.endpointId || undefined }),
   })
   const { data: instructionPage } = useQuery({
-    queryKey: ["rules", projectId, "cited-proposed", "INSTRUCTION"],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INSTRUCTION" }),
+    queryKey: ["rules", projectId, "cited-proposed", "INSTRUCTION", lf.filters.endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INSTRUCTION", endpointId: lf.filters.endpointId || undefined }),
   })
   const citedProposed = useMemo(
     () => [...(docPage?.data ?? []), ...(instructionPage?.data ?? [])].filter((r) => r.quote !== null),
     [docPage, instructionPage]
   )
   const { data: guessPage } = useQuery({
-    queryKey: ["rules", projectId, "guess-proposed"],
-    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INFERRED" }),
+    queryKey: ["rules", projectId, "guess-proposed", lf.filters.endpointId],
+    queryFn: () => listBusinessRules(projectId, { page: 0, size: 200, status: "PROPOSED", source: "INFERRED", endpointId: lf.filters.endpointId || undefined }),
   })
   const guessProposed = useMemo(() => (guessPage?.data ?? []).filter((r) => r.quote === null), [guessPage])
   const revert = useMutation({
@@ -242,24 +270,19 @@ export function BusinessRulesPage() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold">Checklist nghiệp vụ</h2>
+      <Link to={`/projects/${projectId}`} className="text-xs text-primary underline underline-offset-4">
+        ← Về danh sách endpoint
+      </Link>
+      <h2 className="mt-2 text-lg font-semibold">
+        Checklist nghiệp vụ: <span className="font-mono text-base">{endpointLabel}</span>
+      </h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        AI chỉ <em>đề xuất</em> mục checklist (từ tài liệu bạn gửi và/hoặc gợi ý thêm, nhãn GIẢ ĐỊNH); bạn duyệt, rồi hệ thống sinh test từ mục đã duyệt - không
-        dùng AI, không tốn token. Để AI lập checklist: bấm "Sinh test case" ở trang Endpoint và tick "AI bổ sung checklist nghiệp vụ".
+        Checklist của riêng endpoint này. AI chỉ <em>đề xuất</em> (từ tài liệu bạn gửi và/hoặc gợi ý thêm, nhãn GIẢ ĐỊNH); bạn xem cả checklist của hệ thống và của AI, duyệt,
+        rồi hệ thống mới sinh test từ mục đã chọn (0 token). Để AI lập checklist: bấm "Sinh test case" cho endpoint này và tick "AI bổ sung checklist nghiệp vụ".
       </p>
 
-      {lf.filters.endpointId && (
-        <p role="status" className="mt-3 flex flex-wrap items-center gap-2 rounded-md bg-muted p-2 text-sm">
-          <span className="min-w-0 flex-1">Đang xem checklist của <strong>một endpoint</strong>; nút "Sinh test" chỉ sinh cho endpoint này.</span>
-          <Button type="button" size="xs" variant="outline" onClick={() => lf.setFilter("endpointId", "")}>
-            Xem checklist của cả project
-          </Button>
-        </p>
-      )}
-      {lf.filters.endpointId && (
-        <SystemChecklistReview projectId={projectId} endpointId={lf.filters.endpointId} selected={systemKeys} onChange={setSystemKeys} />
-      )}
-      {!lf.filters.endpointId && <AiQuestionsCard projectId={projectId} />}
+      <SystemChecklistReview projectId={projectId} endpointId={lf.filters.endpointId} selected={systemKeys} onChange={setSystemKeys} />
+      <AiQuestionsCard projectId={projectId} />
       <ReviewTimingBanner projectId={projectId} />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -273,10 +296,6 @@ export function BusinessRulesPage() {
         >
           <Plus className="h-3.5 w-3.5" />
           Thêm mục
-        </Button>
-        <Button type="button" size="sm" variant="outline" disabled={detect.isPending} onClick={() => detect.mutate()}>
-          {detect.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-          Hệ thống phát hiện mục
         </Button>
         <Button
           type="button"
@@ -387,7 +406,7 @@ export function BusinessRulesPage() {
       {data && rules.length === 0 && (
         <ListEmptyState
           filtered={lf.activeCount > 0}
-          emptyText='Chưa có checklist nghiệp vụ nào. Bấm "Hệ thống phát hiện mục" để lấy đề xuất từ spec, hoặc "Thêm mục" để tự nhập.'
+          emptyText='Chưa có checklist nghiệp vụ nào. Bấm "Sinh test case" cho endpoint này (tick "AI bổ sung checklist nghiệp vụ") để AI lập checklist, hoặc "Thêm mục" để tự nhập.'
           filteredText="Không có mục nào khớp bộ lọc."
           onReset={lf.reset}
         />

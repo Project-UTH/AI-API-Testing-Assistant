@@ -101,15 +101,13 @@ const EndpointRow = memo(function EndpointRow({ projectId, endpoint, row, select
             baselineVerified={row?.baselineVerified}
           />
         )}
-        {checklist && (
-          <Link
-            to={`/projects/${projectId}/rules?endpointId=${endpoint.id}`}
-            className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/15"
-            title="Mở checklist nghiệp vụ của riêng endpoint này"
-          >
-            Checklist: {checklist.pending} chờ duyệt · {checklist.approved} đã duyệt
-          </Link>
-        )}
+        <Link
+          to={`/projects/${projectId}/rules?endpointId=${endpoint.id}`}
+          className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/15"
+          title="Mở checklist (hệ thống + nghiệp vụ AI) của riêng endpoint này để duyệt và sinh test"
+        >
+          {checklist ? `Checklist: ${checklist.pending} chờ duyệt · ${checklist.approved} đã duyệt` : "Checklist"}
+        </Link>
         <Button
           type="button"
           size="sm"

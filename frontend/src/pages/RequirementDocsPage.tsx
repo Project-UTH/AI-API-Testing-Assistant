@@ -9,6 +9,7 @@ import {
   deleteRequirementDoc,
   getRequirementDocContent,
   getRequirementDocUsage,
+  setRequirementDocEndpoints,
   listRequirementDocs,
   MAX_DOC_BYTES,
   MAX_DOCS,
@@ -16,6 +17,7 @@ import {
   type RequirementDocument,
   type RequirementDocUsage,
 } from "@/lib/requirementDocs"
+import { listEndpoints } from "@/lib/endpoints"
 import { cn } from "@/lib/utils"
 
 function errorText(error: unknown): string {
@@ -48,6 +50,15 @@ export function RequirementDocsPage() {
     queryFn: () => getRequirementDocContent(projectId, current!.id),
     enabled: current !== null,
     staleTime: 60_000,
+  })
+
+  const { data: endpointsPage } = useQuery({ queryKey: ["endpoints", projectId], queryFn: () => listEndpoints(projectId) })
+  const endpointKeys = useMemo(() => (endpointsPage?.data ?? []).map((e) => `${e.method.toUpperCase()} ${e.path}`), [endpointsPage])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerFilter, setPickerFilter] = useState("")
+  const saveEndpoints = useMutation({
+    mutationFn: (input: { docId: string; keys: string[] }) => setRequirementDocEndpoints(projectId, input.docId, input.keys),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["requirement-docs", projectId] }),
   })
 
   const refresh = () => {
@@ -152,6 +163,11 @@ export function RequirementDocsPage() {
                     <span className="mt-1 block text-xs text-muted-foreground">
                       {(d.sizeBytes / 1000).toFixed(1)} KB · {d.lineCount} dòng · tải {formatDate(d.createdAt)}
                     </span>
+                    {d.forEndpoints.length > 0 && (
+                      <span className="mt-1 block truncate text-xs text-muted-foreground" title={d.forEndpoints.join(", ")}>
+                        Viết cho: {d.forEndpoints.length === 1 ? d.forEndpoints[0] : `${d.forEndpoints.length} endpoint`}
+                      </span>
+                    )}
                     <span className={cn("mt-1.5 inline-block rounded-full px-2 py-0.5 text-xs", used.length > 0 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground")}>
                       {used.length > 0 ? `Đã dùng cho ${used.length} endpoint` : "Chưa dùng"}
                     </span>
@@ -177,6 +193,54 @@ export function RequirementDocsPage() {
                     Xoá
                   </Button>
                 </header>
+                <div className="border-b border-border px-3 py-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">Tài liệu này viết cho:</span>
+                    {current.forEndpoints.length === 0 && <span className="text-muted-foreground">chưa khai báo (tài liệu chung, mặc định tick cho mọi endpoint)</span>}
+                    {current.forEndpoints.map((k) => (
+                      <span key={k} className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-primary">
+                        {k}
+                      </span>
+                    ))}
+                    <Button type="button" size="xs" variant="outline" aria-expanded={pickerOpen} onClick={() => { setPickerOpen(!pickerOpen); setPickerFilter("") }}>
+                      {pickerOpen ? "Thu gọn" : "Chọn endpoint…"}
+                    </Button>
+                  </div>
+                  <p className="mt-1 text-muted-foreground">Khi bạn sinh test cho endpoint đó, tài liệu này được tick sẵn; vẫn đổi được lúc sinh. Không ép buộc.</p>
+                  {pickerOpen && (
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      <input
+                        aria-label="Lọc endpoint"
+                        placeholder="Lọc endpoint…"
+                        value={pickerFilter}
+                        onChange={(e) => setPickerFilter(e.target.value)}
+                        className="h-7 w-56 rounded-md border border-input bg-transparent px-2 text-xs"
+                      />
+                      <ul className="max-h-48 overflow-y-auto rounded-md border border-border p-1.5">
+                        {endpointKeys
+                          .filter((k) => k.toLowerCase().includes(pickerFilter.trim().toLowerCase()))
+                          .map((k) => {
+                            const on = current.forEndpoints.includes(k)
+                            return (
+                              <li key={k}>
+                                <label className="flex items-center gap-2 py-0.5 font-mono">
+                                  <input
+                                    type="checkbox"
+                                    checked={on}
+                                    disabled={saveEndpoints.isPending}
+                                    onChange={(e) =>
+                                      saveEndpoints.mutate({ docId: current.id, keys: e.target.checked ? [...current.forEndpoints, k] : current.forEndpoints.filter((x) => x !== k) })
+                                    }
+                                  />
+                                  {k}
+                                </label>
+                              </li>
+                            )
+                          })}
+                      </ul>
+                    </div>
+                  )}
+                </div>
                 {loadingContent && <p className="p-3 text-sm text-muted-foreground">Đang tải nội dung...</p>}
                 {content && (
                   <pre className="max-h-[60vh] overflow-auto p-3 font-sans text-sm leading-relaxed whitespace-pre-wrap">{content.content}</pre>

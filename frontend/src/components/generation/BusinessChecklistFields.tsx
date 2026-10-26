@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, FileText, Loader2, Trash2, Upload } from "lucide-react"
 
@@ -26,6 +26,8 @@ export interface ChecklistInput {
    * (tài liệu không có khoá = dùng cho mọi endpoint, nên tài liệu mới tải lên mặc định áp dụng cho tất cả endpoint đang chọn).
    */
   assign: Record<string, string[]> | null
+  /** Đã tự tick/bỏ tick tài liệu theo "viết cho endpoint nào" của lần mở hộp thoại này (chỉ làm 1 lần để không ghi đè lựa chọn của bạn). */
+  autoApplied: boolean
 }
 
 export const EMPTY_CHECKLIST_INPUT: ChecklistInput = {
@@ -35,6 +37,7 @@ export const EMPTY_CHECKLIST_INPUT: ChecklistInput = {
   budget: String(DEFAULT_RULES_BUDGET),
   consent: false,
   assign: null,
+  autoApplied: false,
 }
 
 export interface EndpointRef {
@@ -83,6 +86,17 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
   const [filter, setFilter] = useState("")
 
   const { data: docs = [], isLoading } = useQuery({ queryKey: ["requirement-docs", projectId], queryFn: () => listRequirementDocs(projectId) })
+  const endpointKeys = endpoints.map((e) => `${e.method.toUpperCase()} ${e.path}`)
+  // Tài liệu đã khai báo "viết cho endpoint X": chỉ tick sẵn khi sinh test cho X; tài liệu chung (chưa khai báo) vẫn tick sẵn. Làm 1 lần khi mở hộp thoại.
+  useEffect(() => {
+    if (value.autoApplied || isLoading) return
+    const excluded = new Set(value.excluded)
+    for (const d of docs) {
+      if (d.forEndpoints.length > 0 && !d.forEndpoints.some((k) => endpointKeys.includes(k))) excluded.add(d.id)
+    }
+    onChange({ ...value, excluded, autoApplied: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs, isLoading, value.autoApplied])
   const selected = docs.filter((d) => !value.excluded.has(d.id))
   const docIds = docs.map((d) => d.id)
   const withoutDocs = endpoints.filter((e) => docsForEndpoint(value, docIds, e.id).length === 0)
@@ -163,6 +177,11 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
                   <span className="shrink-0 text-muted-foreground">
                     {(d.sizeBytes / 1000).toFixed(1)} KB · {d.lineCount} dòng
                   </span>
+                  {d.forEndpoints.length > 0 && (
+                    <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary" title={d.forEndpoints.join(", ")}>
+                      viết cho {d.forEndpoints.length === 1 ? d.forEndpoints[0] : `${d.forEndpoints.length} endpoint`}
+                    </span>
+                  )}
                 </Label>
                 <Button
                   type="button"
@@ -192,7 +211,20 @@ export function BusinessChecklistFields({ projectId, value, onChange, endpoints 
           <Label className="items-start gap-2 text-xs font-normal">
             <Checkbox
               checked={value.assign !== null}
-              onCheckedChange={(c) => onChange({ ...value, assign: c === true ? {} : null })}
+              onCheckedChange={(c) =>
+                onChange({
+                  ...value,
+                  // Bật: mỗi tài liệu đã khai báo "viết cho endpoint X" mặc định chỉ gán cho X (nếu X có trong lần sinh này); tài liệu chung gán cho tất cả.
+                  assign:
+                    c === true
+                      ? Object.fromEntries(
+                          docs
+                            .filter((d) => d.forEndpoints.some((k) => endpointKeys.includes(k)))
+                            .map((d) => [d.id, endpoints.filter((e) => d.forEndpoints.includes(`${e.method.toUpperCase()} ${e.path}`)).map((e) => e.id)])
+                        )
+                      : null,
+                })
+              }
               className="mt-0.5"
             />
             <span>
