@@ -135,6 +135,41 @@
 
 ---
 
+## 16. Luật nghiệp vụ, độ bao phủ theo endpoint, probe tất định (17q, thêm 2026-10-26)
+
+*Cần: hệ thống đang chạy, `mutant-api` cổng 8083 với `MUTANT_CONTROL=true`, project dựng bằng `python scripts/seed-demo-rules.py` (0 token). Bước **[TỐN TOKEN AI THẬT]** chỉ khi chạy `--with-ai` hoặc nút "AI trích luật" (khoảng 14.000 token).*
+
+**Test tự động (backend, không cần môi trường):** `cd backend && ./mvnw test` → 944 test pass, 0 fail (gồm 6 test phân quyền tích hợp thật cần MySQL đang chạy: `RuleAndDocumentOwnershipTest`).
+
+**Tài liệu và trích luật**
+- [ ] Tải tệp `.pdf` → bị từ chối "Chỉ nhận tệp .md hoặc .txt"; tải tệp không phải UTF-8 → `DOCUMENT_ENCODING_INVALID`; tệp > 200 KB → `DOCUMENT_TOO_LARGE`; tải tệp thứ 6 → `DOCUMENT_LIMIT_REACHED`.
+- [ ] Tải tệp có dòng `api_key = ...` → cảnh báo dòng số mấy, KHÔNG hiện giá trị; kiểm prompt gửi AI không chứa giá trị (che trước khi gửi).
+- [ ] Tải lại tệp trùng tên → bản cũ bị thay, luật từ bản cũ chuyển "Lỗi thời".
+- [ ] "Chạy thử (0 token)" → khung giám sát hiện số lô, ước tính token; sổ token không đổi.
+- [ ] **[TỐN TOKEN AI THẬT]** "AI trích luật" với ngân sách 20.000 → job xong, luật ở "Chờ duyệt", mỗi luật có đoạn trích; "Xem trong tài liệu" tô sáng đúng đoạn.
+- [ ] Ngân sách quá nhỏ (5.000) → dừng ngay, lý do "chạm ngân sách", không gọi AI.
+- [ ] Hai job cùng project → job thứ hai bị từ chối (409); bấm "Sinh test từ luật" khi có job đang chạy → 409.
+
+**Duyệt luật**
+- [ ] Luật GIẢ ĐỊNH (không trích dẫn): nút Duyệt mở hộp thoại bắt chọn mã lỗi 400-499; API duyệt không kèm mã → 409.
+- [ ] "Duyệt N luật có trích dẫn": mặc định không tick sẵn; luật GIẢ ĐỊNH và luật mâu thuẫn spec không nằm trong danh sách.
+- [ ] Sửa một luật có trích dẫn → trích dẫn bị bỏ, nguồn thành "Bạn nhập", không còn trong danh sách duyệt hàng loạt.
+- [ ] Công tắc "Đo thời gian duyệt" mặc định TẮT; bật thì hiện dòng thông báo công khai; duyệt/loại/sửa → banner tăng số quyết định; xuất JSON không có id luật hay nội dung.
+
+**Test từ luật và bắt lỗi**
+- [ ] Luật đã duyệt → "Sinh test từ N luật" → test có nhãn nguồn nghiệp vụ; chạy trên API chuẩn: tất cả Pass.
+- [ ] Bật `M23` (hoặc `M24`, `M25`) bằng `/__mutants` rồi chạy lại → Fail nhãn "API nhận dữ liệu vi phạm luật nghiệp vụ", độ tin CHẮC; `POST /__reset` để tắt.
+- [ ] Sinh lại test của luật đã có bug report → test có bug report được giữ lại, không bị xoá.
+
+**Probe tất định và quy ước API**
+- [ ] Hộp thoại "Sinh test case": nhóm "OWASP probe (0 token)" mặc định tắt; bật → có thêm test "JSON cú pháp hỏng" (kỳ vọng 400), "Content-Type sai" (415), "phương thức TRACE" (405). Chạy trên API chuẩn: Pass; request TRACE thật sự được gửi (không phải DELETE).
+- [ ] Hộp thoại Xác thực → "Mã API trả khi thiếu hoặc sai token" = 403 → test Security "thiếu token" trên API trả 403 chuyển Pass; test khác (vd sai mật khẩu đăng nhập) không bị nới.
+- [ ] Import spec có `security` toàn cục và `/auth/login` không khai `security: []` → endpoint đăng nhập được coi là công khai (có ca "sai mật khẩu", không có ca "thiếu token").
+
+**Đo đạc (chạy lại số liệu báo cáo, 0 token trừ khi ghi khác)**
+- [ ] `python scripts/eval-mutants.py --config A --runs 2 --include-heldout` → khớp `docs/eval/results-A-heldout-2026-10-26.json` (phát hiện 21/42 dev, 3/15 held-out, Fail giả 1,5%).
+- [ ] `cd mutant-shop && python oracle.py` → 15/15; `python scripts/eval-shop-mutants.py --runs 2 --unauthenticated-status 403` → khớp `results-shop-A-403-login-2026-10-25.json`.
+
 ## Kết quả lần chạy thật gần nhất (2026-10-15, qua Docker + shop-api-target thật)
 
 **Đã verify OK:** login/register, project CRUD + ownership check, coverage API (schemaReadable/provenance/boundary thật hoạt động đúng trên dữ liệu thật), dashboard summary, admin users/audit-log + role enforcement (403 đúng cho non-admin), history feed, bug reports list, execution thật end-to-end khi `targetBaseUrl` đúng môi trường, backend 212/212 unit test, frontend build/tsc sạch.

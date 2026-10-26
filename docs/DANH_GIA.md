@@ -3,6 +3,23 @@
 *Đo ngày 2026-10-21. Mọi con số dưới đây được sinh từ file kết quả JSON trong `docs/eval/` bằng `scripts/eval/make-report-tables.py`,
 chạy lại được (xem mục 8). Nếu một con số ở đây khác file JSON thì file JSON là đúng.*
 
+## 0. Đọc trước: bộ số liệu nào là bộ chuẩn của báo cáo
+
+Tài liệu này được viết nhiều đợt, nên có 3 bộ số cùng tồn tại. **Bộ chuẩn để trích trong báo cáo là mục 7B** (42 lỗi dev + 15 lỗi held-out, đo 2026-10-26); các mục 1-6 là phép đo gốc ngày 2026-10-21 trên 27 lỗi đầu tiên và giữ lại để thấy quá trình, không dùng làm số cuối.
+
+| Bộ | Mẫu số | Ngày | A (đúng nhãn / phát hiện) | B | Fail giả A |
+|---|---|---|---|---|---|
+| Mục 1-6 (gốc) | 27 lỗi M01-M27 | 2026-10-21 | 4 / 14 | 3-4 / 17 | 4,3% |
+| Cùng 27 lỗi, đo lại sau G1-G4 | 27 lỗi M01-M27 | 2026-10-26 | 4 / 15 | 4 / 18 | 1,5% |
+| **Mục 7B (chuẩn)** | 42 lỗi dev M01-M42 | 2026-10-26 | 5 / 21 | 5 / 25 | 1,5% |
+| **Mục 7B (chuẩn)** | 15 lỗi held-out H01-H15 | 2026-10-26 | 1 / 3 | 1 / 6 | (cùng bản chuẩn) |
+
+Thay đổi từ 14 lên 15 và từ 4,3% xuống 1,5% nhiều khả năng do các cải tiến G1-G4 (luật lệch spec 2xx, nhãn độ tin, probe độ bền) và sửa nhận diện đăng nhập; chưa tách riêng đóng góp từng thay đổi.
+
+**Hai thuật ngữ, không được lẫn:** **"phát hiện"** = có ít nhất 1 test Pass trên bản chuẩn chuyển Fail khi bật đúng 1 lỗi (kể cả khi nhãn nguyên nhân chưa chắc); **"đúng nhãn"** = test Fail đó được gán nhãn nguyên nhân là lỗi của API. Độ lệch chuẩn bằng 0 ở cấu hình A vì A tất định (cùng đầu vào cho cùng kết quả), **không phải bằng chứng thống kê**.
+
+**Các đe doạ ảnh hưởng tới MỌI số liệu cuối (tóm tắt, chi tiết ở mục 7, 7A, 7B):** (1) mutant và API do nhóm tự viết, nhỏ; (2) bộ held-out do AI cùng họ viết, không độc lập hoàn toàn, và H10 đã được dùng để sửa bộ sinh test nên không còn là mẫu ngoài tập; (3) người gán nhãn luật là người phát triển hệ thống; (4) cỡ mẫu nhỏ (15 lỗi held-out, 5 luật khác nhau); (5) chưa đo với người duyệt thật (E2) và chưa có API của bên thứ ba.
+
 ## 1. Câu hỏi và trả lời ngắn
 
 **Câu hỏi:** bộ test mà hệ thống sinh ra bắt được bao nhiêu lỗi có chủ đích trong một API, bao nhiêu test Fail oan, và tốn bao nhiêu?
@@ -317,7 +334,7 @@ Kết quả gốc: `docs/eval/results-shop-A-403-login-2026-10-25.json`, `docs/e
 
 **Hợp A + luật** (cùng bằng chứng, không tính B): dev 8 đúng / 24 phát hiện trên 42; held-out 2 / 5 trên 15. Chi phí thêm so với A: ≈ 14.188 token/lượt trích luật (trung bình), bằng khoảng **1/7** chi phí của B (98.856 token/lượt).
 
-**Trích luật bằng AI (3 lượt):** mỗi lượt giữ **5 luật có trích dẫn nguyên văn**, 0 luật GIẢ ĐỊNH. Cả 15 luật đều đúng so với đáp án (**precision 15/15 = 100%** sau kiểm chứng). Trên bộ đáp án 7 luật mà 9 mẫu luật biểu diễn được (R24, R28, R43, R47, R59, R60, R66) tìm được 5, thiếu R59 và R60 (số phần tử của mảng tiêu chí): **recall 5/7 = 71%**, giống nhau ở cả 3 lượt. R73 (không nộp đơn trùng) không tính vì mẫu UNIQUE chưa được đưa vào prompt. Mỗi lượt AI đề xuất thêm 3-6 luật bị bộ kiểm chứng tất định loại vì sai tham số (tổng đề xuất 8, 8 và 11); **chưa biết lý do cụ thể từng luật bị loại** vì hệ thống chỉ ghi số lượng, và chưa rõ R59/R60 có nằm trong số đó không. Nên nói chính xác: "luật người dùng nhìn thấy đều đúng", chứ không phải "AI đề xuất đúng 100%": tỉ lệ đề xuất qua được kiểm chứng là 15/27 = 56%.
+**Trích luật bằng AI (3 lượt):** mỗi lượt giữ **5 luật có trích dẫn nguyên văn**, 0 luật GIẢ ĐỊNH. Đó là **cùng 5 luật khác nhau** (R24, R28, R43, R47, R66) ở cả 3 lượt, tức **5/5 luật đúng và ổn định giữa 3 lượt** (15 là số lần xuất hiện, không phải 15 mẫu độc lập), sau kiểm chứng. Trên bộ đáp án 7 luật mà 9 mẫu luật biểu diễn được (R24, R28, R43, R47, R59, R60, R66) tìm được 5, thiếu R59 và R60 (số phần tử của mảng tiêu chí): **recall 5/7 = 71%**, giống nhau ở cả 3 lượt. R73 (không nộp đơn trùng) không tính vì mẫu UNIQUE chưa được đưa vào prompt. Mỗi lượt AI đề xuất thêm 3-6 luật bị bộ kiểm chứng tất định loại vì sai tham số (tổng đề xuất 8, 8 và 11); **chưa biết lý do cụ thể từng luật bị loại** vì hệ thống chỉ ghi số lượng, và chưa rõ R59/R60 có nằm trong số đó không. Nên nói chính xác: "luật người dùng nhìn thấy đều đúng", chứ không phải "AI đề xuất đúng 100%": tỉ lệ đề xuất qua được kiểm chứng là 15/27 = 56%.
 
 **Đọc kết quả:**
 1. **AI nghiệp vụ cũ (B) đắt và nhiễu**: ≈ 99 nghìn token/lượt cho 66 test, 19,8% Fail giả (đúng như kết quả cũ 23%), và các lỗi nghiệp vụ nó phát hiện chỉ ở mức "nghi ngờ" (nhãn nguyên nhân mơ hồ), chưa lần nào được gán đúng.
