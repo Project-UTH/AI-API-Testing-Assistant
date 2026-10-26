@@ -150,6 +150,29 @@ class TestCaseGenerationServiceTest {
     // ---- 17q G1 - đổi kỳ vọng test gốc không được che lệch spec ----
 
     @Test
+    void removeStaleBaselineDrafts_deletesUnlockedUnconfirmedAiBaselines_butKeepsLockedKeptAndChainSources() {
+        com.aiapitesting.backend.entity.Endpoint ep = com.aiapitesting.backend.entity.Endpoint.builder().id(UUID.randomUUID()).project(project).method("POST").path("/jobs").build();
+        var origin = com.aiapitesting.backend.entity.TestCaseGenerationOrigin.AI_BASELINE;
+        com.aiapitesting.backend.entity.TestCase keep = com.aiapitesting.backend.entity.TestCase.builder().id(UUID.randomUUID()).endpoint(ep).generationOrigin(origin).locked(true).build();
+        com.aiapitesting.backend.entity.TestCase draft = com.aiapitesting.backend.entity.TestCase.builder().id(UUID.randomUUID()).endpoint(ep).generationOrigin(origin).build();
+        com.aiapitesting.backend.entity.TestCase chainSource = com.aiapitesting.backend.entity.TestCase.builder().id(UUID.randomUUID()).endpoint(ep).generationOrigin(origin).build();
+        com.aiapitesting.backend.entity.TestCase otherLocked = com.aiapitesting.backend.entity.TestCase.builder().id(UUID.randomUUID()).endpoint(ep).generationOrigin(origin).locked(true).build();
+        com.aiapitesting.backend.entity.TestCase manual = com.aiapitesting.backend.entity.TestCase.builder().id(UUID.randomUUID()).endpoint(ep).build();
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        when(endpointRepository.findByIdAndProject(ep.getId(), project)).thenReturn(Optional.of(ep));
+        when(testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(ep)).thenReturn(List.of(keep, draft, chainSource, otherLocked, manual));
+        when(testCaseDependencyRepository.findAllByDependsOnTestCaseIdIn(any())).thenReturn(List.of(
+                com.aiapitesting.backend.entity.TestCaseDependency.builder().dependsOnTestCase(chainSource).build()));
+
+        int removed = testCaseGenerationService.removeStaleBaselineDrafts(projectId, ep.getId(), keep.getId());
+
+        assertThat(removed).isEqualTo(1);
+        org.mockito.ArgumentCaptor<List<com.aiapitesting.backend.entity.TestCase>> deleted = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(testCaseRepository).deleteAll(deleted.capture());
+        assertThat(deleted.getValue()).containsExactly(draft); // không đụng test đã khoá, test được giữ, nguồn nối chuỗi, test thủ công
+    }
+
+    @Test
     void expectationChangeNote_saysSpecDeviationWhenAdoptedCodeIsNotDeclared() {
         Endpoint declared201 = Endpoint.builder().schema("{\"responseStatusCodes\":[\"201\",\"400\"]}").build();
         assertThat(TestCaseGenerationService.expectationChangeNote(declared201, 201, 200))

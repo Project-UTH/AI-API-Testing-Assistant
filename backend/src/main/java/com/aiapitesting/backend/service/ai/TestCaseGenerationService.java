@@ -548,6 +548,38 @@ public class TestCaseGenerationService {
      * (dọn case cũ còn sót từ 1 lần sinh trước đó có tick), hoặc làm bước dọn dẹp trước khi
      * generateGroup() lưu batch mới. Test case đã khoá luôn được giữ nguyên (đã lọc LockedFalse).
      */
+    /**
+     * Khi 1 test gốc mới được xác nhận Pass và khoá, xoá các test gốc NHÁP cũ của cùng endpoint (do AI sinh, chưa khoá, nên chưa bao giờ được xác nhận - thường
+     * còn sót từ lần sinh lỗi). Không xoá test đang là nguồn nối chuỗi của test khác. @return số test đã xoá
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public int removeStaleBaselineDrafts(UUID projectId, UUID endpointId, UUID keepTestCaseId) {
+        Project project = projectService.getOwnedProject(projectId);
+        Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project).orElse(null);
+        if (endpoint == null) {
+            return 0;
+        }
+        List<TestCase> drafts = testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(endpoint).stream()
+                .filter(tc -> tc.getGenerationOrigin() == com.aiapitesting.backend.entity.TestCaseGenerationOrigin.AI_BASELINE)
+                .filter(tc -> !tc.isLocked() && !tc.getId().equals(keepTestCaseId))
+                .toList();
+        if (drafts.isEmpty()) {
+            return 0;
+        }
+        java.util.Set<UUID> usedAsSource = testCaseDependencyRepository.findAllByDependsOnTestCaseIdIn(drafts.stream().map(TestCase::getId).toList()).stream()
+                .map(d -> d.getDependsOnTestCase().getId()).collect(java.util.stream.Collectors.toSet());
+        List<TestCase> removable = drafts.stream().filter(tc -> !usedAsSource.contains(tc.getId())).toList();
+        if (removable.isEmpty()) {
+            return 0;
+        }
+        bugReportRepository.deleteAllByTestCaseIn(removable);
+        testResultRepository.deleteAllByTestCaseIn(removable);
+        testCaseDependencyRepository.deleteAllByTestCaseIn(removable);
+        testCaseAssertionRepository.deleteAllByTestCaseIn(removable);
+        testCaseRepository.deleteAll(removable);
+        return removable.size();
+    }
+
     private void deleteExistingGroup(Endpoint endpoint, TestCaseSource source) {
         List<TestCase> existing = testCaseRepository.findAllByEndpointAndSourceAndLockedFalse(endpoint, source);
         // Chặn xoá nếu còn test case khác đang phụ thuộc dữ liệu từ 1 trong các test case sắp bị xoá.

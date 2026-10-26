@@ -98,6 +98,8 @@ export function templateFit(template: RuleTemplate, fields: EndpointField[]): Te
   const textual = fields.filter((f) => !f.numeric && (f.type === null || f.type === "string"))
   const arrays = fields.filter((f) => f.type === "array")
   const comparable = [...numeric, ...textual]
+  // Ví dụ nhóm field dùng field "lá" (không phải đối tượng/mảng chứa field con).
+  const leaves = fields.filter((f) => f.type !== "object" && f.type !== "array")
   const name = (f: EndpointField) => f.ref
   const no = (reason: string): TemplateFit => ({ usable: false, example: "", reason })
   const ok = (example: string): TemplateFit => ({ usable: true, example, reason: "" })
@@ -107,15 +109,15 @@ export function templateFit(template: RuleTemplate, fields: EndpointField[]): Te
       return pool.length < 2 ? no("Cần ít nhất 2 field số hoặc chuỗi để so sánh") : ok(`${name(pool[0])} ≤ ${name(pool[1])}`)
     }
     case "REQUIRES":
-      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`Có ${name(fields[0])} thì phải có ${name(fields[1])}`)
+      return leaves.length < 2 ? no("Cần ít nhất 2 field") : ok(`Có ${name(leaves[0])} thì phải có ${name(leaves[1])}`)
     case "ALL_OR_NONE":
-      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`${name(fields[0])}, ${name(fields[1])} phải đi cùng nhau`)
+      return leaves.length < 2 ? no("Cần ít nhất 2 field") : ok(`${name(leaves[0])}, ${name(leaves[1])} phải đi cùng nhau`)
     case "ONLY_ONE":
-      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`${name(fields[0])} hoặc ${name(fields[1])}, đúng một`)
+      return leaves.length < 2 ? no("Cần ít nhất 2 field") : ok(`${name(leaves[0])} hoặc ${name(leaves[1])}, đúng một`)
     case "ZERO_OR_ONE":
-      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`không gửi cả ${name(fields[0])} lẫn ${name(fields[1])}`)
+      return leaves.length < 2 ? no("Cần ít nhất 2 field") : ok(`không gửi cả ${name(leaves[0])} lẫn ${name(leaves[1])}`)
     case "OR":
-      return fields.length < 2 ? no("Cần ít nhất 2 field") : ok(`${name(fields[0])} hoặc ${name(fields[1])}, ít nhất một`)
+      return leaves.length < 2 ? no("Cần ít nhất 2 field") : ok(`${name(leaves[0])} hoặc ${name(leaves[1])}, ít nhất một`)
     case "DATE_RELATIVE": {
       const f = textual.find((x) => DATE_NAME.test(x.name)) ?? textual[0]
       return f ? ok(`${name(f)} không ở quá khứ`) : no("Không có field chuỗi (ngày/giờ) nào")
@@ -130,7 +132,7 @@ export function templateFit(template: RuleTemplate, fields: EndpointField[]): Te
       return arr && item ? ok(`Tổng ${item.ref.slice(arr.ref.length + 4)} của ${arr.ref}[] = …`) : no("Không có mảng nào chứa field số")
     }
     case "UNIQUE":
-      return fields.length < 1 ? no("Endpoint không có field nào") : ok(`không tạo trùng theo ${name(fields[0])}`)
+      return leaves.length < 1 ? no("Endpoint không có field nào") : ok(`không tạo trùng theo ${name(leaves[0])}`)
   }
 }
 

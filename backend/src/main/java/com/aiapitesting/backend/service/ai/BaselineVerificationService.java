@@ -263,6 +263,10 @@ public class BaselineVerificationService {
             if (diagnosis.decision() == Decision.PASSED) {
                 p.start(endpointId, label, "LOCK", "SYSTEM", "Khoá test gốc làm nền").ok("Test gốc đã Pass sau " + (attempt + 1) + " lần thử");
                 testCaseService.setLocked(projectId, endpointId, testId, true);
+                int cleaned = generationService.removeStaleBaselineDrafts(projectId, endpointId, testId);
+                if (cleaned > 0) {
+                    p.start(endpointId, label, "CLEANUP", "SYSTEM", "Dọn test gốc nháp cũ").ok("Đã xoá " + cleaned + " test gốc nháp chưa được xác nhận (còn sót từ lần sinh trước)");
+                }
                 p.checkCancelled();
                 JobProgress.Step f = p.start(endpointId, label, "FILL", "SYSTEM", "Hệ thống bổ sung toàn bộ checklist từ test gốc (0 token)");
                 int filled = fill ? coverageGapFillService.fill(projectId, endpointId, new CoverageFillRequest(null)).createdCount() : 0;
