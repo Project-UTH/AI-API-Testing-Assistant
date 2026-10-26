@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, Coins, Sparkles } from "lucide-react"
 
@@ -189,6 +189,9 @@ export function EndpointList({ projectId }: EndpointListProps) {
   // Mặc định cả 3 đều bật - giữ đúng hành vi cũ (luôn sinh đủ Positive/Negative/Boundary) cho tới
   // khi người dùng chủ động bỏ tích bớt.
   const [wizardIds, setWizardIds] = useState<string[] | null>(null)
+  // /projects/:id?generate=<endpointId>: mở sẵn hộp thoại Sinh test case cho endpoint đó (dùng từ trang lần sinh test khi cần nhập lại giá trị).
+  const [urlParams, setUrlParams] = useSearchParams()
+  const generateParam = urlParams.get("generate")
 
   const endpoints = useMemo(() => data?.data ?? [], [data])
 
@@ -247,6 +250,15 @@ export function EndpointList({ projectId }: EndpointListProps) {
     })
   }, [])
 
+  useEffect(() => {
+    if (!generateParam || !endpoints.some((e) => e.id === generateParam)) return
+    setWizardIds([generateParam])
+    setUrlParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete("generate")
+      return next
+    }, { replace: true })
+  }, [generateParam, endpoints, setUrlParams])
   const openWizardFor = useCallback((endpointId: string) => setWizardIds([endpointId]), [])
 
 

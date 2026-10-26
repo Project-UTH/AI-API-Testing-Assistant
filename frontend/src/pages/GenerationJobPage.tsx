@@ -96,6 +96,17 @@ export function GenerationJobPage() {
           <p className="font-mono text-xs font-medium">{r.label}</p>
           <p className="mt-0.5">{r.message}</p>
           {r.reason && REASON_HELP[r.reason] && <p className="mt-1 text-xs text-muted-foreground">Cách xử lý: {REASON_HELP[r.reason]}</p>}
+          {(r.reason === "MISSING_PARAM_VALUE" || r.reason === "RESOURCE_NOT_FOUND") && (
+            <div className="mt-2 text-xs">
+              <p className="text-muted-foreground">
+                Vì sao chưa tới bước AI: endpoint này cần một id có thật trong hệ thống đích (id bịa sẽ bị trả 404), AI không tự tạo được dữ liệu đó. Lấy id từ danh sách
+                hoặc từ lúc bạn tạo tài nguyên, nhập vào ô giá trị rồi chạy lại: khi đó AI mới sinh test gốc và hệ thống chạy thật để xác nhận Pass.
+              </p>
+              <Link to={`/projects/${projectId}?generate=${r.endpointId}`} className="mt-2 inline-block rounded-md border border-primary px-2.5 py-1 font-medium text-primary hover:bg-primary/5">
+                Nhập giá trị và chạy lại
+              </Link>
+            </div>
+          )}
         </div>
       ))}
 
