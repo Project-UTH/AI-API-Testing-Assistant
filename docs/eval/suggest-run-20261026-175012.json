@@ -1,0 +1,221 @@
+{
+  "environment": {
+    "date": "2026-10-26T17:50:11",
+    "gitCommit": "4cd81099c2a051bf440682d10ce2d0ea581c4fe5",
+    "gitDirty": true,
+    "model": "",
+    "promptFiles": 14,
+    "promptHash": "ca5dcda1208c2754",
+    "args": {
+      "api": "http://localhost:8080/api/v1",
+      "target_local": "http://localhost:8083",
+      "target_url": "http://host.docker.internal:8083",
+      "email": "demo@aiapi.local",
+      "model": "",
+      "only": "S1",
+      "out": "",
+      "cap1": 25000,
+      "cap2": 40000
+    }
+  },
+  "tokenAccounting": {
+    "before": {
+      "eventTokens": 1016290,
+      "jobTokens": 247596,
+      "eventRows": 107,
+      "jobRows": 40
+    },
+    "after": {
+      "eventTokens": 1020343,
+      "jobTokens": 251649,
+      "eventRows": 108,
+      "jobRows": 41
+    },
+    "eventTokens": 4053,
+    "jobTokens": 4053
+  },
+  "runs": [
+    {
+      "scenario": "S1-chi-spec",
+      "projectId": "a592313b-de38-4be9-bd7e-bc1ae8511241",
+      "jobId": "3c35d155-8b3d-4299-8dbe-e88a0dd67361",
+      "jobStatus": "SUCCEEDED",
+      "tokens": 4053,
+      "cap": 25000,
+      "seconds": 10.3,
+      "extraction": {
+        "endpointCount": 10,
+        "lotsPlanned": 1,
+        "lotsDone": 0,
+        "estimatedTokens": 7401,
+        "fromDocument": 0,
+        "fromInstruction": 0,
+        "inferred": 7,
+        "rejectedAsDuplicateOfSpec": 0,
+        "conflicts": 0,
+        "skippedExisting": 0,
+        "skippedOverCap": 0,
+        "skippedInferred": 0,
+        "dropped": {},
+        "stoppedReason": null,
+        "tokenBudget": 25000,
+        "questions": [],
+        "suggested": 7,
+        "suggestStoppedReason": null
+      },
+      "steps": [
+        {
+          "phase": "DOC_READ",
+          "status": "OK",
+          "detail": "0 tài liệu (0 ký tự); chuỗi giống bí mật được che trước khi gửi AI",
+          "tokens": null
+        },
+        {
+          "phase": "RULES_PLAN",
+          "status": "OK",
+          "detail": "10 endpoint chia 1 lô; không có tài liệu/chỉ dẫn + AI gợi ý thêm (GIẢ ĐỊNH); ước tính tối đa ~7401 token, ngân sách 25000 token",
+          "tokens": null
+        },
+        {
+          "phase": "RULES_SUGGEST",
+          "status": "OK",
+          "detail": "Đã nhận trả lời",
+          "tokens": 4053
+        },
+        {
+          "phase": "RULES_VERIFY",
+          "status": "OK",
+          "detail": "AI gợi ý 7 mục: giữ 7 (GIẢ ĐỊNH, chờ bạn duyệt)",
+          "tokens": null
+        }
+      ],
+      "rules": [
+        {
+          "id": "e1800cb8-e730-4420-b97f-3ae324de4574",
+          "endpoint": "POST /api/jobs",
+          "template": "COMPARE_FIELDS",
+          "params": {
+            "left": "salaryMin",
+            "op": "LTE",
+            "right": "salaryMax"
+          },
+          "sentence": "salaryMin ≤ salaryMax",
+          "source": "INFERRED",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "suggestedStatus": 400,
+          "hasQuote": false,
+          "rationale": "GIẢ ĐỊNH: Lương tối thiểu phải nhỏ hơn hoặc bằng lương tối đa để khoảng lương hợp lý"
+        },
+        {
+          "id": "0f7ad837-6254-4d6c-ac9f-825d0149462b",
+          "endpoint": "POST /api/jobs",
+          "template": "DATE_RELATIVE",
+          "params": {
+            "op": "GTE",
+            "field": "deadline",
+            "offset": 0,
+            "unit": "DAY"
+          },
+          "sentence": "deadline ≥ bây giờ",
+          "source": "INFERRED",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "suggestedStatus": 400,
+          "hasQuote": false,
+          "rationale": "GIẢ ĐỊNH: Hạn nộp hồ sơ nên ở tương lai so với thời điểm tạo tin"
+        },
+        {
+          "id": "974af3c5-b161-4c6c-9607-a8b039c2af1e",
+          "endpoint": "POST /api/jobs/{jobId}/applications",
+          "template": "REQUIRES",
+          "params": {
+            "field": "consent",
+            "fieldValue": "true",
+            "fields": [
+              "coverLetter"
+            ]
+          },
+          "sentence": "Có consent = true thì phải có coverLetter",
+          "source": "INFERRED",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "suggestedStatus": 400,
+          "hasQuote": false,
+          "rationale": "GIẢ ĐỊNH: Có thể yêu cầu ứng viên đồng ý điều khoản trước khi nộp thư xin việc"
+        },
+        {
+          "id": "d61429e3-ed27-4b7c-a5d4-8f6bf8f0a6cc",
+          "endpoint": "PUT /api/jobs/{id}",
+          "template": "COMPARE_FIELDS",
+          "params": {
+            "left": "salaryMin",
+            "op": "LTE",
+            "right": "salaryMax"
+          },
+          "sentence": "salaryMin ≤ salaryMax",
+          "source": "INFERRED",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "suggestedStatus": 400,
+          "hasQuote": false,
+          "rationale": "GIẢ ĐỊNH: Khi sửa tin, lương tối thiểu vẫn phải nhỏ hơn hoặc bằng lương tối đa"
+        },
+        {
+          "id": "43f6ae21-57ec-4625-8b63-5828292a2bd9",
+          "endpoint": "PUT /api/jobs/{id}",
+          "template": "DATE_RELATIVE",
+          "params": {
+            "op": "GTE",
+            "field": "deadline",
+            "offset": 0,
+            "unit": "DAY"
+          },
+          "sentence": "deadline ≥ bây giờ",
+          "source": "INFERRED",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "suggestedStatus": 400,
+          "hasQuote": false,
+          "rationale": "GIẢ ĐỊNH: Khi cập nhật tin, hạn nộp hồ sơ vẫn nên ở tương lai"
+        },
+        {
+          "id": "f46447ea-a581-4661-b0d0-c6f55fbd5a4f",
+          "endpoint": "PUT /api/jobs/{id}/rubric",
+          "template": "ARRAY_AGGREGATE",
+          "params": {
+            "op": "EQ",
+            "array": "criteria",
+            "item": "weight",
+            "fn": "SUM",
+            "value": 100
+          },
+          "sentence": "Tổng criteria[].weight = 100",
+          "source": "INFERRED",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "suggestedStatus": 400,
+          "hasQuote": false,
+          "rationale": "GIẢ ĐỊNH: Mô tả endpoint yêu cầu tổng weight của các tiêu chí phải bằng 100"
+        },
+        {
+          "id": "91ae0b38-70d9-4592-8fc1-1c2e2d4d811e",
+          "endpoint": "PUT /api/jobs/{id}/rubric",
+          "template": "ARRAY_AGGREGATE",
+          "params": {
+            "array": "criteria",
+            "item": "name",
+            "fn": "DISTINCT"
+          },
+          "sentence": "criteria[].name không trùng nhau",
+          "source": "INFERRED",
+          "status": "PROPOSED",
+          "expectedStatus": null,
+          "suggestedStatus": 400,
+          "hasQuote": false,
+          "rationale": "GIẢ ĐỊNH: Tên tiêu chí trong rubric không nên trùng lặp để tránh đánh giá chồng chéo"
+        }
+      ]
+    }
+  ]
+}

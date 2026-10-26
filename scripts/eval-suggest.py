@@ -41,6 +41,8 @@ def main():
     ap.add_argument("--email", default="demo@aiapi.local")
     ap.add_argument("--password", default="demo12345")
     ap.add_argument("--model", default="")
+    ap.add_argument("--only", default="", help="chỉ chạy kịch bản có tên bắt đầu bằng chuỗi này (vd S1)")
+    ap.add_argument("--out", default="")
     ap.add_argument("--cap1", type=int, default=25000)
     ap.add_argument("--cap2", type=int, default=40000)
     args = ap.parse_args()
@@ -52,6 +54,8 @@ def main():
     print("Sổ token TRƯỚC:", before)
     runs = []
     for name, with_doc, cap in (("S1-chi-spec", False, args.cap1), ("S2-tai-lieu-va-goi-y", True, args.cap2)):
+        if args.only and not name.startswith(args.only):
+            continue
         stamp = datetime.datetime.now().strftime("%m%d-%H%M%S")
         target.reset()
         hr, cand = target.login("hr1@demo.local"), target.login("cand1@demo.local")
@@ -93,7 +97,7 @@ def main():
     out = {"environment": evalm.environment_info(args), "tokenAccounting": {
         "before": before, "after": after, "eventTokens": after["eventTokens"] - before["eventTokens"],
         "jobTokens": after["jobTokens"] - before["jobTokens"]}, "runs": runs}
-    path = REPO / "docs" / "eval" / f"suggest-{datetime.date.today()}.json"
+    path = pathlib.Path(args.out) if args.out else REPO / "docs" / "eval" / f"suggest-run-{datetime.datetime.now():%Y%m%d-%H%M%S}.json"
     path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"TOKEN: chênh lệch sổ = {out['tokenAccounting']['eventTokens']}, tổng job = {sum(r['tokens'] for r in runs)}. Đã ghi {path}")
 

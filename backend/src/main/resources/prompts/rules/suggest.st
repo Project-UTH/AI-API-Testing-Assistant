@@ -24,9 +24,9 @@ NGUYÊN TẮC GỢI Ý
 - KHÔNG đề xuất điều spec đã khai (bắt buộc, độ dài, khoảng giá trị, enum) và không đề xuất lại luật trong danh sách đã có ở trên.
 - Chỉ gợi ý luật mà tên field hoặc ngữ nghĩa nghiệp vụ cho thấy khá rõ (ví dụ ngày bắt đầu không sau ngày kết thúc, giá tối thiểu không vượt giá tối đa). Ưu tiên ÍT mà CHẮC, dừng khi hết ý chắc chắn. Không có luật nào thì trả {"rules":[]}.
 - Không có "quote", không có "expectedStatus". Con số trong params phải là con số có thể suy ra từ spec; không tự bịa ngưỡng.
-- "suggestedStatus": mã lỗi HTTP bạn cho là API nên trả khi luật bị vi phạm, một trong 400, 404, 409, 422; không chắc thì null. Người dùng sẽ tự quyết định mã cuối cùng.
+- "suggestedStatus": mã lỗi HTTP khi luật bị vi phạm, một trong 400, 404, 409, 422; không chắc thì null. MẶC ĐỊNH là 400 cho mọi luật về dữ liệu gửi lên (so sánh field, khoảng giá trị, ngày giờ, tổng hợp trên mảng, định dạng). Chỉ dùng 404 khi tài nguyên không tồn tại, 409 khi xung đột trạng thái hoặc trùng dữ liệu; KHÔNG dùng 422 trừ khi spec hoặc mô tả endpoint nêu rõ 422. Người dùng sẽ tự quyết định mã cuối cùng.
 - "rationale": 1 câu tiếng Việt, tối đa 200 ký tự, nêu VÌ SAO luật hợp lý.
 
 ĐỊNH DẠNG ĐẦU RA
-{"rules":[{"endpoint":"POST /api/jobs","template":"COMPARE_FIELDS","params":{"left":"tenFieldA","op":"LTE","right":"tenFieldB"},"suggestedStatus":422,"rationale":"lý do luật hợp lý"}]}
+{"rules":[{"endpoint":"POST /api/jobs","template":"COMPARE_FIELDS","params":{"left":"tenFieldA","op":"LTE","right":"tenFieldB"},"suggestedStatus":400,"rationale":"lý do luật hợp lý"}]}
 Các trường của params theo mẫu: left, op, right (so sánh 2 field, op là LT, LTE, EQ, GTE hoặc GT); field, fieldValue, fields (nhóm field); offset, unit (DAY hoặc HOUR) cho ngày giờ; min, max cho khoảng giá trị; array, item, fn (SUM, COUNT hoặc DISTINCT), value cho tổng hợp trên mảng.
