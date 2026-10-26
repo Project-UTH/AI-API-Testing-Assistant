@@ -363,6 +363,22 @@ Kết quả gốc: `docs/eval/results-shop-A-403-login-2026-10-25.json`, `docs/e
 
 Dữ liệu gốc: `docs/eval/results-A-heldout-2026-10-26.json`, `results-B-heldout-2026-10-26.json`, `rules-extract-2026-10-26.json` (luật AI đề xuất), `rules-labels-2026-10-26.json` (nhãn), `results-C-rules-2026-10-26.log` (log gốc phép đo C; file JSON không ghi được do lỗi script, đã sửa).
 
+## 7C. Luồng "AI lập checklist theo từng endpoint" (2026-10-26, G3.6-G3.12): số đo và giới hạn
+
+Chi tiết: `docs/eval/suggest-2026-10-26.md`, `docs/eval/real-recruitment-2026-10-26.md`. **Mỗi con số là 1-3 lượt, một API, người gán nhãn là người phát triển.**
+
+| Phép đo | Token | Kết quả |
+|---|---|---|
+| Làn "AI gợi ý thêm", chỉ spec (mutant-api), lượt đầu | 3.782 | 5/6 mục đúng, mã gợi ý 422 trong khi API trả 400 |
+| Như trên sau khi đổi prompt (mặc định 400), 3 lượt | 4.053 / 3.803 / 3.924 | 5/5 mục đúng ở cả 3 lượt, mã 400; mục sai 2, 0, 0 |
+| SRS + gợi ý thêm (mutant-api) | 18.408 | 5/5 mục có trích dẫn đúng; 1 câu hỏi trùng "vấn đề mở" của SRS |
+| Trọn luồng qua giao diện (10 endpoint, SRS) | 18.209 | 5 mục duyệt → 10 test; chuẩn 11/11 Pass; M23, M24, M25 đều bị bắt |
+| **API tuyển dụng của nhóm khác, SRS thật, 22 endpoint** | 46.453 | 5 mục có trích dẫn (2 sai nghĩa), 9 GIẢ ĐỊNH, 8 câu hỏi; **1 lỗi thật** (401 thay vì 400); không có đáp án |
+
+Ba phát hiện về sai sót của hệ thống trong lúc đo (đã sửa): (1) mã gợi ý 422 lệch với API 400 → prompt mặc định 400, mã chỉ điền sẵn; (2) một lần chạy tốn 51.892 token vì AI sửa 3 lần một lỗi nó không sửa được (API trả 404 `COMPANY_NOT_FOUND`) → dừng sớm khi 404 mã `*_NOT_FOUND` ở endpoint không có tham số, test phụ chỉ sửa tối đa 1 lần; (3) nối chuỗi vào test POST nháp chưa bao giờ Pass làm test sau bị chặn → chỉ nối vào test đã khoá hoặc đã Pass, tự dọn test nháp cũ.
+
+Giới hạn: bộ kiểm chứng trích dẫn không bắt được đoạn trích đúng chữ nhưng sai nghĩa (2/5 trên SRS thật); chỉ 10 mẫu luật; chưa đo người duyệt thật (E2); prompt mã gợi ý được chỉnh sau khi thấy kết quả.
+
 ## 8. Chạy lại
 
 ```bash

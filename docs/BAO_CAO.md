@@ -43,7 +43,7 @@ Kiểm thử API REST thủ công tốn công và dễ bỏ sót: người kiể
 
 ## 5. Hiện thực (đã làm)
 
-Các module 1-14 (nền tảng, project, import, review, thực thi, chuỗi dữ liệu, lịch sử, bug report, admin, mật khẩu, Google, Docker); Module 15-16 (độ bao phủ giải thích được, phân tích nguyên nhân Fail, phát hiện test không ổn định); Module 17 (sẵn sàng cho API thật, đo bằng lỗi cài sẵn) và **17q**: độ bao phủ theo endpoint + độ tin của kết luận, luật nghiệp vụ có trích dẫn (tải tài liệu, AI trích luật, duyệt, đo thời gian duyệt), probe tất định, quy ước API, đo trên hai hệ thống. Nhật ký chi tiết: `docs/ROADMAP.md`. Kiểm thử: **944 test backend pass**, kịch bản test tay `docs/KICH_BAN_TEST.md`.
+Các module 1-14 (nền tảng, project, import, review, thực thi, chuỗi dữ liệu, lịch sử, bug report, admin, mật khẩu, Google, Docker); Module 15-16 (độ bao phủ giải thích được, phân tích nguyên nhân Fail, phát hiện test không ổn định); Module 17 (sẵn sàng cho API thật, đo bằng lỗi cài sẵn) và **17q**: độ bao phủ theo endpoint + độ tin của kết luận, luật nghiệp vụ có trích dẫn (tải tài liệu, AI trích luật, duyệt, đo thời gian duyệt), probe tất định, quy ước API, đo trên hai hệ thống. **Luồng sinh test hiện tại (G3.6-G3.12, 2026-10-26):** mỗi lần "Sinh test case" cho một endpoint chạy theo bốn bước: test gốc Pass (AI sinh, chạy thật), AI lập checklist nghiệp vụ riêng cho endpoint (tài liệu có trích dẫn và/hoặc gợi ý thêm GIẢ ĐỊNH, kèm câu hỏi về chỗ tài liệu thiếu mà người dùng trả lời được), người dùng xem checklist của hệ thống và của AI rồi duyệt trên một trang chính, hệ thống sinh test tất định từ mục đã duyệt rồi chạy. Một trần token tổng cho cả lần chạy; tài liệu lưu theo project (30 tài liệu), khai báo viết cho endpoint nào, gán riêng theo endpoint; hệ thống tự tìm hoặc tự tạo id thật cho tham số đường dẫn (GET danh sách rồi POST tạo, có xác nhận ghi thật) và dừng sớm khi API báo thiếu dữ liệu tiên quyết. Nhật ký chi tiết: `docs/ROADMAP.md`. Kiểm thử: **969 test backend pass**, kịch bản test tay `docs/KICH_BAN_TEST.md`.
 
 ## 6. Đánh giá
 
@@ -62,6 +62,8 @@ Các module 1-14 (nền tảng, project, import, review, thực thi, chuỗi d�
 
 **Tổng quát hoá:** trên API cửa hàng (quy ước khác) Fail giả ban đầu 24,1%, còn 11,4% sau khi khai quy ước 403 và sửa nhận diện endpoint đăng nhập; phát hiện 11/15 lỗi. Hai lỗi tổng quát hoá thật được tìm ra nhờ đo hệ thống thứ hai (mục 7A).
 
+**Đo luồng mới (2026-10-26):** làn "AI gợi ý thêm" chỉ từ spec: 3 lượt, 5/5 mục đúng với mã gợi ý 400, mục sai 0-2 mỗi lượt, 3.800-4.050 token/lượt (`docs/eval/suggest-2026-10-26.md`); chạy trọn luồng qua giao diện 18.209 token, chuẩn 11/11 Pass, M23-M25 đều bị bắt. **Chạy thật trên API tuyển dụng của nhóm khác với SRS thật:** 46.453 token, 1 lỗi thật tìm được (`POST /api/hr/jobs` trả 401 thay vì 400 khi `salaryMin > salaryMax`), nhưng 2/5 mục "có trích dẫn" có đoạn trích không nêu luật (`docs/eval/real-recruitment-2026-10-26.md`); không có đáp án nên không tính precision/recall. Mỗi con số là 1-3 lượt, một người gán nhãn.
+
 **Chi phí AI của đợt đo cuối (G5): 339.132 token** (dự đoán 320.106), đối chiếu sổ CSDL trước/sau từng bước. Các phép đo còn lại tốn 0 token.
 
 ## 7. Hạn chế (threats to validity)
@@ -71,7 +73,8 @@ Các module 1-14 (nền tảng, project, import, review, thực thi, chuỗi d�
 3. Lỗi H10 được sửa (bộ sinh test thử cả hai phía của giới hạn) **sau khi thấy** kết quả held-out nên không còn là mẫu độc lập; số held-out trong bảng là số trước khi sửa.
 4. Chỉ trích luật trên một tài liệu và một hệ thống; luật ngoài 9 mẫu (máy trạng thái, không trùng lặp) không trích được.
 5. Chưa có API của bên thứ ba; Fail giả phụ thuộc quy ước API (1,5% đến 24,1%).
-6. Phụ thuộc phiên bản mô hình và prompt (đổi thì phải đo lại); phần vào của ngân sách token chỉ là ước lượng.
+6. **Bộ kiểm chứng trích dẫn chỉ kiểm đoạn trích có thật và hằng số khớp, không kiểm đoạn trích có nói đúng luật** (gặp thật ở SRS thật: `salaryMin ≤ salaryMax` gắn với câu về tạo bài đăng; hạn nộp gắn với câu về xoá mềm): người duyệt phải đọc đoạn trích. Chỉ 10 mẫu luật; luật nằm ngoài mẫu (máy trạng thái, phụ thuộc dữ liệu hiện có) không lập được. Nối chuỗi tự động chỉ lấy id qua `$.id`. Làn "AI gợi ý thêm" và chạy trên API thật chỉ 1-3 lượt, prompt mã gợi ý được chỉnh sau khi thấy kết quả. Test gốc cần dữ liệu tiên quyết (vd HR có công ty) hoặc tải tệp thì vẫn cần người.
+7. Phụ thuộc phiên bản mô hình và prompt (đổi thì phải đo lại); phần vào của ngân sách token chỉ là ước lượng.
 
 ## 8. Hướng phát triển
 
