@@ -29,6 +29,25 @@ SRS = REPO / "docs" / "eval" / "srs-mutant-api.md"
 EXTRACT = REPO / "docs" / "eval" / "rules-extract-2026-10-26.json"
 
 
+# Luật thêm cho phép đo E2 (nhập tay, KHÔNG có trích dẫn). Đáp án: C1, C2 đúng (có trong tài liệu chuẩn: tối đa 20 tiêu chí, ít nhất 1 tiêu chí);
+# W1, W2 SAI cố ý (W1: tài liệu không nêu trần lương; W2: tài liệu nói hạn nộp "hôm nay vẫn được chấp nhận", không phải 30 ngày sau).
+E2_RULES = [
+    ("C1", True, "PUT", "/api/jobs/{id}/rubric", "ARRAY_AGGREGATE", {"array": "criteria", "fn": "COUNT", "op": "LTE", "value": 20}),
+    ("C2", True, "PUT", "/api/jobs/{id}/rubric", "ARRAY_AGGREGATE", {"array": "criteria", "fn": "COUNT", "op": "GTE", "value": 1}),
+    ("W1", False, "POST", "/api/jobs", "VALUE_RANGE", {"field": "salaryMax", "max": 5000}),
+    ("W2", False, "POST", "/api/jobs", "DATE_RELATIVE", {"field": "deadline", "op": "GTE", "offset": 30, "unit": "DAY"}),
+]
+
+
+def add_e2_rules(system, pid, endpoint_id):
+    print("ĐÁP ÁN E2 (không đưa cho người tham gia):")
+    for key, correct, method, path, template, params in E2_RULES:
+        _, r = system.api.call("POST", f"/projects/{pid}/business-rules",
+                               {"endpointId": endpoint_id[(method, path)], "template": template, "params": params, "expectedStatus": None,
+                                "rationale": f"E2-{key}", "approve": False})
+        print(f"  {key}: {'ĐÚNG (nên duyệt)' if correct else 'SAI (nên loại)'}  {r['data']['sentence']}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--with-ai", action="store_true", help="gọi AI thật để trích luật (≈ 14.000 token)")
@@ -39,6 +58,7 @@ def main():
     ap.add_argument("--password", default="demo12345")
     ap.add_argument("--name", default="Demo - Luật nghiệp vụ (API tuyển dụng)")
     ap.add_argument("--token-cap", type=int, default=25000)
+    ap.add_argument("--e2", action="store_true", help="thêm 4 luật nhập tay (2 đúng, 2 SAI cố ý) để đo người duyệt có bắt được luật sai không (docs/eval/E2-do-thoi-gian-duyet.md)")
     args = ap.parse_args()
 
     target = evalm.Target(args.target_local)
@@ -74,6 +94,8 @@ def main():
                             {"endpointId": endpoint_id[(method, path)], "template": r["template"], "params": r["params"],
                              "expectedStatus": r["expectedStatus"], "rationale": "Luật đã được AI trích trong đợt đo (dựng lại, 0 token)", "approve": False})
         print(f"đã tạo {len(rules)} luật chờ duyệt (0 token)")
+    if args.e2:
+        add_e2_rules(system, pid, endpoint_id)
     target.reset()
     print(f"\nXong. Mở http://localhost:3000/projects/{pid}/rules (tab Nghiệp vụ). Đăng nhập bằng {args.email}.")
     print("Bật lỗi để bắt khi demo:  curl -X POST localhost:8083/__mutants -H 'Content-Type: application/json' -d '{\"enabled\":[\"M23\"]}'   (tắt: POST /__reset)")
