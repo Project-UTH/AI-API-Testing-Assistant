@@ -56,6 +56,8 @@ Các module 1-14 (nền tảng, project, import, review, thực thi, chuỗi d�
 | Fail giả trên bản chuẩn | 1,5% | 19,8% | 0% |
 | Token AI | 0 | 296.568 / 3 lượt | 42.564 / 3 lượt |
 
+**Cảnh báo ngay tại bảng:** (1) "đúng nhãn" mới là số đo chặt, "phát hiện" tính cả Fail có nhãn mơ hồ; (2) bộ held-out do một agent thiết kế khi đã đọc đáp án luật (nguồn của SRS và 9 mẫu luật), 3/15 lỗi rơi đúng họ luật cấu hình C hỗ trợ và H10 đã được dùng để sửa hệ thống, nên chưa phải kiểm tra khái quát độc lập; (3) "0% Fail giả" của C là 0 trên khoảng 10 test, API chuẩn, người duyệt mô phỏng (chưa có E2), một API; (4) 3/4 lỗi nghiệp vụ C bắt được (M23-M25) nằm cùng họ luật với đáp án nên là in-sample.
+
 **Đọc kết quả:** checklist A bắt hết lỗi validate và nhiều lỗi mã trạng thái nhưng **không bắt lỗi nghiệp vụ nào**; AI đoán (B) đắt (≈ 99.000 token/lượt) và không thêm lỗi nào được gán đúng nhãn; luật có người duyệt (C) rẻ hơn khoảng 7 lần, 0 Fail giả, bắt đúng 4 lỗi nghiệp vụ. Ba cấu hình bổ sung cho nhau. Trích luật bằng AI: 5 luật khác nhau, ổn định qua 3 lượt, cả 5 đúng; tìm được 5/7 luật mà 9 mẫu biểu diễn được.
 
 **Tổng quát hoá:** trên API cửa hàng (quy ước khác) Fail giả ban đầu 24,1%, còn 11,4% sau khi khai quy ước 403 và sửa nhận diện endpoint đăng nhập; phát hiện 11/15 lỗi. Hai lỗi tổng quát hoá thật được tìm ra nhờ đo hệ thống thứ hai (mục 7A).

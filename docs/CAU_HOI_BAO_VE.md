@@ -70,7 +70,7 @@ Không có một con số "đủ"; trả lời bằng 3 trục độc lập, kh�
 - Tin ở mức "bằng chứng gợi ý trên một hệ thống nhỏ", không phải thống kê. Điểm yếu: mutant và API do nhóm viết; held-out và tài liệu SRS do AI cùng họ viết, rút từ cùng 86 luật chuẩn, 5/15 held-out chồng bộ dev; **người gán nhãn luật là người phát triển hệ thống** và biết đáp án (5 luật đều trùng đáp án nên khó thiên lệch nhưng không loại bỏ được; chưa có người chấm thứ hai); cỡ mẫu 15 lỗi held-out và 5 luật.
 
 **13. AI trích luật chỉ bắt thêm vài lỗi nghiệp vụ, chi phí đó có đáng không? Ngoài 9 mẫu thì sao?**
-- Đo: 42.564 token cho 3 lượt trích (≈ 14k/lượt) rồi 0 token cho mọi lần sinh test; bắt đúng nhãn 4 lỗi nghiệp vụ mà A không bắt được và B (≈ 99k token/lượt) cũng không gán đúng. Mỗi lỗi bắt thêm tốn khoảng 10-11 nghìn token (42.564 / 4), rẻ hơn cách cũ.
+- Đo: 42.564 token cho 3 lượt trích (≈ 14k/lượt) rồi 0 token cho mọi lần sinh test; bắt đúng nhãn 4 lỗi nghiệp vụ mà A không bắt được và B (≈ 99k token/lượt) cũng không gán đúng. Tính đúng: 42.564 là tổng của 3 lượt trích, mỗi lượt (≈ 14,2k token) đều bắt cùng 4 lỗi, nên ≈ 3,5k token mỗi lỗi mỗi lượt và 0 token cho các lần sinh test sau đó; rẻ hơn cách cũ (≈ 99k token/lượt, không gán đúng nhãn lỗi nào).
 - Ngoài 9 mẫu (máy trạng thái, không nộp đơn trùng, luật quyền theo ngữ cảnh) hệ thống **không trích được**; 3/15 lỗi held-out thuộc loại luật đã trích, 2 lỗi (H11, H12) nằm ngoài khả năng.
 
 **14. Người dùng thật duyệt luật mất bao lâu, có duyệt sai không?**
