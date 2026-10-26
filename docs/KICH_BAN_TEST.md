@@ -139,7 +139,7 @@
 
 *Cần: hệ thống đang chạy, `mutant-api` cổng 8083 với `MUTANT_CONTROL=true`, project dựng bằng `python scripts/seed-demo-rules.py` (0 token). Bước **[TỐN TOKEN AI THẬT]** chỉ khi chạy `--with-ai` hoặc hộp thoại "Sinh test case" có tick "+ AI bổ sung checklist nghiệp vụ" (khoảng 14.000 token làn tài liệu; làn "AI gợi ý thêm" ước tính thêm 10.000-15.000, CHƯA đo).*
 
-**Test tự động (backend, không cần môi trường):** `cd backend && ./mvnw test` → 969 test pass, 0 fail (gồm 6 test phân quyền tích hợp thật cần MySQL đang chạy: `RuleAndDocumentOwnershipTest`).
+**Test tự động (backend, không cần môi trường):** `cd backend && ./mvnw test` → 971 test pass, 0 fail (gồm 6 test phân quyền tích hợp thật cần MySQL đang chạy: `RuleAndDocumentOwnershipTest`).
 
 **Tài liệu và trích luật**
 - [ ] Tải tệp `.pdf` → bị từ chối "Chỉ nhận tệp .md hoặc .txt"; tải tệp không phải UTF-8 → `DOCUMENT_ENCODING_INVALID`; tệp > 200 KB → `DOCUMENT_TOO_LARGE`; tải tệp thứ 31 → `DOCUMENT_LIMIT_REACHED` (giới hạn 30 tài liệu mỗi project).
@@ -167,8 +167,8 @@
 - [ ] Import spec có `security` toàn cục và `/auth/login` không khai `security: []` → endpoint đăng nhập được coi là công khai (có ca "sai mật khẩu", không có ca "thiếu token").
 
 **Đo đạc (chạy lại số liệu báo cáo, 0 token trừ khi ghi khác)**
-- [ ] `python scripts/eval-mutants.py --config A --runs 2 --include-heldout` → khớp `docs/eval/results-A-heldout-2026-10-26.json` (phát hiện 21/42 dev, 3/15 held-out, Fail giả 1,5%).
-- [ ] `cd mutant-shop && python oracle.py` → 15/15; `python scripts/eval-shop-mutants.py --runs 2 --unauthenticated-status 403` → khớp `results-shop-A-403-login-2026-10-25.json`.
+- [ ] `python scripts/eval-mutants.py --config A --runs 2 --include-heldout` → khớp số đã đo (phát hiện 21/42 dev, 3/15 held-out, Fail giả 1,5%; gán đúng 6/57).
+- [ ] `cd mutant-shop && python oracle.py` → 15/15; `python scripts/eval-shop-mutants.py --runs 2 --unauthenticated-status 403` → khớp số đã đo (gán đúng 1/15, phát hiện 73%).
 
 ## 17. Luồng "test gốc Pass → AI lập checklist → duyệt → sinh test" theo từng endpoint (thêm 2026-10-26, G3.6-G3.12)
 

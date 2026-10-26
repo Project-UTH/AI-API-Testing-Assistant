@@ -8,7 +8,7 @@
 2. **API đích phần A:** `shop-api-target` ở cổng 8081 (`A:/shop-api-target`).
 3. **API đích phần B:** `cd mutant-api && MUTANT_CONTROL=true ./mvnw spring-boot:run` (cổng 8083). Phải có `MUTANT_CONTROL=true` để bật/tắt lỗi cài sẵn.
 4. **Seed phần A (0 token):** `python scripts/seed-demo.py --recreate` → tài khoản `demo@aiapi.local` / `demo12345`, project **"Demo - Shop API"** (25 test thủ công, 7 lượt chạy, bug report).
-5. **Seed phần B** (project mutant-api; để thử trên API AI tuyển dụng thật của nhóm khác, xem `docs/eval/real-recruitment-2026-10-26.md`, cần tài khoản HR đã có công ty):
+5. **Seed phần B** (project mutant-api; để thử trên API AI tuyển dụng thật của nhóm khác, cần tài khoản HR đã có công ty):
    - Không tốn token: `python scripts/seed-demo-rules.py` → project **"Demo - Luật nghiệp vụ (API tuyển dụng)"** có 10 test gốc (Pass), tài liệu SRS đã tải, 5 luật chờ duyệt (luật nhập tay, không có nút tô sáng trích dẫn).
    - **Khuyến nghị làm 1 lần trước giờ demo** (tốn khoảng **14.000 token** đo thật, trần cứng 25.000): `python scripts/seed-demo-rules.py --with-ai` → luật do AI trích thật, có đoạn trích nguyên văn và nút "Xem trong tài liệu". Script in số token đã dùng.
 6. **Kiểm tra trước giờ demo:** đăng nhập tài khoản demo, mở cả 2 project, mở Kết quả thực thi; `curl localhost:8083/__mutants` trả JSON. Token của shop hết hạn sau 7 ngày (chạy lại bước 4 nếu quá hạn). Sau mỗi lần demo phần B, tắt lỗi: `curl -X POST localhost:8083/__reset`.
@@ -40,7 +40,7 @@ Luồng (mỗi lần sinh test, cho riêng endpoint đã chọn): **1.** AI sinh
 | 13 | Tab **Tài liệu** | Chỉ danh sách (tối đa 30), đọc nội dung, "Tài liệu này viết cho: …", bảng "đã gửi cho AI" theo tài liệu/theo endpoint | "Mỗi tài liệu khai báo viết cho endpoint nào thì khi sinh test cho endpoint đó được **tick sẵn**; lịch sử cho biết tài liệu đã dùng cho endpoint nào." |
 | 14 | Hộp thoại "Sinh test case" (chọn nhiều endpoint) | Chỉ "Chọn tài liệu riêng cho từng endpoint", bấm Hủy | "Mỗi tài liệu chỉ gửi cho đúng endpoint được gán; gom endpoint cùng bộ tài liệu vào cùng lượt gọi AI để tiết kiệm token." |
 | 15 | Trang Endpoint, `PUT /api/jobs/{id}` chưa có dữ liệu | (đã chạy sẵn, chỉ xem bước giám sát) | "Cần `{id}` thật: hệ thống tự thử **GET danh sách** (0 token), rồi tự cho AI tạo bằng **POST** (ghi thật, cần xác nhận). Không được thì nói rõ đã thử gì." |
-| 16 | `docs/eval/real-recruitment-2026-10-26.md` | Chỉ bảng: 46.453 token, lỗi thật 401 thay vì 400 | "Chạy thật trên API tuyển dụng của nhóm khác với SRS thật: tìm được 1 lỗi thật, **và lộ 2/5 mục 'có trích dẫn' mà đoạn trích không nêu luật**: em nêu cả điểm yếu." |
+| 16 | Bảng số đo trên API thật (47.396 token, lỗi thật 401 thay vì 400) | Chỉ bảng | "Chạy thật trên API tuyển dụng của nhóm khác với SRS thật: tìm được 1 lỗi thật, **và lộ 3/4 mục 'có trích dẫn' mà đoạn trích không nêu luật**: em nêu cả điểm yếu." |
 | 17 | `docs/DANH_GIA.md` mục 7B-7C | Chỉ bảng A / B / C và dòng token | "Em không nói AI giỏi: em **đo**. A (checklist, 0 token) không bắt lỗi nghiệp vụ nào; AI đoán test (B) ~99.000 token/lượt, không gán đúng lỗi nào thêm; luật có người duyệt (C) ~14.000 token một lần, bắt đúng 4 lỗi nghiệp vụ, 0 Fail giả. Hạn chế ghi ngay trong tài liệu: held-out do AI viết, người gán nhãn là em, chỉ một API." |
 
 ## Rủi ro khi demo trực tiếp

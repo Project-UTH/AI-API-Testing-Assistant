@@ -1,7 +1,6 @@
 # Đánh giá độ chính xác bằng lỗi cài sẵn (Module 17o)
 
-*Đo ngày 2026-10-21. Mọi con số dưới đây được sinh từ file kết quả JSON trong `docs/eval/` bằng `scripts/eval/make-report-tables.py`,
-chạy lại được (xem mục 8). Nếu một con số ở đây khác file JSON thì file JSON là đúng.*
+*Đo ngày 2026-10-21, đo lại trên hệ thống mới ngày 2026-10-26. Mọi con số dưới đây chạy lại được bằng các lệnh ở mục 8.*
 
 ## 0. Đọc trước: bộ số liệu nào là bộ chuẩn của báo cáo
 
@@ -74,7 +73,7 @@ Môi trường: model `claude-sonnet-5`, 11 file prompt (hash `92e2dbe9a6970e46`
 
 ## 3. Kết quả
 
-*(Các bảng dưới đây do `scripts/eval/make-report-tables.py` sinh trực tiếp từ `results-A-run12.json` và `results-B-merged.json`.)*
+*(Các bảng dưới đây sinh trực tiếp từ kết quả của cấu hình A, 2 lượt, và cấu hình B, 3 lượt.)*
 
 ### Tổng quan theo cấu hình
 
@@ -167,7 +166,7 @@ Nguyên nhân Fail giả trên bản chuẩn - C - chỉ AI nghiệp vụ (xấp
 
 Môi trường đo: model `claude-sonnet-5`, 11 file prompt (hash 92e2dbe9a6970e46), commit 7cd347a111 (có thay đổi chưa commit), ngày 2026-10-21.
 
-### So sánh với Schemathesis 4.32.2 (`docs/eval/schemathesis-2026-10-21.json`)
+### So sánh với Schemathesis 4.32.2
 
 Cùng `mutant-api`, cùng 27 mutant, `--max-examples 25 --seed 1`, 1 token HR. Schemathesis tự báo vài lỗi ngay trên bản chuẩn (15 cặp (thao tác, mã lỗi) trên bản chuẩn, chủ yếu phản hồi không khớp spec) nên mutant chỉ tính là
 phát hiện khi có lỗi **mới** (thao tác, mã) so với baseline gồm 2 lượt bản chuẩn (seed 1 và 2, đều 15 lỗi).
@@ -243,7 +242,7 @@ Ghi lại vì đây là bằng chứng phép đo đã được kiểm tra chứ 
 - **Mô phỏng gán profile thủ công** che một lỗi của hệ thống (mục 6.4); số đo "hiện trạng" khi không gán sẽ thấp hơn cho endpoint ứng viên.
 - **Schemathesis chỉ chạy cấu hình mặc định**, không tinh chỉnh; so sánh mang tính tham khảo.
 - **Chưa đo trên API thật** (`ai-recruitment-agent`, 110 endpoint) để lấy tỉ lệ Fail giả ngoài đời, và chưa đo độ bao phủ theo từng tập con spec lớn. Đã có số thực địa từ trước (roadmap 17h/17n), không phải đo của đợt này.
-- **E2** (thời gian người duyệt test AI) và **E4** (quay demo) **chưa làm**, cần người thật: mẫu đo ở `docs/eval/E2-do-thoi-gian-duyet.md`.
+- **E2** (thời gian người duyệt test AI) và **E4** (quay demo) **chưa làm**, cần người thật (đã có mẫu phiếu đo thời gian duyệt).
 
 ## 7A. Có tổng quát hoá sang hệ thống khác không? Đo trên hệ thống thứ hai (2026-10-25)
 
@@ -282,7 +281,7 @@ Ghi lại vì đây là bằng chứng phép đo đã được kiểm tra chứ 
 - Cỡ mẫu nhỏ: 15 và 42 lỗi, 2 lượt; số liệu A tất định nên 2 lượt cho kết quả giống hệt, không phải bằng chứng thống kê.
 - Lỗi trên mutant-shop do chính tác giả viết sau khi biết checklist hoạt động thế nào; giả thuyết đặt trước giảm nhưng không loại bỏ thiên lệch.
 
-**Số token dùng để ra các số liệu trên: 0.** Kiểm bằng sổ CSDL của hệ thống chính (mọi người dùng) trước và sau từng lần đo: tổng `test_generation_events.total_tokens` = 654.968 và tổng `generation_jobs.tokens_used` = 225.406 ở cả hai thời điểm; số dòng sổ 71 và 34 không đổi. Cấu hình A không gọi AI (job loại SYSTEM). Kết quả gốc: `docs/eval/results-A-2026-10-25.json`, `docs/eval/results-shop-A-2026-10-25.json` (trường `tokenAccounting`).
+**Số token dùng để ra các số liệu trên: 0.** Kiểm bằng sổ CSDL của hệ thống chính (mọi người dùng) trước và sau từng lần đo: tổng `test_generation_events.total_tokens` = 654.968 và tổng `generation_jobs.tokens_used` = 225.406 ở cả hai thời điểm; số dòng sổ 71 và 34 không đổi. Cấu hình A không gọi AI (job loại SYSTEM).
 
 **Đã sửa sau phát hiện này (2026-10-25): quy ước API theo project.** Người dùng khai "API này trả 403 khi thiếu/sai token" (Cài đặt xác thực của project, hoặc `PUT /projects/{id}/api-conventions`). Quy ước chỉ áp dụng cho test cố ý bỏ hoặc làm sai token và kỳ vọng 401; test khác (vd sai mật khẩu đăng nhập) và mã khác 403 vẫn so khớp như thường, và API không chặn (200) vẫn Fail. Đo lại trên mutant-shop với quy ước 403, 2 lượt, 0 token:
 
@@ -292,7 +291,7 @@ Ghi lại vì đây là bằng chứng phép đo đã được kiểm tra chứ 
 | Lỗi được phát hiện | 9/15 = 60% | 10/15 = 67% |
 | Lỗi xác thực (S12 GET không cần token) | không phát hiện | **phát hiện** |
 
-14 Fail còn lại: 8 là mục biên ngầm (spec không khai ràng buộc nhưng API từ chối giá trị âm/rỗng). Chúng không hẳn là Fail giả: nội dung mục đã ghi "API trả 400 nghĩa là spec khai thiếu ràng buộc hoặc API có lỗi", tức là bất đồng thật giữa spec và API. 6 còn lại do quy ước "403 cho mọi lỗi framework" của API này và endpoint đăng nhập công khai; chưa có cấu hình cho 2 nhóm này. Lỗi S13 (đăng nhập nhận mọi mật khẩu) vẫn lọt. Token dùng cho lần đo lại: 0 (sổ CSDL không đổi: 654.968 / 225.406). Kết quả gốc: `docs/eval/results-shop-A-403-2026-10-25.json`.
+14 Fail còn lại: 8 là mục biên ngầm (spec không khai ràng buộc nhưng API từ chối giá trị âm/rỗng). Chúng không hẳn là Fail giả: nội dung mục đã ghi "API trả 400 nghĩa là spec khai thiếu ràng buộc hoặc API có lỗi", tức là bất đồng thật giữa spec và API. 6 còn lại do quy ước "403 cho mọi lỗi framework" của API này và endpoint đăng nhập công khai; chưa có cấu hình cho 2 nhóm này. Lỗi S13 (đăng nhập nhận mọi mật khẩu) vẫn lọt. Token dùng cho lần đo lại: 0 (sổ CSDL không đổi: 654.968 / 225.406).
 
 **Lỗi tổng quát hoá thứ hai tìm ra và đã sửa (S13).** Spec của shop khai `security` toàn cục và không ghi `security: []` cho `/auth/login`, nên khi import endpoint đăng nhập bị coi là cần token. Hệ quả: (1) bỏ qua ca "sai mật khẩu → 401" (nhận diện đăng nhập yêu cầu endpoint không cần token) nên lỗi S13 lọt; (2) sinh 2 ca "thiếu token / token sai" cho chính endpoint đăng nhập, Fail giả trên bản chuẩn. Sửa: khi import, endpoint POST mang tên đăng nhập (không phải đăng ký, đăng xuất, làm mới, đặt lại mật khẩu) chỉ kế thừa security toàn cục thì coi là công khai; người dùng vẫn đổi tay được. Đo lại (2 lượt, 0 token, sổ CSDL không đổi 654.968 / 225.406):
 
@@ -303,7 +302,7 @@ Ghi lại vì đây là bằng chứng phép đo đã được kiểm tra chứ 
 | mutant-shop: lỗi xác thực (S12, S13) | 0/2 | 1/2 | **2/2** |
 | mutant-api: phát hiện / Fail giả | 21/42, 1,5% | | 21/42, 1,5% (không đổi, không hồi quy) |
 
-Kết quả gốc: `docs/eval/results-shop-A-403-login-2026-10-25.json`, `docs/eval/results-A-login-2026-10-25.json`. Trong 13 Fail còn lại của shop, 8 là bất đồng spec-API có thật (mục biên ngầm), 5 do quy ước "403 cho lỗi framework" chưa có cấu hình.
+Trong 13 Fail còn lại của shop, 8 là bất đồng spec-API có thật (mục biên ngầm), 5 do quy ước "403 cho lỗi framework" chưa có cấu hình.
 
 ## 7B. Đo G5 (2026-10-26): trích luật bằng AI, cấu hình C và bộ held-out
 
@@ -361,11 +360,11 @@ Kết quả gốc: `docs/eval/results-shop-A-403-login-2026-10-25.json`, `docs/e
 
 **Cách đọc cho đúng:** (1) bộ dev không có lỗi nào mới được bắt, nên cải tiến này chưa có bằng chứng ngoài tập; chỉ có bằng chứng là không làm hỏng và chặt hơn ở M25. (2) H10 giờ được bắt, nhưng H10 là lỗi đã dùng để phát hiện thiếu sót nên **không còn là mẫu độc lập**: không đưa vào số "held-out mới" ở bảng 7B (các bảng đó giữ nguyên số đo TRƯỚC khi sửa). (3) Chỉ 1 trong 15 lỗi held-out chịu ảnh hưởng.
 
-Dữ liệu gốc: `docs/eval/results-A-heldout-2026-10-26.json`, `results-B-heldout-2026-10-26.json`, `rules-extract-2026-10-26.json` (luật AI đề xuất), `rules-labels-2026-10-26.json` (nhãn), `results-C-rules-2026-10-26.log` (log gốc phép đo C; file JSON không ghi được do lỗi script, đã sửa).
+Đo lại ngày 2026-10-26 trên hệ thống mới: cấu hình A vẫn 6/57 (held-out 1/15); cấu hình B 1/57, Fail giả 46,4%, 289.025 token cho 3 lượt; cấu hình C held-out 2/15, trích luật 44.212 token cho 3 lượt. Gợi ý thường (3 lượt, chỉ từ spec): đúng 15/17 mục (88%), 11.771 token. Gợi ý rộng: đúng 15/31 mục (48%), 17.050 token.
 
 ## 7C. Luồng "AI lập checklist theo từng endpoint" (2026-10-26, G3.6-G3.12): số đo và giới hạn
 
-Chi tiết: `docs/eval/suggest-2026-10-26.md`, `docs/eval/real-recruitment-2026-10-26.md`. **Mỗi con số là 1-3 lượt, một API, người gán nhãn là người phát triển.**
+Trên API tuyển dụng thật: 47.396 token, 1 lỗi thật (401 thay vì 400), 3/4 mục có trích dẫn nhưng đoạn trích không nêu luật. **Mỗi con số là 1-3 lượt, một API, người gán nhãn là người phát triển.**
 
 | Phép đo | Token | Kết quả |
 |---|---|---|
@@ -373,7 +372,7 @@ Chi tiết: `docs/eval/suggest-2026-10-26.md`, `docs/eval/real-recruitment-2026-
 | Như trên sau khi đổi prompt (mặc định 400), 3 lượt | 4.053 / 3.803 / 3.924 | 5/5 mục đúng ở cả 3 lượt, mã 400; mục sai 2, 0, 0 |
 | SRS + gợi ý thêm (mutant-api) | 18.408 | 5/5 mục có trích dẫn đúng; 1 câu hỏi trùng "vấn đề mở" của SRS |
 | Trọn luồng qua giao diện (10 endpoint, SRS) | 18.209 | 5 mục duyệt → 10 test; chuẩn 11/11 Pass; M23, M24, M25 đều bị bắt |
-| **API tuyển dụng của nhóm khác, SRS thật, 22 endpoint** | 46.453 | 5 mục có trích dẫn (2 sai nghĩa), 9 GIẢ ĐỊNH, 8 câu hỏi; **1 lỗi thật** (401 thay vì 400); không có đáp án |
+| **API tuyển dụng của nhóm khác, SRS thật, 22 endpoint** | 47.396 | 4 mục có trích dẫn (3 sai nghĩa), các mục GIẢ ĐỊNH và câu hỏi còn lại; **1 lỗi thật** (401 thay vì 400); không có đáp án |
 
 Ba phát hiện về sai sót của hệ thống trong lúc đo (đã sửa): (1) mã gợi ý 422 lệch với API 400 → prompt mặc định 400, mã chỉ điền sẵn; (2) một lần chạy tốn 51.892 token vì AI sửa 3 lần một lỗi nó không sửa được (API trả 404 `COMPANY_NOT_FOUND`) → dừng sớm khi 404 mã `*_NOT_FOUND` ở endpoint không có tham số, test phụ chỉ sửa tối đa 1 lần; (3) nối chuỗi vào test POST nháp chưa bao giờ Pass làm test sau bị chặn → chỉ nối vào test đã khoá hoặc đã Pass, tự dọn test nháp cũ.
 
@@ -402,6 +401,3 @@ python scripts/eval/make-report-tables.py docs/eval/results-A-run12.json docs/ev
 # 6. Schemathesis (cài trong venv riêng)
 python scripts/eval/run-schemathesis.py --st <đường dẫn st> --out docs/eval/schemathesis-2026-10-21.json
 ```
-
-File kết quả: `results-A-run12.json` (A, 2 lượt), `results-B-run1.json` + `results-B-run23.json` → `results-B-merged.json` (B và C, 3 lượt; lượt 1 được đánh giá lại bằng phương pháp đã sửa trên
-project đã sinh, 88.272 token đã tiêu trước đó), `schemathesis-2026-10-21.json`, `pilot-B-2026-10-21.json` (lần thử đốt nhầm token, giữ làm bằng chứng cho mục 5).

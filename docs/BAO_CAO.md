@@ -1,6 +1,6 @@
 # AI API Testing Assistant: tài liệu báo cáo hợp nhất
 
-> Tài liệu này gom bài toán, mục tiêu, kiến trúc, phương pháp, kết quả đo và hạn chế vào một chỗ để làm khung cho báo cáo đồ án. Chi tiết và số liệu gốc nằm ở các tài liệu được trỏ tới; **nếu một con số ở đây khác file JSON trong `docs/eval/` thì file JSON là đúng.** Cập nhật 2026-10-26.
+> Tài liệu này gom bài toán, mục tiêu, kiến trúc, phương pháp, kết quả đo và hạn chế vào một chỗ để làm khung cho báo cáo đồ án. Số liệu được viết thẳng trong tài liệu; cách chạy lại ở `docs/DANH_GIA.md` mục 8. Cập nhật 2026-10-26.
 
 ## 1. Bài toán
 
@@ -43,7 +43,7 @@ Kiểm thử API REST thủ công tốn công và dễ bỏ sót: người kiể
 
 ## 5. Hiện thực (đã làm)
 
-Các module 1-14 (nền tảng, project, import, review, thực thi, chuỗi dữ liệu, lịch sử, bug report, admin, mật khẩu, Google, Docker); Module 15-16 (độ bao phủ giải thích được, phân tích nguyên nhân Fail, phát hiện test không ổn định); Module 17 (sẵn sàng cho API thật, đo bằng lỗi cài sẵn) và **17q**: độ bao phủ theo endpoint + độ tin của kết luận, luật nghiệp vụ có trích dẫn (tải tài liệu, AI trích luật, duyệt, đo thời gian duyệt), probe tất định, quy ước API, đo trên hai hệ thống. **Luồng sinh test hiện tại (G3.6-G3.12, 2026-10-26):** mỗi lần "Sinh test case" cho một endpoint chạy theo bốn bước: test gốc Pass (AI sinh, chạy thật), AI lập checklist nghiệp vụ riêng cho endpoint (tài liệu có trích dẫn và/hoặc gợi ý thêm GIẢ ĐỊNH, kèm câu hỏi về chỗ tài liệu thiếu mà người dùng trả lời được), người dùng xem checklist của hệ thống và của AI rồi duyệt trên một trang chính, hệ thống sinh test tất định từ mục đã duyệt rồi chạy. Một trần token tổng cho cả lần chạy; tài liệu lưu theo project (30 tài liệu), khai báo viết cho endpoint nào, gán riêng theo endpoint; hệ thống tự tìm hoặc tự tạo id thật cho tham số đường dẫn (GET danh sách rồi POST tạo, có xác nhận ghi thật) và dừng sớm khi API báo thiếu dữ liệu tiên quyết. Nhật ký chi tiết: `docs/ROADMAP.md`. Kiểm thử: **969 test backend pass**, kịch bản test tay `docs/KICH_BAN_TEST.md`.
+Các module 1-14 (nền tảng, project, import, review, thực thi, chuỗi dữ liệu, lịch sử, bug report, admin, mật khẩu, Google, Docker); Module 15-16 (độ bao phủ giải thích được, phân tích nguyên nhân Fail, phát hiện test không ổn định); Module 17 (sẵn sàng cho API thật, đo bằng lỗi cài sẵn) và **17q**: độ bao phủ theo endpoint + độ tin của kết luận, luật nghiệp vụ có trích dẫn (tải tài liệu, AI trích luật, duyệt, đo thời gian duyệt), probe tất định, quy ước API, đo trên hai hệ thống. **Luồng sinh test hiện tại (G3.6-G3.12, 2026-10-26):** mỗi lần "Sinh test case" cho một endpoint chạy theo bốn bước: test gốc Pass (AI sinh, chạy thật), AI lập checklist nghiệp vụ riêng cho endpoint (tài liệu có trích dẫn và/hoặc gợi ý thêm GIẢ ĐỊNH, kèm câu hỏi về chỗ tài liệu thiếu mà người dùng trả lời được), người dùng xem checklist của hệ thống và của AI rồi duyệt trên một trang chính, hệ thống sinh test tất định từ mục đã duyệt rồi chạy. Một trần token tổng cho cả lần chạy; tài liệu lưu theo project (30 tài liệu), khai báo viết cho endpoint nào, gán riêng theo endpoint; hệ thống tự tìm hoặc tự tạo id thật cho tham số đường dẫn (GET danh sách rồi POST tạo, có xác nhận ghi thật) và dừng sớm khi API báo thiếu dữ liệu tiên quyết. Nhật ký chi tiết: `docs/ROADMAP.md`. Kiểm thử: **971 test backend pass**, kịch bản test tay `docs/KICH_BAN_TEST.md`.
 
 ## 6. Đánh giá
 
@@ -62,7 +62,7 @@ Các module 1-14 (nền tảng, project, import, review, thực thi, chuỗi d�
 
 **Tổng quát hoá:** trên API cửa hàng (quy ước khác) Fail giả ban đầu 24,1%, còn 11,4% sau khi khai quy ước 403 và sửa nhận diện endpoint đăng nhập; phát hiện 11/15 lỗi. Hai lỗi tổng quát hoá thật được tìm ra nhờ đo hệ thống thứ hai (mục 7A).
 
-**Đo lại toàn bộ trên hệ thống mới (2026-10-26, `docs/eval/v2/TONG-HOP.md` - thay các số đo cũ):** cấu hình A giống hệt số cũ (6/57, 0 token); B 1/57 với Fail giả 46,4% và 289.025 token cho 3 lượt; C (luật từ tài liệu, người duyệt) held-out 2/15 so với 1/15 của A. Làn "AI gợi ý thêm" chỉ từ spec, 3 lượt mỗi chế độ: **gợi ý thường đúng 15/17 mục (88%), 11.771 token; gợi ý rộng đúng 15/31 mục (48%), 17.050 token** - cùng số luật đúng, gợi ý rộng nhiều gấp đôi mục sai. **Chạy thật trên API tuyển dụng của nhóm khác với SRS thật:** 47.396 token, 1 lỗi thật tìm được (`POST /api/hr/jobs` trả 401 thay vì 400 khi `salaryMin > salaryMax`), nhưng 3/4 mục "có trích dẫn" có đoạn trích không nêu luật; không có đáp án nên không tính precision/recall. Mỗi con số là 1-3 lượt, một người gán nhãn. Tổng token đợt đo: 409.454, đối chiếu sổ CSDL.
+**Đo lại toàn bộ trên hệ thống mới (2026-10-26, thay các số đo cũ):** cấu hình A giống hệt số cũ (6/57, 0 token); B 1/57 với Fail giả 46,4% và 289.025 token cho 3 lượt; C (luật từ tài liệu, người duyệt) held-out 2/15 so với 1/15 của A. Làn "AI gợi ý thêm" chỉ từ spec, 3 lượt mỗi chế độ: **gợi ý thường đúng 15/17 mục (88%), 11.771 token; gợi ý rộng đúng 15/31 mục (48%), 17.050 token** - cùng số luật đúng, gợi ý rộng nhiều gấp đôi mục sai. **Chạy thật trên API tuyển dụng của nhóm khác với SRS thật:** 47.396 token, 1 lỗi thật tìm được (`POST /api/hr/jobs` trả 401 thay vì 400 khi `salaryMin > salaryMax`), nhưng 3/4 mục "có trích dẫn" có đoạn trích không nêu luật; không có đáp án nên không tính precision/recall. Mỗi con số là 1-3 lượt, một người gán nhãn. Tổng token đợt đo: 409.454, đối chiếu sổ CSDL.
 
 **Chi phí AI của đợt đo cuối (G5): 339.132 token** (dự đoán 320.106), đối chiếu sổ CSDL trước/sau từng bước. Các phép đo còn lại tốn 0 token.
 
@@ -96,4 +96,4 @@ Hướng dẫn chạy hệ thống: `README.md`. Chạy lại các phép đo: `d
 | `docs/DEMO.md` | Kịch bản demo ~12 phút, chuẩn bị, rủi ro, bản dự phòng |
 | `docs/KICH_BAN_TEST.md` | Kịch bản test tay phủ mọi module |
 | `docs/ROADMAP.md` | Nhật ký tiến độ theo module (lịch sử, dài) |
-| `docs/eval/` | Dữ liệu đo (JSON), tài liệu nghiệp vụ mẫu, danh mục mẫu luật |
+| `docs/eval/` | Dữ liệu đo, tài liệu nghiệp vụ mẫu, danh mục mẫu luật |
