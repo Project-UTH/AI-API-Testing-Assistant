@@ -1,6 +1,6 @@
 # AI API Testing Assistant
 
-Hệ thống kiểm thử API REST: import OpenAPI/Swagger, sinh test case theo hướng **hybrid** (AI chỉ sinh 1 test gốc hợp lệ được chạy thật để xác nhận; hệ thống tất định bù checklist EP/BVA, bảo mật, probe OWASP; luật nghiệp vụ do AI trích từ tài liệu **có trích dẫn nguyên văn** và người dùng duyệt), thực thi, phân loại nguyên nhân Fail kèm độ tin, hỗ trợ bug report. Nguyên tắc: kiểm thử để **phát hiện** lỗi của API đích, không sửa kỳ vọng cho khớp hành vi sai.
+Hệ thống kiểm thử API REST: import OpenAPI/Swagger, sinh test case theo hướng **hybrid** (AI chỉ sinh 1 test gốc hợp lệ được chạy thật để xác nhận; hệ thống tất định bù checklist EP/BVA, bảo mật, probe OWASP; checklist nghiệp vụ do AI lập từ tài liệu **có trích dẫn nguyên văn** và/hoặc gợi ý thêm gắn nhãn GIẢ ĐỊNH, người dùng duyệt rồi hệ thống sinh test), thực thi, phân loại nguyên nhân Fail kèm độ tin, hỗ trợ bug report. Nguyên tắc: kiểm thử để **phát hiện** lỗi của API đích, không sửa kỳ vọng cho khớp hành vi sai.
 
 Đồ án môn học. Tài liệu báo cáo: [`docs/BAO_CAO.md`](docs/BAO_CAO.md). Kết quả đo: [`docs/DANH_GIA.md`](docs/DANH_GIA.md). Demo: [`docs/DEMO.md`](docs/DEMO.md).
 

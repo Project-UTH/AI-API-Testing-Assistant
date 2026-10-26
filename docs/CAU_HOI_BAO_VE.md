@@ -17,7 +17,7 @@
 ## B. Vai trò của AI
 
 **3. AI đóng góp gì thật sự? Có cần AI không?**
-- AI làm **2 việc có kiểm chứng**: (1) sinh 1 test gốc hợp lệ cho endpoint, hệ thống chạy thật để xác nhận (nếu 4xx thì gửi lỗi thật cho AI sửa, không sửa được thì dừng và hỏi người dùng); (2) **trích luật nghiệp vụ từ tài liệu của người dùng**, mỗi luật kèm đoạn trích nguyên văn. Sau khi người dùng duyệt luật, test được sinh **tất định, 0 token**.
+- AI làm **2 việc có kiểm chứng**: (1) sinh 1 test gốc hợp lệ cho endpoint, hệ thống chạy thật để xác nhận (nếu 4xx thì gửi lỗi thật cho AI sửa, không sửa được thì dừng và hỏi người dùng); (2) **lập checklist nghiệp vụ** (tick "AI bổ sung checklist nghiệp vụ"): từ tài liệu/chỉ dẫn của người dùng, mỗi mục kèm đoạn trích nguyên văn, chỗ tài liệu thiếu AI hỏi lại; tuỳ chọn "AI gợi ý thêm" cho điều tài liệu không nói (nhãn GIẢ ĐỊNH, kèm mã lỗi gợi ý). Sau khi người dùng duyệt, test được sinh **tất định, 0 token**.
 - Checklist bắt buộc/null/biên/enum/bảo mật/probe OWASP **không cần AI** (0 token).
 - Chi phí đo thật (G5, API tuyển dụng 10 endpoint): trích luật ≈ **14.188 token/lượt**; cách cũ "AI đoán test nghiệp vụ" ≈ **98.856 token/lượt** (khoảng 7 lần đắt hơn).
 
@@ -56,7 +56,7 @@ Không có một con số "đủ"; trả lời bằng 3 trục độc lập, kh�
 
 **9. AI nghiệp vụ dựa vào đâu để sinh test, còn "đoán" không?**
 - Cách cũ (AI đoán test nghiệp vụ từ spec): có đo, ≈ 99 nghìn token/lượt, 19,8% Fail giả; vẫn có trong hệ thống nhưng gắn nhãn **GIẢ ĐỊNH**, không tính vào độ bao phủ.
-- Cách mới: AI **không viết test**, chỉ đề xuất *luật* theo 9 mẫu và phải kèm đoạn trích nguyên văn; không trích dẫn được thì thành GIẢ ĐỊNH. Đo: **5 luật khác nhau, cùng 5 luật ở 3 lượt, cả 5 đúng so với đáp án (5/5)**, 0 luật GIẢ ĐỊNH; tìm được **5/7** luật mà 9 mẫu biểu diễn được (thiếu 2 luật về số phần tử của mảng).
+- Cách mới: AI **không viết test**, chỉ đề xuất mục checklist (luật) theo 9 mẫu, phải kèm đoạn trích nguyên văn; không trích dẫn được thì thành GIẢ ĐỊNH. Làn "AI gợi ý thêm" (không tài liệu, chỉ từ spec): đo 3 lượt sau khi sửa prompt (3.800-4.050 token/lượt), cả 3 lượt có đủ 5 mục đúng với mã gợi ý 400, mục sai 0-2 mỗi lượt (`docs/eval/suggest-2026-10-26.md`); lần đo đầu gợi ý 422 trong khi API trả 400, nên mã gợi ý chỉ điền sẵn và người duyệt phải xác nhận. Đo: **5 luật khác nhau, cùng 5 luật ở 3 lượt, cả 5 đúng so với đáp án (5/5)**, 0 luật GIẢ ĐỊNH; tìm được **5/7** luật mà 9 mẫu biểu diễn được (thiếu 2 luật về số phần tử của mảng).
 - **Giới hạn:** một tài liệu do AI viết (có thể dễ trích hơn tài liệu thật), người chấm là người phát triển hệ thống, luật ngoài 9 mẫu (máy trạng thái, không trùng lặp) không trích được.
 
 **10. Hệ thống có chuẩn trên các hệ thống khác nhau không?**
