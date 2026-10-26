@@ -276,11 +276,6 @@ public class TestCaseGenerationService {
     public record BaselineProposal(GeneratedTestCase test, int tokens) {
     }
 
-    @Transactional(readOnly = true)
-    public void assertQuota(UUID projectId) {
-        ensureWithinDailyQuota(projectService.getOwnedProject(projectId));
-    }
-
     /** Gọi AI đúng 1 lần: lần đầu (previous = null) sinh test gốc; lần sau sửa dựa trên kết quả thật của API. Ghi token vào lịch sử/quota. */
     @Transactional
     public BaselineProposal askBaseline(UUID projectId, UUID endpointId, BaselineAttempt previous) {

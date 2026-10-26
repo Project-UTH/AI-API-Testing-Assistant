@@ -107,20 +107,6 @@ const BANNER_TEXT: Partial<Record<FailureCauseCode, string>> = {
   RESOURCE_NOT_FOUND: "gọi bằng id dự phòng và nhận 404 - test chưa chạm tới logic cần kiểm.",
 }
 
-/**
- * Banner đầu trang kết quả: khi nhiều test cùng fail vì 1 nguyên nhân KHÔNG phải do API, nói thẳng một lần thay vì
- * để người dùng tự đọc từng dòng Fail rồi điều tra từng test. Gom ở frontend từ nhãn backend đã chấm sẵn.
- */
-export function FailureCauseBanner({ results, projectId }: { results: TestResult[]; projectId: string }) {
-  const counts: Partial<Record<FailureCauseCode, number>> = {}
-  for (const r of results) {
-    if (r.failureCause?.notApiFault) {
-      counts[r.failureCause.code] = (counts[r.failureCause.code] ?? 0) + 1
-    }
-  }
-  return <FailureCauseSummaryBanner counts={counts} total={results.length} projectId={projectId} />
-}
-
 /** Các nguyên nhân "không phải do API" (khớp FailureCause.notApiFault ở backend) - chỉ những mã này được gom vào banner. */
 const NOT_API_FAULT_CODES: FailureCauseCode[] = ["TEST_SETUP", "ENVIRONMENT", "AUTH_CONFIG", "RESOURCE_NOT_FOUND"]
 

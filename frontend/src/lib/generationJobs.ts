@@ -123,19 +123,8 @@ export function listRecentJobs(projectId: string): Promise<GenerationJob[]> {
   return apiFetch<GenerationJob[]>(`/projects/${projectId}/generation-jobs`)
 }
 
-export function listActiveJobs(projectId: string): Promise<GenerationJob[]> {
-  return apiFetch<GenerationJob[]>(`/projects/${projectId}/generation-jobs?active=true`)
-}
-
 export function isTerminal(status: JobStatus): boolean {
   return status !== "QUEUED" && status !== "RUNNING" && status !== "CANCELLING"
-}
-
-export const JOB_TYPE_LABEL: Record<JobType, string> = {
-  FULL: "Sinh test case (AI sinh test gốc + hệ thống bổ sung)",
-  SYSTEM: "Sinh test case: chỉ bổ sung từ test gốc có sẵn (0 token)",
-  LEGACY: "Sinh toàn bộ bằng AI (chức năng cũ đã bỏ)",
-  RULES: "AI lập checklist nghiệp vụ (mục chờ bạn duyệt)",
 }
 
 export const JOB_STATUS_LABEL: Record<JobStatus, string> = {

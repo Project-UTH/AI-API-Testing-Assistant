@@ -288,11 +288,4 @@ public final class SensitiveDataScanner {
             node.forEach(child -> collect(child, out, depth + 1));
         }
     }
-
-    /** Gom mọi finding thành danh sách chuỗi ổn định cho báo cáo/log (không chứa giá trị). */
-    static List<String> describeAll(List<Finding> findings) {
-        List<String> lines = new ArrayList<>();
-        findings.forEach(f -> lines.add(f.path() + " [" + f.rule() + "]"));
-        return lines;
-    }
 }

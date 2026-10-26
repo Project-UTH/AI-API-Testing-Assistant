@@ -9,9 +9,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { ApiError } from "@/lib/api"
 import { deleteRequirementDoc, listRequirementDocs, MAX_DOC_BYTES, MAX_DOCS, uploadRequirementDoc } from "@/lib/requirementDocs"
 
-export const DEFAULT_RULES_BUDGET = 60_000
-export const MIN_RULES_BUDGET = 5_000
-export const MAX_RULES_BUDGET = 1_000_000
 export const MAX_INSTRUCTION = 4_000
 
 /** Trạng thái nhập của khối "AI lập checklist nghiệp vụ" (do hộp thoại cha giữ để gửi khi bấm Bắt đầu). */
@@ -21,7 +18,6 @@ export interface ChecklistInput {
   suggest: boolean
   /** Gợi ý rộng (true) hay gợi ý thường (false) khi làn gợi ý đang bật. */
   suggestBroad: boolean
-  budget: string
   consent: boolean
   /**
    * Phân công tài liệu theo endpoint: null = mọi tài liệu đang tick dùng cho MỌI endpoint (mặc định); có giá trị = tài liệu -> các endpoint dùng nó
@@ -37,7 +33,6 @@ export const EMPTY_CHECKLIST_INPUT: ChecklistInput = {
   instruction: "",
   suggest: false,
   suggestBroad: false,
-  budget: String(DEFAULT_RULES_BUDGET),
   consent: false,
   assign: null,
   autoApplied: false,
@@ -58,10 +53,6 @@ export function docsForEndpoint(input: ChecklistInput, docIds: string[], endpoin
 export function buildDocumentsByEndpoint(input: ChecklistInput, docIds: string[], endpoints: EndpointRef[]): Record<string, string[]> | undefined {
   if (input.assign === null) return undefined
   return Object.fromEntries(endpoints.map((e) => [e.id, docsForEndpoint(input, docIds, e.id)]))
-}
-
-export function budgetOf(input: ChecklistInput): number {
-  return Math.min(MAX_RULES_BUDGET, Math.max(MIN_RULES_BUDGET, Math.floor(Number(input.budget)) || DEFAULT_RULES_BUDGET))
 }
 
 function errorText(error: unknown): string {

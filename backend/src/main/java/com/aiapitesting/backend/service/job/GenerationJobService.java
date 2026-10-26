@@ -316,16 +316,6 @@ public class GenerationJobService {
         return toResponse(jobs.save(job), List.of(), 0);
     }
 
-    /** Dọn job + bước của project khi xoá project. */
-    @Transactional
-    public void deleteForProject(UUID projectId) {
-        List<UUID> ids = jobs.findIdsByProjectId(projectId);
-        if (!ids.isEmpty()) {
-            steps.deleteAllByJobIdIn(ids);
-            jobs.deleteAllByProjectId(projectId);
-        }
-    }
-
     // ---- Chạy job (trên jobExecutor, có SecurityContext của người bấm) ----
 
     void runJob(UUID jobId, UUID projectId, List<UUID> endpointIds, StartGenerationJobRequest req) {

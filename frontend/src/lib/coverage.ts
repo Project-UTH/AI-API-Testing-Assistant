@@ -182,13 +182,6 @@ export function getTestStateDisplay(state: string | null | undefined) {
   )
 }
 
-export interface ProjectCoverage {
-  projectId: string
-  overallCoveragePercent: number
-  overallExecutedPercent: number
-  endpoints: EndpointCoverage[]
-}
-
 export interface CoverageFillResult {
   createdCount: number
   created: CoverageTestCaseRef[]
@@ -241,11 +234,6 @@ export function coverageRowCounts(row: CoverageEndpointRow) {
     doubtful: row.doubtfulCount ?? 0,
     specGap: row.specGapCount ?? 0,
   }
-}
-
-/** Module 15c/15j - tất định (checklist EP/BVA + method/auth/dependency/lịch sử fail), không gọi AI. */
-export function getProjectCoverage(projectId: string): Promise<ProjectCoverage> {
-  return apiFetch<ProjectCoverage>(`/projects/${projectId}/coverage`)
 }
 
 /** Số đo của TOÀN project (không bị thu hẹp bởi bộ lọc/trang). */

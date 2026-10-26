@@ -29,12 +29,6 @@ export const BUG_SEVERITY_LABEL: Record<BugSeverity, string> = {
   CRITICAL: "Chí mạng",
 }
 
-export const BUG_SEVERITY_STYLES: Record<BugSeverity, string> = {
-  MINOR: "bg-muted text-muted-foreground",
-  SERIOUS: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  CRITICAL: "bg-destructive/10 text-destructive",
-}
-
 export const BUG_PRIORITY_LABEL: Record<BugPriority, string> = {
   TRIVIAL: "Không đáng kể",
   MINOR: "Thấp",
@@ -43,24 +37,10 @@ export const BUG_PRIORITY_LABEL: Record<BugPriority, string> = {
   BLOCKER: "Chặn release",
 }
 
-export const BUG_PRIORITY_STYLES: Record<BugPriority, string> = {
-  TRIVIAL: "bg-muted text-muted-foreground",
-  MINOR: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  MAJOR: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  CRITICAL: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-  BLOCKER: "bg-destructive/10 text-destructive",
-}
-
 export const BUG_FREQUENCY_LABEL: Record<BugFrequency, string> = {
   SELDOM: "Hiếm khi",
   OFTEN: "Thường xuyên",
   ALWAYS: "Luôn luôn",
-}
-
-export const BUG_FREQUENCY_STYLES: Record<BugFrequency, string> = {
-  SELDOM: "bg-muted text-muted-foreground",
-  OFTEN: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  ALWAYS: "bg-destructive/10 text-destructive",
 }
 
 function Chip({ label, style, className }: { label: string; style: string; className?: string }) {
@@ -73,16 +53,4 @@ function Chip({ label, style, className }: { label: string; style: string; class
 
 export function BugStatusBadge({ status, className }: { status: BugStatus; className?: string }) {
   return <Chip label={BUG_STATUS_LABEL[status]} style={BUG_STATUS_STYLES[status]} className={className} />
-}
-
-export function BugSeverityBadge({ severity, className }: { severity: BugSeverity; className?: string }) {
-  return <Chip label={BUG_SEVERITY_LABEL[severity]} style={BUG_SEVERITY_STYLES[severity]} className={className} />
-}
-
-export function BugPriorityBadge({ priority, className }: { priority: BugPriority; className?: string }) {
-  return <Chip label={BUG_PRIORITY_LABEL[priority]} style={BUG_PRIORITY_STYLES[priority]} className={className} />
-}
-
-export function BugFrequencyBadge({ frequency, className }: { frequency: BugFrequency; className?: string }) {
-  return <Chip label={BUG_FREQUENCY_LABEL[frequency]} style={BUG_FREQUENCY_STYLES[frequency]} className={className} />
 }

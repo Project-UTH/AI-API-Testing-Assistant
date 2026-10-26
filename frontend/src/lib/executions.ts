@@ -183,10 +183,6 @@ export function exportExecution(projectId: string, executionId: string, format: 
   )
 }
 
-export function getExecution(projectId: string, executionId: string): Promise<TestExecution> {
-  return apiFetch<TestExecution>(`/projects/${projectId}/executions/${executionId}`)
-}
-
 /** Tổng hợp trên TOÀN BỘ kết quả của lượt chạy (không đổi theo bộ lọc/trang). */
 export interface ExecutionResultsSummary {
   total: number

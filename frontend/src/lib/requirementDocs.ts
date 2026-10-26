@@ -62,8 +62,3 @@ export function deleteRequirementDoc(projectId: string, documentId: string): Pro
 export function getRequirementDocContent(projectId: string, documentId: string): Promise<RequirementDocumentContent> {
   return apiFetch<RequirementDocumentContent>(`/projects/${projectId}/requirement-documents/${documentId}/content`)
 }
-
-/** Ước tính token một lần trích mục (khớp công thức backend: ký tự / 2,8 cộng 10%), chỉ để người dùng đặt ngân sách. */
-export function estimateTokens(chars: number): number {
-  return Math.ceil((chars * 1.1) / 2.8)
-}

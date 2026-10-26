@@ -92,12 +92,6 @@ export interface GenerationPlanSummary {
   items: ChecklistItemResponse[]
 }
 
-export interface GenerateTestCasesResponse {
-  testCases: TestCase[]
-  /** Từ 15i luôn có (cả khi chỉ sinh Security); kiểu vẫn cho null để an toàn với phản hồi cũ. */
-  planSummary: GenerationPlanSummary | null
-}
-
 /** Module 15b (Tier 1) - đối chiếu tất định với spec, chỉ áp dụng cho case kỳ vọng thành công. */
 export type TestCaseReliability = "RELIABLE" | "NEEDS_REVIEW"
 
@@ -246,15 +240,6 @@ export interface TestCaseInput {
   authProfileId?: string | null
   dependencies?: TestCaseDependencyInput[]
   assertions?: TestCaseAssertionInput[]
-}
-
-export interface GenerateTestCasesOptions {
-  includeSecurity?: boolean
-  includePositive?: boolean
-  includeNegative?: boolean
-  includeBoundary?: boolean
-  /** Nhóm nghiệp vụ: AI đoán mục không có trong spec (mọi lý do đều là GIẢ ĐỊNH). */
-  includeBusiness?: boolean
 }
 
 /** Báo cáo checklist của lần sinh nhóm Basic gần nhất - null nếu chưa có (Module 15h). */
