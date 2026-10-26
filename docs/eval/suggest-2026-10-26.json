@@ -1,0 +1,146 @@
+[
+  {
+    "project": "EVAL-SUGGEST-S2-tai-lieu-va-goi-y-1026-174335",
+    "projectId": "d35d2902-7c64-4c85-95ad-d1b88a5d5efb",
+    "rules": [
+      {
+        "id": "9ffad297-bff3-42f6-9857-8108d7affcc7",
+        "endpoint": "POST /api/jobs",
+        "sentence": "salaryMin ≤ salaryMax",
+        "source": "DOC",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": null,
+        "hasQuote": true,
+        "rationale": "Lương tối thiểu không được vượt quá lương tối đa khi cả hai cùng được nhập."
+      },
+      {
+        "id": "6222209d-f231-450e-9e54-dfa5f25b8eab",
+        "endpoint": "POST /api/jobs",
+        "sentence": "deadline ≥ bây giờ",
+        "source": "DOC",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": null,
+        "hasQuote": true,
+        "rationale": "Hạn nộp hồ sơ phải từ hôm nay trở đi, không được là ngày quá khứ."
+      },
+      {
+        "id": "bab6cd96-7972-4289-9a35-17fef73e8ae8",
+        "endpoint": "POST /api/jobs/{jobId}/applications",
+        "sentence": "Có consent = true thì phải có coverLetter",
+        "source": "INFERRED",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": null,
+        "hasQuote": false,
+        "rationale": "GIẢ ĐỊNH: Có thể yêu cầu ứng viên đồng ý điều khoản trước khi cho phép nộp đơn có thư xin việc"
+      },
+      {
+        "id": "f2d36a81-dde3-46c1-af2b-b209b65d2c80",
+        "endpoint": "PUT /api/jobs/{id}",
+        "sentence": "salaryMin ≤ salaryMax",
+        "source": "DOC",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": null,
+        "hasQuote": true,
+        "rationale": "Lương tối thiểu không được vượt quá lương tối đa khi sửa tin."
+      },
+      {
+        "id": "2fd2d4c2-1a8a-4302-a160-1230332d8910",
+        "endpoint": "PUT /api/jobs/{id}",
+        "sentence": "deadline ≥ bây giờ",
+        "source": "DOC",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": null,
+        "hasQuote": true,
+        "rationale": "Khi sửa tin, hạn nộp mới cũng không được là ngày trong quá khứ."
+      },
+      {
+        "id": "dc0835bb-73f0-4ee8-b531-edc12332d6df",
+        "endpoint": "PUT /api/jobs/{id}/rubric",
+        "sentence": "Tổng criteria[].weight = 100",
+        "source": "DOC",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": null,
+        "hasQuote": true,
+        "rationale": "Tổng trọng số của toàn bộ tiêu chí phải bằng đúng 100."
+      }
+    ]
+  },
+  {
+    "project": "EVAL-SUGGEST-S1-chi-spec-1026-174320",
+    "projectId": "e90b8de8-be76-40b0-97da-9cc65f8ec3cb",
+    "rules": [
+      {
+        "id": "d644ca0a-712e-4ea4-827c-ca451cc70b8d",
+        "endpoint": "POST /api/jobs",
+        "sentence": "salaryMin ≤ salaryMax",
+        "source": "INFERRED",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": 422,
+        "hasQuote": false,
+        "rationale": "GIẢ ĐỊNH: Lương tối thiểu phải nhỏ hơn hoặc bằng lương tối đa để hợp lý nghiệp vụ"
+      },
+      {
+        "id": "6e88fb5a-53b1-4cef-9e25-d6034a603c33",
+        "endpoint": "POST /api/jobs",
+        "sentence": "deadline ≥ bây giờ",
+        "source": "INFERRED",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": 422,
+        "hasQuote": false,
+        "rationale": "GIẢ ĐỊNH: Hạn nộp hồ sơ của tin tuyển dụng phải ở tương lai so với thời điểm tạo"
+      },
+      {
+        "id": "4dba7259-523b-409e-b922-267b50b32628",
+        "endpoint": "POST /api/jobs/{jobId}/applications",
+        "sentence": "Có consent = true thì phải có coverLetter",
+        "source": "INFERRED",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": null,
+        "hasQuote": false,
+        "rationale": "GIẢ ĐỊNH: Có thể yêu cầu ứng viên đồng ý điều khoản trước khi cho phép nộp thư xin việc"
+      },
+      {
+        "id": "54ce9db9-a716-4218-b148-09f82c16eff7",
+        "endpoint": "PUT /api/jobs/{id}",
+        "sentence": "salaryMin ≤ salaryMax",
+        "source": "INFERRED",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": 422,
+        "hasQuote": false,
+        "rationale": "GIẢ ĐỊNH: Lương tối thiểu phải nhỏ hơn hoặc bằng lương tối đa để hợp lý nghiệp vụ"
+      },
+      {
+        "id": "8186a3bf-1e50-428f-a6ae-95163612c6b1",
+        "endpoint": "PUT /api/jobs/{id}",
+        "sentence": "deadline ≥ bây giờ",
+        "source": "INFERRED",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": 422,
+        "hasQuote": false,
+        "rationale": "GIẢ ĐỊNH: Hạn nộp hồ sơ khi sửa tin vẫn cần ở tương lai so với thời điểm cập nhật"
+      },
+      {
+        "id": "d9df96a2-d0aa-4ef1-8d58-4419882eba38",
+        "endpoint": "PUT /api/jobs/{id}/rubric",
+        "sentence": "Tổng criteria[].weight = 100",
+        "source": "INFERRED",
+        "status": "PROPOSED",
+        "expectedStatus": null,
+        "suggestedStatus": 422,
+        "hasQuote": false,
+        "rationale": "GIẢ ĐỊNH: Mô tả endpoint nêu rõ tổng weight của các tiêu chí phải bằng 100"
+      }
+    ]
+  }
+]
