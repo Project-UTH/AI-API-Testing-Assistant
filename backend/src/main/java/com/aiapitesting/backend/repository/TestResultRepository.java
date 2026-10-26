@@ -23,6 +23,8 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID>, J
 
     void deleteAllByTestCase(TestCase testCase);
 
+    boolean existsByTestCaseAndStatus(TestCase testCase, TestResultStatus status);
+
     /**
      * @Modifying bắt buộc (giống TestCaseDependencyRepository.deleteAllByTestCase) - derived delete
      * thường load entity rồi remove() từng dòng, kiểm tra đúng 1 dòng bị xoá lúc flush; 2 lượt

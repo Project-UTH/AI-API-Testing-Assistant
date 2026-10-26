@@ -5,11 +5,13 @@ import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseDependency;
+import com.aiapitesting.backend.entity.TestResultStatus;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
 import com.aiapitesting.backend.repository.TestCaseRepository;
+import com.aiapitesting.backend.repository.TestResultRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -38,6 +40,7 @@ public class DependencySuggestionService {
     private final TestCaseRepository testCaseRepository;
     private final TestCaseDependencyRepository testCaseDependencyRepository;
     private final TestCasePathValidator testCasePathValidator;
+    private final TestResultRepository testResultRepository;
 
     public List<DependencySuggestionResponse> suggest(UUID projectId, UUID endpointId, UUID testCaseId) {
         Project project = projectService.getOwnedProject(projectId);
@@ -61,12 +64,20 @@ public class DependencySuggestionService {
         return suggestions;
     }
 
-    /** Có test POST (kỳ vọng 2xx) tạo tài nguyên để nối chuỗi lấy giá trị cho tham số đường dẫn này không - dùng để hỏi người dùng TRƯỚC khi tốn token AI. */
+    /**
+     * Có test POST tạo tài nguyên KHỎE (đã khoá làm test gốc hoặc đã từng Pass) để nối chuỗi lấy giá trị cho tham số đường dẫn này không - dùng để hỏi người
+     * dùng TRƯỚC khi tốn token AI. Test nháp chưa bao giờ Pass (vd còn sót từ lần sinh lỗi) KHÔNG tính: nối vào nó thì test sau bị chặn "test nguồn không Pass".
+     */
     public boolean hasCreatorSource(UUID projectId, UUID endpointId, String paramName) {
         Project project = projectService.getOwnedProject(projectId);
         Endpoint endpoint = endpointRepository.findByIdAndProject(endpointId, project)
                 .orElseThrow(() -> new EndpointNotFoundException("Không tìm thấy endpoint với id đã cho"));
-        return findSuggestion(project, endpoint, paramName).isPresent();
+        return findSuggestion(project, endpoint, paramName).filter(s -> isHealthy(s.sourceTestCaseId())).isPresent();
+    }
+
+    private boolean isHealthy(UUID testCaseId) {
+        TestCase tc = testCaseRepository.findById(testCaseId).orElse(null);
+        return tc != null && (tc.isLocked() || testResultRepository.existsByTestCaseAndStatus(tc, TestResultStatus.PASSED));
     }
 
     /** Endpoint POST tạo tài nguyên cho tham số đường dẫn này (POST trên đường dẫn cha, vd /api/hr/jobs cho /api/hr/jobs/{id}); rỗng nếu spec không có. */
@@ -89,9 +100,11 @@ public class DependencySuggestionService {
             return Optional.empty();
         }
 
-        Optional<TestCase> source = testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(creatorEndpoint.get()).stream()
+        List<TestCase> candidates = testCaseRepository.findAllByEndpointOrderByCreatedAtAsc(creatorEndpoint.get()).stream()
                 .filter(tc -> tc.getExpectedStatus() != null && tc.getExpectedStatus() >= MIN_2XX && tc.getExpectedStatus() <= MAX_2XX)
-                .findFirst();
+                .toList();
+        // Ưu tiên test nguồn khỏe (đã khoá/đã Pass); không có thì lấy test 2xx đầu tiên như trước (người dùng tự thêm test, chưa chạy).
+        Optional<TestCase> source = candidates.stream().filter(tc -> isHealthy(tc.getId())).findFirst().or(() -> candidates.stream().findFirst());
         if (source.isEmpty()) {
             return Optional.empty();
         }

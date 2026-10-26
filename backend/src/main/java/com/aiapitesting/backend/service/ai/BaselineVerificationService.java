@@ -383,6 +383,9 @@ public class BaselineVerificationService {
             if (err.toLowerCase(Locale.ROOT).contains("thiếu giá trị")) {
                 return new Diagnosis(Decision.HUMAN, "MISSING_PARAM_VALUE", "Thiếu giá trị cho tham số đường dẫn - nhập giá trị thật (vd id).");
             }
+            if (err.contains("không PASSED")) {
+                return new Diagnosis(Decision.HUMAN, "SOURCE_NOT_PASSED", err + ". Test tạo tài nguyên phải Pass trước (sửa hoặc chạy lại test đó), rồi chạy lại - đây không phải lỗi kết nối.");
+            }
             return new Diagnosis(Decision.HUMAN, "EXECUTION_ERROR", "Không gọi được API đích: " + (err.isBlank() ? "không có phản hồi" : err));
         }
         if (credentialEndpoint && http == 401) {
