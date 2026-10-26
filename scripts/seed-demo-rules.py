@@ -44,7 +44,7 @@ def add_e2_rules(system, pid, endpoint_id):
     for key, correct, method, path, template, params in E2_RULES:
         _, r = system.api.call("POST", f"/projects/{pid}/business-rules",
                                {"endpointId": endpoint_id[(method, path)], "template": template, "params": params, "expectedStatus": None,
-                                "rationale": f"E2-{key}", "approve": False})
+                                "rationale": None, "approve": False})  # ghi chú để trống: không để lộ mã/đáp án trên giao diện
         print(f"  {key}: {'ĐÚNG (nên duyệt)' if correct else 'SAI (nên loại)'}  {r['data']['sentence']}")
 
 
@@ -92,7 +92,7 @@ def main():
             method, path = r["endpoint"].split(" ", 1)
             system.api.call("POST", f"/projects/{pid}/business-rules",
                             {"endpointId": endpoint_id[(method, path)], "template": r["template"], "params": r["params"],
-                             "expectedStatus": r["expectedStatus"], "rationale": "Luật đã được AI trích trong đợt đo (dựng lại, 0 token)", "approve": False})
+                             "expectedStatus": r["expectedStatus"], "rationale": None if args.e2 else "Luật đã được AI trích trong đợt đo (dựng lại, 0 token)", "approve": False})
         print(f"đã tạo {len(rules)} luật chờ duyệt (0 token)")
     if args.e2:
         add_e2_rules(system, pid, endpoint_id)

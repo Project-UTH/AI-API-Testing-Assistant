@@ -89,7 +89,7 @@ Tổng hợp (sau khi có ít nhất 3 người): trung vị thời gian mỗi q
 - **Cả 5 luật AI trích đều đúng** nên phép đo **không kiểm tra được trường hợp trích dẫn sai nhưng trông thuyết phục**; luật sai duy nhất là 2 luật nhập tay không có trích dẫn. Kết luận về "trích dẫn giúp phát hiện luật sai" vì vậy bị giới hạn.
 - Công cụ đo tính thời gian luật nằm trong khung nhìn khi tab đang mở và có focus, **không** đo thời gian đọc thực sự (người dùng có thể nhìn đi chỗ khác); không đo duyệt hàng loạt.
 - Tài liệu ngắn (khoảng 16.000 ký tự) và do AI viết, có thể dễ duyệt hơn tài liệu thật.
-- Trong điều kiện PLAIN, ghi chú của 5 luật ghi "Luật đã được AI trích..." nên người tham gia biết nguồn; đã cố định lời hướng dẫn để không nhấn mạnh điều này.
+- **Nguồn luật không bị lộ qua ghi chú:** script `--e2` để trống ghi chú (rationale) của mọi luật nhập tay, nên điều kiện PLAIN không có dòng "luật do AI trích" và 4 luật thử không mang mã/đáp án trên giao diện; chấm điểm nhận diện luật sai theo mẫu và tham số. Người tham gia vẫn có thể đoán nguồn từ cách diễn đạt; lời hướng dẫn nói luật "do hệ thống đề xuất" ở cả hai điều kiện.
 - Đây là phép đo người duyệt, không phải đo chất lượng test sinh ra (đã có ở `docs/DANH_GIA.md` mục 7B).
 
 ## 8. Quyền riêng tư và đạo đức

@@ -4,7 +4,7 @@ Chấm một phiên E2 (người duyệt luật) sau khi người tham gia duy�
 
 Đầu vào: id project đã seed bằng `python scripts/seed-demo-rules.py --e2` (và người tham gia đã duyệt/loại luật trong tab Nghiệp vụ).
 Đầu ra (in ra màn hình và ghi JSON nếu có --out):
-  - ĐỘ CHÍNH XÁC: so quyết định cuối của từng luật với đáp án (luật SAI cố ý E2-W1, E2-W2 phải bị loại; mọi luật còn lại phải được duyệt).
+  - ĐỘ CHÍNH XÁC: so quyết định cuối của từng luật với đáp án (2 luật SAI cố ý do `--e2` thêm phải bị loại; mọi luật còn lại phải được duyệt).
     Đếm: quyết định đúng, duyệt nhầm luật sai (nguy hiểm nhất), loại nhầm luật đúng, chưa quyết định.
   - THỜI GIAN: từ số liệu đo trong giao diện (công tắc "Đo thời gian duyệt luật" phải BẬT trong lúc duyệt): số quyết định, tổng và trung vị giây,
     tách theo luật có/không có trích dẫn và theo quyết định. Dữ liệu đo ẩn danh, không có id luật nên thời gian được gộp, không gán cho từng luật.
@@ -18,7 +18,16 @@ import sys
 import urllib.error
 import urllib.request
 
-WRONG_KEYS = {"E2-W1", "E2-W2"}
+
+
+def is_wrong(rule):
+    """Luật SAI cố ý do seed-demo-rules.py --e2 thêm vào (nhận diện theo mẫu + tham số, không dựa vào ghi chú để người tham gia không thấy đáp án):
+    W1 = khoảng giá trị của salaryMax; W2 = deadline lùi tới 30 ngày sau."""
+    params = rule.get("params") or {}
+    if rule["template"] == "VALUE_RANGE" and params.get("field") == "salaryMax":
+        return True
+    return rule["template"] == "DATE_RELATIVE" and (params.get("offset") or 0) == 30
+
 
 
 def call(base, token, path):
@@ -49,7 +58,7 @@ def main():
 
     rows, counts = [], {"đúng": 0, "duyệt nhầm luật sai": 0, "loại nhầm luật đúng": 0, "chưa quyết định": 0}
     for r in rules:
-        should_reject = (r.get("rationale") or "") in WRONG_KEYS
+        should_reject = is_wrong(r)
         status = r["status"]
         if status == "APPROVED":
             verdict = "duyệt nhầm luật sai" if should_reject else "đúng"
