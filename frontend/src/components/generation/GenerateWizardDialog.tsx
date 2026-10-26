@@ -25,6 +25,8 @@ import { listRequirementDocs } from "@/lib/requirementDocs"
 import {
   BusinessChecklistFields,
   budgetOf,
+  buildDocumentsByEndpoint,
+  docsForEndpoint,
   EMPTY_CHECKLIST_INPUT,
   estimateChecklistTokens,
   type ChecklistInput,
@@ -103,6 +105,8 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
   const hasChecklistInput = selectedDocs.length > 0 || checklistInput.instruction.trim().length > 0
   const effectiveSuggest = !hasChecklistInput || checklistInput.suggest
   const useChecklist = mode === "AI" && checklist
+  const docIds = docs.map((d) => d.id)
+  const documentsByEndpoint = useChecklist ? buildDocumentsByEndpoint(checklistInput, docIds, endpoints) : undefined
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -123,6 +127,7 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
         documentIds: useChecklist ? selectedDocs.map((d) => d.id) : undefined,
         instruction: useChecklist ? checklistInput.instruction.trim() || undefined : undefined,
         suggest: useChecklist ? effectiveSuggest : undefined,
+        documentsByEndpoint,
         rulesTokenBudget: useChecklist ? budgetOf(checklistInput) : undefined,
         tokenCap,
       }),
@@ -134,9 +139,26 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
   })
 
   const targetUrl = project?.targetBaseUrl ?? null
-  const checklistEstimate = useChecklist
-    ? estimateChecklistTokens(endpoints.length, selectedDocs.reduce((sum, d) => sum + d.sizeBytes, 0) + checklistInput.instruction.length, effectiveSuggest, hasChecklistInput)
-    : 0
+  // Ước tính theo phân công: mỗi nhóm endpoint cùng bộ tài liệu tính lô riêng; làn gợi ý thêm tính 1 lần trên mọi endpoint.
+  let checklistEstimate = 0
+  if (useChecklist) {
+    if (documentsByEndpoint) {
+      const groups = new Map<string, { count: number; chars: number }>()
+      for (const e of endpoints) {
+        const ids = docsForEndpoint(checklistInput, docIds, e.id).sort()
+        const chars = ids.reduce((sum, id) => sum + (docs.find((d) => d.id === id)?.sizeBytes ?? 0), 0)
+        const g = groups.get(ids.join(",")) ?? { count: 0, chars }
+        groups.set(ids.join(","), { count: g.count + 1, chars })
+      }
+      for (const g of groups.values()) {
+        const hasInput = g.chars > 0 || checklistInput.instruction.trim().length > 0
+        checklistEstimate += estimateChecklistTokens(g.count, g.chars + checklistInput.instruction.length, false, hasInput)
+      }
+      if (effectiveSuggest) checklistEstimate += estimateChecklistTokens(endpoints.length, 0, true, false)
+    } else {
+      checklistEstimate = estimateChecklistTokens(endpoints.length, selectedDocs.reduce((sum, d) => sum + d.sizeBytes, 0) + checklistInput.instruction.length, effectiveSuggest, hasChecklistInput)
+    }
+  }
   const canRun = !mutation.isPending && !!targetUrl && (!isWrite || confirmWrite) && (!useChecklist || checklistInput.consent)
 
   return (
@@ -219,7 +241,7 @@ export function GenerateWizardDialog({ projectId, endpoints, open, onOpenChange 
                 <span className="text-muted-foreground"> - từ tài liệu/chỉ dẫn của bạn và/hoặc AI gợi ý thêm; bạn duyệt rồi hệ thống mới sinh test (0 token)</span>
               </span>
             </label>
-            {checklist && <BusinessChecklistFields projectId={projectId} value={checklistInput} onChange={setChecklistInput} />}
+            {checklist && <BusinessChecklistFields projectId={projectId} value={checklistInput} onChange={setChecklistInput} endpoints={endpoints.map((e) => ({ id: e.id, method: e.method, path: e.path }))} />}
           </div>
           <div className="flex flex-wrap items-center gap-3" hidden={mode === "SYSTEM"}>
             <Label htmlFor="gw-rounds" className="text-xs">

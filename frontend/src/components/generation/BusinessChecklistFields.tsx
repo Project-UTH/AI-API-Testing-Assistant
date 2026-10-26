@@ -21,9 +21,38 @@ export interface ChecklistInput {
   suggest: boolean
   budget: string
   consent: boolean
+  /**
+   * Phân công tài liệu theo endpoint: null = mọi tài liệu đang tick dùng cho MỌI endpoint (mặc định); có giá trị = tài liệu -> các endpoint dùng nó
+   * (tài liệu không có khoá = dùng cho mọi endpoint, nên tài liệu mới tải lên mặc định áp dụng cho tất cả endpoint đang chọn).
+   */
+  assign: Record<string, string[]> | null
 }
 
-export const EMPTY_CHECKLIST_INPUT: ChecklistInput = { excluded: new Set(), instruction: "", suggest: false, budget: String(DEFAULT_RULES_BUDGET), consent: false }
+export const EMPTY_CHECKLIST_INPUT: ChecklistInput = {
+  excluded: new Set(),
+  instruction: "",
+  suggest: false,
+  budget: String(DEFAULT_RULES_BUDGET),
+  consent: false,
+  assign: null,
+}
+
+export interface EndpointRef {
+  id: string
+  method: string
+  path: string
+}
+
+/** Tài liệu nào dùng cho endpoint nào, theo phân công hiện tại (chỉ tính tài liệu đang tick). */
+export function docsForEndpoint(input: ChecklistInput, docIds: string[], endpointId: string): string[] {
+  return docIds.filter((docId) => !input.excluded.has(docId) && (input.assign === null || input.assign[docId] === undefined || input.assign[docId].includes(endpointId)))
+}
+
+/** endpointId -> tài liệu riêng của endpoint; undefined khi người dùng không tuỳ chỉnh (backend dùng chung documentIds). */
+export function buildDocumentsByEndpoint(input: ChecklistInput, docIds: string[], endpoints: EndpointRef[]): Record<string, string[]> | undefined {
+  if (input.assign === null) return undefined
+  return Object.fromEntries(endpoints.map((e) => [e.id, docsForEndpoint(input, docIds, e.id)]))
+}
 
 export function budgetOf(input: ChecklistInput): number {
   return Math.min(MAX_RULES_BUDGET, Math.max(MIN_RULES_BUDGET, Math.floor(Number(input.budget)) || DEFAULT_RULES_BUDGET))
@@ -37,6 +66,8 @@ interface Props {
   projectId: string
   value: ChecklistInput
   onChange: (next: ChecklistInput) => void
+  /** Các endpoint đang được sinh test: để chọn tài liệu riêng cho từng endpoint. */
+  endpoints: EndpointRef[]
 }
 
 /**
@@ -44,13 +75,17 @@ interface Props {
  * Không có tài liệu lẫn chỉ dẫn thì "AI gợi ý thêm" tự bật và bị khoá (AI chỉ còn cách gợi ý từ spec). AI chỉ ĐỀ XUẤT mục checklist; bạn duyệt rồi
  * hệ thống mới sinh test (tất định, 0 token).
  */
-export function BusinessChecklistFields({ projectId, value, onChange }: Props) {
+export function BusinessChecklistFields({ projectId, value, onChange, endpoints }: Props) {
   const queryClient = useQueryClient()
   const fileInput = useRef<HTMLInputElement | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [openDoc, setOpenDoc] = useState<string | null>(null)
+  const [filter, setFilter] = useState("")
 
   const { data: docs = [], isLoading } = useQuery({ queryKey: ["requirement-docs", projectId], queryFn: () => listRequirementDocs(projectId) })
   const selected = docs.filter((d) => !value.excluded.has(d.id))
+  const docIds = docs.map((d) => d.id)
+  const withoutDocs = endpoints.filter((e) => docsForEndpoint(value, docIds, e.id).length === 0)
   const hasInput = selected.length > 0 || value.instruction.trim().length > 0
   const effectiveSuggest = !hasInput || value.suggest
   const budget = budgetOf(value)
@@ -150,6 +185,89 @@ export function BusinessChecklistFields({ projectId, value, onChange }: Props) {
             </li>
           ))}
         </ul>
+      )}
+
+      {selected.length > 0 && endpoints.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-md border border-border p-2.5">
+          <Label className="items-start gap-2 text-xs font-normal">
+            <Checkbox
+              checked={value.assign !== null}
+              onCheckedChange={(c) => onChange({ ...value, assign: c === true ? {} : null })}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium">Chọn tài liệu riêng cho từng endpoint</span>
+              <span className="block text-muted-foreground">
+                Mặc định mọi tài liệu đã tick dùng cho cả {endpoints.length} endpoint. Bật để mỗi tài liệu chỉ dùng cho các endpoint bạn chọn (tài liệu mới tải lên mặc định áp dụng cho tất cả).
+              </span>
+            </span>
+          </Label>
+          {value.assign !== null && (
+            <ul className="flex flex-col gap-1.5">
+              {selected.map((d) => {
+                const chosen = value.assign?.[d.id] ?? endpoints.map((e) => e.id)
+                const open = openDoc === d.id
+                const shown = endpoints.filter((e) => `${e.method} ${e.path}`.toLowerCase().includes(filter.trim().toLowerCase()))
+                const setChosen = (ids: string[]) => onChange({ ...value, assign: { ...(value.assign ?? {}), [d.id]: ids } })
+                return (
+                  <li key={d.id} className="rounded-md border border-border px-2.5 py-1.5 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate font-medium">{d.fileName}</span>
+                      <span className="text-muted-foreground">
+                        Áp dụng cho {chosen.length}/{endpoints.length} endpoint
+                      </span>
+                      <Button type="button" size="xs" variant="outline" aria-expanded={open} onClick={() => { setOpenDoc(open ? null : d.id); setFilter("") }}>
+                        {open ? "Thu gọn" : "Chọn endpoint…"}
+                      </Button>
+                    </div>
+                    {open && (
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            aria-label="Lọc endpoint"
+                            placeholder="Lọc endpoint…"
+                            value={filter}
+                            onChange={(e) => setFilter(e.target.value)}
+                            className="h-7 w-48 rounded-md border border-input bg-transparent px-2 text-xs"
+                          />
+                          <Button type="button" size="xs" variant="ghost" onClick={() => setChosen([...new Set([...chosen, ...shown.map((e) => e.id)])])}>
+                            Chọn các endpoint đang hiện
+                          </Button>
+                          <Button type="button" size="xs" variant="ghost" onClick={() => setChosen(chosen.filter((id) => !shown.some((e) => e.id === id)))}>
+                            Bỏ các endpoint đang hiện
+                          </Button>
+                        </div>
+                        <ul className="max-h-40 overflow-y-auto rounded-md border border-border p-1.5">
+                          {shown.map((e) => (
+                            <li key={e.id}>
+                              <Label className="items-center gap-2 py-0.5 text-xs font-normal">
+                                <Checkbox
+                                  checked={chosen.includes(e.id)}
+                                  onCheckedChange={(c) => setChosen(c === true ? [...chosen, e.id] : chosen.filter((id) => id !== e.id))}
+                                />
+                                <span className="font-mono">
+                                  {e.method} {e.path}
+                                </span>
+                              </Label>
+                            </li>
+                          ))}
+                          {shown.length === 0 && <li className="text-muted-foreground">Không có endpoint nào khớp.</li>}
+                        </ul>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {value.assign !== null && withoutDocs.length > 0 && (
+            <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
+              {withoutDocs.length} endpoint không được gán tài liệu nào
+              {value.instruction.trim() ? " (chỉ dùng chỉ dẫn của bạn)" : value.suggest ? ": chỉ chạy làn AI gợi ý (mục GIẢ ĐỊNH)" : ": sẽ không có mục nào trừ khi bật AI gợi ý thêm"}.
+            </p>
+          )}
+        </div>
       )}
 
       <div className="flex flex-col gap-1">

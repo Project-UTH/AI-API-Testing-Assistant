@@ -19,6 +19,7 @@ const ProjectsPage = lazy(() => import("@/pages/ProjectsPage").then((m) => ({ de
 const ProjectDetailPage = lazy(() => import("@/pages/ProjectDetailPage").then((m) => ({ default: m.ProjectDetailPage })))
 const TestCasesPage = lazy(() => import("@/pages/TestCasesPage").then((m) => ({ default: m.TestCasesPage })))
 const BusinessRulesPage = lazy(() => import("@/pages/BusinessRulesPage").then((m) => ({ default: m.BusinessRulesPage })))
+const RequirementDocsPage = lazy(() => import("@/pages/RequirementDocsPage").then((m) => ({ default: m.RequirementDocsPage })))
 const CoveragePage = lazy(() => import("@/pages/CoveragePage").then((m) => ({ default: m.CoveragePage })))
 const CiIntegrationPage = lazy(() => import("@/pages/CiIntegrationPage").then((m) => ({ default: m.CiIntegrationPage })))
 const ExecutionComparePage = lazy(() => import("@/pages/ExecutionComparePage").then((m) => ({ default: m.ExecutionComparePage })))
@@ -50,6 +51,7 @@ function App() {
               <Route index element={<ProjectDetailPage />} />
               <Route path="test-cases" element={<TestCasesPage />} />
               <Route path="rules" element={<BusinessRulesPage />} />
+              <Route path="documents" element={<RequirementDocsPage />} />
               <Route path="coverage" element={<CoveragePage />} />
               <Route path="history" element={<TestHistoryPage />} />
               <Route path="bug-reports" element={<BugReportPage />} />

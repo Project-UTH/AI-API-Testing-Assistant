@@ -1739,6 +1739,11 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - Ngân sách trích tính theo token của riêng pha trích (`startTokens`), không lấy từ phần sinh test gốc.
   - Tab "Nghiệp vụ" đổi thành "Checklist nghiệp vụ" = màn hình duyệt; bỏ ExtractRulesPanel. Đường AI viết test nghiệp vụ cũ (`includeBusiness`, cấu hình B) giữ ở backend để tái lập, giao diện không còn dùng.
   - **CHƯA ĐO:** làn gợi ý thêm và chế độ không tài liệu chưa đo bằng AI thật (cần ước tính token và duyệt trước); tài liệu demo/báo cáo mô tả luồng mới nhưng số đo C vẫn là của làn tài liệu.
+- [x] **G3.7 (2026-10-26) Tài liệu nghiệp vụ theo từng endpoint + nơi lưu/đọc tài liệu.** Nhánh `feature/module-17q-coverage-luat-nghiep-vu`.
+  - Tab mới **"Tài liệu"**: danh sách tài liệu (tối đa 5), đọc nội dung, tải/xoá/thay bản, chip "Đã dùng cho N endpoint" và bảng lịch sử đọc 2 chiều (theo tài liệu / theo endpoint). Backend: bảng `requirement_document_usages` (project, document, endpointKey, job, bản chụp tên/sha, không có nội dung) và `GET /requirement-documents/usage`.
+  - Hộp thoại Sinh test case: "Chọn tài liệu riêng cho từng endpoint" (mặc định mọi tài liệu đã tick cho mọi endpoint; tài liệu mới tải lên mặc định áp dụng cho tất cả). Request `documentsByEndpoint` (endpointId -> documentId; rỗng = không dùng tài liệu); backend gom endpoint theo cùng bộ tài liệu, chia lô trong từng nhóm, bộ kiểm chứng chỉ thấy tài liệu của nhóm. Ước tính token tính theo nhóm.
+  - Đo thật (1 lượt, 3.485 token, trần 15.000): gán tài liệu mini cho 2/3 endpoint, nhật ký chỉ ghi đúng 2 endpoint đó.
+  - **Lưu ý đo lường:** chia nhóm theo tài liệu làm số lô và token khác cách gửi chung; các số 46.453 token (SRS thật) và ~14.200 (mutant-api) là của cách gửi chung một bộ tài liệu cho mọi endpoint.
 - [x] **G3.3 Tải tài liệu + AI trích luật + kiểm chứng trích dẫn**, nhánh `feature/requirement-doc`, khoảng 2,5 ngày backend + 1 ngày frontend.
   - Entity `RequirementDocument`: `projectId`, `fileName`, `sizeBytes`, `sha256`, `content` MEDIUMTEXT, `uploadedBy`, `createdAt`, `active`. Tải bản mới thì luật của bản cũ chuyển STALE, không xoá.
   - Giới hạn tài liệu: **chỉ .md/.txt UTF-8**, ≤ 200 KB/file, ≤ 5 file/project, quyền sở hữu qua `getOwnedProject`.

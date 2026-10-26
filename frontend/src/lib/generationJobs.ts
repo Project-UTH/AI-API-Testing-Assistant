@@ -99,6 +99,8 @@ export interface StartJobBody {
   /** Bật làn "AI gợi ý thêm" (GIẢ ĐỊNH); backend tự bật khi không có tài liệu lẫn chỉ dẫn. */
   suggest?: boolean
   rulesTokenBudget?: number
+  /** endpointId -> id các tài liệu dùng RIÊNG cho endpoint đó (rỗng = không dùng tài liệu). Không gửi = mọi endpoint dùng chung documentIds. */
+  documentsByEndpoint?: Record<string, string[]>
 }
 
 export function startJob(projectId: string, body: StartJobBody): Promise<GenerationJob> {

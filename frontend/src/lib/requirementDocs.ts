@@ -18,11 +18,26 @@ export interface RequirementDocumentContent {
   content: string
 }
 
+/** 1 dòng lịch sử: tài liệu đã gửi cho AI để lập checklist của endpoint này (lần gần nhất, số lần). */
+export interface RequirementDocUsage {
+  documentId: string
+  fileName: string
+  /** false: tài liệu đã bị xoá hoặc thay bản (id cũ). */
+  documentActive: boolean
+  endpointKey: string
+  lastUsedAt: string
+  timesUsed: number
+}
+
 export const MAX_DOC_BYTES = 200_000
 export const MAX_DOCS = 5
 
 export function listRequirementDocs(projectId: string): Promise<RequirementDocument[]> {
   return apiFetch<RequirementDocument[]>(`/projects/${projectId}/requirement-documents`)
+}
+
+export function getRequirementDocUsage(projectId: string): Promise<RequirementDocUsage[]> {
+  return apiFetch<RequirementDocUsage[]>(`/projects/${projectId}/requirement-documents/usage`)
 }
 
 export function uploadRequirementDoc(projectId: string, file: File): Promise<RequirementDocument> {
