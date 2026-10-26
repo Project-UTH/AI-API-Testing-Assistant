@@ -41,6 +41,7 @@ def main():
     ap.add_argument("--email", default="demo@aiapi.local")
     ap.add_argument("--password", default="demo12345")
     ap.add_argument("--model", default="")
+    ap.add_argument("--broad", action="store_true", help="dùng GỢI Ý RỘNG thay vì gợi ý thường")
     ap.add_argument("--only", default="", help="chỉ chạy kịch bản có tên bắt đầu bằng chuỗi này (vd S1)")
     ap.add_argument("--out", default="")
     ap.add_argument("--cap1", type=int, default=25000)
@@ -74,7 +75,7 @@ def main():
             body, hdr = evalm.multipart({}, "srs-mutant-api.md", SRS.read_bytes())
             system.api.call("POST", f"/projects/{pid}/requirement-documents", raw=body, headers=hdr)
         t0 = time.time()
-        job = system.generate(pid, {"type": "RULES", "endpointIds": [e["id"] for e in eps], "tokenCap": cap, "allowInferred": True, "suggest": True},
+        job = system.generate(pid, {"type": "RULES", "endpointIds": [e["id"] for e in eps], "tokenCap": cap, "allowInferred": True, "suggest": True, "suggestBroad": args.broad},
                               timeout=1800, progress=lambda j: print(f"    ... job {j['status']} {j['tokensUsed']} token"))
         seconds = round(time.time() - t0, 1)
         rules, page = [], 0
