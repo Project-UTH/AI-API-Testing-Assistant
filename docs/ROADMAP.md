@@ -1783,26 +1783,28 @@ Quyết định: SSRF cho phép localhost/private ở URL đích theo cờ (mặ
   - **G3.5:** công tắc đo thời gian duyệt (mặc định TẮT, banner công khai khi bật), đo thời gian luật hiện trong khung nhìn khi tab mở và có focus, gửi khi duyệt/loại/sửa, xuất JSON ẩn danh; duyệt hàng loạt không được đo.
 
 **G5. Đo lại và viết kết quả (khoảng 2-3 ngày; token do người dùng duyệt trước mỗi lần chạy)**
-- [ ] Đo cấu hình A, B cũ và **C mới (có tài liệu + luật đã duyệt)** trên 3 bộ:
+- [x] Đo cấu hình A, B cũ và **C mới (có tài liệu + luật đã duyệt)** trên 3 bộ:
   - **bộ phát triển** M01-M42;
   - **bộ held-out** H01-H15;
   - `shop-api-target`.
 
   Báo cáo TÁCH riêng từng bộ.
-- [ ] **Precision/recall trích luật**: 1 luật trích ra khớp khi trùng (endpoint, template, tập field) với danh sách chuẩn G0.4. precision = khớp/đề xuất; recall = khớp/chuẩn. Đo thêm tỉ lệ trích dẫn bị hạ xuống GIẢ ĐỊNH.
-- [ ] Fail giả trên bản chuẩn, token, thời gian, **đường bão hoà** (số lỗi bắt thêm trên mỗi 10.000 token).
-- [ ] Số A/B cũ giữ nguyên nếu `business.st` và planner không đổi. Mọi số sau thay đổi ghi rõ là in-sample (bộ phát triển) hay out-of-sample (held-out).
-- [ ] Cập nhật `DANH_GIA.md`: kết quả + threats to validity, gồm:
+- [x] **Precision/recall trích luật**: 1 luật trích ra khớp khi trùng (endpoint, template, tập field) với danh sách chuẩn G0.4. precision = khớp/đề xuất; recall = khớp/chuẩn. Đo thêm tỉ lệ trích dẫn bị hạ xuống GIẢ ĐỊNH.
+- [x] Fail giả trên bản chuẩn, token, thời gian, **đường bão hoà** (số lỗi bắt thêm trên mỗi 10.000 token).
+- [x] Số A/B cũ giữ nguyên nếu `business.st` và planner không đổi. Mọi số sau thay đổi ghi rõ là in-sample (bộ phát triển) hay out-of-sample (held-out).
+- [x] Cập nhật `DANH_GIA.md`: kết quả + threats to validity, gồm:
   - held-out/tài liệu do AI viết;
   - in-sample sau 17p;
   - API demo đơn giản;
   - cỡ mẫu nhỏ.
-- [ ] **D1. Cập nhật `CAU_HOI_BAO_VE.md`**: trả lời "đủ chưa" bằng **3 trục độc lập**, không gộp:
+- [x] **D1. Cập nhật `CAU_HOI_BAO_VE.md`**: trả lời "đủ chưa" bằng **3 trục độc lập**, không gộp:
   - (a) thoả tiêu chí: % mục spec có test / % luật đã duyệt có test;
   - (b) chất lượng kết luận: CHẮC/NGHI;
   - (c) khả năng bắt lỗi: mutation score, tách bộ phát triển và held-out.
 
   Thêm 2 câu trả lời mẫu: "sinh bao nhiêu là đủ, dựa vào đâu" và "AI nghiệp vụ dựa vào đâu, còn đoán không".
+
+- *G5 ĐÃ ĐO 2026-10-26:* AI tốn **339.132 token** (trích luật 42.564 + cấu hình B 296.568; sổ CSDL đối chiếu khớp), dự đoán 320.106 (+5,9%). Trích luật: precision 15/15, recall 5/7 (thiếu R59/R60), 0 GIẢ ĐỊNH. Held-out mới: A 0 đúng/2 phát hiện, B 0/4, C-luật 1/2 (bắt đúng H08). C-luật: 9 test, 0 Fail giả, bắt đúng M23-M25. H10 lọt dù R66 trích đúng (chưa điều tra, không sửa hệ thống sau khi thấy held-out). Chi tiết: `docs/DANH_GIA.md` mục 7B; câu trả lời mẫu 3 trục: `docs/CAU_HOI_BAO_VE.md` mục F. Còn lại: G6 (E2 với người thật, E4 quay demo).
 
 **G6. Việc cần người (song song, xong trước khi bảo vệ)**
 - [ ] **E2**: đo thời gian duyệt luật bằng G3.5 với người tham gia thật.
