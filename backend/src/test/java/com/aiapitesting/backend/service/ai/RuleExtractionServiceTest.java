@@ -7,6 +7,7 @@ import com.aiapitesting.backend.entity.RequirementDocument;
 import com.aiapitesting.backend.entity.RuleSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
 import com.aiapitesting.backend.entity.User;
+import com.aiapitesting.backend.repository.BusinessRuleRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.UserRepository;
 import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
@@ -54,6 +55,7 @@ class RuleExtractionServiceTest {
     private final UserRepository users = mock(UserRepository.class);
     private final TestCaseChecklistPlanner planner = mock(TestCaseChecklistPlanner.class);
     private final RuleProposalWriter writer = mock(RuleProposalWriter.class);
+    private final BusinessRuleRepository ruleRepository = mock(BusinessRuleRepository.class);
     private RuleExtractionService service;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -64,7 +66,7 @@ class RuleExtractionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RuleExtractionService(chatClient, events, quota, users, planner, writer);
+        service = new RuleExtractionService(chatClient, events, quota, users, planner, writer, ruleRepository);
         User owner = User.builder().id(ownerId).build();
         project = Project.builder().id(UUID.randomUUID()).owner(owner).build();
         endpoint = endpoint("POST", "/api/jobs");
@@ -74,6 +76,9 @@ class RuleExtractionServiceTest {
         when(planner.readSpec(any())).thenReturn(new Spec("/api/jobs", true, true, List.of(field("salaryMin"), field("salaryMax"))));
         when(writer.write(any(), anyMap(), any(), any(), anyInt()))
                 .thenReturn(new RuleProposalWriter.Outcome(1, 0, 0, 0, 0, 0, 0, Map.of()));
+        when(writer.writeSuggestions(any(), anyMap(), any(), any()))
+                .thenReturn(new RuleProposalWriter.Outcome(0, 0, 1, 0, 0, 0, 0, Map.of()));
+        when(ruleRepository.findAllByProject(any())).thenReturn(List.of());
     }
 
     private static FieldRule field(String name) {
@@ -288,6 +293,83 @@ class RuleExtractionServiceTest {
         verifyNoInteractions(chatClient, writer);
         assertThat(result.stoppedReason()).isEqualTo("NO_INPUT");
         assertThat(empty.getFileName()).isEqualTo("a.md");
+    }
+
+    private static String suggestJson(String status) {
+        return "{\"rules\":[{\"endpoint\":\"POST /api/jobs\",\"template\":\"COMPARE_FIELDS\","
+                + "\"params\":{\"left\":\"salaryMin\",\"op\":\"LTE\",\"right\":\"salaryMax\"},\"suggestedStatus\":" + status
+                + ",\"quote\":\"" + QUOTE + "\",\"expectedStatus\":422,\"rationale\":\"lương tối thiểu hợp lý nhỏ hơn tối đa\"}]}";
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Verdict> suggestionsWritten() {
+        ArgumentCaptor<List<Verdict>> captor = ArgumentCaptor.forClass(List.class);
+        verify(writer).writeSuggestions(any(), anyMap(), captor.capture(), eq(jobId));
+        return captor.getValue();
+    }
+
+    @Test
+    void noDocumentButSuggest_runsOnlyTheSuggestionLane_alwaysInferredWithoutQuote_andKeepsOnlyAllowedSuggestedStatus() {
+        aiReturns(suggestJson("422"), 2_000);
+        Progress ctx = new Progress();
+
+        RulesJobResult result = service.run(new RuleExtractionService.Request(project, ownerId, List.of(endpoint), List.of(), "", true, jobId, 60_000,
+                true, 0), ctx);
+
+        assertThat(suggestionsWritten()).singleElement().satisfies(v -> {
+            assertThat(v.source()).isEqualTo(RuleSource.INFERRED);
+            assertThat(v.quote()).isNull();            // AI có đưa quote cũng bị bỏ
+            assertThat(v.expectedStatus()).isNull();   // mã chỉ là GỢI Ý
+            assertThat(v.suggestedStatus()).isEqualTo(422);
+        });
+        verify(writer, never()).write(any(), anyMap(), any(), any(), anyInt());
+        assertThat(result.suggested()).isEqualTo(1);
+        assertThat(result.stoppedReason()).isNull();
+        assertThat(ctx.tokensUsed()).isEqualTo(2_000);
+    }
+
+    @Test
+    void suggestedStatusOutsideTheNarrowSet_isDropped() {
+        aiReturns(suggestJson("200"), 1_000);
+        service.run(new RuleExtractionService.Request(project, ownerId, List.of(endpoint), List.of(), "", true, jobId, 60_000, true, 0), new Progress());
+        assertThat(suggestionsWritten()).singleElement().satisfies(v -> assertThat(v.suggestedStatus()).isNull());
+    }
+
+    @Test
+    void budgetCountsOnlyTokensSpentByTheExtractionPhase_notTheBaselineTokensTheJobAlreadyUsed() {
+        aiReturns("{\"rules\":[]}", 1_000);
+        Progress ctx = new Progress();
+        ctx.tokens = 200_000; // test gốc đã ăn 200.000 token trước pha trích
+        RulesJobResult result = service.run(new RuleExtractionService.Request(project, ownerId, List.of(endpoint), List.of(document), "", false, jobId,
+                60_000, false, 200_000), ctx);
+        assertThat(result.stoppedReason()).isNull();
+        assertThat(result.lotsDone()).isEqualTo(1);
+    }
+
+    @Test
+    void documentAndSuggest_runsBothLanes_andQuestionsAreCappedAndCleaned() {
+        aiReturns("{\"rules\":[],\"questions\":[\"Hạn nộp tối đa bao nhiêu ngày?\",\"  \",12,\"" + "x".repeat(500) + "\"]}", 1_000);
+        RulesJobResult result = service.run(new RuleExtractionService.Request(project, ownerId, List.of(endpoint), List.of(document), "", true, jobId,
+                60_000, true, 0), new Progress());
+        assertThat(result.questions()).hasSize(2);
+        assertThat(result.questions().get(1)).hasSize(RuleExtractionService.MAX_QUESTION_CHARS);
+        verify(chatClient, org.mockito.Mockito.atLeast(2)).prompt(any(String.class));
+    }
+
+    @Test
+    void suggestPrompt_fencesTheEndpointDigestWithTheNonce_andNeverSendsTheDocument() {
+        aiReturns("{\"rules\":[]}", 500);
+        service.run(new RuleExtractionService.Request(project, ownerId, List.of(endpoint), List.of(document), "", true, jobId, 60_000, true, 0),
+                new Progress());
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(chatClient, org.mockito.Mockito.atLeast(2)).prompt(prompt.capture());
+        String suggestPrompt = prompt.getAllValues().get(prompt.getAllValues().size() - 1);
+        assertThat(suggestPrompt).contains("BEGIN_ENDPOINTS").contains("END_ENDPOINTS").doesNotContain(QUOTE);
+    }
+
+    @Test
+    void cleanSummary_stripsControlCharsAndCuts() {
+        assertThat(RuleExtractionService.cleanSummary("a" + (char) 10 + "b" + (char) 7 + " c" + "x".repeat(300))).startsWith("a b c").hasSizeLessThanOrEqualTo(120);
     }
 
     @Test

@@ -121,7 +121,8 @@ class GenerationJobServiceTest {
         StartGenerationJobRequest req = new StartGenerationJobRequest();
         req.setType("rules");
         when(documents.activeDocuments(eq(project), any())).thenReturn(List.of());
-        assertThatThrownBy(() -> service.start(projectId, req)).isInstanceOf(InvalidRequestException.class);
+        // Không tài liệu, không chỉ dẫn: vẫn hợp lệ, làn "AI gợi ý thêm" tự bật (chỉ gợi ý từ spec).
+        assertThat(service.start(projectId, req).type()).isEqualTo(GenerationJob.TYPE_RULES);
 
         req.setInstruction("Lương tối thiểu không được lớn hơn lương tối đa");
         GenerationJobResponse job = service.start(projectId, req);

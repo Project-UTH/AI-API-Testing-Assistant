@@ -42,7 +42,7 @@ class RuleExtractionVerifierTest {
     }
 
     private static Proposed proposed(String template, RuleParams params, Integer status, String quote) {
-        return new Proposed(KEY, template, params, status, quote, "ý nghĩa luật");
+        return new Proposed(KEY, template, params, status, quote, "ý nghĩa luật", null);
     }
 
     @Test
@@ -121,7 +121,7 @@ class RuleExtractionVerifierTest {
     @Test
     void invalidEndpointTemplateOrParams_areDroppedWithTheirOwnReason() {
         Verdict unknownEndpoint = RuleExtractionVerifier.verify(
-                new Proposed("GET /khong/co", "COMPARE_FIELDS", compare(), null, null, null), ENDPOINTS, SOURCES);
+                new Proposed("GET /khong/co", "COMPARE_FIELDS", compare(), null, null, null, null), ENDPOINTS, SOURCES);
         assertThat(unknownEndpoint.dropped()).isEqualTo(DropReason.UNKNOWN_ENDPOINT);
 
         Verdict unknownTemplate = RuleExtractionVerifier.verify(proposed("MAGIC_RULE", compare(), null, null), ENDPOINTS, SOURCES);

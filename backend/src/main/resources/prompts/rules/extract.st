@@ -20,6 +20,7 @@ NGUYÊN TẮC TRÍCH LUẬT
 - "expectedStatus": chỉ điền khi quote nêu rõ đúng mã lỗi 4xx đó; nếu không, để null.
 - "rationale": 1 câu tiếng Việt nêu ý nghĩa luật.
 - Tối đa <maxPerEndpoint> luật cho mỗi endpoint; ưu tiên luật được nêu rõ nhất.
+- Nếu tài liệu nhắc tới một quy định liên quan endpoint nhưng còn THIẾU hoặc mơ hồ (ví dụ nhắc "hạn nộp" mà không nêu mốc, nhắc "giới hạn" mà không nêu con số), KHÔNG đoán: ghi thành 1 câu hỏi ngắn tiếng Việt trong "questions" (tối đa 5 câu, mỗi câu dưới 200 ký tự). Không có chỗ thiếu thì để mảng rỗng.
 
 CHỈ DẪN CỦA NGƯỜI DÙNG (có thể trống)
 =====BEGIN_INSTRUCTION <nonce>=====
@@ -32,5 +33,5 @@ TÀI LIỆU NGHIỆP VỤ
 =====END_DOC <nonce>=====
 
 ĐỊNH DẠNG ĐẦU RA: một đối tượng JSON duy nhất
-{"rules":[{"endpoint":"POST /api/jobs","template":"COMPARE_FIELDS","params":{"left":"tenFieldA","op":"LTE","right":"tenFieldB"},"expectedStatus":null,"quote":"đoạn trích nguyên văn từ tài liệu","rationale":"ý nghĩa luật"}]}
-Các trường của params theo mẫu: left, op, right (so sánh 2 field, op là LT, LTE, EQ, GTE hoặc GT); field, fieldValue, fields (nhóm field); offset, unit (DAY hoặc HOUR) cho ngày giờ; min, max cho khoảng giá trị; array, item, fn (SUM, COUNT hoặc DISTINCT), value cho tổng hợp trên mảng. Nếu không có luật nào, trả {"rules":[]}.
+{"rules":[{"endpoint":"POST /api/jobs","template":"COMPARE_FIELDS","params":{"left":"tenFieldA","op":"LTE","right":"tenFieldB"},"expectedStatus":null,"quote":"đoạn trích nguyên văn từ tài liệu","rationale":"ý nghĩa luật"}],"questions":["câu hỏi về chỗ tài liệu còn thiếu"]}
+Các trường của params theo mẫu: left, op, right (so sánh 2 field, op là LT, LTE, EQ, GTE hoặc GT); field, fieldValue, fields (nhóm field); offset, unit (DAY hoặc HOUR) cho ngày giờ; min, max cho khoảng giá trị; array, item, fn (SUM, COUNT hoặc DISTINCT), value cho tổng hợp trên mảng. Nếu không có luật nào, trả {"rules":[],"questions":[]}.

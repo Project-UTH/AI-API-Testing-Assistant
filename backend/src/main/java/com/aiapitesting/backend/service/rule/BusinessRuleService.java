@@ -223,6 +223,7 @@ public class BusinessRuleService {
             rule.setQuoteOffset(null);
             rule.setDocumentId(null);
             rule.setExtractionJobId(null);
+            rule.setSuggestedStatus(null);
             if (rule.getSource() == RuleSource.DOC || rule.getSource() == RuleSource.INSTRUCTION || rule.getSource() == RuleSource.INFERRED) {
                 rule.setSource(RuleSource.USER);
             }

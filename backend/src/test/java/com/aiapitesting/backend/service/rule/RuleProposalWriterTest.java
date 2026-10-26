@@ -67,7 +67,7 @@ class RuleProposalWriterTest {
     private Verdict verdict(RuleSource source, String quote, String rationale) {
         return new Verdict(null, null, "POST /jobs", RuleTemplate.OR, new RuleParams(null, null, null, null, null, List.of("a", "b"), null, null, null,
                 null, null, null, null, null), source, source == RuleSource.DOC ? UUID.randomUUID() : null, quote, quote == null ? null : 10, null,
-                rationale, null);
+                rationale, null, null);
     }
 
     @Test
@@ -119,6 +119,25 @@ class RuleProposalWriterTest {
     }
 
     @Test
+    void suggestionLane_hasNoCountCap_andStoresTheSuggestedStatusOnlyOnInferredRules() {
+        List<Verdict> verdicts = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            Verdict v = verdict(RuleSource.INFERRED, null, "GIẢ ĐỊNH: i" + i);
+            verdicts.add(new Verdict(null, null, v.endpointKey(), v.template(), v.params(), v.source(), null, null, null, null, v.rationale(), null, 422));
+        }
+        RuleProposalWriter.Outcome outcome = writer.writeSuggestions(project, endpoints, verdicts, jobId);
+
+        assertThat(outcome.inferred()).isEqualTo(20);
+        assertThat(outcome.skippedOverCap()).isZero();
+        ArgumentCaptor<BusinessRule> saved = ArgumentCaptor.forClass(BusinessRule.class);
+        verify(ruleRepository, times(20)).save(saved.capture());
+        assertThat(saved.getAllValues()).allSatisfy(r -> {
+            assertThat(r.getSuggestedStatus()).isEqualTo(422);
+            assertThat(r.getExpectedStatus()).isNull(); // gợi ý không bao giờ thành kỳ vọng
+        });
+    }
+
+    @Test
     void existingFingerprintAndRaceOnInsert_areSkipped_notDuplicated() {
         when(ruleRepository.existsByProjectAndFingerprint(eq(project), eq("fp-0"))).thenReturn(true);
         when(ruleRepository.save(any(BusinessRule.class))).thenThrow(new DataIntegrityViolationException("dup"));
@@ -134,9 +153,9 @@ class RuleProposalWriterTest {
     void duplicateOfSpecAndConflict_areStoredButCountedApart_andDroppedAreTallied() {
         List<Verdict> verdicts = List.of(verdict(RuleSource.DOC, "trích dẫn trùng spec đủ dài", "TRUNG_SPEC"),
                 verdict(RuleSource.DOC, "trích dẫn mâu thuẫn đủ dài", "MAU_THUAN"),
-                Verdict.class.cast(new Verdict(DropReason.UNKNOWN_ENDPOINT, "x", null, null, null, null, null, null, null, null, null, null)),
-                Verdict.class.cast(new Verdict(DropReason.UNKNOWN_ENDPOINT, "y", null, null, null, null, null, null, null, null, null, null)),
-                Verdict.class.cast(new Verdict(DropReason.INVALID_PARAMS, "z", null, null, null, null, null, null, null, null, null, null)));
+                Verdict.class.cast(new Verdict(DropReason.UNKNOWN_ENDPOINT, "x", null, null, null, null, null, null, null, null, null, null, null)),
+                Verdict.class.cast(new Verdict(DropReason.UNKNOWN_ENDPOINT, "y", null, null, null, null, null, null, null, null, null, null, null)),
+                Verdict.class.cast(new Verdict(DropReason.INVALID_PARAMS, "z", null, null, null, null, null, null, null, null, null, null, null)));
 
         RuleProposalWriter.Outcome outcome = writer.write(project, endpoints, verdicts, jobId, 8);
 
@@ -149,7 +168,7 @@ class RuleProposalWriterTest {
 
     @Test
     void verdictForEndpointOutsideTheMap_isIgnored() {
-        Verdict stray = new Verdict(null, null, "GET /khac", RuleTemplate.OR, null, RuleSource.DOC, null, "q", 1, null, "r", null);
+        Verdict stray = new Verdict(null, null, "GET /khac", RuleTemplate.OR, null, RuleSource.DOC, null, "q", 1, null, "r", null, null);
         RuleProposalWriter.Outcome outcome = writer.write(project, endpoints, List.of(stray), jobId, 8);
         assertThat(outcome.proposed()).isZero();
         verify(ruleRepository, never()).save(any());

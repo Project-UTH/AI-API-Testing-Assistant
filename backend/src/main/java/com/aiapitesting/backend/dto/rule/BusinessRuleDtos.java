@@ -60,13 +60,13 @@ public final class BusinessRuleDtos {
             UUID id, String endpointKey, UUID endpointId, RuleTemplate template, RuleParams params, String sentence,
             Integer expectedStatus, RuleStatus status, RuleSource source, String rationale, String quote, Integer quoteOffset, UUID documentId,
             UUID extractionJobId, RuleRejectReason rejectReason, String statusNote, UUID reviewedBy, Instant reviewedAt, long testCount,
-            Instant createdAt, Instant updatedAt, Long version
+            Instant createdAt, Instant updatedAt, Long version, Integer suggestedStatus
     ) {
         public static RuleResponse from(BusinessRule rule, RuleParams params, String sentence, long testCount) {
             return new RuleResponse(rule.getId(), rule.getEndpointKey(), rule.getEndpointId(), rule.getTemplate(), params, sentence,
                     rule.getExpectedStatus(), rule.getStatus(), rule.getSource(), rule.getRationale(), rule.getQuote(), rule.getQuoteOffset(),
                     rule.getDocumentId(), rule.getExtractionJobId(), rule.getRejectReason(), rule.getStatusNote(), rule.getReviewedBy(), rule.getReviewedAt(), testCount,
-                    rule.getCreatedAt(), rule.getUpdatedAt(), rule.getVersion());
+                    rule.getCreatedAt(), rule.getUpdatedAt(), rule.getVersion(), rule.getSuggestedStatus());
         }
     }
 

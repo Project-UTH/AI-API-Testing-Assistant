@@ -88,6 +88,10 @@ public class GenerationJob {
     @Column(columnDefinition = "TEXT")
     private String resultJson;
 
+    /** JSON {@code RulesJobResult} của pha trích checklist nghiệp vụ chạy trong job FULL/SYSTEM (job RULES cũ vẫn để ở resultJson). */
+    @Column(columnDefinition = "TEXT")
+    private String rulesResultJson;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

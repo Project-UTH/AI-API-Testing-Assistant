@@ -41,4 +41,10 @@ public class StartGenerationJobRequest {
     private List<UUID> documentIds;
     private String instruction;
     private Boolean allowInferred;
+    /** FULL/SYSTEM: sau khi sinh test gốc, AI lập checklist nghiệp vụ (documentIds/instruction/suggest/rulesTokenBudget áp dụng cho pha này). */
+    private Boolean businessChecklist;
+    /** Bật làn "AI gợi ý thêm" (ngoài tài liệu, GIẢ ĐỊNH). Tự bật khi không có tài liệu lẫn chỉ dẫn. */
+    private Boolean suggest;
+    /** Ngân sách token CỨNG riêng của pha trích checklist (mặc định 60.000, kẹp 5.000..1.000.000). */
+    private Integer rulesTokenBudget;
 }

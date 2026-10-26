@@ -57,6 +57,9 @@ public class BusinessRule {
     /** Mã lỗi cụ thể người duyệt/tài liệu chỉ định; null = "bị từ chối" (4xx nghiệp vụ bất kỳ). */
     private Integer expectedStatus;
 
+    /** Mã lỗi AI GỢI Ý cho luật GIẢ ĐỊNH (chỉ để điền sẵn khi duyệt). KHÔNG BAO GIỜ dùng để sinh test: chỉ expectedStatus người duyệt xác nhận mới có hiệu lực. */
+    private Integer suggestedStatus;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "VARCHAR(20)")
     @Builder.Default

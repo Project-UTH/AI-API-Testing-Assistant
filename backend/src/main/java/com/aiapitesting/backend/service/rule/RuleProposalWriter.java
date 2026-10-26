@@ -48,6 +48,18 @@ public class RuleProposalWriter {
     @Transactional
     public Outcome write(Project project, Map<String, Endpoint> endpointsByKey, List<RuleExtractionVerifier.Verdict> verdicts, UUID jobId,
                          int maxPerEndpoint) {
+        return write(project, endpointsByKey, verdicts, jobId, maxPerEndpoint, INFERRED_CAP_PER_ENDPOINT);
+    }
+
+    /** Làn "AI gợi ý thêm" không đặt trần số mục: giới hạn duy nhất là ngân sách token do người dùng đặt. */
+    @Transactional
+    public Outcome writeSuggestions(Project project, Map<String, Endpoint> endpointsByKey, List<RuleExtractionVerifier.Verdict> verdicts, UUID jobId) {
+        return write(project, endpointsByKey, verdicts, jobId, Integer.MAX_VALUE, Integer.MAX_VALUE);
+    }
+
+    @Transactional
+    public Outcome write(Project project, Map<String, Endpoint> endpointsByKey, List<RuleExtractionVerifier.Verdict> verdicts, UUID jobId,
+                         int maxPerEndpoint, int inferredCap) {
         Map<RuleExtractionVerifier.DropReason, Integer> dropped = new EnumMap<>(RuleExtractionVerifier.DropReason.class);
         Map<String, List<RuleExtractionVerifier.Verdict>> byEndpoint = new HashMap<>();
         for (RuleExtractionVerifier.Verdict v : verdicts) {
@@ -76,7 +88,7 @@ public class RuleProposalWriter {
             int keptInferred = 0;
             for (RuleExtractionVerifier.Verdict v : ordered) {
                 boolean inferredRule = v.source() == RuleSource.INFERRED;
-                if (kept >= maxPerEndpoint || (inferredRule && keptInferred >= INFERRED_CAP_PER_ENDPOINT)) {
+                if (kept >= maxPerEndpoint || (inferredRule && keptInferred >= inferredCap)) {
                     overCap++;
                     continue;
                 }
@@ -95,6 +107,9 @@ public class RuleProposalWriter {
                 rule.setQuoteOffset(v.quoteOffset());
                 rule.setDocumentId(v.documentId());
                 rule.setExtractionJobId(jobId);
+                if (inferredRule) {
+                    rule.setSuggestedStatus(v.suggestedStatus());
+                }
                 if (v.note() != null && rule.getStatusNote() == null) {
                     rule.setStatusNote(v.note());
                 }

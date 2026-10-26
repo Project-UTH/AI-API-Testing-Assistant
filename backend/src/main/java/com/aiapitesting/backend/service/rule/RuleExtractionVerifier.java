@@ -32,7 +32,15 @@ public final class RuleExtractionVerifier {
     }
 
     /** Luật AI đề xuất (chưa tin). template để String để giá trị lạ không làm hỏng cả lần parse. */
-    public record Proposed(String endpoint, String template, RuleParams params, Integer expectedStatus, String quote, String rationale) {
+    public record Proposed(String endpoint, String template, RuleParams params, Integer expectedStatus, String quote, String rationale,
+                           Integer suggestedStatus) {
+    }
+
+    /** Mã lỗi AI được phép GỢI Ý (loại 401/403 vì lẫn với phân quyền). Chỉ để điền sẵn khi duyệt, người duyệt vẫn phải xác nhận. */
+    static final Set<Integer> SUGGESTABLE_STATUS = Set.of(400, 404, 409, 422);
+
+    static Integer suggestable(Integer status) {
+        return status != null && SUGGESTABLE_STATUS.contains(status) ? status : null;
     }
 
     /** Nguồn văn bản để kiểm đoạn trích (tài liệu đã chuẩn hoá NFC, hoặc ô chỉ dẫn). */
@@ -50,15 +58,28 @@ public final class RuleExtractionVerifier {
     /** @param dropped != null → bỏ luật (không lưu được); ngược lại lưu với nguồn/đoạn trích đã chốt. */
     public record Verdict(
             DropReason dropped, String dropDetail, String endpointKey, RuleTemplate template, RuleParams params, RuleSource source,
-            UUID documentId, String quote, Integer quoteOffset, Integer expectedStatus, String rationale, String note
+            UUID documentId, String quote, Integer quoteOffset, Integer expectedStatus, String rationale, String note, Integer suggestedStatus
     ) {
         static Verdict drop(DropReason reason, String detail) {
-            return new Verdict(reason, detail, null, null, null, null, null, null, null, null, null, null);
+            return new Verdict(reason, detail, null, null, null, null, null, null, null, null, null, null, null);
         }
 
         public boolean hasQuote() {
             return quote != null;
         }
+    }
+
+    /**
+     * Làn "AI gợi ý thêm": luật KHÔNG có trích dẫn. Dù AI có đưa quote hay expectedStatus thì đều bị bỏ; nguồn luôn là INFERRED (GIẢ ĐỊNH);
+     * mã lỗi AI nghĩ tới chỉ giữ ở suggestedStatus (tập hẹp 4xx) để điền sẵn khi duyệt.
+     */
+    public static Verdict verifySuggestion(Proposed p, Map<String, EndpointInfo> endpoints) {
+        Verdict v = verify(p, endpoints, List.of());
+        if (v.dropped() != null) {
+            return v;
+        }
+        return new Verdict(null, null, v.endpointKey(), v.template(), v.params(), RuleSource.INFERRED, null, null, null, null, v.rationale(), null,
+                suggestable(p.suggestedStatus() != null ? p.suggestedStatus() : p.expectedStatus()));
     }
 
     public static Verdict verify(Proposed p, Map<String, EndpointInfo> endpoints, List<Source> sources) {
@@ -106,7 +127,8 @@ public final class RuleExtractionVerifier {
         if (source == RuleSource.INFERRED) {
             rationale = "GIẢ ĐỊNH: " + (rationale == null || rationale.isBlank() ? "AI suy đoán, không có trích dẫn hợp lệ" : rationale);
         }
-        return new Verdict(null, null, endpointKey, template, params, source, documentId, quote, offset, expected, rationale, note);
+        Integer suggested = source == RuleSource.INFERRED ? suggestable(p.suggestedStatus() != null ? p.suggestedStatus() : p.expectedStatus()) : null;
+        return new Verdict(null, null, endpointKey, template, params, source, documentId, quote, offset, expected, rationale, note, suggested);
     }
 
     // ---- đoạn trích ----

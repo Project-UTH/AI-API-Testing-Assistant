@@ -6,6 +6,7 @@ import com.aiapitesting.backend.entity.Project;
 import com.aiapitesting.backend.entity.RequirementDocument;
 import com.aiapitesting.backend.entity.RuleSource;
 import com.aiapitesting.backend.entity.TestGenerationEvent;
+import com.aiapitesting.backend.repository.BusinessRuleRepository;
 import com.aiapitesting.backend.repository.TestGenerationEventRepository;
 import com.aiapitesting.backend.repository.UserRepository;
 import com.aiapitesting.backend.service.TestCaseChecklistPlanner;
@@ -72,6 +73,12 @@ public class RuleExtractionService {
     static final String NO_INPUT = "NO_INPUT";
     static final String WRITE_ERROR = "WRITE_ERROR";
     static final int MAX_PARAGRAPH_CHARS = 3_000;
+    static final int MAX_EXISTING_LINES = 60;
+    /** Ước lượng phần "luật đã có" gửi kèm làn gợi ý (tối đa MAX_EXISTING_LINES dòng ~ 150 ký tự). */
+    static final int EXISTING_ESTIMATE_CHARS = 3_000;
+    static final int MAX_QUESTIONS = 10;
+    static final int MAX_QUESTION_CHARS = 300;
+    static final int MAX_SUMMARY_CHARS = 120;
 
     private final ChatClient chatClient;
     private final TestGenerationEventRepository events;
@@ -79,12 +86,22 @@ public class RuleExtractionService {
     private final UserRepository users;
     private final TestCaseChecklistPlanner planner;
     private final RuleProposalWriter writer;
+    private final BusinessRuleRepository ruleRepository;
     private final ObjectMapper mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
+    /**
+     * @param tokenCap    ngân sách CỨNG của riêng pha trích (không phải trần của cả job)
+     * @param suggest     bật làn 2 "AI gợi ý thêm" (ngoài tài liệu, GIẢ ĐỊNH); bắt buộc bật khi không có tài liệu lẫn chỉ dẫn
+     * @param startTokens token job đã dùng trước pha trích (test gốc...), để ngân sách chỉ tính phần của pha trích
+     */
     public record Request(
             Project project, UUID ownerId, List<Endpoint> endpoints, List<RequirementDocument> documents, String instruction,
-            boolean allowInferred, UUID jobId, Integer tokenCap
+            boolean allowInferred, UUID jobId, Integer tokenCap, boolean suggest, int startTokens
     ) {
+        public Request(Project project, UUID ownerId, List<Endpoint> endpoints, List<RequirementDocument> documents, String instruction,
+                       boolean allowInferred, UUID jobId, Integer tokenCap) {
+            this(project, ownerId, endpoints, documents, instruction, allowInferred, jobId, tokenCap, false, 0);
+        }
     }
 
     public static int budgetOf(Integer tokenCap) {
@@ -116,10 +133,24 @@ public class RuleExtractionService {
         for (List<Endpoint> lot : lots) {
             estimated += estimateTokens(fixedChars + digestOf(lot).length() + Math.min(DOC_CHAR_LIMIT, docChars)) + MAX_OUTPUT_TOKENS;
         }
+        boolean hasInput = !docs.isEmpty() || !instruction.isEmpty();
+        if (!hasInput) {
+            estimated = 0; // không có tài liệu/chỉ dẫn: không có làn 1
+        }
+        String suggestTemplates = req.suggest() ? templates : "";
+        int suggestEstimated = 0;
+        if (req.suggest()) {
+            int suggestFixed = readResource("prompts/rules/suggest.st").length() + templates.length();
+            for (List<Endpoint> lot : lots) {
+                suggestEstimated += estimateTokens(suggestFixed + digestOf(lot).length() + EXISTING_ESTIMATE_CHARS) + MAX_OUTPUT_TOKENS;
+            }
+        }
+        estimated += suggestEstimated;
         JobProgress.Step plan = ctx.start(null, "Kế hoạch", "RULES_PLAN", "SYSTEM", "Chia lô và ước tính token");
-        plan.ok(req.endpoints().size() + " endpoint chia " + lots.size() + " lô; ước tính tối đa ~" + estimated + " token, ngân sách " + budget + " token");
+        plan.ok(req.endpoints().size() + " endpoint chia " + lots.size() + " lô; " + (hasInput ? "đọc tài liệu/chỉ dẫn" : "không có tài liệu/chỉ dẫn")
+                + (req.suggest() ? " + AI gợi ý thêm (GIẢ ĐỊNH)" : "") + "; ước tính tối đa ~" + estimated + " token, ngân sách " + budget + " token");
         if (ctx.isDryRun()) {
-            return new RulesJobResult(req.endpoints().size(), lots.size(), 0, estimated, 0, 0, 0, 0, 0, 0, 0, 0, Map.of(), null, budget);
+            return new RulesJobResult(req.endpoints().size(), lots.size(), 0, estimated, 0, 0, 0, 0, 0, 0, 0, 0, Map.of(), null, budget, List.of(), 0, null);
         }
 
         List<Source> sources = new ArrayList<>();
@@ -132,8 +163,8 @@ public class RuleExtractionService {
 
         Totals totals = new Totals();
         int done = 0;
-        String stopped = docs.isEmpty() && instruction.isEmpty() ? NO_INPUT : null;
-        for (int i = 0; i < lots.size() && stopped == null; i++) {
+        String stopped = hasInput || req.suggest() ? null : NO_INPUT;
+        for (int i = 0; hasInput && i < lots.size() && stopped == null; i++) {
             ctx.checkCancelled();
             String label = "Lô " + (i + 1) + "/" + lots.size();
             stopped = runLot(req, ctx, lots.get(i), label, docs, maskedInstruction, templates, sources, budget, totals);
@@ -141,7 +172,110 @@ public class RuleExtractionService {
                 done++;
             }
         }
-        return totals.result(req.endpoints().size(), lots.size(), done, estimated, stopped, budget);
+        String suggestStopped = null;
+        if (req.suggest() && stopped != null && !NO_INPUT.equals(stopped)) {
+            suggestStopped = stopped; // làn 1 đã ăn hết ngân sách/quota thì làn 2 không còn chỗ chạy
+            ctx.start(null, "AI gợi ý thêm", "RULES_SUGGEST", "AI", "AI gợi ý thêm ngoài tài liệu").skipped("Bỏ qua: làn đọc tài liệu đã dừng (" + stopped + ")");
+        } else if (req.suggest()) {
+            for (int i = 0; i < lots.size() && suggestStopped == null; i++) {
+                ctx.checkCancelled();
+                suggestStopped = runSuggestLot(req, ctx, lots.get(i), "Gợi ý lô " + (i + 1) + "/" + lots.size(), suggestTemplates, budget, totals);
+            }
+        }
+        return totals.result(req.endpoints().size(), lots.size(), done, estimated, stopped, budget, suggestStopped);
+    }
+
+    /** Token pha trích đã dùng (không tính token test gốc job đã dùng trước đó). */
+    private static long usedByExtraction(Request req, JobProgress ctx) {
+        return Math.max(0, ctx.tokensUsed() - req.startTokens());
+    }
+
+    /**
+     * Làn 2 "AI gợi ý thêm": chỉ gửi digest endpoint/field và danh sách luật đã có (không gửi tài liệu). Đầu ra luôn là GIẢ ĐỊNH, không trích dẫn,
+     * không trần số mục: giới hạn duy nhất là ngân sách token. @return null nếu lô chạy xong; lý do dừng nếu phải dừng làn này.
+     */
+    private String runSuggestLot(Request req, JobProgress ctx, List<Endpoint> lot, String label, String templates, int budget, Totals totals) {
+        String nonce = UUID.randomUUID().toString().substring(0, 8);
+        String digest = digestOf(lot);
+        String existing = existingRulesOf(req.project(), lot);
+        long remainingQuota = quota.remainingToday(users.findById(req.ownerId()).orElseThrow());
+        long allowed = Math.min(budget - usedByExtraction(req, ctx), remainingQuota);
+        String reason = remainingQuota <= budget - usedByExtraction(req, ctx) ? DAILY_QUOTA : BUDGET_STOPPED;
+        String promptText = renderSuggestPrompt(nonce, templates, digest, existing);
+        int estimatedIn = estimateTokens(promptText.length());
+        long maxOut = Math.min(MAX_OUTPUT_TOKENS, allowed - estimatedIn);
+        if (maxOut < MIN_USEFUL_OUTPUT) {
+            ctx.start(null, label, "RULES_SUGGEST", "AI", "AI gợi ý thêm").skipped(
+                    "Dừng: " + (DAILY_QUOTA.equals(reason) ? "hết quota token trong ngày" : "chạm ngân sách token") + " - giữ phần đã làm");
+            return reason;
+        }
+        JobProgress.Step ai = ctx.start(null, label, "RULES_SUGGEST", "AI", "AI gợi ý thêm cho " + lot.size() + " endpoint (GIẢ ĐỊNH)");
+        String text;
+        int tokens;
+        try {
+            ChatResponse response = chatClient.prompt(promptText)
+                    .options(AnthropicChatOptions.builder().maxTokens((int) maxOut).thinkingDisabled())
+                    .call().chatResponse();
+            text = response == null || response.getResult() == null ? "" : response.getResult().getOutput().getText();
+            Usage usage = response == null || response.getMetadata() == null ? null : response.getMetadata().getUsage();
+            tokens = usage != null && usage.getTotalTokens() != null && usage.getTotalTokens() > 0
+                    ? usage.getTotalTokens() : estimatedIn + estimateTokens(text == null ? 0 : text.length());
+        } catch (RuntimeException e) {
+            log.warn("Goi AI goi y that bai ({}): {}", label, e.getClass().getSimpleName());
+            ai.fail("Gọi AI thất bại: " + e.getClass().getSimpleName());
+            return AI_ERROR;
+        }
+        ctx.addTokens(tokens);
+        ai.finish("OK", "Đã nhận trả lời", null, tokens);
+
+        JobProgress.Step verify = ctx.start(null, label, "RULES_VERIFY", "SYSTEM", "Kiểm chứng gợi ý của AI (tất định)");
+        int proposedCount = 0;
+        try {
+            ParsedAnswer parsed = parse(text);
+            Map<String, EndpointInfo> infos = new HashMap<>();
+            Map<String, Endpoint> byKey = new HashMap<>();
+            for (Endpoint e : lot) {
+                String key = BusinessRuleService.keyOf(e);
+                infos.put(key, new EndpointInfo(planner.readSpec(e), e.getMethod()));
+                byKey.put(key, e);
+            }
+            List<Verdict> verdicts = new ArrayList<>();
+            for (Proposed p : parsed.rules()) {
+                verdicts.add(RuleExtractionVerifier.verifySuggestion(p, infos));
+            }
+            RuleProposalWriter.Outcome outcome = writer.writeSuggestions(req.project(), byKey, verdicts, req.jobId());
+            proposedCount = outcome.proposed();
+            totals.add(outcome, 0, parsed.malformed());
+            totals.suggested += outcome.inferred();
+            verify.ok("AI gợi ý " + parsed.rules().size() + " mục: giữ " + outcome.inferred() + " (GIẢ ĐỊNH, chờ bạn duyệt)"
+                    + droppedText(outcome, 0, parsed.malformed()));
+        } catch (IllegalArgumentException e) {
+            log.warn("Dau ra goi y khong doc duoc ({}): {}", label, e.getClass().getSimpleName());
+            verify.fail("Không đọc được trả lời của AI (định dạng sai hoặc bị cắt) - token đã tính, lô này không có gợi ý mới");
+        } catch (RuntimeException e) {
+            log.warn("Ghi goi y that bai ({}): {}", label, e.getClass().getSimpleName());
+            verify.fail("Lỗi hệ thống khi lưu gợi ý - dừng, phần đã lưu ở các lô trước được giữ");
+            return WRITE_ERROR;
+        } finally {
+            recordEvent(req, tokens, proposedCount, lot.size());
+        }
+        return null;
+    }
+
+    /** Luật đã có (mọi trạng thái, kể cả đã loại) của các endpoint trong lô, để AI không đề xuất lại. */
+    private String existingRulesOf(Project project, List<Endpoint> lot) {
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        for (Endpoint e : lot) {
+            keys.add(BusinessRuleService.keyOf(e));
+        }
+        StringBuilder sb = new StringBuilder();
+        int lines = 0;
+        for (var rule : ruleRepository.findAllByProject(project)) {
+            if (keys.contains(rule.getEndpointKey()) && lines++ < MAX_EXISTING_LINES) {
+                sb.append(rule.getEndpointKey()).append(" | ").append(rule.getTemplate()).append(" | ").append(rule.getParamsJson()).append('\n');
+            }
+        }
+        return sb.toString();
     }
 
     /** @return null nếu lô chạy xong; lý do dừng nếu phải dừng cả job. */
@@ -150,8 +284,8 @@ public class RuleExtractionService {
         String nonce = UUID.randomUUID().toString().substring(0, 8);
         String digest = digestOf(lot);
         long remainingQuota = quota.remainingToday(users.findById(req.ownerId()).orElseThrow());
-        long allowed = Math.min(budget - ctx.tokensUsed(), remainingQuota);
-        String reason = remainingQuota <= budget - ctx.tokensUsed() ? DAILY_QUOTA : BUDGET_STOPPED;
+        long allowed = Math.min(budget - usedByExtraction(req, ctx), remainingQuota);
+        String reason = remainingQuota <= budget - usedByExtraction(req, ctx) ? DAILY_QUOTA : BUDGET_STOPPED;
 
         int fixedEstimate = estimateTokens(renderPrompt(nonce, templates, digest, maskedInstruction, "").length());
         long forDocs = allowed - MAX_OUTPUT_TOKENS - fixedEstimate;
@@ -215,6 +349,7 @@ public class RuleExtractionService {
             RuleProposalWriter.Outcome outcome = writer.write(req.project(), byKey, verdicts, req.jobId(), RuleProposalWriter.DEFAULT_MAX_PER_ENDPOINT);
             proposedCount = outcome.proposed();
             totals.add(outcome, skippedInferred, parsed.malformed());
+            totals.addQuestions(parsed.questions());
             verify.ok("AI đề xuất " + parsed.rules().size() + " luật: giữ " + outcome.proposed() + " (" + outcome.fromDocument() + " có trích dẫn tài liệu, "
                     + outcome.fromInstruction() + " từ chỉ dẫn, " + outcome.inferred() + " GIẢ ĐỊNH)"
                     + droppedText(outcome, skippedInferred, parsed.malformed()));
@@ -301,7 +436,7 @@ public class RuleExtractionService {
         for (Endpoint e : lot) {
             sb.append(BusinessRuleService.keyOf(e));
             if (e.getSummary() != null && !e.getSummary().isBlank()) {
-                sb.append(" - ").append(e.getSummary().trim());
+                sb.append(" - ").append(cleanSummary(e.getSummary()));
             }
             sb.append('\n');
             for (TestCaseChecklistPlanner.FieldRule f : planner.readSpec(e).rules()) {
@@ -321,6 +456,12 @@ public class RuleExtractionService {
             }
         }
         return sb.toString();
+    }
+
+    /** Mô tả endpoint đến từ spec import (không tin cậy): bỏ ký tự điều khiển và xuống dòng, cắt ngắn. */
+    static String cleanSummary(String summary) {
+        String s = summary.replaceAll("[\\p{Cntrl}\\s]+", " ").trim();
+        return s.length() > MAX_SUMMARY_CHARS ? s.substring(0, MAX_SUMMARY_CHARS) : s;
     }
 
     private record Doc(UUID id, String name, String original, String masked) {
@@ -435,6 +576,18 @@ public class RuleExtractionService {
                 .build().render(vars);
     }
 
+    private String renderSuggestPrompt(String nonce, String templates, String endpoints, String existing) {
+        Map<String, Object> vars = new LinkedHashMap<>();
+        vars.put("nonce", nonce);
+        vars.put("templates", templates);
+        vars.put("endpoints", endpoints);
+        vars.put("existing", existing.isBlank() ? "(chưa có)" : existing);
+        return PromptTemplate.builder()
+                .template(readResource("prompts/rules/suggest.st"))
+                .renderer(StTemplateRenderer.builder().startDelimiterToken('<').endDelimiterToken('>').build())
+                .build().render(vars);
+    }
+
     private static String readResource(String path) {
         try {
             return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8);
@@ -443,7 +596,7 @@ public class RuleExtractionService {
         }
     }
 
-    record ParsedAnswer(List<Proposed> rules, int malformed) {
+    record ParsedAnswer(List<Proposed> rules, int malformed, List<String> questions) {
     }
 
     /** Đọc JSON AI trả (bỏ rào ```), từng luật hỏng được đếm chứ không làm hỏng cả lô. Ném lỗi nếu không có JSON nào. */
@@ -458,8 +611,19 @@ public class RuleExtractionService {
         }
         try {
             JsonNode rules;
+            List<String> questions = new ArrayList<>();
             try {
-                rules = mapper.readTree(text.substring(from, to + 1)).get("rules");
+                JsonNode root = mapper.readTree(text.substring(from, to + 1));
+                rules = root.get("rules");
+                JsonNode asked = root.get("questions");
+                if (asked != null && asked.isArray()) {
+                    for (JsonNode q : asked) {
+                        String s = q.isTextual() ? q.asText().replaceAll("[\\p{Cntrl}\\s]+", " ").trim() : "";
+                        if (!s.isEmpty() && questions.size() < MAX_QUESTIONS) {
+                            questions.add(s.length() > MAX_QUESTION_CHARS ? s.substring(0, MAX_QUESTION_CHARS) : s);
+                        }
+                    }
+                }
             } catch (IOException cut) {
                 rules = salvage(text.substring(from));
             }
@@ -473,13 +637,16 @@ public class RuleExtractionService {
                     RuleParams params = node.hasNonNull("params") ? mapper.treeToValue(node.get("params"), RuleParams.class) : null;
                     Integer status = node.hasNonNull("expectedStatus") && node.get("expectedStatus").canConvertToInt()
                             ? node.get("expectedStatus").asInt() : null;
+                    Integer suggested = node.hasNonNull("suggestedStatus") && node.get("suggestedStatus").canConvertToInt()
+                            ? node.get("suggestedStatus").asInt() : null;
+                    String rationale = textOf(node, "rationale");
                     list.add(new Proposed(textOf(node, "endpoint"), textOf(node, "template"), params, status, textOf(node, "quote"),
-                            textOf(node, "rationale")));
+                            rationale == null || rationale.length() <= 300 ? rationale : rationale.substring(0, 300), suggested));
                 } catch (Exception e) {
                     malformed++;
                 }
             }
-            return new ParsedAnswer(list, malformed);
+            return new ParsedAnswer(list, malformed, questions);
         } catch (IllegalStateException e) {
             throw new IllegalArgumentException("bad json", e);
         }
@@ -535,6 +702,8 @@ public class RuleExtractionService {
         int overCap;
         int skippedInferred;
         int malformed;
+        int suggested;
+        final List<String> questions = new ArrayList<>();
         final Map<RuleExtractionVerifier.DropReason, Integer> dropped = new EnumMap<>(RuleExtractionVerifier.DropReason.class);
 
         void add(RuleProposalWriter.Outcome o, int skipInferred, int bad) {
@@ -550,14 +719,22 @@ public class RuleExtractionService {
             o.dropped().forEach((k, v) -> dropped.merge(k, v, Integer::sum));
         }
 
-        RulesJobResult result(int endpoints, int lots, int lotsDone, int estimated, String stopped, int budget) {
+        void addQuestions(List<String> asked) {
+            for (String q : asked) {
+                if (questions.size() < MAX_QUESTIONS && !questions.contains(q)) {
+                    questions.add(q);
+                }
+            }
+        }
+
+        RulesJobResult result(int endpoints, int lots, int lotsDone, int estimated, String stopped, int budget, String suggestStopped) {
             Map<String, Integer> droppedByName = new LinkedHashMap<>();
             dropped.forEach((k, v) -> droppedByName.put(k.name(), v));
             if (malformed > 0) {
                 droppedByName.put("MALFORMED", malformed);
             }
             return new RulesJobResult(endpoints, lots, lotsDone, estimated, doc, instruction, inferred, dupSpec, conflicts, existing, overCap,
-                    skippedInferred, droppedByName, stopped, budget);
+                    skippedInferred, droppedByName, stopped, budget, List.copyOf(questions), suggested, suggestStopped);
         }
     }
 }
