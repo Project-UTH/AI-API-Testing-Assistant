@@ -34,15 +34,6 @@ export function AuthLayout({ children }: { children: ReactNode }) {
     <div className="relative flex min-h-svh flex-col overflow-hidden bg-background lg:flex-row">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.06]"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle, var(--foreground) 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
-        }}
-      />
-      <div
-        aria-hidden
         className="pointer-events-none absolute -top-24 -left-24 h-[28rem] w-[28rem] rounded-full bg-success/15 blur-3xl"
       />
       <div
