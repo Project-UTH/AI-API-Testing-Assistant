@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, Play, Sparkles, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { CollapseToggle } from "@/components/shared/CollapseToggle"
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { cn, formatDateTime, METHOD_STYLES } from "@/lib/utils"
 import { getProjectHistory, type EndpointHistory, type HistoryEvent } from "@/lib/history"
@@ -22,6 +23,9 @@ export function TestHistoryPage() {
   const projectId = id!
   const [searchParams] = useSearchParams()
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  // Endpoint người dùng đã MỞ ra - mặc định mọi endpoint thu gọn, mở khi cần. Giữ ở cấp trang (không ở từng thẻ) vì thẻ bị dựng lại
+  // mỗi lần đổi bộ lọc loại sự kiện.
+  const [openEndpointIds, setOpenEndpointIds] = useState<Set<string>>(new Set())
   const lf = useListFilters({ filterKeys: FILTER_KEYS, defaultPageSize: PAGE_SIZE })
   const { q, filters, page: currentPage, clampPage, applyParams } = lf
 
@@ -70,6 +74,14 @@ export function TestHistoryPage() {
   useEffect(() => {
     clampPage(totalPages)
   }, [totalPages, clampPage])
+
+  function toggleEndpointOpen(endpointId: string) {
+    setOpenEndpointIds((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(endpointId)) next.add(endpointId)
+      return next
+    })
+  }
 
   function toggleExpanded(eventId: string) {
     setExpandedIds((prev) => {
@@ -173,6 +185,8 @@ export function TestHistoryPage() {
             projectId={projectId}
             expandedIds={expandedIds}
             onToggleExpanded={toggleExpanded}
+            collapsed={!openEndpointIds.has(endpointHistory.endpointId)}
+            onToggleCollapsed={() => toggleEndpointOpen(endpointHistory.endpointId)}
           />
         ))}
       </div>
@@ -199,19 +213,30 @@ function EndpointHistoryCard({
   projectId,
   expandedIds,
   onToggleExpanded,
+  collapsed,
+  onToggleCollapsed,
 }: {
   endpointHistory: EndpointHistory
   projectId: string
   expandedIds: Set<string>
   onToggleExpanded: (eventId: string) => void
+  collapsed: boolean
+  onToggleCollapsed: () => void
 }) {
   const [visibleEvents, setVisibleEvents] = useState(EVENTS_STEP)
   // Backend trả sự kiện cũ nhất trước; đảo lại để mới nhất lên đầu thì "20 sự kiện đầu" mới là 20 sự kiện mới nhất.
   const newestFirst = useMemo(() => [...endpointHistory.events].reverse(), [endpointHistory.events])
   const shown = newestFirst.slice(0, visibleEvents)
+  const listId = `endpoint-history-${endpointHistory.endpointId}`
   return (
     <div className="rounded-lg border border-border p-4">
       <div className="flex flex-wrap items-center gap-3">
+        <CollapseToggle
+          collapsed={collapsed}
+          onToggle={onToggleCollapsed}
+          label={`lịch sử của ${endpointHistory.endpointMethod} ${endpointHistory.endpointPath}`}
+          controlsId={listId}
+        />
         <span
           className={cn(
             "w-16 shrink-0 rounded-md px-2 py-0.5 text-center text-xs font-semibold",
@@ -226,24 +251,26 @@ function EndpointHistoryCard({
         </span>
       </div>
 
-      <ul className="mt-4 ml-1 flex flex-col gap-3 border-l border-border pl-5">
-        {shown.map((event) => (
-          <li key={event.id} className="relative">
-            <span className="absolute top-1.5 -left-[25px] h-2.5 w-2.5 rounded-full border-2 border-background bg-primary" />
-            {event.type === "GENERATION" ? (
-              <GenerationEventRow event={event} isExpanded={expandedIds.has(event.id)} onToggle={() => onToggleExpanded(event.id)} />
-            ) : (
-              <ExecutionEventRow
-                event={event}
-                projectId={projectId}
-                endpointId={endpointHistory.endpointId}
-                currentTestCaseCount={endpointHistory.currentTestCaseCount}
-              />
-            )}
-          </li>
-        ))}
-      </ul>
-      {endpointHistory.events.length > visibleEvents && (
+      {!collapsed && (
+        <ul id={listId} className="mt-4 ml-1 flex flex-col gap-3 border-l border-border pl-5">
+          {shown.map((event) => (
+            <li key={event.id} className="relative">
+              <span className="absolute top-1.5 -left-[25px] h-2.5 w-2.5 rounded-full border-2 border-background bg-primary" />
+              {event.type === "GENERATION" ? (
+                <GenerationEventRow event={event} isExpanded={expandedIds.has(event.id)} onToggle={() => onToggleExpanded(event.id)} />
+              ) : (
+                <ExecutionEventRow
+                  event={event}
+                  projectId={projectId}
+                  endpointId={endpointHistory.endpointId}
+                  currentTestCaseCount={endpointHistory.currentTestCaseCount}
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!collapsed && endpointHistory.events.length > visibleEvents && (
         <button
           type="button"
           className="mt-3 text-xs text-primary underline underline-offset-4"

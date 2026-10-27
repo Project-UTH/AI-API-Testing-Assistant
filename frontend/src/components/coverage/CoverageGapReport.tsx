@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { CheckCircle2, CircleAlert, Loader2, MinusCircle, ShieldAlert, Wand2, X } from "lucide-react"
 
+import { CollapseToggle } from "@/components/shared/CollapseToggle"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -112,6 +113,8 @@ interface CoverageGapReportProps {
 export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProps) {
   const queryClient = useQueryClient()
   const [showCovered, setShowCovered] = useState(false)
+  // Nhóm người dùng đã MỞ ra - mặc định mọi nhóm thu gọn (chỉ hiện tên + "đạt X/Y"), vì 1 endpoint có hàng chục mục còn thiếu rất dài.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set())
   const [fillResult, setFillResult] = useState<CoverageFillResult | null>(null)
   const counts = coverageCounts(endpoint)
   // Nhóm theo spec (mã trạng thái/quan hệ/phân quyền) không thuộc loại test nào nên không tính vào % - ghi chú 1 lần
@@ -170,6 +173,21 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
       queryClient.invalidateQueries({ queryKey: ["endpoints", projectId] })
     },
   })
+
+  const shownGroupCategories = GROUPS.filter((g) => endpoint.dimensions.some((d) => d.category === g.category)).map((g) => g.category)
+  const allGroupsOpen = shownGroupCategories.length > 0 && shownGroupCategories.every((c) => openGroups.has(c))
+
+  function toggleGroup(category: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(category)) next.add(category)
+      return next
+    })
+  }
+
+  function toggleAllGroups() {
+    setOpenGroups(allGroupsOpen ? new Set() : new Set(shownGroupCategories))
+  }
 
   /** Dòng đang được bù: chỉ các khoá nằm trong lượt đang chạy (bấm 1 dòng hoặc bấm bù tất cả). */
   function isFilling(itemKey: string | null) {
@@ -345,10 +363,15 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
           Bổ sung {counts.fillableKeys.length} mục bù được ngay
         </Button>
         <span className="text-xs text-muted-foreground">Hệ thống tự tạo · 0 token</span>
-        <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Checkbox checked={showCovered} onCheckedChange={(checked) => setShowCovered(checked === true)} />
-          Hiện cả mục đã đạt / không áp dụng
-        </label>
+        <div className="ml-auto flex flex-wrap items-center gap-3">
+          <Button type="button" size="xs" variant="ghost" onClick={toggleAllGroups}>
+            {allGroupsOpen ? "Thu gọn tất cả nhóm" : "Mở tất cả nhóm"}
+          </Button>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Checkbox checked={showCovered} onCheckedChange={(checked) => setShowCovered(checked === true)} />
+            Hiện cả mục đã đạt / không áp dụng
+          </label>
+        </div>
       </div>
 
       {counts.blockedCount > 0 && (
@@ -388,6 +411,9 @@ export function CoverageGapReport({ projectId, endpoint }: CoverageGapReportProp
               title={group.title}
               rule={group.rule}
               rows={rows}
+              open={openGroups.has(group.category)}
+              onToggle={() => toggleGroup(group.category)}
+              bodyId={`coverage-group-${endpoint.endpointId}-${group.category}`}
               showCovered={showCovered}
               isFilling={isFilling}
               onFill={(itemKey) => mutation.mutate([itemKey])}
@@ -404,21 +430,28 @@ interface GroupSectionProps {
   title: string
   rule: string
   rows: CoverageDimension[]
+  open: boolean
+  onToggle: () => void
+  bodyId: string
   showCovered: boolean
   isFilling: (itemKey: string | null) => boolean
   onFill: (itemKey: string) => void
   fillDisabled: boolean
 }
 
-function GroupSection({ title, rule, rows, showCovered, isFilling, onFill, fillDisabled }: GroupSectionProps) {
+function GroupSection({ title, rule, rows, open, onToggle, bodyId, showCovered, isFilling, onFill, fillDisabled }: GroupSectionProps) {
   const relevant = rows.filter((d) => d.status !== "NOT_APPLICABLE")
   const covered = relevant.filter((d) => d.status === "COVERED")
   const visible = showCovered ? rows : rows.filter((d) => d.status === "MISSING")
 
   return (
     <section className="rounded-md border border-border px-3 py-2">
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <h4 className="font-semibold">{title}</h4>
+      <div className="flex flex-wrap items-center gap-x-2">
+        <CollapseToggle collapsed={!open} onToggle={onToggle} label={`nhóm ${title}`} controlsId={bodyId} />
+        {/* Bấm vào tên nhóm cũng đóng/mở cho tiện chuột; người dùng bàn phím/đọc màn hình dùng nút mũi tên bên cạnh. */}
+        <h4 className="cursor-pointer font-semibold" onClick={onToggle}>
+          {title}
+        </h4>
         {relevant.length > 0 ? (
           <span
             className={cn(
@@ -432,26 +465,30 @@ function GroupSection({ title, rule, rows, showCovered, isFilling, onFill, fillD
           <span className="text-xs text-muted-foreground">không áp dụng</span>
         )}
       </div>
-      {rule && <p className="text-xs text-muted-foreground">{rule}</p>}
+      {open && (
+        <div id={bodyId}>
+          {rule && <p className="text-xs text-muted-foreground">{rule}</p>}
 
-      {visible.length === 0 ? (
-        <p className="mt-1.5 text-xs text-muted-foreground">
-          {relevant.length === 0
-            ? rows[0]?.detail
-            : `✓ Đủ cả ${relevant.length} mục - tick "Hiện cả mục đã đạt" để xem test case nào phủ từng mục.`}
-        </p>
-      ) : (
-        <ul className="mt-2 flex flex-col gap-2.5">
-          {visible.map((row, index) => (
-            <GapRow
-              key={row.itemKey ?? `${row.category}-${row.label}-${index}`}
-              row={row}
-              filling={isFilling(row.itemKey)}
-              onFill={onFill}
-              fillDisabled={fillDisabled}
-            />
-          ))}
-        </ul>
+          {visible.length === 0 ? (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {relevant.length === 0
+                ? rows[0]?.detail
+                : `✓ Đủ cả ${relevant.length} mục - tick "Hiện cả mục đã đạt" để xem test case nào phủ từng mục.`}
+            </p>
+          ) : (
+            <ul className="mt-2 flex flex-col gap-2.5">
+              {visible.map((row, index) => (
+                <GapRow
+                  key={row.itemKey ?? `${row.category}-${row.label}-${index}`}
+                  row={row}
+                  filling={isFilling(row.itemKey)}
+                  onFill={onFill}
+                  fillDisabled={fillDisabled}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </section>
   )
