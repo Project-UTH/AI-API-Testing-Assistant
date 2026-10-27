@@ -3,14 +3,17 @@ package com.aiapitesting.backend.service;
 import com.aiapitesting.backend.dto.request.TestCaseRequest;
 import com.aiapitesting.backend.dto.response.PageResponse;
 import com.aiapitesting.backend.dto.response.TestCaseResponse;
+import com.aiapitesting.backend.entity.BusinessRule;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
+import com.aiapitesting.backend.entity.RuleSource;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseSource;
 import com.aiapitesting.backend.exception.EndpointNotFoundException;
 import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
 import com.aiapitesting.backend.repository.BugReportRepository;
+import com.aiapitesting.backend.repository.BusinessRuleRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
 import com.aiapitesting.backend.repository.TestCaseDependencyRepository;
@@ -68,6 +71,9 @@ class TestCaseServiceTest {
     @Mock
     private TestCasePathValidator testCasePathValidator;
 
+    @Mock
+    private BusinessRuleRepository businessRuleRepository;
+
     @InjectMocks
     private TestCaseService testCaseService;
 
@@ -99,6 +105,75 @@ class TestCaseServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(testCaseId);
         assertThat(result.get(0).endpointPath()).isEqualTo("/users");
+    }
+
+    // ---- Loại của luật nghiệp vụ đã sinh test (để giao diện chỉ hiện 1 tag nguồn gốc, phân biệt "AI đoán" / "từ tài liệu") ----
+
+    private TestCase ruleGeneratedTestCase(UUID ruleId) {
+        return TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).name("Nghiep vu").expectedStatus(400)
+                .source(TestCaseSource.BUSINESS).ruleId(ruleId).build();
+    }
+
+    @Test
+    void listByProject_exposesTheSourceOfTheRuleThatGeneratedEachTest_andNullForOthers() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        UUID guessedRuleId = UUID.randomUUID();
+        UUID documentRuleId = UUID.randomUUID();
+        TestCase guessed = ruleGeneratedTestCase(guessedRuleId);
+        TestCase fromDocument = ruleGeneratedTestCase(documentRuleId);
+        TestCase plain = TestCase.builder().id(UUID.randomUUID()).endpoint(endpoint).name("Positive").expectedStatus(200)
+                .source(TestCaseSource.AI_GENERATED).build();
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(guessed, fromDocument, plain));
+        when(businessRuleRepository.findAllById(any())).thenReturn(List.of(
+                BusinessRule.builder().id(guessedRuleId).source(RuleSource.INFERRED).build(),
+                BusinessRule.builder().id(documentRuleId).source(RuleSource.DOC).build()));
+
+        List<TestCaseResponse> result = testCaseService.listByProject(projectId);
+
+        assertThat(result).extracting(TestCaseResponse::ruleSource).containsExactly(RuleSource.INFERRED, RuleSource.DOC, null);
+        verify(businessRuleRepository, org.mockito.Mockito.times(1)).findAllById(any());
+    }
+
+    @Test
+    void listByProject_withoutAnyRuleGeneratedTest_neverQueriesRules() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        TestCase plain = TestCase.builder().id(testCaseId).endpoint(endpoint).name("Positive").expectedStatus(200)
+                .source(TestCaseSource.AI_GENERATED).build();
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(plain));
+
+        List<TestCaseResponse> result = testCaseService.listByProject(projectId);
+
+        assertThat(result.get(0).ruleSource()).isNull();
+        verifyNoInteractions(businessRuleRepository);
+    }
+
+    @Test
+    void listByProject_ruleAlreadyDeleted_ruleSourceIsNullInsteadOfFailing() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        TestCase orphan = ruleGeneratedTestCase(UUID.randomUUID());
+        when(testCaseRepository.findAllByEndpointProject(project)).thenReturn(List.of(orphan));
+        when(businessRuleRepository.findAllById(any())).thenReturn(List.of());
+
+        List<TestCaseResponse> result = testCaseService.listByProject(projectId);
+
+        assertThat(result.get(0).ruleId()).isNotNull();
+        assertThat(result.get(0).ruleSource()).isNull();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void listByProjectPaged_exposesRuleSourceForTheRowsOfThePage() {
+        when(projectService.getOwnedProject(projectId)).thenReturn(project);
+        UUID ruleId = UUID.randomUUID();
+        TestCase fromInstruction = ruleGeneratedTestCase(ruleId);
+        when(testCaseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(fromInstruction), PageRequest.of(0, 50), 1));
+        when(businessRuleRepository.findAllById(any()))
+                .thenReturn(List.of(BusinessRule.builder().id(ruleId).source(RuleSource.INSTRUCTION).build()));
+
+        PageResponse<TestCaseResponse> result = testCaseService.listByProjectPaged(projectId, query(0, null, null, null));
+
+        assertThat(result.data().get(0).ruleSource()).isEqualTo(RuleSource.INSTRUCTION);
     }
 
     // ---- Module 17 (G4) - danh sách theo trang ----

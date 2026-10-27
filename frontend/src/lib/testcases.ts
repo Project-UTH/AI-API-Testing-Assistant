@@ -1,4 +1,5 @@
 import { apiFetch, apiFetchPaged, fetchAllPages, type PagedResult } from "@/lib/api"
+import type { RuleSource } from "@/lib/rules"
 
 export type TestCaseSource = "AI_GENERATED" | "MANUAL" | "SECURITY" | "BUSINESS"
 
@@ -61,6 +62,71 @@ export const GENERATION_ORIGIN_DISPLAY: Record<TestCaseGenerationOrigin, { label
 /** Giá trị nguồn gốc lạ (backend thêm mới mà frontend chưa biết) không được làm trắng cả trang. */
 export function originDisplay(origin: TestCaseGenerationOrigin) {
   return GENERATION_ORIGIN_DISPLAY[origin] ?? { label: origin, className: "bg-muted text-muted-foreground", title: "Nguồn gốc test case" }
+}
+
+export interface TestCaseTag {
+  label: string
+  className: string
+  title: string
+}
+
+/** Test sinh từ checklist nghiệp vụ (RULE_TEMPLATE): tag theo loại của luật đã sinh ra nó - cùng là "nghiệp vụ" nhưng độ tin cậy khác nhau. */
+const RULE_TEMPLATE_TAG_BY_RULE_SOURCE: Record<RuleSource, TestCaseTag> = {
+  INFERRED: {
+    label: "Nghiệp vụ · AI đoán",
+    className: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    title: "Sinh từ mục checklist nghiệp vụ do AI ĐOÁN (GIẢ ĐỊNH, không có trích dẫn). Bạn đã duyệt nên kỳ vọng do bạn chịu trách nhiệm; không tính vào % EP/BVA",
+  },
+  DOC: {
+    label: "Nghiệp vụ · từ tài liệu",
+    className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    title: "Sinh từ mục checklist nghiệp vụ AI trích từ tài liệu (có đoạn trích nguyên văn đã kiểm chứng) và bạn đã duyệt; không tính vào % EP/BVA",
+  },
+  INSTRUCTION: {
+    label: "Nghiệp vụ · từ chỉ dẫn",
+    className: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+    title: "Sinh từ mục checklist nghiệp vụ AI trích từ ô chỉ dẫn của bạn (có đoạn trích nguyên văn đã kiểm chứng) và bạn đã duyệt; không tính vào % EP/BVA",
+  },
+  USER: {
+    label: "Nghiệp vụ · bạn nhập",
+    className: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
+    title: "Sinh từ mục checklist nghiệp vụ do chính bạn nhập; không tính vào % EP/BVA",
+  },
+  SYSTEM_DETECTED: {
+    label: "Nghiệp vụ · hệ thống phát hiện",
+    className: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
+    title: "Sinh từ mục checklist nghiệp vụ hệ thống tự phát hiện từ spec (0 token) và bạn đã duyệt; không tính vào % EP/BVA",
+  },
+}
+
+/** Giải thích cho tag theo `source` - chỉ dùng khi test không có `generationOrigin` (tự thêm, Security, dữ liệu tạo trước Module 15h). */
+const TEST_CASE_SOURCE_TITLE: Record<TestCaseSource, string> = {
+  AI_GENERATED: "Do AI sinh (dữ liệu tạo trước khi có nhãn cách tạo chi tiết)",
+  MANUAL: "Do bạn tự thêm",
+  SECURITY: "Test bảo mật: gọi thiếu token hoặc với token sai",
+  BUSINESS: "Test nghiệp vụ (dữ liệu tạo trước khi có nhãn cách tạo chi tiết)",
+}
+
+/**
+ * Tag DUY NHẤT hiện cho 1 test case (trước đây có 2 tag "nguồn" + "cách tạo" trùng nhau). Ưu tiên cái cụ thể nhất:
+ * test từ checklist nghiệp vụ → theo loại luật; có `generationOrigin` → theo cách tạo; còn lại (tự thêm, Security, dữ liệu cũ) → theo `source`.
+ * `source` KHÔNG hiện cùng lúc với cách tạo vì nó chỉ là trường kỹ thuật (hệ thống bổ sung và test nghiệp vụ vẫn lưu source là AI/BUSINESS
+ * để sinh lại, khoá và tính % EP/BVA chạy đúng). Giá trị lạ từ backend hiện mã thô thay vì làm trắng trang.
+ */
+export function testCaseTag(testCase: Pick<TestCase, "source" | "generationOrigin" | "ruleSource">): TestCaseTag {
+  const origin = testCase.generationOrigin
+  if (origin === "RULE_TEMPLATE" && testCase.ruleSource && RULE_TEMPLATE_TAG_BY_RULE_SOURCE[testCase.ruleSource]) {
+    return RULE_TEMPLATE_TAG_BY_RULE_SOURCE[testCase.ruleSource]
+  }
+  if (origin) {
+    return originDisplay(origin)
+  }
+  const source = testCase.source
+  return {
+    label: TEST_CASE_SOURCE_LABEL[source] ?? source,
+    className: TEST_CASE_SOURCE_STYLES[source] ?? "bg-muted text-muted-foreground",
+    title: TEST_CASE_SOURCE_TITLE[source] ?? "Nguồn của test case",
+  }
 }
 
 export type ChecklistItemStatus = "ALREADY_COVERED" | "AI_SATISFIED" | "SYSTEM_FILLED" | "NOT_FILLABLE" | "NOT_APPLICABLE"
@@ -198,6 +264,8 @@ export interface TestCase {
   expectedStatusClass?: string | null
   ruleId?: string | null
   sendTwice?: boolean
+  /** Loại của luật nghiệp vụ đã sinh test này (null khi test không sinh từ luật hoặc luật đã bị xoá) - để phân biệt "AI đoán" với "từ tài liệu". */
+  ruleSource?: RuleSource | null
 }
 
 export interface ReliabilityDisplay {

@@ -8,9 +8,7 @@ import { cn } from "@/lib/utils"
 import {
   expectationChanged,
   getReliabilityDisplay,
-  originDisplay,
-  TEST_CASE_SOURCE_LABEL,
-  TEST_CASE_SOURCE_STYLES,
+  testCaseTag,
   type TestCase,
 } from "@/lib/testcases"
 
@@ -42,7 +40,7 @@ export const TestCaseRow = memo(function TestCaseRow({
   onDelete,
 }: TestCaseRowProps) {
   const reliability = getReliabilityDisplay(testCase)
-  const origin = testCase.generationOrigin ? originDisplay(testCase.generationOrigin) : null
+  const tag = testCaseTag(testCase)
   return (
     <li className="flex items-center gap-3 rounded-md border border-border p-2">
       <Checkbox
@@ -50,24 +48,13 @@ export const TestCaseRow = memo(function TestCaseRow({
         checked={selected}
         onCheckedChange={(checked) => onToggleSelect(testCase.id, checked === true)}
       />
+      {/* Chỉ MỘT tag nguồn gốc mỗi dòng (cách chọn: testCaseTag ở lib/testcases.ts). source=AI_GENERATED/BUSINESS của case hệ thống bổ sung
+          và case nghiệp vụ là trường kỹ thuật (sinh lại, khoá, tính % EP/BVA) nên không hiện cùng tag cách tạo. */}
       <span
-        className={cn(
-          "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium",
-          // Case hệ thống bù (15h) vẫn lưu source=AI_GENERATED để sinh lại/khoá chạy đúng,
-          // nhưng không do AI viết - hiện "Hệ thống" cho khỏi hiểu nhầm.
-          testCase.generationOrigin === "SYSTEM_FILLED"
-            ? "bg-teal-500/10 text-teal-600 dark:text-teal-400"
-            : testCase.generationOrigin === "RULE_TEMPLATE"
-              ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
-              : TEST_CASE_SOURCE_STYLES[testCase.source]
-        )}
+        title={tag.title + (testCase.checklistItem ? `\nMục checklist: ${testCase.checklistItem}` : "")}
+        className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", tag.className)}
       >
-        {/* 17q G3 - test từ checklist nghiệp vụ lưu source=BUSINESS (để bộ lọc "!= BUSINESS" loại khỏi % EP/BVA) nhưng KHÔNG phải AI đoán: mục do người duyệt. */}
-        {testCase.generationOrigin === "SYSTEM_FILLED"
-          ? "Hệ thống"
-          : testCase.generationOrigin === "RULE_TEMPLATE"
-            ? "Nghiệp vụ (bạn duyệt)"
-            : TEST_CASE_SOURCE_LABEL[testCase.source]}
+        {tag.label}
       </span>
       {testCase.probeKind === "MASS_ASSIGNMENT" && (
         <span
@@ -89,14 +76,6 @@ export const TestCaseRow = memo(function TestCaseRow({
           )}
         >
           {reliability.label}
-        </span>
-      )}
-      {origin && (
-        <span
-          title={origin.title + (testCase.checklistItem ? `\nMục checklist: ${testCase.checklistItem}` : "")}
-          className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", origin.className)}
-        >
-          {origin.label}
         </span>
       )}
       {testCase.source !== "MANUAL" && testCase.rationale && (
