@@ -35,7 +35,7 @@ export function Sidebar() {
   const isAdmin = data?.role === "ADMIN"
 
   return (
-    <aside className="hidden w-56 shrink-0 border-r border-border bg-card md:block">
+    <aside id="app-sidebar" className="hidden w-56 shrink-0 border-r border-border bg-card md:block">
       <div className="flex h-14 items-center border-b border-border px-4">
         <span className="font-semibold">AI API Testing Assistant</span>
       </div>

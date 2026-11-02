@@ -1,5 +1,6 @@
 package com.aiapitesting.backend.dto.response;
 
+import com.aiapitesting.backend.entity.RuleSource;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
 import com.aiapitesting.backend.entity.TestCaseGenerationOrigin;
@@ -47,7 +48,9 @@ public record TestCaseResponse(
         /** 17q G3 - "REJECTED" = kỳ vọng "bị từ chối (4xx)"; ruleId = luật nghiệp vụ đã sinh test này; sendTwice = gửi 2 lần (luật UNIQUE). */
         String expectedStatusClass,
         UUID ruleId,
-        boolean sendTwice
+        boolean sendTwice,
+        /** Loại của luật nghiệp vụ đã sinh test này (DOC/INSTRUCTION/INFERRED/USER/SYSTEM_DETECTED), null khi test không sinh từ luật hoặc luật đã bị xoá - để giao diện phân biệt "AI đoán" với "từ tài liệu". */
+        RuleSource ruleSource
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -61,6 +64,13 @@ public record TestCaseResponse(
 
     public static TestCaseResponse from(
             TestCase testCase, List<TestCaseDependencyResponse> dependencies, List<TestCaseAssertionResponse> assertions
+    ) {
+        return from(testCase, dependencies, assertions, null);
+    }
+
+    public static TestCaseResponse from(
+            TestCase testCase, List<TestCaseDependencyResponse> dependencies, List<TestCaseAssertionResponse> assertions,
+            RuleSource ruleSource
     ) {
         return new TestCaseResponse(
                 testCase.getId(),
@@ -94,7 +104,8 @@ public record TestCaseResponse(
                 testCase.getExpectationNote(),
                 testCase.getExpectedStatusClass(),
                 testCase.getRuleId(),
-                testCase.isSendTwice()
+                testCase.isSendTwice(),
+                ruleSource
         );
     }
 

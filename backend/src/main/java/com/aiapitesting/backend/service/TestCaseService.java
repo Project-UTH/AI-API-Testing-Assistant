@@ -10,6 +10,7 @@ import com.aiapitesting.backend.dto.response.TestCaseResponse;
 import com.aiapitesting.backend.entity.AssertionOperator;
 import com.aiapitesting.backend.entity.Endpoint;
 import com.aiapitesting.backend.entity.Project;
+import com.aiapitesting.backend.entity.RuleSource;
 import com.aiapitesting.backend.entity.TestCase;
 import com.aiapitesting.backend.entity.TestCaseAssertion;
 import com.aiapitesting.backend.entity.TestCaseAuthOverride;
@@ -20,6 +21,7 @@ import com.aiapitesting.backend.exception.InvalidRequestException;
 import com.aiapitesting.backend.exception.TestCaseHasDependentsException;
 import com.aiapitesting.backend.exception.TestCaseNotFoundException;
 import com.aiapitesting.backend.repository.BugReportRepository;
+import com.aiapitesting.backend.repository.BusinessRuleRepository;
 import com.aiapitesting.backend.repository.AuthProfileRepository;
 import com.aiapitesting.backend.repository.EndpointRepository;
 import com.aiapitesting.backend.repository.TestCaseAssertionRepository;
@@ -56,6 +58,25 @@ public class TestCaseService {
     private final BugReportRepository bugReportRepository;
     private final TestCasePathValidator testCasePathValidator;
     private final AuthProfileRepository authProfileRepository;
+    private final BusinessRuleRepository businessRuleRepository;
+
+    /**
+     * Loại của luật nghiệp vụ đã sinh từng test (ruleId -> source), nạp 1 lần cho cả danh sách. Không có test nào sinh từ luật
+     * thì không truy vấn. Luật đã bị xoá thì không có trong kết quả (giao diện rơi về nhãn chung "Từ checklist nghiệp vụ").
+     */
+    private Map<UUID, RuleSource> ruleSourcesOf(java.util.Collection<TestCase> testCases) {
+        Set<UUID> ruleIds = testCases.stream().map(TestCase::getRuleId).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        if (ruleIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, RuleSource> sources = new HashMap<>();
+        businessRuleRepository.findAllById(ruleIds).forEach(rule -> sources.put(rule.getId(), rule.getSource()));
+        return sources;
+    }
+
+    private static RuleSource ruleSourceOf(TestCase testCase, Map<UUID, RuleSource> sources) {
+        return testCase.getRuleId() == null ? null : sources.get(testCase.getRuleId());
+    }
 
     public List<TestCaseResponse> listByProject(UUID projectId) {
         Project project = projectService.getOwnedProject(projectId);
@@ -73,11 +94,13 @@ public class TestCaseService {
                                 a -> a.getTestCase().getId(),
                                 Collectors.mapping(TestCaseAssertionResponse::from, Collectors.toList())));
 
+        Map<UUID, RuleSource> ruleSources = ruleSourcesOf(testCases);
         return testCases.stream()
                 .map(tc -> TestCaseResponse.from(
                         tc,
                         dependenciesByTestCaseId.getOrDefault(tc.getId(), List.of()),
-                        assertionsByTestCaseId.getOrDefault(tc.getId(), List.of())))
+                        assertionsByTestCaseId.getOrDefault(tc.getId(), List.of()),
+                        ruleSourceOf(tc, ruleSources)))
                 .toList();
     }
 
@@ -117,10 +140,12 @@ public class TestCaseService {
             testCaseAssertionRepository.findAllByTestCaseIdIn(ids).forEach(a -> assertionsByTestCaseId
                     .computeIfAbsent(a.getTestCase().getId(), k -> new ArrayList<>()).add(TestCaseAssertionResponse.from(a)));
         }
+        Map<UUID, RuleSource> ruleSources = ruleSourcesOf(page.getContent());
         return PageResponse.from(page, tc -> TestCaseResponse.from(
                 tc,
                 dependenciesByTestCaseId.getOrDefault(tc.getId(), List.of()),
-                assertionsByTestCaseId.getOrDefault(tc.getId(), List.of())));
+                assertionsByTestCaseId.getOrDefault(tc.getId(), List.of()),
+                ruleSourceOf(tc, ruleSources)));
     }
 
     @Transactional
@@ -187,7 +212,8 @@ public class TestCaseService {
         return TestCaseResponse.from(
                 testCase,
                 dependencies.stream().map(TestCaseDependencyResponse::from).toList(),
-                assertions.stream().map(TestCaseAssertionResponse::from).toList());
+                assertions.stream().map(TestCaseAssertionResponse::from).toList(),
+                ruleSourceOf(testCase, ruleSourcesOf(List.of(testCase))));
     }
 
     /** Profile xác thực phải thuộc ĐÚNG project của endpoint - không cho test case của project này dùng token của project khác. */
@@ -207,7 +233,7 @@ public class TestCaseService {
         TestCase testCase = getOwnedTestCase(endpoint, testCaseId);
         testCase.setLocked(locked);
         testCaseRepository.save(testCase);
-        return TestCaseResponse.from(testCase);
+        return TestCaseResponse.from(testCase, List.of(), List.of(), ruleSourceOf(testCase, ruleSourcesOf(List.of(testCase))));
     }
 
     @Transactional

@@ -25,7 +25,7 @@ import { ApiError } from "@/lib/api"
 import {
   confidenceCheck,
   expectationChanged,
-  originDisplay,
+  testCaseTag,
   getReliabilityDisplay,
   type AssertionOperator,
   type ConfidenceCheckResponse,
@@ -56,13 +56,6 @@ const ASSERTION_OPERATOR_LABEL: Record<AssertionOperator, string> = {
   CONTAINS: "Chứa chuỗi (CONTAINS)",
   EXISTS: "Có mặt field (EXISTS)",
   TYPE: "Đúng kiểu dữ liệu (TYPE)",
-}
-
-const SOURCE_LABEL: Record<TestCase["source"], string> = {
-  AI_GENERATED: "AI",
-  MANUAL: "Tự thêm",
-  SECURITY: "Security",
-  BUSINESS: "Nghiệp vụ (AI đoán)",
 }
 
 interface TestCaseDetailDialogProps {
@@ -107,6 +100,7 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
 
   if (!testCase) return null
   const reliability = getReliabilityDisplay(testCase)
+  const tag = testCaseTag(testCase)
 
   return (
     <>
@@ -141,8 +135,8 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-full bg-muted px-2 py-0.5 font-medium">
-              {testCase.generationOrigin === "RULE_TEMPLATE" ? "Nghiệp vụ (bạn duyệt)" : SOURCE_LABEL[testCase.source]}
+            <span title={tag.title} className={cn("rounded-full px-2 py-0.5 font-medium", tag.className)}>
+              {tag.label}
             </span>
             {testCase.probeKind === "MASS_ASSIGNMENT" && (
               <span className="rounded-full border border-destructive/40 px-2 py-0.5 font-medium text-destructive">Probe bảo mật</span>
@@ -178,18 +172,8 @@ export function TestCaseDetailDialog({ open, onOpenChange, testCase, projectId }
           )}
 
           {testCase.generationOrigin && (
-            <Field label="Nguồn gốc (checklist EP/BVA)">
-              <p className="text-sm">
-                <span
-                  className={cn(
-                    "mr-2 rounded-full px-2 py-0.5 text-xs font-medium",
-                    originDisplay(testCase.generationOrigin).className
-                  )}
-                >
-                  {originDisplay(testCase.generationOrigin).label}
-                </span>
-                <span className="text-muted-foreground">{originDisplay(testCase.generationOrigin).title}</span>
-              </p>
+            <Field label="Nguồn gốc">
+              <p className="text-sm text-muted-foreground">{tag.title}</p>
               {testCase.checklistItem && (
                 <p className="mt-1 text-sm text-muted-foreground">Mục checklist: {testCase.checklistItem}</p>
               )}

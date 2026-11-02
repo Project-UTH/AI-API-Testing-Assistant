@@ -32,6 +32,7 @@ import { useListFilters } from "@/hooks/useListFilters"
 import { ListToolbar, type ListFilterSelect } from "@/components/shared/ListToolbar"
 import { Pagination } from "@/components/shared/Pagination"
 import { ListEmptyState } from "@/components/shared/ListEmptyState"
+import { CollapseToggle } from "@/components/shared/CollapseToggle"
 import { TestCaseRow } from "@/components/testcases/TestCaseRow"
 import { TestCaseFormDialog } from "@/components/testcases/TestCaseFormDialog"
 import { DeleteTestCaseDialog } from "@/components/testcases/DeleteTestCaseDialog"
@@ -115,6 +116,16 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
   const [detailTestCase, setDetailTestCase] = useState<TestCase | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // Endpoint người dùng đã MỞ ra - mặc định mọi endpoint thu gọn (danh sách dài khi project có nhiều endpoint), mở khi cần.
+  // Khoá theo endpointId: sắp theo ngày/tên có thể tách 1 endpoint thành nhiều nhóm liền kề, mở/đóng cùng lúc là đúng ý "endpoint này".
+  const [openEndpointIds, setOpenEndpointIds] = useState<Set<string>>(new Set())
+  const toggleEndpointOpen = useCallback((endpointId: string) => {
+    setOpenEndpointIds((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(endpointId)) next.add(endpointId)
+      return next
+    })
+  }, [])
   // "Chọn tất cả khớp bộ lọc" đã bấm (null = chưa): chỉ còn đúng khi bộ lọc VÀ tổng số khớp đều giữ nguyên như lúc bấm.
   const [matchingSelected, setMatchingSelected] = useState<{ key: string; total: number } | null>(null)
   const [selectingMatching, setSelectingMatching] = useState(false)
@@ -457,13 +468,23 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
             </div>
           ) : (
             <div className="mt-4 flex flex-col gap-4" aria-busy={isFetching}>
-              {groups.map((group, index) => (
+              {groups.map((group, index) => {
+                const collapsed = !openEndpointIds.has(group.endpointId)
+                const selectedInGroup = group.cases.filter((testCase) => selectedIds.has(testCase.id)).length
+                const listId = `test-case-group-${index}`
+                return (
                 <section
                   key={`${group.endpointId}-${index}`}
                   className={cn("rounded-lg border border-border p-4", isPlaceholderData && "opacity-60 transition-opacity")}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-3">
+                      <CollapseToggle
+                        collapsed={collapsed}
+                        onToggle={() => toggleEndpointOpen(group.endpointId)}
+                        label={`test case của ${group.method} ${group.path}`}
+                        controlsId={listId}
+                      />
                       <Checkbox
                         aria-label={`Chọn tất cả test case của ${group.method} ${group.path} trên trang này`}
                         title="Chọn tất cả test case của endpoint này (trên trang hiện tại)"
@@ -488,6 +509,7 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
                         {group.cases.length} test case
                         {index === 0 && page.page > 0 ? " · có thể tiếp tục từ trang trước" : ""}
                         {index === groups.length - 1 && page.page + 1 < page.totalPages ? " · có thể còn ở trang sau" : ""}
+                        {collapsed && selectedInGroup > 0 ? ` · ${selectedInGroup} đã chọn (đang ẩn)` : ""}
                       </span>
                     </div>
                     <Button size="sm" variant="outline" onClick={() => openCreate(group.endpointId, group.path)}>
@@ -495,25 +517,28 @@ function TestCasesPageContent({ projectId }: { projectId: string }) {
                       Thêm test case
                     </Button>
                   </div>
-                  <ul className="mt-3 flex flex-col gap-2">
-                    {group.cases.map((testCase) => (
-                      <TestCaseRow
-                        key={testCase.id}
-                        projectId={projectId}
-                        testCase={testCase}
-                        selected={selectedIds.has(testCase.id)}
-                        lockPending={lockPendingIds.has(testCase.id)}
-                        disabled={isPlaceholderData}
-                        onToggleSelect={toggleSelect}
-                        onToggleLock={handleToggleLock}
-                        onOpenDetail={openDetail}
-                        onEdit={openEdit}
-                        onDelete={openDelete}
-                      />
-                    ))}
-                  </ul>
+                  {!collapsed && (
+                    <ul id={listId} className="mt-3 flex flex-col gap-2">
+                      {group.cases.map((testCase) => (
+                        <TestCaseRow
+                          key={testCase.id}
+                          projectId={projectId}
+                          testCase={testCase}
+                          selected={selectedIds.has(testCase.id)}
+                          lockPending={lockPendingIds.has(testCase.id)}
+                          disabled={isPlaceholderData}
+                          onToggleSelect={toggleSelect}
+                          onToggleLock={handleToggleLock}
+                          onOpenDetail={openDetail}
+                          onEdit={openEdit}
+                          onDelete={openDelete}
+                        />
+                      ))}
+                    </ul>
+                  )}
                 </section>
-              ))}
+                )
+              })}
             </div>
           )}
 

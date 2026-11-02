@@ -189,12 +189,6 @@
 
   body {
     background-color: var(--background);
-    background-image: radial-gradient(
-      circle at 1px 1px,
-      color-mix(in oklch, var(--foreground), transparent 92%) 1px,
-      transparent 0
-    );
-    background-size: 28px 28px;
     color: var(--foreground);
     @apply bg-background text-foreground;
   }
